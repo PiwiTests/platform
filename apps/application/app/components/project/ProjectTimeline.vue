@@ -7,7 +7,6 @@ const props = defineProps<{
   projectId: number;
   markers: MarkerInfo[];
   environments: string[];
-  canEdit: boolean;
   /** When set, open this marker in the editor (e.g. after clicking a chart line). */
   focusMarkerId?: number | null;
 }>();
@@ -15,6 +14,9 @@ const props = defineProps<{
 const emit = defineEmits<{ changed: []; 'clear-focus': [] }>();
 
 const toast = useToast();
+// Adding, editing and removing markers needs `marker:write` on the project.
+const { can } = useAuth();
+const canEdit = computed(() => can('marker:write', props.projectId));
 
 // Newest first for the management table.
 const rows = computed(() => [...props.markers].sort((a, b) => +new Date(b.occurredAt) - +new Date(a.occurredAt)));

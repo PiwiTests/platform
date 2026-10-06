@@ -6,9 +6,10 @@ defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'Disable the inbound webhook',
-    description: 'Clear the connection webhook secret, turning the inbound webhook off. Requires administrator role.',
+    description:
+      'Clear the connection webhook secret, turning the inbound webhook off. Requires `connections:manage` (administrators only).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'connections:manage',
   },
 });
 

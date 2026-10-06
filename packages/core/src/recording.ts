@@ -552,3 +552,146 @@ export function sessionFromEvents(events: RawCaptureEvent[], startedAt: number):
   const viewports = viewportsForSteps(session.steps, events);
   return viewports.length > 0 ? { ...session, viewports } : session;
 }
+
+/** The kinds of capture event a recorder sends. */
+const CAPTURE_KINDS: ReadonlySet<RawCaptureEvent['kind']> = new Set([
+  'click',
+  'dblclick',
+  'hover',
+  'input',
+  'change',
+  'files',
+  'drop',
+  'keydown',
+  'navigate',
+  'assert',
+  'viewport',
+]);
+
+/** The longest strings `parseCaptureEvent` keeps, and the bounds of its numbers. */
+const CAPTURE_LIMITS = {
+  tagName: 64,
+  /** A target's role, accessible name, test id and text. */
+  targetText: 500,
+  elementKey: 128,
+  alternatives: 10,
+  locator: 2000,
+  method: 64,
+  value: 100_000,
+  inputType: 32,
+  pageUrl: 4096,
+  /** An assertion's expected and recorded values. */
+  assertionValue: 2000,
+  note: 500,
+  /** The widest and tallest viewport, in CSS pixels. */
+  viewportSize: 10_000,
+  zoom: { min: 0.25, max: 5 },
+} as const;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
+/** A string cut to its first `max` characters; null for anything else. */
+function boundedText(v: unknown, max: number): string | null {
+  return typeof v === 'string' ? v.slice(0, max) : null;
+}
+
+/** A locator alternative within the limits, or null. */
+function parseAlternative(v: unknown): RecordedLocatorAlternative | null {
+  if (!isRecord(v)) return null;
+  const { locator, method, score } = v;
+  if (typeof locator !== 'string' || locator.length > CAPTURE_LIMITS.locator) return null;
+  if (typeof method !== 'string' || method.length > CAPTURE_LIMITS.method) return null;
+  if (!isFiniteNumber(score)) return null;
+  return { locator, method, score };
+}
+
+/** A target rebuilt from its known fields, strings cut to their limits and the alternatives that parse; null for anything but an object. */
+function parseTarget(v: unknown): RecordedTarget | null {
+  if (!isRecord(v)) return null;
+  const alternatives: RecordedLocatorAlternative[] = [];
+  if (Array.isArray(v.alternatives)) {
+    for (const entry of v.alternatives) {
+      if (alternatives.length === CAPTURE_LIMITS.alternatives) break;
+      const alternative = parseAlternative(entry);
+      if (alternative) alternatives.push(alternative);
+    }
+  }
+  return {
+    tagName: boundedText(v.tagName, CAPTURE_LIMITS.tagName) ?? '',
+    role: boundedText(v.role, CAPTURE_LIMITS.targetText),
+    accessibleName: boundedText(v.accessibleName, CAPTURE_LIMITS.targetText),
+    testId: boundedText(v.testId, CAPTURE_LIMITS.targetText),
+    text: boundedText(v.text, CAPTURE_LIMITS.targetText),
+    alternatives,
+    ...(typeof v.elementKey === 'string' ? { elementKey: v.elementKey.slice(0, CAPTURE_LIMITS.elementKey) } : {}),
+  };
+}
+
+/** An assertion with a known matcher, or null. */
+function parseAssertion(v: unknown): StepAssertion | null {
+  if (!isRecord(v)) return null;
+  const matcher = v.matcher as AssertionMatcher;
+  if (!ASSERTION_MATCHERS.includes(matcher)) return null;
+  return {
+    matcher,
+    expected: boundedText(v.expected, CAPTURE_LIMITS.assertionValue),
+    actual: boundedText(v.actual, CAPTURE_LIMITS.assertionValue),
+    negated: v.negated === true,
+    note: boundedText(v.note, CAPTURE_LIMITS.note),
+  };
+}
+
+/** A viewport size within the bounds, with its zoom when it has one; null for anything else. */
+function parseViewport(v: unknown): RawCaptureEvent['viewport'] | null {
+  if (!isRecord(v)) return null;
+  const { width, height, zoom } = v;
+  const isSize = (n: unknown): n is number => isFiniteNumber(n) && n >= 1 && n <= CAPTURE_LIMITS.viewportSize;
+  if (!isSize(width) || !isSize(height)) return null;
+  if (zoom == null) return { width, height };
+  if (!isFiniteNumber(zoom) || zoom < CAPTURE_LIMITS.zoom.min || zoom > CAPTURE_LIMITS.zoom.max) return null;
+  return { width, height, zoom };
+}
+
+/**
+ * A capture event from a page that cannot be trusted (a page can call the
+ * binding a recording browser exposes), rebuilt field by field: the known
+ * fields only, each of its own type or else null (false for
+ * `isPasswordField`), strings cut to their limits, and the locator
+ * alternatives that parse. Null when it has no known `kind`, no `pageUrl`
+ * string, no finite `timestamp`, or an assertion without a known matcher. A
+ * password field's value is never kept; a viewport out of bounds is left out,
+ * and so is `view`.
+ */
+export function parseCaptureEvent(value: unknown): RawCaptureEvent | null {
+  if (!isRecord(value)) return null;
+  const kind = value.kind as RawCaptureEvent['kind'];
+  if (!CAPTURE_KINDS.has(kind)) return null;
+  const { pageUrl, timestamp } = value;
+  if (typeof pageUrl !== 'string' || !isFiniteNumber(timestamp)) return null;
+  const isPasswordField = value.isPasswordField === true;
+  const event: RawCaptureEvent = {
+    kind,
+    target: parseTarget(value.target),
+    value: isPasswordField ? null : boundedText(value.value, CAPTURE_LIMITS.value),
+    checked: typeof value.checked === 'boolean' ? value.checked : null,
+    inputType: boundedText(value.inputType, CAPTURE_LIMITS.inputType),
+    isPasswordField,
+    pageUrl: pageUrl.slice(0, CAPTURE_LIMITS.pageUrl),
+    timestamp,
+  };
+  if (value.assertion != null) {
+    const assertion = parseAssertion(value.assertion);
+    if (!assertion) return null;
+    event.assertion = assertion;
+  }
+  if (value.dropTarget !== undefined) event.dropTarget = parseTarget(value.dropTarget);
+  const viewport = parseViewport(value.viewport);
+  if (viewport) event.viewport = viewport;
+  return event;
+}

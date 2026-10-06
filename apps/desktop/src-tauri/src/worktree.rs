@@ -8,12 +8,13 @@
 // the good/bad loop) and streams progress into the Local runs tray on the same
 // `piwi:local-run` channel a normal local run uses.
 //
-// The webview only ever names a project and a commit window, or for a lab session
-// a test case id and bounded numbers; `git` is invoked through a fixed set of
-// subcommands with validated arguments (SHAs match `^[0-9a-f]{7,40}$`, worktree
-// paths are canonicalized and must sit under the worktrees dir). A lab session
-// reads the commit of the test's latest failure from the bundled server itself,
-// and builds the `piwi flake` arguments and environment here.
+// The webview only ever names a project and a commit window, for a lab session
+// a test case id and bounded numbers, and for an editor's lab job the request;
+// `git` is invoked through a fixed set of subcommands with validated arguments
+// (SHAs match `^[0-9a-f]{7,40}$`, worktree paths are canonicalized and must sit
+// under the worktrees dir). A lab session reads the commit of the test's latest
+// failure from the bundled server itself, a lab job its commit and plan, and
+// the `piwi flake` arguments and environment are built here.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -267,6 +268,63 @@ pub(crate) fn flake_bisect_args(cli: &Path, test_case_id: u64) -> Vec<String> {
     ]
 }
 
+/// The sidecar arguments of an editor's lab job: `piwi flake` on the plan file
+/// the shell wrote, with its results printed as JSON. `piwi flake` builds the
+/// Playwright arguments from the plan, which this app's server validated.
+pub(crate) fn lab_job_args(cli: &Path, plan_file: &Path) -> Vec<String> {
+    vec![
+        node_path(cli),
+        "flake".into(),
+        "--plan".into(),
+        plan_file.to_string_lossy().into_owned(),
+        "--json".into(),
+    ]
+}
+
+/// The commit and the plan of an editor's lab job, read from its request as
+/// the bundled server keeps it: a `flake-lab` request the window started.
+pub(crate) fn parse_lab_job(
+    request: &serde_json::Value,
+) -> Result<(String, serde_json::Value), String> {
+    if request.get("kind").and_then(|v| v.as_str()) != Some("flake-lab") {
+        return Err("the request is not a Flake Lab job".into());
+    }
+    if request.get("status").and_then(|v| v.as_str()) != Some("running") {
+        return Err("the job has not been started in the window".into());
+    }
+    let job = request.get("job").ok_or("the request carries no job")?;
+    let commit = job
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .map(str::to_lowercase)
+        .filter(|c| valid_sha(c))
+        .ok_or("the job's commit is not a commit id")?;
+    let plan = job
+        .get("plan")
+        .filter(|p| p.is_object())
+        .cloned()
+        .ok_or("the job carries no plan")?;
+    Ok((commit, plan))
+}
+
+/// The report `piwi flake --json` printed: the JSON object its output ends
+/// with. None when it printed none, as when it could not run.
+pub(crate) fn parse_lab_report(stdout: &str) -> Option<serde_json::Value> {
+    let start = if stdout.starts_with('{') {
+        0
+    } else {
+        stdout.find("\n{")? + 1
+    };
+    let report: serde_json::Value = serde_json::from_str(stdout[start..].trim_end()).ok()?;
+    report.is_object().then_some(report)
+}
+
+/// Where a lab job's plan file goes: beside the project's worktrees, in this
+/// app's data dir, never inside a linked folder or a worktree.
+pub(crate) fn lab_plan_path(root: &Path, project_id: &str, request_id: &str) -> PathBuf {
+    root.join(project_id).join(format!("lab-{request_id}.json"))
+}
+
 /// The environment a reproduction, a bisect step and `piwi flake` run with:
 /// this app's server and token, which win over a dashboard named in the user's
 /// environment or a `.env` in the worktree, so a run of an old commit reports
@@ -283,18 +341,43 @@ pub(crate) fn flake_lab_env(server: &ServerInfo) -> Vec<(&'static str, String)> 
     ]
 }
 
-/// The environment a reproduction or a bisect step runs its test with: the
-/// reporter records the run's origin (`reproduce`, `bisect`) and, when the
-/// webview names one, the failure cluster it reproduces as its reference.
+/// The environment a local test runs with: the reporter records the run's
+/// origin (`desktop`, `reproduce`, `bisect`) and, when there is one, its
+/// reference, which the window uses to find the run the reporter recorded.
 pub(crate) fn origin_env(
     kind: &'static str,
-    cluster_id: Option<u64>,
+    origin_ref: Option<&str>,
 ) -> Vec<(&'static str, String)> {
     let mut env = vec![("PIWI_ORIGIN", kind.to_string())];
-    if let Some(id) = cluster_id {
-        env.push(("PIWI_ORIGIN_REF", id.to_string()));
+    if let Some(reference) = origin_ref {
+        env.push(("PIWI_ORIGIN_REF", reference.to_string()));
     }
     env
+}
+
+/// A run's origin reference: the failure cluster (or bug report) it was
+/// launched for, else the reference the webview chose for it. A reference is
+/// at most 200 letters, digits and `._:/#@-`, as the reporter keeps it.
+pub(crate) fn origin_reference(
+    id: Option<u64>,
+    chosen: Option<String>,
+) -> Result<Option<String>, String> {
+    if let Some(id) = id {
+        return Ok(Some(id.to_string()));
+    }
+    match chosen {
+        None => Ok(None),
+        Some(reference)
+            if !reference.is_empty()
+                && reference.len() <= 200
+                && reference
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._:/#@-".contains(c)) =>
+        {
+            Ok(Some(reference))
+        }
+        Some(_) => Err("invalid origin reference".into()),
+    }
 }
 
 /// The `git bisect` subcommand for a flake-aware step's exit code: 0 good, 1
@@ -712,6 +795,22 @@ async fn run_sidecar_streaming(
     env: &[(&'static str, String)],
 ) -> Option<i32> {
     let _ = cli; // node_args already carry the resolved CLI path
+    run_sidecar(app, id, worktree, node_args, env, false)
+        .await
+        .0
+}
+
+/// Spawn the Node sidecar, stream its output, record its pid for stop, and
+/// return its exit code, with its standard output when `keep_stdout` is set.
+async fn run_sidecar(
+    app: &AppHandle,
+    id: u32,
+    worktree: &Path,
+    node_args: Vec<String>,
+    env: &[(&'static str, String)],
+    keep_stdout: bool,
+) -> (Option<i32>, String) {
+    let mut stdout = String::new();
     let command = match app.shell().sidecar("node") {
         Ok(c) => c
             .args(node_args)
@@ -721,14 +820,14 @@ async fn run_sidecar_streaming(
             .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
         Err(e) => {
             emit_line(app, id, "error", e.to_string());
-            return None;
+            return (None, stdout);
         }
     };
     let (mut rx, child) = match command.spawn() {
         Ok(pair) => pair,
         Err(e) => {
             emit_line(app, id, "error", e.to_string());
-            return None;
+            return (None, stdout);
         }
     };
     record_child(
@@ -742,12 +841,14 @@ async fn run_sidecar_streaming(
     let mut code = None;
     while let Some(event) = rx.recv().await {
         match event {
-            CommandEvent::Stdout(line) => emit_line(
-                app,
-                id,
-                "stdout",
-                String::from_utf8_lossy(&line).trim_end().to_string(),
-            ),
+            CommandEvent::Stdout(line) => {
+                let text = String::from_utf8_lossy(&line).trim_end().to_string();
+                if keep_stdout {
+                    stdout.push_str(&text);
+                    stdout.push('\n');
+                }
+                emit_line(app, id, "stdout", text)
+            }
             CommandEvent::Stderr(line) => emit_line(
                 app,
                 id,
@@ -763,7 +864,7 @@ async fn run_sidecar_streaming(
         }
     }
     record_child(app, id, None);
-    code
+    (code, stdout)
 }
 
 /// Record (or clear) the child currently running for a job, so stop and
@@ -864,11 +965,13 @@ pub async fn desktop_reproduce_here(
     args: Vec<String>,
     browser: Option<String>,
     cluster_id: Option<u64>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&commit) {
         return Err("invalid commit".into());
     }
+    let origin_ref = origin_reference(cluster_id, origin_ref)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
 
     let state = app.state::<LocalRuns>();
@@ -900,7 +1003,7 @@ pub async fn desktop_reproduce_here(
             &worktree,
             &args,
             browser.as_deref(),
-            cluster_id,
+            origin_ref.as_deref(),
             &stop,
         )
         .await;
@@ -918,7 +1021,7 @@ async fn reproduce_driver(
     worktree: &Path,
     args: &[String],
     browser: Option<&str>,
-    cluster_id: Option<u64>,
+    origin_ref: Option<&str>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "checkout"));
@@ -939,7 +1042,7 @@ async fn reproduce_driver(
     if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
         return None;
     }
-    let env = origin_env("reproduce", cluster_id);
+    let env = origin_env("reproduce", origin_ref);
     run_test_phase(app, id, worktree, args, browser, &env, stop).await
 }
 
@@ -985,11 +1088,13 @@ pub async fn desktop_bisect_here(
     browser: Option<String>,
     flake_test_case_id: Option<u64>,
     cluster_id: Option<u64>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_sha(&good) || !valid_sha(&bad) {
         return Err("invalid commit".into());
     }
+    let origin_ref = origin_reference(cluster_id, origin_ref)?;
     // A flake-aware bisect asks `piwi flake verify --bisect` at each step, with
     // this app's server and token.
     let flake = flake_test_case_id.map(|id| (id, server_info(&app)));
@@ -1044,7 +1149,7 @@ pub async fn desktop_bisect_here(
             &args,
             browser.as_deref(),
             flake.as_ref(),
-            cluster_id,
+            origin_ref.as_deref(),
             &stop,
         )
         .await;
@@ -1065,7 +1170,7 @@ async fn bisect_driver(
     args: &[String],
     browser: Option<&str>,
     flake: Option<&(u64, ServerInfo)>,
-    cluster_id: Option<u64>,
+    origin_ref: Option<&str>,
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
@@ -1153,7 +1258,7 @@ async fn bisect_driver(
                 }
             }
         } else {
-            let env = origin_env("bisect", cluster_id);
+            let env = origin_env("bisect", origin_ref);
             let code = run_test_phase(app, id, worktree, args, browser, &env, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
@@ -1352,6 +1457,22 @@ async fn flake_lab_driver(
     server: &ServerInfo,
     stop: &AtomicBool,
 ) -> Option<i32> {
+    let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
+    let args = flake_lab_args(&cli, test_case_id, options);
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &flake_lab_env(server)).await
+}
+
+/// The phases before a lab runs in its worktree: checkout, install, and the
+/// reporter's `piwi` entry to run. None when a phase failed or the run was stopped.
+fn prepare_lab(
+    app: &AppHandle,
+    id: u32,
+    folder: &Path,
+    worktree: &Path,
+    commit: &str,
+    dirty: bool,
+    stop: &AtomicBool,
+) -> Option<PathBuf> {
     emit(app, RunEventPayload::phase(id, "checkout"));
     emit_line(
         app,
@@ -1384,8 +1505,111 @@ async fn flake_lab_driver(
         emit_line(app, id, "error", "@piwitests/reporter is not installed in the linked folder or at this commit — install it to run the lab.");
         return None;
     };
-    let args = flake_lab_args(&cli, test_case_id, options);
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &flake_lab_env(server)).await
+    Some(cli)
+}
+
+/// Run an editor's Flake Lab job the developer started in the window: the
+/// shell reads the request's commit and plan from the bundled server, checks
+/// the commit out in a throwaway worktree of the project's linked folder,
+/// installs, writes the plan beside the worktree and runs
+/// `piwi flake --plan <file> --json` there against this app. The webview names
+/// the project and the request only. Output streams as `piwi:local-run`
+/// events, then a `lab` event with the report (null when it printed none),
+/// then the exit: `piwi flake`'s code (0 reproduced, 1 not reproduced, 2 could
+/// not run).
+#[tauri::command]
+pub async fn desktop_flake_lab_job(
+    app: AppHandle,
+    project_id: String,
+    request_id: String,
+) -> Result<u32, String> {
+    if !crate::repro::valid_request_id(&request_id) {
+        return Err("invalid repro request id".into());
+    }
+    let server = server_info(&app);
+    let read = ServerInfo {
+        port: server.port,
+        token: server.token.clone(),
+    };
+    let path = format!("/api/desktop/repro-requests/{request_id}");
+    let request = tauri::async_runtime::spawn_blocking(move || local_get_json(&read, &path))
+        .await
+        .map_err(|e| e.to_string())??;
+    let (commit, plan) = parse_lab_job(&request)?;
+    let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
+        .map(|out| is_dirty(&out))
+        .unwrap_or(false);
+
+    let root = worktrees_root(&app)?;
+    let worktree = add_worktree_in(&root, &git, &folder, &project_id, "lab-job-", &commit)?;
+    let cleanup = Cleanup {
+        git: git.clone(),
+        folder: folder.clone(),
+        worktree: worktree.clone(),
+        bisect: false,
+    };
+    let plan_file = lab_plan_path(&root, &project_id, &request_id);
+    let written = serde_json::to_vec_pretty(&plan)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| std::fs::write(&plan_file, bytes).map_err(|e| e.to_string()));
+    if let Err(e) = written {
+        perform_cleanup(&cleanup, &AtomicBool::new(false));
+        return Err(e);
+    }
+
+    let state = app.state::<LocalRuns>();
+    let id = state.allocate_id();
+    let stop = Arc::new(AtomicBool::new(false));
+    let cleaned = Arc::new(AtomicBool::new(false));
+    state.register_job(
+        id,
+        Job {
+            stop: stop.clone(),
+            child: Arc::new(Mutex::new(None)),
+            cleanup,
+            cleaned: cleaned.clone(),
+        },
+    );
+
+    tauri::async_runtime::spawn(async move {
+        let code = lab_job_driver(
+            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &server, &stop,
+        )
+        .await;
+        let _ = std::fs::remove_file(&plan_file);
+        // A job that could not start reads as an error, never as "not reproduced".
+        finish_job(
+            &app,
+            id,
+            &git,
+            &folder,
+            &worktree,
+            false,
+            &cleaned,
+            Some(code.unwrap_or(2)),
+        );
+    });
+    Ok(id)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn lab_job_driver(
+    app: &AppHandle,
+    id: u32,
+    folder: &Path,
+    worktree: &Path,
+    commit: &str,
+    dirty: bool,
+    plan_file: &Path,
+    server: &ServerInfo,
+    stop: &AtomicBool,
+) -> Option<i32> {
+    let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
+    let args = lab_job_args(&cli, plan_file);
+    let (code, stdout) = run_sidecar(app, id, worktree, args, &flake_lab_env(server), true).await;
+    emit(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
+    code
 }
 
 /// The browser phase for a bisect step, without emitting the "browser" phase
@@ -1681,7 +1905,7 @@ mod tests {
     #[test]
     fn a_reproduction_or_bisect_test_names_its_origin_and_cluster() {
         assert_eq!(
-            origin_env("reproduce", Some(42)),
+            origin_env("reproduce", Some("42")),
             [
                 ("PIWI_ORIGIN", "reproduce".to_string()),
                 ("PIWI_ORIGIN_REF", "42".to_string())
@@ -1694,12 +1918,98 @@ mod tests {
     }
 
     #[test]
+    fn a_cluster_wins_over_the_chosen_reference_and_a_bad_reference_is_refused() {
+        assert_eq!(
+            origin_reference(Some(42), Some("job:ab12".into())),
+            Ok(Some("42".to_string()))
+        );
+        assert_eq!(
+            origin_reference(None, Some("job:ab12".into())),
+            Ok(Some("job:ab12".to_string()))
+        );
+        assert_eq!(origin_reference(None, None), Ok(None));
+        assert!(origin_reference(None, Some("a b".into())).is_err());
+        assert!(origin_reference(None, Some(String::new())).is_err());
+        assert!(origin_reference(None, Some("x".repeat(201))).is_err());
+    }
+
+    #[test]
     fn a_flake_step_exit_code_is_a_bisect_verdict() {
         assert_eq!(flake_step_verdict(Some(0)), Ok("good"));
         assert_eq!(flake_step_verdict(Some(1)), Ok("bad"));
         assert_eq!(flake_step_verdict(Some(125)), Ok("skip"));
         assert!(flake_step_verdict(Some(2)).is_err());
         assert!(flake_step_verdict(None).is_err());
+    }
+
+    #[test]
+    fn a_lab_job_runs_piwi_flake_on_its_plan_file_and_prints_json() {
+        let plan_file = PathBuf::from("/data/worktrees/3/lab-f00d.json");
+        let args = lab_job_args(&cli(), &plan_file);
+        assert_eq!(args[0], node_path(&cli()));
+        assert_eq!(
+            strings(&args[1..]),
+            [
+                "flake",
+                "--plan",
+                "/data/worktrees/3/lab-f00d.json",
+                "--json"
+            ]
+        );
+    }
+
+    fn lab_request(kind: &str, status: &str, commit: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": "f00d",
+            "kind": kind,
+            "status": status,
+            "job": { "commit": commit, "plan": { "version": 1, "kind": "reproduce" } },
+        })
+    }
+
+    #[test]
+    fn a_lab_job_is_read_from_a_started_flake_lab_request() {
+        let (commit, plan) =
+            parse_lab_job(&lab_request("flake-lab", "running", "ABCDEF1234567")).unwrap();
+        assert_eq!(commit, "abcdef1234567");
+        assert_eq!(
+            plan,
+            serde_json::json!({ "version": 1, "kind": "reproduce" })
+        );
+
+        assert!(parse_lab_job(&lab_request("bisect", "running", "abcdef1")).is_err());
+        assert!(parse_lab_job(&lab_request("flake-lab", "waiting", "abcdef1")).is_err());
+        assert!(parse_lab_job(&lab_request("flake-lab", "running", "HEAD~1")).is_err());
+        assert!(parse_lab_job(&lab_request("flake-lab", "running", "--detach")).is_err());
+        let no_plan = serde_json::json!({
+            "kind": "flake-lab",
+            "status": "running",
+            "job": { "commit": "abcdef1", "plan": null },
+        });
+        assert!(parse_lab_job(&no_plan).is_err());
+    }
+
+    #[test]
+    fn the_lab_report_is_the_json_object_its_output_ends_with() {
+        let report = "{\n  \"kind\": \"reproduce\",\n  \"verdict\": \"reproduced\"\n}\n";
+        assert_eq!(
+            parse_lab_report(report),
+            Some(serde_json::json!({ "kind": "reproduce", "verdict": "reproduced" }))
+        );
+        let after_a_warning = format!("(node:42) ExperimentalWarning: something\n{report}");
+        assert_eq!(parse_lab_report(&after_a_warning), parse_lab_report(report));
+        assert_eq!(parse_lab_report(""), None);
+        assert_eq!(parse_lab_report("piwi flake: cannot read the plan\n"), None);
+        assert_eq!(parse_lab_report("{ torn"), None);
+        assert_eq!(parse_lab_report("[1, 2]"), None);
+    }
+
+    #[test]
+    fn a_lab_jobs_plan_file_sits_beside_the_worktrees_never_in_one() {
+        let root = PathBuf::from("/data/worktrees");
+        let plan = lab_plan_path(&root, "3", "f00d");
+        assert_eq!(plan, root.join("3").join("lab-f00d.json"));
+        assert!(!plan.starts_with(root.join("3").join("lab-job-abcdef123456")));
     }
 
     #[test]

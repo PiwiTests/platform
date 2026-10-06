@@ -124,6 +124,15 @@ class RunEventBus {
     };
   }
 
+  /**
+   * Whether anyone is subscribed to the run's events: a run or execution page
+   * holding its live stream open. The streaming endpoints return it to the
+   * reporter, which sends step events only while it is true.
+   */
+  isWatched(runId: number): boolean {
+    return this.emitter.listenerCount(`run:${runId}`) > 0;
+  }
+
   /** Cache the stream token and projectId for an active run. */
   cacheRunState(runId: number, state: RunState): void {
     this.runStates.set(runId, state);

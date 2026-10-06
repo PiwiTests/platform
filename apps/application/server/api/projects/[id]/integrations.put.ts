@@ -9,9 +9,9 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Save the project tracker binding',
     description:
-      'Replace the project-integration binding with a normalized settings object. A null connection clears the binding. Requires administrator role.',
+      'Replace the project-integration binding with a normalized settings object. A null connection clears the binding. Requires `project:manage` (Project admin on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'project:manage',
   },
 });
 

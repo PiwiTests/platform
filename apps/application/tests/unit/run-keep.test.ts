@@ -159,7 +159,7 @@ describe('parseTestRunPatch', () => {
 
 describe('keeping and releasing a run', () => {
   test('patchTestRun keeps with author and reason, and releases', async () => {
-    await db.insert(schema.users).values({ id: 7, username: 'alice', password: 'x', role: 'user' });
+    await db.insert(schema.users).values({ id: 7, username: 'alice', password: 'x', role: 'member' });
     const id = await run(1, 10);
 
     await patchTestRun(db as any, id, { keep: true, keepReason: '  v2.3.1 release  ' }, { userId: 7 });
@@ -194,7 +194,7 @@ describe('keeping and releasing a run', () => {
   });
 
   test('a deleted user leaves the keep in place without an author', async () => {
-    await db.insert(schema.users).values({ id: 8, username: 'bob', password: 'x', role: 'user' });
+    await db.insert(schema.users).values({ id: 8, username: 'bob', password: 'x', role: 'member' });
     const id = await run(1, 10);
     await keepRun(db as any, id, { source: 'user', userId: 8 });
 

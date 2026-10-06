@@ -16,6 +16,7 @@ import { getAnalyticsStats } from './stats';
 import { getAnalyticsMetric } from './metric';
 import { getAnalyticsVerdict } from './verdict';
 import { getAnalyticsProgress } from './progress';
+import { getAnalyticsHandbacks } from './handbacks';
 import { getAnalyticsRisks } from './risks';
 import { getAnalyticsNewGaps, getAnalyticsScenarioGaps } from './scenario-gaps';
 import { getAnalyticsList } from './list';
@@ -55,6 +56,7 @@ const ANALYTICS_WIDGET_HANDLERS: Record<AnalyticsWidgetId, AnalyticsWidgetHandle
   verdict: getAnalyticsVerdict,
   narrative: getAnalyticsVerdict,
   progress: getAnalyticsProgress,
+  handbacks: getAnalyticsHandbacks,
   risks: getAnalyticsRisks,
   insights: getAnalyticsInsights,
   portfolio: getAnalyticsPortfolio,

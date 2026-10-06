@@ -7,8 +7,8 @@ defineRouteMeta({
     tags: ['Admin'],
     summary: 'Cleanup old test data',
     description:
-      'Deletes test runs older than a specified number of days, including associated files, traces, and reports. Kept runs and the newest PIWI_RETENTION_MIN_RUNS runs of each project are left in place and counted in the response. Optionally runs a full VACUUM (SQLite) to return freed space to the filesystem. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Deletes test runs older than a specified number of days, including associated files, traces, and reports. Kept runs and the newest PIWI_RETENTION_MIN_RUNS runs of each project are left in place and counted in the response. Optionally runs a full VACUUM (SQLite) to return freed space to the filesystem. Requires `storage:manage` (administrators only).',
+    'x-required-permission': 'storage:manage',
     requestBody: {
       content: {
         'application/json': {

@@ -31,7 +31,7 @@ describe('the Overview dashboard', () => {
     );
   });
 
-  test('keeps the ten widgets in the same order, bands and widths, and adds the tiles, the trend and three trend widgets', () => {
+  test('keeps the ten widgets in the same order, bands and widths, and adds the tiles, the trend, three trend widgets and the hand-back outcomes', () => {
     const placed = OVERVIEW_DASHBOARD.bands.flatMap((band, i) =>
       band.widgets.map((w) => ({ type: w.type, size: w.size, band: ANALYTICS_BANDS[i]!.id })),
     );
@@ -44,6 +44,7 @@ describe('the Overview dashboard', () => {
     expect(placed.filter((w) => !LEGACY_WIDGETS.includes(w.type)).map((w) => w.type)).toEqual([
       'stats',
       'time-to-fix',
+      'handbacks',
       'metric',
       'suite-growth',
       'flaky-debt',

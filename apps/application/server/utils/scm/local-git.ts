@@ -21,6 +21,7 @@ import type {
   ScmFileEdit,
   ScmPullRequest,
   CreatePullRequestInput,
+  ScmPostedComment,
 } from './ScmProvider';
 import { isValidGitRef } from './refs';
 import { TtlCache } from '../ttl-cache';
@@ -427,16 +428,17 @@ export class LocalGitProvider extends ScmProvider {
         '--no-show-signature',
         '--reverse',
         `-n${MAX_RANGE_COMMITS}`,
-        '--format=%H%x1f%s%x1e',
+        '--format=%H%x1f%s%x1f%B%x1e',
         `${fromSha}..${toSha}`,
         '--',
       ]),
       this.diff([`${fromSha}...${toSha}`]),
     ]);
     if (!log.ok || !diff) return this.hosted.fetchChanges(fromSha, toSha);
-    const commits = parseRecords(log.stdout).map(([sha = '', subject = '']) => ({
+    const commits = parseRecords(log.stdout).map(([sha = '', subject = '', body = '']) => ({
       sha: sha.slice(0, 7),
       message: subject,
+      fullMessage: body.trim(),
     }));
     return { commits, ...diff };
   }
@@ -517,6 +519,10 @@ export class LocalGitProvider extends ScmProvider {
 
   override upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
     return this.hosted.upsertPullRequestComment(prNumber, marker, body);
+  }
+
+  override postPullRequestComment(prNumber: number, marker: string, body: string): Promise<ScmPostedComment | null> {
+    return this.hosted.postPullRequestComment(prNumber, marker, body);
   }
 
   override postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {

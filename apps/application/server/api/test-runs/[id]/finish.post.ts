@@ -6,6 +6,7 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, removeStoredShardToken } from '../../../utils/shard-tokens';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
@@ -23,7 +24,6 @@ defineRouteMeta({
     description:
       'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': [],
     requestBody: {
       content: {
         'application/json': {
@@ -137,6 +137,7 @@ export default eventHandler(async (event) => {
       // Postgres, so use a CASE expression that runs on both dialects.
       duration: sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`,
       metadata: { ...currentMeta, shardDurations: allDurations },
+      origin: runOrigin(currentMeta),
       // The first shard to report a branch names the run's branch.
       branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
@@ -197,6 +198,7 @@ export default eventHandler(async (event) => {
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
+          origin: runOrigin(finalMeta),
           updatedAt: new Date(),
         })
         .where(eq(testRuns.id, id));
@@ -259,7 +261,16 @@ export default eventHandler(async (event) => {
     ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
     : testRun.failedTests;
 
+  // The reporter's final metadata, when it sends one, replaces the stored one
+  // and keeps the incident flag and the ingest health the server recorded.
+  const reportedMetadata = body.metadata
+    ? keepIncidentMetadata(testRun.metadata, carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata))
+    : null;
+
   if (hasPendingUploads) {
+    // The reported status waits in the metadata, where it survives a restart,
+    // until the report upload or the stale-run sweep settles the run.
+    const pendingMetadata = withPendingStatus(body.metadata ? reportedMetadata : testRun.metadata, status);
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
@@ -274,14 +285,8 @@ export default eventHandler(async (event) => {
       ...(body.flakyTests !== undefined && { flakyTests }),
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
-      // The reported status waits in the metadata, where it survives a restart,
-      // until the report upload or the stale-run sweep settles the run.
-      metadata: withPendingStatus(
-        body.metadata
-          ? keepIncidentMetadata(testRun.metadata, carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata))
-          : testRun.metadata,
-        status,
-      ),
+      metadata: pendingMetadata,
+      origin: runOrigin(pendingMetadata),
       ...(body.metadata && { branch: resolveRunBranch(body.metadata) }),
       ...(body.label !== undefined && { label: body.label }),
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
@@ -324,10 +329,8 @@ export default eventHandler(async (event) => {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {
-        metadata: keepIncidentMetadata(
-          testRun.metadata,
-          carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
-        ),
+        metadata: reportedMetadata,
+        origin: runOrigin(reportedMetadata),
         branch: resolveRunBranch(body.metadata),
       }),
       ...(body.label !== undefined && { label: body.label }),

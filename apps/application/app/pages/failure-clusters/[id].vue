@@ -23,8 +23,8 @@ const clusterId = parseInt(String(route.params.id));
 // Share links need the server; the public demo has no share-link routes.
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
-// Quarantine/triage actions on the cluster are reporter/admin only, matching the endpoint.
-const { canWrite } = useAuth();
+// What the viewer may do on the cluster's project, matching each action's route.
+const { can } = useAuth();
 
 // Provide shared diagnosis/investigation state (consumed by WhatChangedLine,
 // ClusterInvestigation and DiagnosisPanel). Must run before the top-level await
@@ -36,6 +36,10 @@ const { hasChangesToShow } = provideClusterDiagnosis(clusterId);
 const { data: cluster, refresh: refreshCluster } = await useFetch<FailureClusterDetail>(
   `/api/failure-clusters/${clusterId}`,
 );
+const clusterProjectId = computed(() => cluster.value?.project?.id ?? null);
+const canTriage = computed(() => can('triage:write', clusterProjectId.value));
+const canQuarantine = computed(() => can('quarantine:write', clusterProjectId.value));
+const canRerun = computed(() => can('run:control', clusterProjectId.value));
 
 // The fix plan — the one artifact bundling diagnosis, edits, failing tests, owner
 // and the verify command. Same endpoint the `get_fix_plan` MCP tool returns.
@@ -366,7 +370,7 @@ const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.qu
 
 const moreMenuItems = computed(() => {
   const items: { label: string; icon: string; color?: 'warning'; onSelect: () => void }[] = [];
-  if (canWrite.value && pendingQuarantine.value.length > 0)
+  if (canQuarantine.value && pendingQuarantine.value.length > 0)
     items.push({
       label: 'Quarantine all affected tests',
       icon: 'i-lucide-shield-alert',
@@ -384,7 +388,7 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-clipboard-copy',
     onSelect: () => diagnosisPanel.value?.copyPrompt(),
   });
-  if (rerunInfo.value?.available)
+  if (canRerun.value && rerunInfo.value?.available)
     items.push({
       label: 'Re-run in CI',
       icon: 'i-lucide-refresh-cw',
@@ -507,6 +511,7 @@ const breadcrumbItems = computed(() => [
           <ShareLinksModal
             v-if="cluster && !isDemoMode"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
+            :project-id="cluster.project?.id ?? null"
           />
           <ExportMenu
             v-if="cluster"
@@ -614,7 +619,7 @@ const breadcrumbItems = computed(() => [
 
           <!-- State: one sentence with one verb, and the control that changes it -->
           <template v-if="clusterState" #state>
-            <ClusterStateLine :cluster="cluster" :state="clusterState" :can-write="canWrite" @saved="refresh" />
+            <ClusterStateLine :cluster="cluster" :state="clusterState" @saved="refresh" />
           </template>
 
           <!-- Line 5: the next step -->
@@ -624,13 +629,7 @@ const breadcrumbItems = computed(() => [
 
           <!-- Line 6: the facts line — Details, Raw error, Copy summary -->
           <template #facts>
-            <ClusterFactsLine
-              ref="factsLine"
-              :cluster="cluster"
-              :can-write="canWrite"
-              :signature-line="signatureLine"
-              @refresh="refresh"
-            />
+            <ClusterFactsLine ref="factsLine" :cluster="cluster" :signature-line="signatureLine" @refresh="refresh" />
           </template>
         </SituationBlock>
 
@@ -644,7 +643,6 @@ const breadcrumbItems = computed(() => [
           v-model:selected-case-id="selectedCaseId"
           :cluster-id="clusterId"
           :cases="cluster.affectedTestCases ?? []"
-          :can-write="canWrite"
           :selected-run-id="selectedRunId"
           :selected-exec-id="selectedExecId"
           :project-id="cluster.project?.id"
@@ -672,6 +670,9 @@ const breadcrumbItems = computed(() => [
         <!-- ── Occurrences over time, with the fix and a regression marked ── -->
         <ClusterOccurrenceTrend :cluster-id="cluster.id" />
 
+        <!-- ── Fix attempts and what agents wrote to this cluster ──────── -->
+        <ClusterActivity :cluster-id="cluster.id" />
+
         <!-- ── More ways to fix ───────────────────────────────────────── -->
         <div class="scroll-mt-4">
           <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
@@ -692,6 +693,7 @@ const breadcrumbItems = computed(() => [
                   scope="cluster"
                   context-in-menu
                   :cluster-id="clusterId"
+                  :project-id="cluster.project?.id ?? null"
                   :last-seen-run-id="cluster.lastSeenRunId"
                   :cluster-status="cluster.status"
                   :fix-verification="cluster.fixVerification"
@@ -705,7 +707,7 @@ const breadcrumbItems = computed(() => [
             <template v-if="fixedBefore.length" #fixed-before>
               <FixedBeforeMatches
                 :matches="fixedBefore"
-                :can-write="canWrite"
+                :can-triage="canTriage"
                 :applying-id="applyingId"
                 @apply="applyTriage"
               />
@@ -787,7 +789,7 @@ const breadcrumbItems = computed(() => [
 
   <!-- Bulk actions triggered from the More menu. -->
   <QuarantineAllButton
-    v-if="cluster && canWrite"
+    v-if="cluster && canQuarantine"
     ref="quarantineAll"
     hide-trigger
     :project-id="cluster.project?.id"

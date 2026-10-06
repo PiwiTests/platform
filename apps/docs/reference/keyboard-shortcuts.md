@@ -21,7 +21,7 @@ The dashboard's shortcuts, by where they work. The letter keys never fire while 
 ## Failure inbox
 
 On the [failure inbox](/features/failure-clusters#triage-from-the-row-or-the-keyboard), the keys act on the selected
-row. The triage actions need write access to the project.
+row. The triage actions need the Maintainer role or above on the project.
 
 | Keys | Action |
 |---|---|
@@ -69,11 +69,11 @@ When you [pick a replacement locator](/features/locator-healing) on a captured p
 ## Permission grid
 
 On the [permission grid](/operate/project-access#permission-grid), the arrow keys move between cells, and `Home` / `End`
-jump to the first / last project of the row.
+jump to the first / last column of the row. `Space` or `Enter` opens the focused cell's role menu, and `Esc` closes it.
 
 ## Related
 
 - [UI overview](/features/ui-overview): the pages these keys move between
 - [Test search](/reference/test-search): the language of the Tests tabs' search box
 - [Failure clusters & the inbox](/features/failure-clusters): the triage actions
-- [Project access](/operate/project-access#permission-grid): the permission grid
+- [Access, roles and groups](/operate/project-access#permission-grid): the permission grid

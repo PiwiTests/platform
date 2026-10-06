@@ -42,8 +42,9 @@ export async function getAnalyticsMetric(
   const overTime = hasSeries && display !== 'stat' && (!breakdown || display === 'line' || display === 'heatmap');
   const wholeSeries = overTime && !breakdown;
 
+  const samples = new Map<MetricId, number>();
   const [current, previous, points, previousPoints, groups] = await Promise.all([
-    computeMetricValues(db, ctx, [id], from, to, { cost }),
+    computeMetricValues(db, ctx, [id], from, to, { cost, samples }),
     compare
       ? computeMetricValues(db, ctx, [id], compare.from.getTime(), compare.to.getTime(), { cost })
       : Promise.resolve(null),
@@ -69,7 +70,7 @@ export async function getAnalyticsMetric(
   return {
     target: options.target ? await metricTarget(db, ctx, id, cost) : null,
     display,
-    value: metricValue(id, current.get(id) ?? null, previous?.get(id) ?? null, cost),
+    value: metricValue(id, current.get(id) ?? null, previous?.get(id) ?? null, cost, samples.get(id)),
     bucketDays: ctx.buckets.bucketDays,
     points: series,
     // Aligned by position: bucket i of the comparison sits under bucket i of the period.

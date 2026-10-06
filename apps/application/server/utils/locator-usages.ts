@@ -104,7 +104,7 @@ export interface LocatorUsageCase {
 }
 
 /** What the index needs to know about a run. */
-interface RunFacts {
+export interface RunFacts {
   /** Orders uses across runs, including an old report imported late. */
   startedAt: Date;
   /** The checkout directory the reporter ran from, when it sent one. */
@@ -143,6 +143,18 @@ export async function projectDefaultBranch(db: DrizzleDB, projectId: number): Pr
   return resolveStoredDefaultBranch(db, project ?? { id: projectId });
 }
 
+/** The index's facts about a run, from its row. */
+export function runFacts(run: { startTime: Date; metadata: unknown; branch: string | null }): RunFacts {
+  const metadata = run.metadata as Record<string, unknown> | null;
+  return {
+    startedAt: new Date(run.startTime),
+    root: locationRootOf(metadata?.workingDir),
+    probe: isLabRun(metadata),
+    branch: run.branch?.trim() || null,
+    baseUrls: runBaseUrls(metadata),
+  };
+}
+
 async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number, RunFacts>> {
   const out = new Map<number, RunFacts>();
   const ids = [...new Set(runIds)];
@@ -151,16 +163,7 @@ async function loadRunFacts(db: DrizzleDB, runIds: number[]): Promise<Map<number
       .select({ id: testRuns.id, startTime: testRuns.startTime, metadata: testRuns.metadata, branch: testRuns.branch })
       .from(testRuns)
       .where(inArray(testRuns.id, ids.slice(i, i + INSERT_CHUNK)));
-    for (const r of rows) {
-      const metadata = r.metadata as Record<string, unknown> | null;
-      out.set(r.id, {
-        startedAt: new Date(r.startTime),
-        root: locationRootOf(metadata?.workingDir),
-        probe: isLabRun(metadata),
-        branch: r.branch?.trim() || null,
-        baseUrls: runBaseUrls(metadata),
-      });
-    }
+    for (const r of rows) out.set(r.id, runFacts(r));
   }
   return out;
 }
@@ -303,14 +306,33 @@ export function buildLocatorUsageRows(
  * truncated execution never removes anything: it may have stopped before
  * reaching them.
  */
-export async function upsertLocatorUsages(db: DrizzleDB, projectId: number, cases: LocatorUsageCase[]): Promise<void> {
-  const runs = await loadRunFacts(
-    db,
-    cases.map((c) => c.runId),
-  );
+/** What a caller that has already read it hands {@link upsertLocatorUsages}, which reads the rest itself. */
+export interface LocatorUsageLookups {
+  /** The facts of every run the cases belong to (see {@link runFacts}). */
+  runs?: Map<number, RunFacts>;
+  /** The project's stored default branch, resolved by the caller at most once. */
+  defaultBranch?: () => Promise<string>;
+  /** The project's route origins. */
+  routeOrigins?: string[];
+}
+
+export async function upsertLocatorUsages(
+  db: DrizzleDB,
+  projectId: number,
+  cases: LocatorUsageCase[],
+  known: LocatorUsageLookups = {},
+): Promise<void> {
+  const runs =
+    known.runs ??
+    (await loadRunFacts(
+      db,
+      cases.map((c) => c.runId),
+    ));
   const branched = [...runs.values()].some((r) => r.branch);
-  const defaultBranch = branched ? await projectDefaultBranch(db, projectId) : null;
-  const routeOrigins = cases.some((c) => c.locatorPages?.length) ? await projectOrigins(db, projectId) : [];
+  const defaultBranch = branched ? await (known.defaultBranch?.() ?? projectDefaultBranch(db, projectId)) : null;
+  const routeOrigins = cases.some((c) => c.locatorPages?.length)
+    ? (known.routeOrigins ?? (await projectOrigins(db, projectId)))
+    : [];
   const { rows, partial } = buildLocatorUsageRows(projectId, cases, runs, new Date(), defaultBranch, routeOrigins);
 
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {

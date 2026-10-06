@@ -7,6 +7,8 @@ import type { LocatorIndex, LocatorIndexTest } from '@piwitests/core/locator-ind
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult, RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
+import type { BisectResultBody } from '@piwitests/core/bisect';
+import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
 import type { TimeoutAdvice } from './analysis.js';
 
 const TIMEOUT_MS = 15_000;
@@ -111,6 +113,35 @@ export interface FlakeLabEntry {
   flakeRate?: number | null;
   /** The suspect it is shown with; absent from an older instance or past the instance's limit. */
   suspect?: { id: string; label: string; standing: string; lab: string } | null;
+  /** How many of its suspects no experiment tested; absent from an older instance or past the instance's limit. */
+  untestedSuspects?: number;
+}
+
+/**
+ * A test's reproduce plan as the instance answers `GET /api/test-cases/:id/flake-plan`: the fields a Flake Lab job
+ * runs, beside the suspects the command line prints.
+ */
+export type FlakePlan = Omit<FlakeLabJobPlan, 'suspects' | 'verifies'> & { suspects?: unknown[]; verifies?: unknown };
+
+/** One arm's counts and conditions, as `POST /api/projects/:id/flake-lab/results` takes them. */
+export interface FlakeArmResult {
+  id: string;
+  label: string;
+  suspectId: string | null;
+  conditions: unknown[];
+  runs: number;
+  matchingFailures: number;
+  otherFailures: number;
+  discardedRounds: number;
+  stoppedEarly: boolean;
+}
+
+/** The body of `POST /api/projects/:id/flake-lab/results`. */
+export interface FlakeResultsBody {
+  experimentId: string;
+  commit: string | null;
+  playwrightProject: string | null;
+  arms: FlakeArmResult[];
 }
 
 /** A ticket or page linked to a failure cluster or a test (`GET /api/links`). */
@@ -146,6 +177,24 @@ export interface FixPlan {
     edit: { filePath: string | null; line: number; oldLine: string; newLine: string } | null;
   }>;
   verify: { command: string; expectation: string };
+}
+
+/** What a reproduction of an execution needs on this machine (`desktop` of `GET /api/test-run-cases/:id/reproduce`). */
+export interface ReproduceDesktop {
+  cases: Array<{ filePath: string; title: string; line?: number | null; projectName?: string | null }>;
+  browserName: string | null;
+  commit: string | null;
+  /** The bisect window: the last green commit and the failing one. */
+  good: string | null;
+  bad: string | null;
+  clusterId: number | null;
+}
+
+/** A job request as the desktop app answers `GET /api/desktop/repro-requests/:id`. */
+export interface DesktopJobState {
+  id: string;
+  status: 'waiting' | 'running' | 'done' | 'declined' | 'expired';
+  jobVerdict: DesktopJobVerdict | null;
 }
 
 export class PiwiClient {
@@ -337,6 +386,43 @@ export class PiwiClient {
     );
     if (!response.ok) throw new PiwiHttpError(`fix-plan answered ${response.status}`, response.status);
     return response.text();
+  }
+
+  /** What a reproduction of an execution needs, and why a bisect is not possible when it is not. */
+  async reproduceDesktop(executionId: number): Promise<{ desktop: ReproduceDesktop; bisectReason: string | null }> {
+    const body = await this.get<{ desktop: ReproduceDesktop; bisect: { available: boolean; reason?: string } }>(
+      `/api/test-run-cases/${executionId}/reproduce`,
+    );
+    return { desktop: body.desktop, bisectReason: body.bisect.available ? null : (body.bisect.reason ?? null) };
+  }
+
+  /** Record a bisect's first bad commit on a failure cluster (`POST /api/failure-clusters/:id/bisect`). */
+  recordBisect(clusterId: number, result: BisectResultBody): Promise<unknown> {
+    return this.post(`/api/failure-clusters/${clusterId}/bisect`, result);
+  }
+
+  /**
+   * A test's reproduce plan, recorded as an experiment the desktop app on `machine` runs; its results are posted with
+   * {@link recordFlakeResults}.
+   */
+  flakePlan(testCaseId: number, machine: string): Promise<FlakePlan> {
+    const query = new URLSearchParams({ kind: 'reproduce', source: 'desktop', machine, record: 'true' });
+    return this.get(`/api/test-cases/${testCaseId}/flake-plan?${query}`);
+  }
+
+  /** Record what an experiment's arms measured (`POST /api/projects/:id/flake-lab/results`). */
+  recordFlakeResults(projectId: number, body: FlakeResultsBody): Promise<{ verdict: string }> {
+    return this.post(`/api/projects/${projectId}/flake-lab/results`, body);
+  }
+
+  /** Desktop app only: pass it a job, which waits for the developer in its window. */
+  createDesktopJob(job: DesktopJobRequest): Promise<{ id: string; windowOpen: boolean }> {
+    return this.post('/api/desktop/repro-requests', job);
+  }
+
+  /** Desktop app only: a job's status and, once done, its verdict. */
+  desktopJob(id: string): Promise<DesktopJobState> {
+    return this.get(`/api/desktop/repro-requests/${encodeURIComponent(id)}`);
   }
 
   /** An execution's page in the dashboard. */

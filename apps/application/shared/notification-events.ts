@@ -220,6 +220,14 @@ export interface FixAuthor {
   email: string;
 }
 
+/** An auto-heal pull request, named on the fix it landed. */
+export interface HealPrRef {
+  number: number;
+  url: string;
+  /** The heal action that opened it. */
+  actionId: number;
+}
+
 /** A cluster whose every affected test passed again. */
 export interface ClusterFixedPayload extends RunScope {
   clusterId: number;
@@ -242,6 +250,8 @@ export interface ClusterFixedPayload extends RunScope {
   fixAuthor?: FixAuthor;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
+  /** The auto-heal pull request whose commit (its `Piwi-Heal` trailer) landed the fix. */
+  healPr?: HealPrRef;
 }
 
 /** A cluster with a recorded fix that is failing again. */

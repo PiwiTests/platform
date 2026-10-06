@@ -45,7 +45,10 @@ use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
-use mcp_clients::{desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal};
+use mcp_clients::{
+    desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal, desktop_skills_read,
+    desktop_skills_write,
+};
 use updates::{
     desktop_check_update, desktop_get_update_settings, desktop_install_update, desktop_restart_app,
     desktop_set_update_notification,
@@ -56,7 +59,9 @@ use runner::{
     desktop_set_project_link, desktop_set_project_start_command, desktop_stop_local_tests,
 };
 use repro::desktop_run_repro;
-use worktree::{desktop_bisect_here, desktop_flake_lab_here, desktop_reproduce_here};
+use worktree::{
+    desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
+};
 
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
@@ -1333,6 +1338,7 @@ pub fn run() {
             desktop_reproduce_here,
             desktop_bisect_here,
             desktop_flake_lab_here,
+            desktop_flake_lab_job,
             desktop_check_local_specs,
             desktop_check_local_env,
             desktop_take_pending_open_files,
@@ -1340,6 +1346,8 @@ pub fn run() {
             desktop_mcp_connect,
             desktop_mcp_disconnect,
             desktop_mcp_reveal,
+            desktop_skills_read,
+            desktop_skills_write,
             desktop_check_update,
             desktop_install_update,
             desktop_restart_app,

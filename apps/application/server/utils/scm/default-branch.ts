@@ -5,6 +5,35 @@ import type { RunMetadata } from '../run-json-types';
 import { createScmProvider } from './index';
 import { normalizeGitUrl, FALLBACK_DEFAULT_BRANCH } from './git-url';
 import { mostCommonRunBranch, type DefaultBranchProject } from './stored-default-branch';
+import { TtlCache } from '../ttl-cache';
+
+/**
+ * How long a repository whose default branch its SCM provider did not give (no
+ * token, no access, an error) is not asked again for one project.
+ */
+const FAILED_LOOKUP_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * The SCM lookup of a repository's default branch per project: shared while it
+ * runs, since a finished run starts several readers of the default branch at
+ * once, and kept for {@link FAILED_LOOKUP_TTL_MS} when it found none.
+ */
+const providerLookups = new TtlCache<Promise<string | null>>(FAILED_LOOKUP_TTL_MS);
+
+function providerDefaultBranch(db: DbClient, projectId: number, repositoryUrl: string): Promise<string | null> {
+  const key = `${projectId}\x00${repositoryUrl}`;
+  const pending = providerLookups.get(key);
+  if (pending) return pending;
+  const lookup = (async () => {
+    const provider = await createScmProvider(repositoryUrl, db, projectId).catch(() => null);
+    return (await provider?.getDefaultBranch().catch(() => null)) ?? null;
+  })();
+  providerLookups.set(key, lookup);
+  void lookup.then((branch) => {
+    if (branch) providerLookups.delete(key);
+  });
+  return lookup;
+}
 
 /**
  * The effective default branch of a project, resolved through one chain the
@@ -14,7 +43,8 @@ import { mostCommonRunBranch, type DefaultBranchProject } from './stored-default
  *      provider-resolved value is cached into.
  *   2. The SCM provider API (`default_branch` / `mainbranch.name`), fetched from
  *      the run's remote URL and cached back onto the project row so later runs
- *      skip the call. A token-less or failing fetch simply falls through.
+ *      skip the call. A token-less or failing fetch falls through, and the
+ *      provider is not asked about that repository again for ten minutes.
  *   3. The reporter's `metadata.defaultBranch` hint.
  *   4. The most common branch among the project's runs.
  *   5. `'main'`, the documented last resort.
@@ -36,8 +66,7 @@ export async function resolveDefaultBranch(
 
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
   if (repositoryUrl) {
-    const provider = await createScmProvider(repositoryUrl, db, project.id).catch(() => null);
-    const fetched = (await provider?.getDefaultBranch().catch(() => null)) ?? null;
+    const fetched = await providerDefaultBranch(db, project.id, repositoryUrl);
     if (fetched) {
       // Cache on the project row so subsequent runs short-circuit at step 1.
       await db

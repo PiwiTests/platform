@@ -10,8 +10,8 @@ defineRouteMeta({
     tags: ['AI'],
     summary: 'Resolve one AI-step iteration (authoring)',
     description:
-      'Given a natural-language template, the current page ARIA snapshot and the actions taken so far, returns one step decision (an element + action, or done + postcondition) for the Piwi reporter to compile into a committed artifact. Requires reporter or administrator role and a configured AI provider (see Settings → AI). The reporter calls this only in resolve/heal mode; normal test runs never hit it.',
-    'x-required-roles': ['administrator', 'reporter'],
+      'Given a natural-language template, the current page ARIA snapshot and the actions taken so far, returns one step decision (an element + action, or done + postcondition) for the Piwi reporter to compile into a committed artifact. Requires `run:submit` on at least one project (Maintainer, Project admin or Uploader) and a configured AI provider (see Settings → AI). The reporter calls this only in resolve/heal mode; normal test runs never hit it.',
+    'x-required-permission': 'run:submit',
   },
 });
 

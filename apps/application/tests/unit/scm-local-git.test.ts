@@ -193,11 +193,15 @@ describe('LocalGitProvider reads', () => {
     expect([...branches].sort()).toEqual(['feature/pay', 'main']);
   });
 
-  test('diffs a range from the merge base, with the commits oldest first', async () => {
+  test('diffs a range from the merge base, with the commits oldest first and their full messages', async () => {
     const changes = await (await provider()).fetchChanges(sha.first, sha.third);
     expect(changes?.commits).toEqual([
-      { sha: sha.second.slice(0, 7), message: 'Describe the cart' },
-      { sha: sha.third.slice(0, 7), message: 'Rename and add checkout' },
+      {
+        sha: sha.second.slice(0, 7),
+        message: 'Describe the cart',
+        fullMessage: 'Describe the cart\n\nWith a body that is not the subject.',
+      },
+      { sha: sha.third.slice(0, 7), message: 'Rename and add checkout', fullMessage: 'Rename and add checkout' },
     ]);
     const byName = Object.fromEntries((changes?.files ?? []).map((f) => [f.filename, f]));
     expect(Object.keys(byName).sort()).toEqual(['README.md', 'e2e/checkout.spec.ts', 'new-name.ts']);

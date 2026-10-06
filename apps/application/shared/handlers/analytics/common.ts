@@ -347,7 +347,7 @@ function runConditions(
   const conditions: SQL[] = [
     gte(testRuns.startTime, new Date(fromMs)),
     inArray(testRuns.status, TERMINAL_RUN_STATUSES),
-    notLabRun(testRuns.metadata),
+    notLabRun(testRuns.origin),
   ];
   if (toMs != null) conditions.push(lt(testRuns.startTime, new Date(toMs)));
   if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));

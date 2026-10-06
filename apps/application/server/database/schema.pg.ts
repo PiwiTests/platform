@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   primaryKey,
   customType,
+  check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -62,6 +63,7 @@ export const projects = pgTable(
     targets: jsonb('targets'), // ProjectTargets — per-project goals on catalog metrics (shared/analytics/targets.ts)
     locatorIndexBuiltAt: timestamp('locator_index_built_at', { mode: 'date' }),
     quarantineFailsStatus: boolean('quarantine_fails_status').notNull().default(false), // true = a quarantined failure turns the run's commit status red; false = the status ignores quarantined failures
+    gateStatus: boolean('gate_status').notNull().default(false), // true = each gate evaluation also posts the `<statusContext>/gate` commit status; off by default
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -102,6 +104,7 @@ export const testRuns = pgTable(
     environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: jsonb('metadata'), // Additional metadata as JSON
+    origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
@@ -595,6 +598,19 @@ export const testRunsCases = pgTable(
     codeReachPayloadIdx: index('idx_trc_code_reach_payload')
       .on(table.codeReachPayloadId)
       .where(sql`code_reach_payload_id IS NOT NULL`),
+    // Partial indexes over the few rows the capability probes and the run list
+    // look for, so finding one, or proving there is none, never reads every
+    // execution. A query uses one only when it repeats the condition with
+    // literals (shared/handlers/setup-status.ts, shared/utils/skip-kind.ts).
+    passedAriaIdx: index('idx_trc_passed_aria')
+      .on(table.testRunId)
+      .where(sql`status = 'passed' AND (aria_snapshot_payload_id IS NOT NULL OR aria_snapshot IS NOT NULL)`),
+    passedRetryIdx: index('idx_trc_passed_retry')
+      .on(table.testRunId)
+      .where(sql`status = 'passed' AND retries > 0`),
+    skippedIdx: index('idx_trc_skipped')
+      .on(table.testRunId)
+      .where(sql`status = 'skipped'`),
   }),
 );
 
@@ -749,6 +765,10 @@ export const networkRequests = pgTable(
     runIdx: index('idx_nr_run').on(t.testRunId),
     caseStatusIdx: index('idx_nr_case').on(t.testRunsCaseId, t.status),
     normalizedUrlIdx: index('idx_nr_normalized_url').on(t.normalizedUrl),
+    // Server traces arrive only from instrumented backends; the capability probe looks for one.
+    serverTracesIdx: index('idx_nr_server_traces')
+      .on(t.testRunId)
+      .where(sql`server_traces IS NOT NULL`),
   }),
 );
 
@@ -990,7 +1010,7 @@ export const users = pgTable(
     id: serial('id').primaryKey(),
     username: text('username').notNull().unique(),
     password: text('password').notNull(), // hashed password (empty string for OAuth-only users)
-    role: text('role').notNull(), // Role enum: 'administrator', 'reporter', 'user'
+    role: text('role').notNull(), // InstanceRole: 'administrator' | 'member'
     name: text('name'), // Display name
     email: text('email'), // Email address (nullable; OAuth callback can populate it)
     emailVerified: intBoolean('email_verified').notNull().default(INT_BOOLEAN_FALSE),
@@ -1228,26 +1248,82 @@ export const integrationActions = pgTable(
   }),
 );
 
-// Project assignments table — user-to-project access (null projectId = global access)
-export const projectAssignments = pgTable(
-  'project_assignments',
+// Groups — named sets of users. A group receives project roles through role
+// bindings, like a user does; it never carries the instance role.
+export const groups = pgTable(
+  'groups',
   {
     id: serial('id').primaryKey(),
+    name: text('name').notNull().unique(),
+    description: text('description'),
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    createdByIdx: index('idx_groups_created_by').on(t.createdBy),
+  }),
+);
+
+// Group members — one row per user in a group.
+export const groupMembers = pgTable(
+  'group_members',
+  {
+    groupId: integer('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
     userId: integer('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    // null = affectation GLOBALE (tous les projets, présents et futurs)
+    addedBy: integer('added_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.groupId, t.userId] }),
+    userIdx: index('idx_group_members_user').on(t.userId),
+    addedByIdx: index('idx_group_members_added_by').on(t.addedBy),
+  }),
+);
+
+// Role bindings — a user or a group (exactly one) holds a ProjectRole on one
+// project, or on all projects present and future when project_id is null.
+// One role per subject per scope. SQLite and PostgreSQL both treat NULL as
+// distinct in a unique index, so the all-projects bindings are deduped by a
+// partial index over the subject, and the per-project ones by (subject, project).
+export const roleBindings = pgTable(
+  'role_bindings',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    groupId: integer('group_id').references(() => groups.id, { onDelete: 'cascade' }),
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // ProjectRole: 'viewer' | 'contributor' | 'maintainer' | 'project_admin' | 'uploader'
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
   },
   (t) => ({
-    userIdx: index('idx_project_assignments_user').on(t.userId),
-    projectIdx: index('idx_project_assignments_project').on(t.projectId),
-    userProjectUnique: uniqueIndex('idx_project_assignments_user_project').on(t.userId, t.projectId),
-    createdByIdx: index('idx_project_assignments_created_by').on(t.createdBy),
+    oneSubject: check(
+      'role_bindings_one_subject',
+      sql`(${t.userId} is not null and ${t.groupId} is null) or (${t.userId} is null and ${t.groupId} is not null)`,
+    ),
+    userAllProjectsIdx: uniqueIndex('idx_role_bindings_user_all_projects')
+      .on(t.userId)
+      .where(sql`${t.projectId} is null`),
+    userProjectIdx: uniqueIndex('idx_role_bindings_user_project').on(t.userId, t.projectId),
+    groupAllProjectsIdx: uniqueIndex('idx_role_bindings_group_all_projects')
+      .on(t.groupId)
+      .where(sql`${t.projectId} is null`),
+    groupProjectIdx: uniqueIndex('idx_role_bindings_group_project').on(t.groupId, t.projectId),
+    projectIdx: index('idx_role_bindings_project').on(t.projectId),
+    createdByIdx: index('idx_role_bindings_created_by').on(t.createdBy),
   }),
 );
 
@@ -1742,6 +1818,106 @@ export const handbackOutcomeRollups = pgTable(
   }),
 );
 
+// The write log of agents: one row per call of a write tool over MCP (the API
+// key, the tool, what it acted on and whether it succeeded). Read tools are
+// never logged. Pruned with the notification outbox; an instance that declined
+// the `agent-write-log` capability writes none.
+export const mcpToolCalls = pgTable(
+  'mcp_tool_calls',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'cascade' }), // null when the call named no project
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // null for a session or with auth off
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    tool: text('tool').notNull(),
+    subjectType: text('subject_type'), // 'cluster', 'gap', 'bug-report', 'run', 'test-case', 'suggestion', 'diagnosis'
+    subjectId: integer('subject_id'),
+    result: text('result').notNull(), // 'ok' | 'error'
+    error: text('error'), // the error text an agent was given, truncated
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    subjectIdx: index('idx_mcp_tool_calls_subject').on(table.subjectType, table.subjectId),
+    projectIdx: index('idx_mcp_tool_calls_project').on(table.projectId, table.createdAt),
+    createdIdx: index('idx_mcp_tool_calls_created').on(table.createdAt),
+    apiKeyIdx: index('idx_mcp_tool_calls_api_key').on(table.apiKeyId),
+    userIdx: index('idx_mcp_tool_calls_user').on(table.userId),
+  }),
+);
+
+// One row per gate evaluation (`POST /api/test-runs/:id/gate`): the policy, the
+// verdict and its violations, and the pull request it judged. The PR state
+// sweep (`server/utils/gate-overrides.ts`) fills in what happened to the pull
+// request after a failed gate, and the default-branch run where a cluster the
+// gate caught came back.
+export const gateEvaluations = pgTable(
+  'gate_evaluations',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    commitSha: text('commit_sha'),
+    prNumber: integer('pr_number'), // null when the run names no pull request
+    policy: jsonb('policy').notNull(), // GatePolicy, plus maxUncoveredChanges when asked
+    policyHash: text('policy_hash').notNull(),
+    passed: boolean('passed').notNull(),
+    verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
+    violations: jsonb('violations').notNull(), // GateViolation[]
+    clusterIds: jsonb('cluster_ids'), // number[]: the clusters of the run's new regressions, read for an escape
+    source: text('source').notNull(), // 'cli' | 'api'
+    evaluatedAt: timestamp('evaluated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    prState: text('pr_state'), // 'open' | 'merged' | 'closed'; null until the sweep reads it
+    prSettledAt: timestamp('pr_settled_at', { mode: 'date' }), // when the host last updated the merged or closed pull request
+    overridden: boolean('overridden').notNull().default(false), // merged while its last gate evaluation failed
+    escapedRunId: integer('escaped_run_id').references(() => testRuns.id, { onDelete: 'set null' }), // the default-branch run where a caught cluster failed again
+    checkedAt: timestamp('checked_at', { mode: 'date' }), // the sweep's last look; null = never looked at
+  },
+  (table) => ({
+    runIdx: index('idx_gate_evaluations_run').on(table.runId),
+    projectPrIdx: index('idx_gate_evaluations_project_pr').on(table.projectId, table.prNumber),
+    sweepIdx: index('idx_gate_evaluations_sweep').on(table.verdict, table.prState, table.checkedAt),
+    escapedRunIdx: index('idx_gate_evaluations_escaped_run').on(table.escapedRunId),
+  }),
+);
+
+// The pull-request feedback posted for a run: the host, the pull request and
+// its comment, and the commit status contexts the host accepted.
+export const prFeedbackPosts = pgTable(
+  'pr_feedback_posts',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => testRuns.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(), // ScmProviderName
+    repositoryUrl: text('repository_url').notNull(),
+    prNumber: integer('pr_number'), // null when only commit statuses were posted
+    commentId: text('comment_id'), // the host's id of Piwi's comment; null when none was posted or the host returned none
+    statuses: jsonb('statuses').notNull(), // string[]: the commit status contexts the host accepted
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => ({
+    runIdx: uniqueIndex('idx_pr_feedback_posts_run').on(table.runId),
+    projectIdx: index('idx_pr_feedback_posts_project').on(table.projectId, table.prNumber),
+  }),
+);
+
 // Saved dashboards — a named arrangement of widgets in bands with a default
 // scope (`DashboardDefinition` in `shared/analytics/dashboards.ts`). Private
 // dashboards belong to their owner; shared ones are listed for every signed-in
@@ -1889,8 +2065,11 @@ export type ProjectTag = typeof projectTags.$inferSelect;
 export type NewProjectTag = typeof projectTags.$inferInsert;
 export type Marker = typeof markers.$inferSelect;
 export type NewMarker = typeof markers.$inferInsert;
-export type ProjectAssignment = typeof projectAssignments.$inferSelect;
-export type NewProjectAssignment = typeof projectAssignments.$inferInsert;
+export type Group = typeof groups.$inferSelect;
+export type NewGroup = typeof groups.$inferInsert;
+export type GroupMember = typeof groupMembers.$inferSelect;
+export type RoleBinding = typeof roleBindings.$inferSelect;
+export type NewRoleBinding = typeof roleBindings.$inferInsert;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type NewEntityLink = typeof entityLinks.$inferInsert;
 export type IntegrationConnection = typeof integrationConnections.$inferSelect;

@@ -28,6 +28,9 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')
 // bundles nothing — the tools then point at the published copies.
 const docsDir = resolve(__dirname, '../docs');
 const changelogDir = resolve(__dirname, '../..');
+// The workflow skills `piwi skills add` installs, served by the MCP server as
+// prompts (prompts/list, prompts/get) in the version of this build.
+const skillsDir = resolve(__dirname, '../../packages/reporter/templates/skills');
 const serverAssets = [
   ...(existsSync(resolve(docsDir, 'guide'))
     ? [
@@ -43,6 +46,7 @@ const serverAssets = [
   ...(existsSync(resolve(changelogDir, 'CHANGELOG.md'))
     ? [{ baseName: 'piwi-changelog', dir: changelogDir, pattern: 'CHANGELOG.md', ignore: ['**/node_modules/**'] }]
     : []),
+  ...(existsSync(skillsDir) ? [{ baseName: 'piwi-skills', dir: skillsDir, pattern: '*/SKILL.md' }] : []),
 ];
 
 // Read the demo seed version hash at build time so it can be injected into
@@ -284,6 +288,10 @@ export default defineNuxtConfig({
     // HTML pages can be hydrated with fixture data embedded during prerender,
     // avoiding extra network round-trips in the SPA.
     payloadExtraction: isDemo,
+    // When a prefetched <NuxtLink> target declares preload hints via useHead,
+    // forward them (downgraded to rel="prefetch") into the current document so
+    // the next navigation's critical assets are already warm.
+    prefetchPreloadTags: true,
   },
 
   compatibilityDate: '2025-02-23',
@@ -394,6 +402,8 @@ export default defineNuxtConfig({
       '* * * * *': ['notifications:sweep', 'heal:sweep', 'integrations:sweep', 'integrations:sync'],
       // Fire the report schedules that are due (a missed tick fires on the next sweep)
       '*/5 * * * *': ['reports:schedule'],
+      // Read the final state of the pull requests a gate failed on (overrides and escapes)
+      '*/10 * * * *': ['gate:sweep'],
       // Nightly data retention: run pruning (opt-in), outbox pruning, orphan sweep
       '17 3 * * *': ['retention:sweep'],
       // Nightly feature-graph sweep: prune stale changes edges, branch-tagged

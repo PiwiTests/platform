@@ -1,6 +1,6 @@
 ---
 title: Editor extensions
-description: "Piwi in VS Code and the JetBrains IDEs: the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
+description: "Piwi in VS Code and the JetBrains IDEs: tests recorded at the cursor, the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
 lang: en-US
 ---
 
@@ -21,30 +21,33 @@ run **Piwi: Connect** (**Settings → Tools → Piwi** in a JetBrains IDE) and s
 [Editor connection](./editor-connection) has the steps.
 
 Nothing from your workspace is sent to the instance: the project's
-[locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are downloaded and
-compared with your files locally.
+[locator index](/guide/concepts#locator-index), [code reach](/features/code-reach) and latest run are compared with
+your files locally.
 
 ## CI failures in the Problems panel
 
-The failures of the latest complete [CI run](/reference/test-metadata#run-origin) (whole suite, finished) on the
-checked-out branch, else the default branch, are errors in the Problems panel, at the line that failed: the call in the
-error's stack when that file is in your workspace (often a page object), else the `test(…)` line. The message is the failure's headline. The run is
-read every minute.
+The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
+default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
+is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. The run is read every
+minute.
 
 On a failure, the quick fixes are:
 
 - **Heal: use …** — when [locator healing](/features/locator-healing) has a recommendation for the failing locator,
-  the same edit an [auto-heal pull request](/features/auto-heal) would make, applied to the line in place.
-- **Open the trace** — downloads the trace and opens it with `npx playwright show-trace`.
+  the same edit an [auto-heal pull request](/features/auto-heal) would make, applied in place.
+- **Open the trace** — opens it with `npx playwright show-trace`.
+- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** and, when the test has an
+  untested [flake suspect](./flake-lab), **Run Flake Lab on its untested suspects in the desktop app** — on a team
+  instance's failure, while the [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records
+  the first bad commit or lab results.
 - **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
-  captured): VS Code previews the edit before applying it, then runs the plan's verify command in a terminal.
+  captured): VS Code previews the edit, then runs the plan's verify command in a terminal.
 - **Copy context for agent** — the failure, its healing and fix plan, for a coding agent.
-- **Open the failure in the dashboard** — the execution page, with every piece of [evidence](/features/evidence).
+- **Open the failure in the dashboard** — the execution page, with its [evidence](/features/evidence).
 
-Hover the line for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
-cluster or test with their status. Without one, **File an issue** opens the cluster in the dashboard, where issues are
-created.
+Hover for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
+cluster or test. Without one, **File an issue** opens the cluster in the dashboard.
 
 ## The status bar
 
@@ -67,10 +70,7 @@ reason, **Screenshot** and **Trace** above it.
 
 Above a flaky test: its flaky rate and [top suspect](./flake-lab#from-the-editor-and-the-failure-pages), then
 **Reproduce this flake** and, once reproduced, **Verify the flake fix**, which run `piwi flake` against the instance
-the editor reads.
-
-**Piwi: Run the tests that reach this file** runs them in a terminal, with the arguments `piwi run` would use;
-**Piwi: Run selection…** runs one of the project's saved [selections](/features/test-selection).
+the editor reads, and, beside a team instance, **Reproduce this flake in the desktop app**.
 
 ## Timeouts
 
@@ -102,7 +102,7 @@ a warning, with the chains it breaks and their tests on hover, and one quick fix
 ## Piwi's MCP server for the agent
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
-connection it already has, listed under the MCP servers. In an editor without that API, **Piwi: Copy the MCP server configuration** puts an `mcp.json` entry on the
+connection it already has. In an editor without that API, **Piwi: Copy the MCP server configuration** puts an `mcp.json` entry on the
 clipboard. It holds your API key: paste it into your user settings, not into the repository.
 
 ## Commands
@@ -111,28 +111,20 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 |---|---|
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
-| Piwi: Run the tests that reach this file | Run them in a terminal |
+| Piwi: Run the tests that reach this file | Run them in a terminal, with the arguments `piwi run` would use |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
-| Piwi: Run selection… | Run one of the project's saved selections |
+| Piwi: Run selection… | Run one of the project's saved [selections](/features/test-selection) |
 | Piwi: Open the latest run | Open the run the status bar shows |
 | Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
-| Piwi: Pair with Piwi Picker | Copy the address Piwi Picker sends to |
+| Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
+| Piwi: Record here, Record a new test file | Record in a browser, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
+| Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
 
-## Send from Piwi Picker
+## Record a test
 
-A locator picked with the [Piwi Picker](./extension) browser extension, or a flow it recorded, lands at the editor's
-cursor:
-
-1. In the editor, run **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE).
-   It copies a pairing address, `http://127.0.0.1:<port>/…#<token>`.
-2. In Piwi Picker's settings, paste it under **Send to editor** and click **Pair**; the browser asks once for access to
-   that local address.
-3. A picked locator's row and the recording review then show **Send to editor**. A locator is inserted in the copy
-   form you chose; a recording is rendered by the editor as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen).
-
-The editor listens on the loopback interface only, and accepts a request only with the token. Nothing goes through the Piwi instance. With several VS Code windows open,
-the one that paired receives.
+**Piwi: Record here** opens a browser through your project's own Playwright and writes what you do there at the cursor,
+as you do it. A locator picked or a flow recorded with [Piwi Picker](./extension) can be sent to the cursor too. Both
+are in [Record tests from the editor](./editor-recording).
 
 ## JetBrains IDEs
 
@@ -148,8 +140,11 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
 - **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this
   file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
-  Assistant → Model Context Protocol** or another agent. It runs the server through `mcp-remote`, with the key in its
+  Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
   environment.
-- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard opens at its line, with nothing to set.
+- **[Open in IDE](./ide-integration)**: a path clicked in the dashboard of the instance the project is connected to, or
+  in the desktop app, opens at its line.
+- **[Recording](./editor-recording)**: **Tools → Piwi → Record Here**, Alt+Enter or Alt+Insert, and **File → New →
+  Record a New Test File…**; the controls are in a banner above the editor.
 
 IntelliJ IDEA Community Edition and Android Studio do not have the LSP API the plugin needs.

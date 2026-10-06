@@ -21,6 +21,9 @@ apps/jetbrains/build
 # Feature screenshots (scripts/take-feature-screenshots.mjs)
 .screens
 
+# Performance suite work directory and results (apps/application/scripts/perf)
+.perf
+
 # Node dependencies
 node_modules
 

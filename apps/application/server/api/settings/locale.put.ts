@@ -11,8 +11,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save date & time localization settings',
     description:
-      'Sets the instance-default locale and/or time zone for formatting dates and times. A field accepts a BCP-47 locale / IANA time zone, the keyword "auto" (follow the browser), or null to reset it to the built-in default. A field pinned by PIWI_LOCALE / PIWI_TIME_ZONE is env-managed and any write to it is refused with HTTP 409. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Sets the instance-default locale and/or time zone for formatting dates and times. A field accepts a BCP-47 locale / IANA time zone, the keyword "auto" (follow the browser), or null to reset it to the built-in default. A field pinned by PIWI_LOCALE / PIWI_TIME_ZONE is env-managed and any write to it is refused with HTTP 409. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

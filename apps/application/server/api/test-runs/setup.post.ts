@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { getDatabase } from '../../database';
 import { testRuns } from '../../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
@@ -10,14 +10,15 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs.',
-    'x-required-roles': ['administrator', 'reporter'],
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId.',
+    'x-required-permission': 'run:submit',
     requestBody: {
       content: {
         'application/json': {
@@ -40,7 +41,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // Require reporter or administrator role
+  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
   const body = await readBody(event);
@@ -54,7 +55,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'run:submit');
 
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
@@ -63,7 +64,8 @@ export default eventHandler(async (event) => {
   const isSharded = !!(shardTotal && shardTotal > 1);
 
   if (isSharded && instanceId) {
-    // Sharded setup: look for existing initializing run with same instanceId
+    // Sharded setup: join the run another shard of the same instanceId set up,
+    // whether it is still initializing or that shard already began it
     const existingRuns = await db
       .select()
       .from(testRuns)
@@ -71,7 +73,7 @@ export default eventHandler(async (event) => {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          eq(testRuns.status, 'initializing'),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -101,6 +103,7 @@ export default eventHandler(async (event) => {
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
     const setupToken = randomBytes(32).toString('hex');
+    const metadata = { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>;
 
     const testRunResult = await db
       .insert(testRuns)
@@ -117,7 +120,8 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>,
+        metadata,
+        origin: runOrigin(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -172,6 +176,7 @@ export default eventHandler(async (event) => {
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: null,
+      origin: runOrigin(null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

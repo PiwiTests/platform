@@ -11,6 +11,7 @@
  */
 import type { MetricId } from '#shared/analytics/metrics';
 import type {
+  AnalyticsHandbacks,
   AnalyticsListItem,
   AnalyticsProgress,
   AnalyticsRisks,
@@ -97,6 +98,12 @@ export interface ReportBadgeWords {
   verdict: Record<VerdictTone, string>;
 }
 
+/** One line of the Hand-back outcomes section: the kind, and what became of it. */
+export interface HandbackLine {
+  label: string;
+  text: string;
+}
+
 export interface ReportSentences {
   /** The language in itself, for the language pickers: `English`, `Français`. */
   name: string;
@@ -110,6 +117,12 @@ export interface ReportSentences {
   verdict(facts: VerdictFacts, f: ValueFormatter): string;
   /** What is being done, one line per fact worth saying. */
   progress(progress: AnalyticsProgress, f: ValueFormatter): string[];
+  /**
+   * What became of Piwi's hand-backs, one labeled line per kind with something
+   * to say; empty when nothing was handed back. A rate under its sample floor
+   * is named as too small, never given.
+   */
+  handbacks(data: AnalyticsHandbacks, f: ValueFormatter): HandbackLine[];
   /** The risks, one line each; empty when there are none. */
   risks(risks: AnalyticsRisks, f: ValueFormatter): string[];
   /** One target over the period, met, missed or with nothing to judge it on. */

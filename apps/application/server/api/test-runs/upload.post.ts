@@ -17,6 +17,7 @@ import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { settleFinalizingRun } from '../../utils/finalizing-runs';
@@ -35,7 +36,7 @@ defineRouteMeta({
     summary: 'Upload test results with reports, traces, and attachments',
     description:
       'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
     requestBody: {
       content: {
         'multipart/form-data': {
@@ -68,7 +69,7 @@ function getReportLabel(type: string, override?: string): string {
 }
 
 export default eventHandler(async (event) => {
-  // Require reporter or administrator role for uploading test results
+  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
   const maxUploadBytes = resolveMaxUploadBytes();
@@ -208,7 +209,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'run:submit');
   const storage = getStorage();
 
   // If attaching to an existing streaming run, look up the run and its project
@@ -337,6 +338,7 @@ export default eventHandler(async (event) => {
     await applyReporterKeep(db, existingTestRunId, testRunData.keep);
   } else {
     // Create a new test run (standard batch upload)
+    const metadata = sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null);
     const testRunResult = await db
       .insert(testRuns)
       .values({
@@ -355,7 +357,8 @@ export default eventHandler(async (event) => {
         environment: (testRunData.environment as string | null | undefined) || null,
         branch: resolveRunBranch(testRunData.metadata),
         label: (testRunData.label as string | null | undefined) || null,
-        metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
+        metadata,
+        origin: runOrigin(metadata),
         instanceId: (testRunData.instanceId as string | null | undefined) || null,
         playwrightVersion: (testRunData.playwrightVersion as string | null | undefined) || null,
         reporterVersion: (testRunData.reporterVersion as string | null | undefined) || null,

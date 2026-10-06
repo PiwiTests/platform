@@ -104,7 +104,7 @@ covers can be read off its **Filters** block.
 ## Sharing and access
 
 - A dashboard is **private** (its owner) or **shared** (listed for every signed-in user). Anyone signed in
-  keeps private dashboards; sharing needs the reporter or administrator role.
+  keeps private dashboards; sharing needs the Maintainer role or above on at least one project, or an administrator.
 - A shared dashboard is changed by its owner or an administrator; everyone else duplicates it.
 - With authentication off, every dashboard is shared.
 - **A dashboard grants no access.** Every widget is computed for the projects you can open, and the line

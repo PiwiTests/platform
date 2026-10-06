@@ -81,9 +81,11 @@ function withRunScope(
 }
 
 // Channels/subscriptions are reachable in demo mode, without auth (instance-wide
-// rows via the virtual admin), and for signed-in users when auth is on.
+// rows via the virtual admin), and for signed-in users when auth is on. They load
+// in the browser, after the page shows: the bell's icon is all the page renders
+// from them until its menu opens.
 const shouldFetch = isDemoMode || !authEnabled.value || isAuthenticated.value;
-const fetchOpts = isDemoMode ? ({ server: false } as const) : {};
+const fetchOpts = { server: false, lazy: true } as const;
 
 const { data: subsData, refresh: refreshSubs } = await useFetch<{ items: Subscription[] }>(
   `/api/subscriptions?projectId=${props.projectId}`,

@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Updates the status (open, resolved, ignored) of a failure cluster. A `triageNote` string replaces the note (empty clears it), `null` clears it, and an omitted one keeps it.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 

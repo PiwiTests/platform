@@ -19,6 +19,7 @@ import type {
   ScmCommitStatus,
   ScmFileEdit,
   CreatePullRequestInput,
+  ScmPostedComment,
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef } from './refs';
@@ -141,7 +142,11 @@ export class GitLabProvider extends ScmProvider {
     };
     const allDiffs = data.diffs ?? [];
     const result: ScmChanges = {
-      commits: (data.commits ?? []).map((c) => ({ sha: c.id.slice(0, 7), message: c.message.split('\n')[0] ?? '' })),
+      commits: (data.commits ?? []).map((c) => ({
+        sha: c.id.slice(0, 7),
+        message: c.message.split('\n')[0] ?? '',
+        fullMessage: c.message,
+      })),
       files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map((f) => {
         const { additions, deletions } = countDiffLines(f.diff ?? '');
         return {
@@ -415,7 +420,15 @@ export class GitLabProvider extends ScmProvider {
   }
 
   override async upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
-    if (!this.token) return false;
+    return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
+  }
+
+  override async postPullRequestComment(
+    prNumber: number,
+    marker: string,
+    body: string,
+  ): Promise<ScmPostedComment | null> {
+    if (!this.token) return null;
     try {
       const base = `https://${this.hostname}/api/v4/projects/${this.projectPath()}/merge_requests/${prNumber}/notes`;
 
@@ -438,9 +451,12 @@ export class GitLabProvider extends ScmProvider {
         body: JSON.stringify({ body }),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      return res.ok;
+      if (!res.ok) return null;
+      const posted = (await res.json().catch(() => null)) as { id?: number } | null;
+      const id = posted?.id ?? existingId;
+      return { id: id != null ? String(id) : null };
     } catch {
-      return false;
+      return null;
     }
   }
 

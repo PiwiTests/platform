@@ -52,8 +52,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = process.env.PIWI_DEMO_SEED_OUTPUT_DIR || join(__dirname, '../public/demo');
 const OUTPUT = join(OUTPUT_DIR, 'seed.sql');
 
-// Canonical demo identities — shared with the runtime app (app/demo/demo-users.ts).
-const DEMO_USERS = JSON.parse(readFileSync(join(__dirname, '../app/demo/demo-users.json'), 'utf-8'));
+// Canonical demo identities and groups — shared with the runtime app (app/demo/demo-users.ts).
+const DEMO_ACCESS = JSON.parse(readFileSync(join(__dirname, '../app/demo/demo-users.json'), 'utf-8'));
+const DEMO_USERS = DEMO_ACCESS.users;
+const DEMO_GROUPS = DEMO_ACCESS.groups;
+/** The identity the demo opens as (`DEFAULT_DEMO_USER_ID`), an administrator. */
+const DEFAULT_DEMO_USER = DEMO_USERS.find((u) => u.id === 1);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1011,6 +1015,8 @@ for (const proj of DEMO_PROJECTS) {
       branch: commit.branch && commit.branch !== 'HEAD' ? commit.branch : null,
       label: proj.id === 1 && i === 0 ? 'v2.4.0 release' : null,
       metadata,
+      // `runOrigin(metadata)`: the metadata carries a CI record.
+      origin: 'ci',
       stream_token: null,
       instance_id: null,
       // Newest runs are on a newer Playwright than older ones so the
@@ -1829,6 +1835,10 @@ const INCIDENT_MARKERS = [];
     .filter((row) => row.status === 'passed')
     .sort((a, b) => a.started_at - b.started_at);
   const failing = rows.slice(INCIDENT_PASSED_CASES);
+  const failingIds = new Set(failing.map((row) => row.id));
+  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
+    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+  }
   for (const row of failing) {
     const caseDef = caseById.get(row.test_case_id);
     const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
@@ -1853,10 +1863,23 @@ const INCIDENT_MARKERS = [];
     row.console_logs = null;
     row.dialogs = null;
     row.aria_snapshot = null;
-  }
-  const failingIds = new Set(failing.map((row) => row.id));
-  for (let k = NETWORK_REQUESTS.length - 1; k >= 0; k--) {
-    if (failingIds.has(NETWORK_REQUESTS[k].test_runs_case_id)) NETWORK_REQUESTS.splice(k, 1);
+    // The network capture holds the one navigation the test tried: refused.
+    NETWORK_REQUESTS.push({
+      id: nrId++,
+      test_runs_case_id: row.id,
+      test_run_id: target.id,
+      method: 'GET',
+      url,
+      normalized_url: seedNormalizeUrl(url),
+      status: 0,
+      duration: row.duration - 20,
+      start_time: row.started_at + 10,
+      resource_type: 'document',
+      content_type: null,
+      server_logs: null,
+      server_traces: null,
+      failure: 'net::ERR_CONNECTION_REFUSED',
+    });
   }
 
   const executed = rows.length;
@@ -2290,7 +2313,7 @@ for (const story of FAILURE_STORIES) {
 {
   const clusterById = new Map(FAILURE_CLUSTERS.map((c) => [c.id, c]));
   const assignMine = clusterById.get(7);
-  if (assignMine) assignMine.assignee = DEMO_USERS[0].name;
+  if (assignMine) assignMine.assignee = DEFAULT_DEMO_USER.name;
   const snoozed = clusterById.get(9);
   if (snoozed) {
     snoozed.snoozed_until = Math.floor(Date.UTC(9999, 0, 1) / 1000);
@@ -2877,46 +2900,54 @@ const ENTITY_LINKS = [
   },
 ];
 
-// ── Users & project assignments (affectations) ─────────────────────────────
-// Seed the canonical demo identities so the project affectation feature is
-// usable in the demo (the "act as" switcher in the banner picks one of these).
-const USERS = DEMO_USERS.map((u) => ({
-  id: u.id,
-  username: u.username,
-  password: '', // demo identities are switched client-side, never logged in
-  role: u.role,
-  name: u.name,
-  email: u.email,
-  email_verified: 1,
-  created_at: ts('2025-02-01'),
-  updated_at: ts('2025-02-01'),
-}));
+// ── Users, groups & role bindings ───────────────────────────────────────────
+// Seed the canonical demo identities and groups so the access model is usable
+// in the demo (the "act as" switcher in the banner picks one of these).
+const USERS = [...DEMO_USERS]
+  .sort((a, b) => a.id - b.id)
+  .map((u) => ({
+    id: u.id,
+    username: u.username,
+    password: '', // demo identities are switched client-side, never logged in
+    role: u.instanceRole,
+    name: u.name,
+    email: u.email,
+    email_verified: 1,
+    created_at: ts('2025-02-01'),
+    updated_at: ts('2025-02-01'),
+  }));
 
-const PROJECT_ASSIGNMENTS = [];
-let assignmentId = 1;
-const assignmentCreatedAt = new Date('2025-02-10').getTime(); // timestamp_ms column
+const accessCreatedAt = new Date('2025-02-10').getTime(); // timestamp_ms columns
+const GROUPS = DEMO_GROUPS.map((g) => ({
+  id: g.id,
+  name: g.name,
+  description: g.description,
+  created_by: null,
+  created_at: accessCreatedAt,
+  updated_at: accessCreatedAt,
+}));
+const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
+  g.memberIds.map((userId) => ({ group_id: g.id, user_id: userId, added_by: null, created_at: accessCreatedAt })),
+);
+
+const ROLE_BINDINGS = [];
+let roleBindingId = 1;
+function bindRole(subject, binding) {
+  ROLE_BINDINGS.push({
+    id: roleBindingId++,
+    user_id: subject.userId ?? null,
+    group_id: subject.groupId ?? null,
+    project_id: binding.projectId,
+    role: binding.role,
+    created_by: null,
+    created_at: accessCreatedAt,
+  });
+}
+for (const g of DEMO_GROUPS) for (const b of g.bindings) bindRole({ groupId: g.id }, b);
 for (const u of DEMO_USERS) {
-  // Administrators have implicit access to all projects — no assignment rows.
-  if (u.role === 'administrator') continue;
-  if (u.assignment.global) {
-    PROJECT_ASSIGNMENTS.push({
-      id: assignmentId++,
-      user_id: u.id,
-      project_id: null,
-      created_by: null,
-      created_at: assignmentCreatedAt,
-    });
-  } else {
-    for (const projectId of u.assignment.projectIds) {
-      PROJECT_ASSIGNMENTS.push({
-        id: assignmentId++,
-        user_id: u.id,
-        project_id: projectId,
-        created_by: null,
-        created_at: assignmentCreatedAt,
-      });
-    }
-  }
+  // Administrators open every project without a binding.
+  if (u.instanceRole === 'administrator') continue;
+  for (const b of u.bindings) bindRole({ userId: u.id }, b);
 }
 
 // ── Locator healing snapshots ───────────────────────────────────────────────
@@ -3576,7 +3607,12 @@ function collectAnchorSec() {
   for (const r of ATTACHMENTS) bump(r.created_at, 's');
 
   // Millisecond-precision columns.
-  for (const r of PROJECT_ASSIGNMENTS) bump(r.created_at, 'ms');
+  for (const r of GROUPS) {
+    bump(r.created_at, 'ms');
+    bump(r.updated_at, 'ms');
+  }
+  for (const r of GROUP_MEMBERS) bump(r.created_at, 'ms');
+  for (const r of ROLE_BINDINGS) bump(r.created_at, 'ms');
   for (const r of LOCATOR_SNAPSHOTS) bump(r.last_seen_at, 'ms');
   for (const r of CODE_REACH) bump(r.last_seen_at, 'ms');
   for (const r of ENTITY_LINKS) {
@@ -3599,6 +3635,284 @@ function collectAnchorSec() {
 }
 
 const ANCHOR_SEC = collectAnchorSec();
+
+// ── Hand-back outcomes and diagnosis ratings (rng-free) ────────────────────
+// What became of what Piwi handed back over the last weeks, so the Analytics
+// page's Hand-back outcomes section and the AI usage panel have something to
+// read: locator heals adopted and verified, auto-heal pull requests merged and
+// one closed, diagnoses rated and confirmed by the fix, failed gates with one
+// pull request merged anyway that then failed again, and a flaky test Flake
+// Lab proved fixed. Every row is placed before the anchor, so the rebase lands
+// it in the past.
+const HANDBACK_OUTCOMES = [];
+{
+  const anchorMs = ANCHOR_SEC * 1000;
+  const DAY_MS = 86_400_000;
+  const daysAgo = (days, hours = 0) => anchorMs - days * DAY_MS - hours * 3_600_000;
+  const add = (row) => {
+    const key = row.suggestion_key ?? '';
+    HANDBACK_OUTCOMES.push({
+      id: HANDBACK_OUTCOMES.length + 1,
+      project_id: row.project_id ?? 1,
+      kind: row.kind,
+      subject_type: row.subject_type,
+      subject_id: row.subject_id,
+      suggestion_key: key,
+      outcome: row.outcome,
+      channel: row.channel ?? 'inferred',
+      actor_user_id: null,
+      actor_api_key_id: null,
+      run_id: null,
+      commit_sha: row.commit_sha ?? null,
+      details: row.details ?? null,
+      dedupe_key: [row.kind, `${row.subject_type}:${row.subject_id}`, key, row.outcome, ''].join('|'),
+      created_at: Math.round(row.at),
+    });
+  };
+
+  // Locator heals: 12 call sites given a replacement, 8 of them now use it, 6 passed since.
+  const shopCases = TEST_CASES.filter((c) => c.project_id === 1).slice(0, 12);
+  shopCases.forEach((testCase, i) => {
+    const key = `heal-${i + 1}`;
+    const details = {
+      location: `${testCase.file_path}:${20 + i}:5`,
+      failingLocator: "getByRole('button', { name: 'Submit' })",
+      recommendedLocator: "getByRole('button', { name: 'Place order' })",
+      recommendedSig: `demo-sig-${i + 1}`,
+      failingRunId: 0,
+    };
+    const base = 24 - i * 2;
+    add({
+      kind: 'locator-heal',
+      subject_type: 'test-case',
+      subject_id: testCase.id,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(base),
+    });
+    if (i < 8) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'applied',
+        details: { ...details, label: 'matched-recommendation' },
+        at: daysAgo(base - 1),
+      });
+    }
+    if (i < 6) {
+      add({
+        kind: 'locator-heal',
+        subject_type: 'test-case',
+        subject_id: testCase.id,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(base - 1, -6),
+      });
+    }
+  });
+
+  // Auto-heal pull requests: 5 opened, 3 merged (2 verified on main since), 1 closed.
+  for (let n = 1; n <= 5; n++) {
+    const details = { prNumber: 40 + n, testCaseIds: [shopCases[n - 1].id] };
+    const key = `heal:v1:1:demo-${n}`;
+    add({
+      kind: 'auto-heal-pr',
+      subject_type: 'heal-action',
+      subject_id: n,
+      suggestion_key: key,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(22 - n * 3),
+    });
+    if (n <= 3)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'applied',
+        details,
+        at: daysAgo(21 - n * 3),
+      });
+    if (n <= 2)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'verified',
+        details,
+        at: daysAgo(20 - n * 3),
+      });
+    if (n === 4)
+      add({
+        kind: 'auto-heal-pr',
+        subject_type: 'heal-action',
+        subject_id: n,
+        suggestion_key: key,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(8),
+      });
+  }
+
+  // Diagnoses: the fixes of clusters 1 and 10 changed the files their diagnosis
+  // named; cluster 1 then failed again.
+  for (const clusterId of [1, 10]) {
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const diagnosis = FAILURE_DIAGNOSES.find((d) => d.cluster_id === clusterId);
+    const details = { diagnosisId: diagnosis.id, provider: diagnosis.provider, model: diagnosis.model };
+    // The live key carries the version's start time, which the rebase would leave stale here.
+    const key = `${diagnosis.id}@demo`;
+    add({
+      kind: 'diagnosis',
+      subject_type: 'cluster',
+      subject_id: clusterId,
+      suggestion_key: key,
+      outcome: 'verified',
+      commit_sha: cluster.fix_commit,
+      details,
+      at: cluster.fix_landed_at * 1000,
+    });
+    if (cluster.fix_verification === 'regressed') {
+      add({
+        kind: 'diagnosis',
+        subject_type: 'cluster',
+        subject_id: clusterId,
+        suggestion_key: key,
+        outcome: 'regressed',
+        details,
+        at: cluster.updated_at * 1000,
+      });
+    }
+  }
+
+  // The gate: 6 failed evaluations; the pull request of the third was merged
+  // anyway, and the failure it caught came back on main.
+  for (let n = 1; n <= 6; n++) {
+    const details = { prNumber: 60 + n, verdict: 'failed', rules: ['maxNewFailures'] };
+    add({
+      kind: 'gate',
+      subject_type: 'gate-evaluation',
+      subject_id: n,
+      outcome: 'suggested',
+      details,
+      at: daysAgo(26 - n * 4),
+    });
+    if (n === 3) {
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'rejected',
+        details,
+        at: daysAgo(13),
+      });
+      add({
+        kind: 'gate',
+        subject_type: 'gate-evaluation',
+        subject_id: n,
+        outcome: 'regressed',
+        details: { ...details, clusterId: 1 },
+        at: daysAgo(11),
+      });
+    }
+  }
+
+  // Flake Lab: a verify run proved one flaky test fixed (not the one whose flake the lab reproduced).
+  const verifiedFlake = TEST_CASES.filter((c) => c.project_id === 1 && c.id !== FLAKE_DEMO.caseId).at(-1);
+  add({
+    kind: 'flake-verify',
+    subject_type: 'test-case',
+    subject_id: verifiedFlake.id,
+    suggestion_key: 'verify-1',
+    outcome: 'verified',
+    channel: 'cli',
+    at: daysAgo(6),
+  });
+}
+
+// Ratings on the diagnoses, and earlier versions of them, so the AI usage
+// panel has a helpful share over enough ratings, and one version an agent
+// recorded with the model it ran on.
+{
+  const RATINGS = { 1: 'up', 3: 'up', 6: 'down', 7: 'up', 10: 'up' };
+  for (const d of FAILURE_DIAGNOSES) d.feedback = RATINGS[d.cluster_id] ?? null;
+  FAILURE_DIAGNOSIS_VERSIONS[0].feedback = 'down';
+  const stalePatch = {
+    status: 'stale-file',
+    filesChecked: 1,
+    filesInPatch: 1,
+    errors: ['The file changed since the diagnosis was written.'],
+  };
+  const EARLIER = [
+    { clusterId: 3, minutes: -720, feedback: 'up', patch: appliesPatch },
+    { clusterId: 3, minutes: -1440, feedback: 'down', patch: stalePatch },
+    { clusterId: 6, minutes: -600, feedback: 'down', patch: stalePatch },
+    { clusterId: 7, minutes: -480, feedback: 'up', patch: appliesPatch },
+    { clusterId: 7, minutes: -960, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -300, feedback: 'up', patch: appliesPatch },
+    { clusterId: 10, minutes: -900, feedback: null, patch: null },
+  ];
+  for (const v of EARLIER) {
+    const current = FAILURE_DIAGNOSES.find((d) => d.cluster_id === v.clusterId);
+    FAILURE_DIAGNOSIS_VERSIONS.push({
+      id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+      diagnosis_id: current.id,
+      cluster_id: v.clusterId,
+      scope: 'cluster',
+      test_runs_case_id: null,
+      status: 'completed',
+      provider: 'demo',
+      model: 'demo-simulated',
+      category: current.category,
+      confidence: 'medium',
+      summary: `Earlier take: ${current.summary}`,
+      root_cause: current.root_cause,
+      details: JSON.stringify({ ...JSON.parse(current.details), patchValidation: v.patch }),
+      error: null,
+      input_tokens: 900,
+      output_tokens: 260,
+      duration_ms: 2100,
+      context_sha: null,
+      feedback: v.feedback,
+      created_at: diagnosisTs(v.clusterId, v.minutes),
+    });
+  }
+  const agentBase = FAILURE_DIAGNOSES.find((d) => d.cluster_id === 3);
+  const agentDetails = JSON.parse(agentBase.details);
+  FAILURE_DIAGNOSIS_VERSIONS.push({
+    id: FAILURE_DIAGNOSIS_VERSIONS.length + 1,
+    diagnosis_id: agentBase.id,
+    cluster_id: 3,
+    scope: 'cluster',
+    test_runs_case_id: null,
+    status: 'completed',
+    provider: 'agent',
+    model: 'demo-agent',
+    category: agentBase.category,
+    confidence: 'high',
+    summary: `Recorded by an agent: ${agentBase.summary}`,
+    root_cause: agentBase.root_cause,
+    details: JSON.stringify({
+      ...agentDetails,
+      patchValidation: undefined,
+      suggestedFix: { ...agentDetails.suggestedFix, patchValidation: appliesPatch },
+      recordedBy: { channel: 'mcp', userId: null, apiKeyId: null },
+    }),
+    error: null,
+    input_tokens: null,
+    output_tokens: null,
+    duration_ms: null,
+    context_sha: null,
+    feedback: 'up',
+    created_at: diagnosisTs(3, -200),
+  });
+}
 
 // ── Flake-lab experiment (rng-free) ─────────────────────────────────────────
 // Two days before the anchor, someone ran `piwi flake` on the checkout
@@ -3851,10 +4165,13 @@ const REBASE_SQL = [
   '-- Millisecond timestamp columns',
   `UPDATE test_runs_cases SET started_at = started_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
-  `UPDATE project_assignments SET created_at = created_at + ${D_MS};`,
+  `UPDATE groups SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  `UPDATE group_members SET created_at = created_at + ${D_MS};`,
+  `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE entity_links SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE locator_snapshots SET last_seen_at = last_seen_at + ${D_MS};`,
+  `UPDATE handback_outcomes SET created_at = created_at + ${D_MS};`,
   `UPDATE code_reach SET last_seen_at = last_seen_at + ${D_MS};`,
   // Test Map tables are defined after ANCHOR_SEC is computed, so they add no
   // candidates to it; they are all stamped at BASE_START_MS, which the run
@@ -4681,8 +4998,10 @@ const lines = [
   '-- Users (demo identities for the "act as" switcher)',
   insert('users', USERS),
   '',
-  '-- Project assignments (affectations)',
-  insert('project_assignments', PROJECT_ASSIGNMENTS),
+  '-- Groups and role bindings (who holds which project role)',
+  insert('groups', GROUPS),
+  insert('group_members', GROUP_MEMBERS),
+  insert('role_bindings', ROLE_BINDINGS),
   '',
   '-- App settings (the `ai` key marks the demo provider as configured)',
   insert('app_settings', APP_SETTINGS),
@@ -4740,6 +5059,9 @@ const lines = [
   '',
   '-- Diagnosis version history (references failure_diagnoses + failure_clusters)',
   insert('failure_diagnosis_versions', FAILURE_DIAGNOSIS_VERSIONS),
+  '',
+  '-- Hand-back outcomes (references projects)',
+  insert('handback_outcomes', HANDBACK_OUTCOMES),
   '',
   '-- Content-addressed case payloads (referenced by test_runs_cases, so must come first)',
   insert('case_payloads', CASE_PAYLOADS),
@@ -4809,7 +5131,8 @@ console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
 console.log(`   Users      : ${USERS.length}`);
-console.log(`   Assignments: ${PROJECT_ASSIGNMENTS.length}`);
+console.log(`   Groups     : ${GROUPS.length}`);
+console.log(`   Bindings   : ${ROLE_BINDINGS.length}`);
 console.log(`   Tags       : ${TAGS.length}`);
 console.log(`   Suites     : ${TEST_SUITES.length}`);
 console.log(`   TestCases  : ${TEST_CASES.length}`);

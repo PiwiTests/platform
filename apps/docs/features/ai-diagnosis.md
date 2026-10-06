@@ -23,7 +23,7 @@ runs that follow.
 Pairs in the **ambiguous band**, between `PIWI_CLUSTER_SUGGEST_THRESHOLD` (default `0.80`) and the merge threshold, are
 not merged automatically. When AI is configured, a model judges the pair from its error text, locators, most-affected
 tests and overlap: it merges on a confident yes, turns a less confident yes into a **merge suggestion** on the
-project's Failure clusters tab, for a reporter or admin to approve or dismiss, and leaves a no apart. Without AI, or
+project's Failure clusters tab, for a Maintainer or above to approve or dismiss, and leaves a no apart. Without AI, or
 past five model calls in a run, the pair becomes a suggestion directly. This runs after every finished run
 whenever an embedding role is configured, independently of auto-diagnose.
 
@@ -43,7 +43,7 @@ a cluster is named from its error kind, locator, route and spec file, such as
 ### Split a cluster by hand
 
 The opposite of a merge needs no AI. When some of a cluster's tests fail with the same error for a different reason,
-select them in the cluster page's **Affected tests** and choose **Move to a new cluster** (reporter or administrator).
+select them in the cluster page's **Affected tests** and choose **Move to a new cluster** (Maintainer or above).
 Their failures move to a new cluster at once, with the triage note you type, and the cluster they left gains a line
 naming the move. Later failures of those tests with the same error join the new cluster, the other tests' failures
 stay where they were, and the two clusters are never merged automatically.
@@ -104,6 +104,14 @@ was shown. The patch carries one badge: **Applies cleanly**, **Applies with offs
 is told to return no patch unless it can quote the lines it changes. Applying a patch is always manual: **Copy**,
 **Copy `git apply` command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
 deterministic locator edits rather than model output.
+
+## Diagnoses written by an agent
+
+A coding agent can record its own diagnosis on a cluster with the MCP tool `record_diagnosis`, in the same JSON a
+model returns here. It needs no AI provider on this instance, its patch is validated against the source the cluster
+failed at when [source control](/guide/source-control) is connected, and the panel shows it as **written by an
+agent** with the model it named. It replaces the current diagnosis, which stays in the history. Declining the
+**Agent diagnoses** capability refuses them; declining AI diagnosis does not.
 
 ## Locator healing
 

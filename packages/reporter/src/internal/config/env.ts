@@ -26,8 +26,9 @@ const DEFAULTS: PiwiDashboardOptions = {
   sampleAriaOnPass: true,
   uploadManifest: true,
   defaultCapture: true,
+  checkBaseUrl: false,
   streaming: true,
-  streamingBatchSize: 5,
+  streamingBatchSize: 20,
   streamingBatchDelay: 2000,
   maxStreamBufferBytes: 100 * 1024 * 1024,
   submitTimeout: 15 * 60 * 1000,
@@ -75,6 +76,7 @@ export const PIWI_ENV_KEYS = {
   sampleAriaOnPass: 'PIWI_SAMPLE_ARIA_ON_PASS',
   uploadManifest: 'PIWI_UPLOAD_MANIFEST',
   defaultCapture: 'PIWI_DEFAULT_CAPTURE',
+  checkBaseUrl: 'PIWI_CHECK_BASE_URL',
   inspectOnFailure: 'PIWI_INSPECT_ON_FAIL',
   pickLocatorOnFailure: 'PIWI_PICK_LOCATOR_ON_FAIL',
   outputFile: 'PIWI_OUTPUT_FILE',
@@ -241,6 +243,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'sampleAriaOnPass', env: PIWI_ENV_KEYS.sampleAriaOnPass, kind: 'bool' },
   { option: 'uploadManifest', env: PIWI_ENV_KEYS.uploadManifest, kind: 'bool' },
   { option: 'defaultCapture', env: PIWI_ENV_KEYS.defaultCapture, kind: 'bool' },
+  { option: 'checkBaseUrl', env: PIWI_ENV_KEYS.checkBaseUrl, kind: 'bool' },
   { option: 'inspectOnFailure', env: PIWI_ENV_KEYS.inspectOnFailure, kind: 'bool' },
   { option: 'pickLocatorOnFailure', env: PIWI_ENV_KEYS.pickLocatorOnFailure, kind: 'bool' },
   { option: 'outputFile', env: PIWI_ENV_KEYS.outputFile, kind: 'string' },
@@ -326,6 +329,7 @@ export function applyOptionsToEnv(options: PiwiDashboardOptions): void {
   if (options.label) env[PIWI_ENV_KEYS.label] = options.label;
   if (options.runLabel) env[PIWI_ENV_KEYS.runLabel] = options.runLabel;
   if (options.keep) env[PIWI_ENV_KEYS.keep] = 'true';
+  if (options.checkBaseUrl !== undefined) env[PIWI_ENV_KEYS.checkBaseUrl] = String(options.checkBaseUrl);
   // Locator capture is part of performance-metric collection; switch it off in
   // the worker when either flag is disabled so the fixture skips the per-action
   // cost. Only an explicit `true` overrides the unset (default-on) state.

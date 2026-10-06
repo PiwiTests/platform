@@ -17,7 +17,7 @@ const route = useRoute();
 const router = useRouter();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
-const { canSeeAdmin } = useAuth();
+const { can } = useAuth();
 
 const { data: testRun, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 
@@ -713,7 +713,7 @@ const moreMenuItems = computed(() => {
   const kept = !!testRun.value?.keptAt;
   if (!kept) {
     items.push({ label: 'Keep forever…', icon: 'i-lucide-lock', onSelect: () => (isKeepOpen.value = true) });
-  } else if (canRelease.value) {
+  } else if (canRelease(testRun.value?.projectId)) {
     items.push({
       label: 'Release keep',
       icon: 'i-lucide-lock-open',
@@ -722,7 +722,7 @@ const moreMenuItems = computed(() => {
       },
     });
   }
-  if (canSeeAdmin.value) {
+  if (can('run:delete', testRun.value?.projectId)) {
     // A kept run cannot be deleted until it is released.
     items.push({
       label: kept ? 'Delete run (release it first)' : 'Delete run',
@@ -871,6 +871,7 @@ const moreMenuItems = computed(() => {
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"
             :refresh-key="runRefreshKey"
+            @open-timeline="activeTab = 'workers'"
           />
         </template>
       </DetailPageLayout>

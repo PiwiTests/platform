@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'What a replay in Piwi Picker or a run in the desktop app found: `{ verdict, source?, divergedAt?, origin?, userAgent?, runId? }`, with `verdict` one of `reproduced`, `not-reproduced`, `diverged` (then `divergedAt`, the 0-based step), and `source` `replay` (the default) or `desktop`.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

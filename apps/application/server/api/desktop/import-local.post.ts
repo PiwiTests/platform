@@ -22,7 +22,7 @@ defineRouteMeta({
     summary: 'Import a local archive file (desktop app)',
     description:
       'Desktop build only — 404 on the server build. Imports a Playwright blob report or trace .zip directly from an absolute path on the machine the app runs on. Same semantics as POST /api/test-runs/import: idempotent by content hash, no notifications or regression signals.',
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'storage:manage',
     requestBody: {
       content: {
         'application/json': {

@@ -11,7 +11,7 @@ defineRouteMeta({
     description:
       'One stored quality report with its frozen report bundle, readable when the caller can open every project it covers (403 otherwise), and how it was delivered.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

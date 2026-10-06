@@ -1,5 +1,5 @@
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import { optionalIntQuery } from '../../../utils/query-params';
+import { optionalIntQuery, queryFlag } from '../../../utils/query-params';
 import { getDatabase } from '../../../database';
 import { getProjectFlakyTestsWithVerified } from '#shared/handlers/projects';
 import { withFlakyRootCauses } from '#shared/handlers/flaky-classify';
@@ -12,12 +12,20 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Flaky test analysis',
     description:
-      'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment or SCM branch. A test whose Flake Lab verify experiment held, and that has not retry-passed in a run started since, leaves `items` and is listed in `verifiedFixed` (`{ testCaseId, title, filePath, retryPassRuns, lastFlakeAt, verifiedFix }`) until it retry-passes again. A test with no root cause yet is classified as the list is read, so `rootCause` is set on every item.',
+      'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment or SCM branch. A test whose Flake Lab verify experiment held, and that has not retry-passed in a run started since, leaves `items` and is listed in `verifiedFixed` (`{ testCaseId, title, filePath, retryPassRuns, lastFlakeAt, verifiedFix }`) until it retry-passes again. A test with no root cause yet is classified as the list is read, so `rootCause` is set on every item, unless `enrich=false`.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'runs', in: 'query', required: false, schema: { type: 'integer' } },
       { name: 'environment', in: 'query', required: false, schema: { type: 'string' } },
       { name: 'branch', in: 'query', required: false, schema: { type: 'string' } },
+      {
+        name: 'enrich',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: true },
+        description:
+          'false leaves out what only the list shows — the root cause classified on read and the owner read from CODEOWNERS — for a caller that only counts the tests',
+      },
       {
         name: 'tags',
         in: 'query',
@@ -40,7 +48,7 @@ defineRouteMeta({
         description: 'Priority declared via the `piwi:priority` annotation',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -72,6 +80,7 @@ export default eventHandler(async (event) => {
       filter,
       branch,
     );
+    if (!queryFlag(event, 'enrich', { default: true })) return { items, verifiedFixed };
     const classified = await withFlakyRootCauses(db, projectId, items);
     // Fill in the owner from CODEOWNERS for tests that declare none, so the
     // leaderboard can be read per team without anyone annotating a test.

@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Reports'],
     summary: 'Get a report schedule',
     description: 'One report schedule the caller can see: their own, or a global one.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'report:write',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });
@@ -19,6 +19,6 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'schedule ID');
   const db = await getDatabase();
   return reportRoute(async () =>
-    getReportSchedule(db as any, id, reportActor(event, user as any), await loadReportChannels(db as any)),
+    getReportSchedule(db as any, id, await reportActor(event, user as any), await loadReportChannels(db as any)),
   );
 });

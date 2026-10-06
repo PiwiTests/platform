@@ -25,7 +25,7 @@ use crate::runner::{
 const REPRO_FOLDER: &str = "piwi-repro";
 
 /// A request id as the server mints it: short lowercase hex.
-fn valid_request_id(id: &str) -> bool {
+pub(crate) fn valid_request_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 32
         && id
@@ -233,7 +233,7 @@ fn remove_spec(spec: &Path) {
 /// what the spec recorded (`{ status, line, message }`, or null when it
 /// recorded nothing), then `exit`. `args` go through the same flag allowlist
 /// as any local run. The test runs as a reproduction, referencing the bug
-/// report it came from when `bug_report_id` names one.
+/// report it came from when `bug_report_id` names one, else `origin_ref`.
 #[tauri::command]
 pub async fn desktop_run_repro(
     app: AppHandle,
@@ -241,8 +241,13 @@ pub async fn desktop_run_repro(
     request_id: String,
     args: Vec<String>,
     bug_report_id: Option<u64>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
+    let origin = crate::worktree::origin_env(
+        "reproduce",
+        crate::worktree::origin_reference(bug_report_id, origin_ref)?.as_deref(),
+    );
     // Flags only, values joined with `=`: the spec is the one file the run takes.
     if args.iter().any(|a| !a.starts_with('-')) {
         return Err("a repro run takes flags only".into());
@@ -310,7 +315,7 @@ pub async fn desktop_run_repro(
         repro_file_filter(&request_id),
     ];
     cmd_args.extend(args);
-    let mut command = app
+    let command = app
         .shell()
         .sidecar("node")
         .map_err(|e| e.to_string())?
@@ -322,10 +327,7 @@ pub async fn desktop_run_repro(
             "PIWI_REPRO_RESULT",
             result_file.to_string_lossy().to_string(),
         )
-        .env("PIWI_ORIGIN", "reproduce");
-    if let Some(report) = bug_report_id {
-        command = command.env("PIWI_ORIGIN_REF", report.to_string());
-    }
+        .envs(origin);
     let spawned = command.spawn();
     let (mut rx, child) = match spawned {
         Ok(pair) => pair,

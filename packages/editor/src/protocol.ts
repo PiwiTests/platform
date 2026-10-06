@@ -12,7 +12,8 @@ export interface PiwiCommand {
   /**
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
-   * `piwi.runCommand` (arguments: `[RunCommandArgs]`) or `piwi.copyText` (arguments: `[text]`).
+   * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`) or
+   * `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
    */
   command:
     | 'piwi.openInDashboard'
@@ -20,7 +21,8 @@ export interface PiwiCommand {
     | 'piwi.openTrace'
     | 'piwi.openScreenshot'
     | 'piwi.runCommand'
-    | 'piwi.copyText';
+    | 'piwi.copyText'
+    | 'piwi.desktopJob';
   arguments: unknown[];
 }
 
@@ -348,11 +350,244 @@ export const FAILURES_REQUEST = 'piwi/failures';
 export interface RenderStepsParams {
   uri: string;
   steps: unknown;
+  /**
+   * 0-based caret position: the steps run on the page expression in use there (`piwi/pageCandidates`'s default), and
+   * a page object already declared there before the caret is not instantiated again.
+   */
+  line?: number | null;
+  character?: number | null;
+  /**
+   * `separate`: the import lines the code needs come in `imports`, for the client to add at the top of the file,
+   * instead of as `// Needs: import …` comments in `code`.
+   */
+  imports?: 'comments' | 'separate' | null;
 }
 
 export interface RenderStepsResult {
   code: string;
   warnings: string[];
+  /**
+   * With `imports: 'separate'`: the import lines the code needs whose names the file's import statements do not bind
+   * yet, as of the file's text the service holds. The client adds those it does not hold already.
+   */
+  imports?: string[];
 }
 
 export const RENDER_STEPS_REQUEST = 'piwi/renderSteps';
+
+/**
+ * Where a recording writes: `steps`, lines of the test, method or function the caret is in; `test`, a new `test(…)`
+ * at the caret; `file`, a whole new spec.
+ */
+export type RecordInto = 'steps' | 'test' | 'file';
+
+/**
+ * `piwi/record`: open a browser through the Playwright of the file's config, with the `use` options of one of its
+ * projects, and write the steps recorded there into the file, at the caret, until `piwi/stopRecording`. What is
+ * written comes in `piwi/recordingChanged` notifications. A caret that does not fit `into` is refused with `ok: false`
+ * and a sentence: `steps` needs the `test` or `function` context of `piwi/pageCandidates`, `test` needs `file`;
+ * `file` is not checked.
+ */
+export interface RecordParams {
+  uri: string;
+  /** 0-based caret position: where the recorded block starts. */
+  line: number;
+  character: number;
+  into: RecordInto;
+  /** The Playwright project whose `use` options the browser gets; the config's only project when absent. */
+  project?: string | null;
+  /** A path on the project's `baseURL`, or an absolute URL; the `baseURL` when absent. */
+  startUrl?: string | null;
+  /** The test's title, for `test` and `file`. */
+  title?: string | null;
+  /** The page expression the steps run on; `piwi/pageCandidates`'s default when absent. */
+  page?: string | null;
+  /** The editor's display language, a BCP 47 tag such as `fr` or `pt-BR`, for the recorder's panel in the browser. */
+  language?: string | null;
+}
+
+/**
+ * Where the recorded block goes, decided from the file's text when the recording starts. The client writes the block
+ * there on the first `piwi/recordingChanged`, then follows it through the edits around it.
+ */
+export interface RecordingPlacement {
+  /** 0-based line the block's first line goes on. */
+  line: number;
+  /**
+   * Whether that line is new: the client first inserts an empty line there, pushing the line that was there down.
+   * Otherwise the line is empty (or blank) and the block takes its place.
+   */
+  newLine: boolean;
+  /** What every line of the block starts with; an empty line of the block stays empty. */
+  indent: string;
+}
+
+export interface RecordResult {
+  ok: boolean;
+  sessionId?: string;
+  /** One sentence for the client to show when the recording did not start. */
+  message: string;
+  /** When the config has several projects and none was given: their names, for the client to ask which. */
+  projects?: string[];
+  /** Where the block goes; set when `ok`. For `file`, line 0 of the (empty) file, with no indent. */
+  placement?: RecordingPlacement;
+}
+
+export const RECORD_REQUEST = 'piwi/record';
+
+/** `piwi/stopRecording`: stop recording; the browser closes and a last `piwi/recordingChanged` says `stopped`. */
+export interface StopRecordingParams {
+  sessionId: string;
+}
+
+export const STOP_RECORDING_REQUEST = 'piwi/stopRecording';
+
+/**
+ * `piwi/recordingCommand`: `pause` stops writing what is done in the browser; `resume` writes again, and the service
+ * sends the latest `piwi/recordingChanged` again, which rewrites the recorded block.
+ */
+export interface RecordingCommandParams {
+  sessionId: string;
+  command: 'pause' | 'resume';
+}
+
+export const RECORDING_COMMAND_REQUEST = 'piwi/recordingCommand';
+
+/** A recorded step, as the recorded block holds it. */
+export interface RecordingStep {
+  /** The step in words, as the extension's review lists it. */
+  words: string;
+  /** 0-based line of `RecordingUpdate.code` the step starts on; the steps a function call stands for share it. */
+  line: number;
+  /** The locators the recorder verified for the step's element, best first; empty for a step without an element. */
+  locators: string[];
+  /** The index in `locators` of the one written; null when none could be written. */
+  chosen: number | null;
+  /** The project function the step is part of, when a catalog call stands for it. */
+  functionName?: string | null;
+}
+
+/** Something about a recorded step the reader of the code should check: a brittle locator, a secret, a file. */
+export interface RecordingWarning {
+  /** Index of the step in `RecordingUpdate.steps`. */
+  step: number;
+  /** 0-based line of `RecordingUpdate.code` the warning is about. */
+  line: number;
+  message: string;
+}
+
+/**
+ * `piwi/recordingChanged` (notification, server to client): what the recorded block holds now, and the session's
+ * state. `code` is the whole block: lines joined with `\n`, no trailing newline, not indented; the client prefixes
+ * every non-empty line with `RecordResult.placement.indent`.
+ */
+export interface RecordingUpdate {
+  sessionId: string;
+  /** The file the session writes into. */
+  uri: string;
+  into: RecordInto;
+  state: 'starting' | 'recording' | 'paused' | 'stopped' | 'failed';
+  code: string;
+  /**
+   * Import lines the code needs (a catalog call's page object or helper) whose names the file's import statements do
+   * not bind yet, as of the file's text when the block was rendered; the client adds those it does not hold already.
+   * Empty for `into: 'file'`, whose `code` holds its imports.
+   */
+  imports: string[];
+  steps: RecordingStep[];
+  warnings: RecordingWarning[];
+  /** One sentence on what happened: why the session failed, or what the client should know. */
+  message?: string | null;
+  /** An action the client offers with `message`, such as installing the browser (`piwi.runCommand`). */
+  command?: PiwiCommand | null;
+}
+
+export const RECORDING_NOTIFICATION = 'piwi/recordingChanged';
+
+/** `piwi/pageCandidates`: the page expressions the steps written at a position could run on. */
+export interface PageCandidatesParams {
+  uri: string;
+  line: number;
+  character: number;
+}
+
+export interface PageCandidate {
+  expression: string;
+  /** Why it is offered, in a few words: `used on line 12`, `fixture of this test`, `field of SignInPage`. */
+  reason: string;
+}
+
+export interface PageCandidatesResult {
+  /** Best first; the default is always among them. */
+  candidates: PageCandidate[];
+  default: string;
+  /**
+   * Where the position is: `test`, in the body of a test's or a hook's callback; `function`, in the body of another
+   * function or method (a page object's method, a helper), even inside a class; `class`, in a class body between its
+   * members; `file`, anywhere else (the top level, a `test.describe` callback between its tests). `file` takes a new
+   * test (`into: 'test'`); `test` and `function` take steps (`into: 'steps'`); `class` takes neither.
+   */
+  context: 'test' | 'function' | 'class' | 'file';
+}
+
+export const PAGE_CANDIDATES_REQUEST = 'piwi/pageCandidates';
+
+/**
+ * What the desktop app is asked to do with a failure or a flaky test from the team instance: reproduce the failure,
+ * bisect it, or run the test's Flake Lab experiment.
+ */
+export type DesktopJobKind = 'reproduce' | 'bisect' | 'flake-lab';
+
+/**
+ * `piwi/desktopJob`, and the arguments of the client command `piwi.desktopJob` that sends it: ask the desktop app
+ * running on this machine to reproduce a failure of the instance the context reads (`root`), at its commit, to
+ * bisect it, or to run Flake Lab on a test (`flake-lab`, with `testCaseId`; `executionId` names the failure it was
+ * offered on, if any). The app shows the job in its window and runs nothing until the developer starts it there.
+ */
+export interface DesktopJobParams {
+  root: string;
+  /** The failure, for `reproduce` and `bisect`. */
+  executionId?: number | null;
+  /** The test, for `flake-lab`. */
+  testCaseId?: number | null;
+  kind: DesktopJobKind;
+}
+
+export interface DesktopJobResult {
+  ok: boolean;
+  /** One sentence for the client to show: where to confirm the job, or why it was not sent. */
+  message: string;
+  jobId?: string;
+}
+
+export const DESKTOP_JOB_REQUEST = 'piwi/desktopJob';
+
+/**
+ * `piwi/desktopJobChanged`, sent while the service follows a job: the developer started it in the desktop app
+ * (`running`), it ended (`done`, with the verdict in `message`), or it was `declined`, `expired`, or the app quit
+ * (`gone`). `share` names the instance the verdict can be shared on (`piwi/shareDesktopJob`): a bisect's first bad
+ * commit, or the results of a Flake Lab run; null when there is nothing to share.
+ */
+export interface DesktopJobUpdate {
+  jobId: string;
+  kind: DesktopJobKind;
+  status: 'running' | 'done' | 'declined' | 'expired' | 'gone';
+  message: string;
+  share: { label: string } | null;
+}
+
+export const DESKTOP_JOB_NOTIFICATION = 'piwi/desktopJobChanged';
+
+/** `piwi/shareDesktopJob`: record a job's verdict on the instance the job came from, with the editor's key. */
+export interface ShareDesktopJobParams {
+  jobId: string;
+}
+
+export interface ShareDesktopJobResult {
+  ok: boolean;
+  message: string;
+  /** The failure cluster's page, or the test's Flakiness tab, once shared. */
+  url?: string;
+}
+
+export const SHARE_DESKTOP_JOB_REQUEST = 'piwi/shareDesktopJob';

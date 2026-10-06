@@ -9,6 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // so clear it before the module under test loads.
 delete process.env.PIWI_DATABASE_URL;
 const { selectBaselineRun } = await import('../../server/utils/branch-baseline');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 const HOUR = 3_600_000;
@@ -29,6 +30,7 @@ beforeAll(async () => {
     startTime: new Date(NOW - hoursAgo * HOUR),
     branch: 'main',
     metadata,
+    origin: runOrigin(metadata),
   });
   await db
     .insert(schema.testRuns)

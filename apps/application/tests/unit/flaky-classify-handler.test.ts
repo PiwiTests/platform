@@ -12,6 +12,7 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { classifyAndPersistFlakyRootCause, classifyRunFlakyTests, withFlakyRootCauses } =
   await import('../../shared/handlers/flaky-classify');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -111,6 +112,7 @@ describe('classifyAndPersistFlakyRootCause', () => {
       await addAttempt(runId, 1, 'passed', 'chromium', null, new Date(start + i));
     }
     // A flake experiment replays the test under an injected slowdown.
+    const labMetadata = { piwiFlakeLab: { experimentId: 'exp-1', armId: 'slow' } };
     for (let i = 0; i < 120; i++) {
       const [lab] = await db
         .insert(schema.testRuns)
@@ -118,7 +120,8 @@ describe('classifyAndPersistFlakyRootCause', () => {
           projectId: 1,
           status: 'passed',
           startTime: new Date(start + 1_000 + i),
-          metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'slow' } },
+          metadata: labMetadata,
+          origin: runOrigin(labMetadata),
         })
         .returning({ id: schema.testRuns.id });
       const at = new Date(start + 1_000 + i);

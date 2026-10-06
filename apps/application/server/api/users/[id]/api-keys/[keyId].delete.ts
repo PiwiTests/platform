@@ -1,18 +1,18 @@
 import { getDatabase } from '../../../../database';
 import { deleteUserApiKeyRecord } from '#shared/handlers/users';
-import { requireAuth } from '../../../../utils/auth';
-import { Role } from '#shared/types';
+import { getRequestAccess, requireAuth } from '../../../../utils/auth';
+import { can } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Delete an API key',
-    description: 'Revokes an API key by ID. Non-administrators can only revoke their own keys.',
+    description: 'Revokes an API key by ID. Anyone but an administrator can only revoke their own keys.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'keyId', in: 'path', required: true, schema: { type: 'integer' } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -27,7 +27,7 @@ export default eventHandler(async (event) => {
   }
 
   // Non-administrators can only revoke their own keys
-  if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
+  if (!can(await getRequestAccess(event), 'users:manage') && currentUser.id !== targetId) {
     throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 

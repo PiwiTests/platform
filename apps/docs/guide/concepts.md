@@ -36,7 +36,7 @@ A named container for one suite's results — usually one repository, or one sui
 are created automatically the first time results are submitted under a new `projectName`; you never
 have to pre-register one.
 
-A project carries its own tags, access assignments, SCM connection, default branch, capability
+A project carries its own tags, [role grants](#role-and-group), SCM connection, default branch, capability
 decisions, and AI-diagnosis instructions. Retention is instance-wide.
 
 ### Test run
@@ -217,6 +217,13 @@ same error as the test's failures in history count. An arm **reproduced** the fl
 failed that way and it fails significantly more than the control; a **verify** experiment reruns that arm after a
 fix. See [Flake Lab](/features/flake-lab).
 
+### Fix attempt
+
+A change a person or an agent reports having made to fix a failure cluster (a patch, a locator edit, a fix plan
+carried out), on a commit or a branch. It is recorded **applied**, then **verified** when the cluster's tests pass on a
+run that carries it (its commit, a `Piwi-Cluster: <id>` trailer in a commit message, or its branch), and
+**regressed** when the cluster fails again. See [Agent skills](/features/agent-skills#what-agents-report-back).
+
 ### Locator snapshot
 
 When the [capture fixtures](./capture-fixtures) are installed, every successful locator call records
@@ -354,6 +361,17 @@ A glob over a page's whole address (`*` within one part of the path, `**` across
 to a project, with an optional environment and branch. Each project keeps its own list, and the browser extension
 reads them to know which project the page it is on belongs to. See
 [Extension connection](/features/extension-connection#url-patterns).
+
+## Access
+
+### Role and group
+
+With [authentication](/operate/authentication) on, every account holds an **instance role**: **Administrator**, who
+can do everything, or **Member**. A Member's rights in a project come from the **project roles** they hold there
+(Viewer, Contributor, Maintainer, Project admin, Uploader), each granted on one project or on all projects. A
+**group** is a named set of users that receives project roles the way a user does. A user's rights on a project are
+the union of every role they hold there, directly or through their groups. See
+[Access, roles and groups](/operate/project-access).
 
 ## Where each concept lives in the UI
 

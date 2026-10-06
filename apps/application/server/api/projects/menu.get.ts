@@ -9,7 +9,7 @@ defineRouteMeta({
     summary: 'List projects for sidebar navigation',
     description:
       'Returns a slim list of all projects (id, name, label) ordered by last update. Used by the sidebar menu — much lighter than GET /api/projects.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

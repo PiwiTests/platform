@@ -7,8 +7,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Send test email',
     description:
-      'Sends a test email via the env-configured SMTP settings to verify the configuration. Requires administrator role. Soft-fail: when SMTP is reachable but the send fails, the response is HTTP 200 with `{ success: false, error }` — the request was processed, only the delivery failed. HTTP error statuses are reserved for request-level problems (SMTP not configured → 503, invalid recipient → 400).',
-    'x-required-roles': ['administrator'],
+      'Sends a test email via the env-configured SMTP settings to verify the configuration. Requires `settings:manage` (administrators only). Soft-fail: when SMTP is reachable but the send fails, the response is HTTP 200 with `{ success: false, error }` — the request was processed, only the delivery failed. HTTP error statuses are reserved for request-level problems (SMTP not configured → 503, invalid recipient → 400).',
+    'x-required-permission': 'settings:manage',
     requestBody: {
       content: {
         'application/json': {

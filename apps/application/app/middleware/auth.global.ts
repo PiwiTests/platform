@@ -1,4 +1,3 @@
-import { Role } from '#shared/types';
 import { canOpenSettingsPath } from '~/utils/settings-metadata';
 
 // Pages that must work without a session: signing in, and the account-recovery
@@ -10,21 +9,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return;
   }
 
-  const { authState, fetchUser } = useAuth();
+  const { authState, fetchUser, isAdmin, can, access } = useAuth();
   const config = useRuntimeConfig();
-
-  // Skip auth check in demo mode
-  if (config.public.demoMode) {
-    return;
-  }
 
   // Check if auth is enabled
   if (!config.public.authEnabled) {
     return;
   }
 
-  // Fetch user if not already loaded
-  if (!authState.value.authenticated) {
+  // Fetch user if not already loaded. The demo signs nobody in: its "act as"
+  // identity is already in the auth state, and the guards below apply to it.
+  if (!config.public.demoMode && !authState.value.authenticated) {
     const result = await fetchUser();
 
     if (!result.authenticated) {
@@ -33,28 +28,30 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
   }
 
-  const isAdmin = authState.value.user?.role === Role.ADMINISTRATOR;
-
-  // Check if user is trying to access edit pages
-  if (to.path.includes('/edit') && !isAdmin) {
-    return navigateTo('/');
+  // Edit pages: a project's needs `project:manage` on that project, any other
+  // one an administrator.
+  if (to.path.includes('/edit')) {
+    const projectEdit = /^\/projects\/(\d+)\/edit\/?$/.exec(to.path);
+    const allowed = projectEdit ? can('project:manage', projectEdit[1]) : isAdmin.value;
+    if (!allowed) return navigateTo('/');
   }
 
   // Setup configures how results reach this instance and, in the desktop build,
   // exposes the local access token — admin-only. The sidebar hides the link, and
   // this stops a non-admin reaching it by typing the URL. The endpoint behind it
-  // (`/api/setup-status`) enforces the same role server-side; this is only the
+  // (`/api/setup-status`) needs `settings:manage` server-side; this is only the
   // affordance. Note the early returns above: with auth disabled every visitor is
   // a virtual admin, which is what keeps Setup reachable on a default install.
-  if (to.path === '/setup' && !isAdmin) {
+  if (to.path === '/setup' && !isAdmin.value) {
     return navigateTo('/');
   }
 
-  // Role-restricted settings pages (Users, Tags, Storage, AI…) follow the same
-  // rule: the nav hides them, and this stops a direct URL rendering a page whose
-  // every API call would 403. The server enforces the roles on those endpoints;
-  // `/settings` itself redirects to the first page the viewer may open.
-  if (!canOpenSettingsPath(to.path, authState.value.user?.role as Role | undefined)) {
+  // Settings pages needing an instance permission (Users, Tags, Storage, AI…)
+  // follow the same rule: the nav hides them, and this stops a direct URL
+  // rendering a page whose every API call would 403. The server checks the
+  // permission on those endpoints; `/settings` itself redirects to the first
+  // page the viewer may open.
+  if (!canOpenSettingsPath(to.path, access.value)) {
     return navigateTo('/settings');
   }
 });

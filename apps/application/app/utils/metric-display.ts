@@ -19,6 +19,13 @@ export function formatMetric(value: AnalyticsMetricValue, f = metricFormatter())
   return f.value(value.value, value.unit, value.precision, value.currency);
 }
 
+/** Why a rate shows no value: fewer items than its sample floor (`3 of the 10 needed`); null otherwise. */
+export function sampleNote(value: AnalyticsMetricValue): string | null {
+  const sample = value.sample;
+  if (value.value !== null || !sample || sample.size >= sample.min) return null;
+  return `Too few to rate: ${sample.size} of the ${sample.min} needed`;
+}
+
 /** Text utility for a change: the passed color when it is good news, the failed color when bad. */
 export function metricTrendClass(trend: AnalyticsMetricValue['trend']): string {
   if (trend === 'better') return STATUS_PALETTE.passed.text;

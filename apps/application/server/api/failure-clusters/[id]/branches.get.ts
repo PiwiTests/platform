@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'List branches for a cluster repository',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

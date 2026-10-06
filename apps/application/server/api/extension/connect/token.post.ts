@@ -8,7 +8,6 @@ defineRouteMeta({
     summary: 'Poll a browser-extension connect request',
     description:
       'Body: `{ deviceCode }`. Answers `{ status }`: `pending` until a user decides, `slow_down` (with a longer `interval`) when polled faster than the interval, `denied`, `expired`, or `approved` with `apiKey` and `user`. The key is created for the user who allowed the request and is returned by the first poll that sees it approved, never again; with authentication off it is empty. Rate-limited per client address.',
-    'x-required-roles': [],
     security: [],
     responses: {
       200: {

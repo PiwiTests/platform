@@ -86,9 +86,9 @@ A run whose reporter sent findings shows a **Resources** tab:
 
 - the counts of each kind of finding, the CPU the run's processes used and the machine's peak memory;
 - the findings, each with the line or fixture that opened the object, a click from your editor;
-- **Open pages by worker**: the pages each worker still had open at the end of each of its tests, which the run's
-  [Timeline tab](./cpu-memory-disk#in-the-dashboard) draws over time. A leak climbs test after test, a clean worker
-  stays flat;
+- a pointer to each worker's open pages over the run, drawn on the run's
+  [Timeline tab](./cpu-memory-disk#in-the-dashboard) above the worker rows: a leak climbs test after test, a clean
+  worker stays flat;
 - the machine each shard ran on, from the [CPU, memory & disk](./cpu-memory-disk#in-the-dashboard) panel;
 - the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
 

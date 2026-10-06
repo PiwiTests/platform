@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Project settings → Source control: the repository token and default branch,
- * whether quarantined failures fail the commit status, the CI re-run target per
+ * whether quarantined failures fail the commit status, whether the gate verdict
+ * gets a commit status of its own, the CI re-run target per
  * provider with its optional Flake Lab target, and where the specs generated from bug reports go. The token is write-only: a blank field keeps the stored one.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
@@ -14,6 +15,7 @@ const { state, dirty } = useStoredForm(() => {
   return {
     defaultBranch: props.project.defaultBranch || '',
     quarantineFailsStatus: props.project.quarantineFailsStatus === true,
+    gateStatus: props.project.gateStatus === true,
     ciRerun: {
       enabled: ci?.enabled ?? false,
       github: {
@@ -53,6 +55,7 @@ async function submit() {
       scmToken: scmToken.value.trim() || undefined,
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
+      gateStatus: state.value.gateStatus,
       ciRerun: state.value.ciRerun,
       generatedSpecs: {
         testImport: state.value.generatedSpecs.testImport.trim() || null,
@@ -125,6 +128,14 @@ async function removeToken() {
           description="The run's commit status stays green when only quarantined tests failed, and counts them. Turn this on to fail it on any failure."
         >
           <USwitch v-model="state.quarantineFailsStatus" label="Quarantined failures fail the commit status" />
+        </UFormField>
+
+        <UFormField
+          label="Gate status"
+          name="gateStatus"
+          description="Post each piwi gate verdict as its own commit status, beside the run's, so a branch rule can require it. Needs pull-request feedback with commit statuses on."
+        >
+          <USwitch v-model="state.gateStatus" label="Post the gate verdict as a commit status" />
         </UFormField>
 
         <UFormField

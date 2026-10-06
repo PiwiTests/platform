@@ -14,6 +14,7 @@ import {
 import { reclaimOrphanTraceResources } from '../../utils/delete-run-files';
 import { reconcileRecentRollups } from '#shared/handlers/analytics/rollups';
 import { pruneOutcomesOlderThan } from '../../utils/outcomes';
+import { pruneMcpToolCalls } from '../../utils/mcp/write-log';
 
 /** Days of retained rollup rows the sweep recomputes before pruning. */
 const RECONCILE_DAYS = 7;
@@ -98,6 +99,12 @@ export default defineTask({
     if (notificationDays > 0) {
       const pruned = await pruneIntegrationActions(db, notificationDays);
       if (pruned > 0) result.integrationActionsPruned = pruned;
+    }
+
+    // …and for the agents' write log.
+    if (notificationDays > 0) {
+      const pruned = await pruneMcpToolCalls(db, notificationDays);
+      if (pruned > 0) result.mcpToolCallsPruned = pruned;
     }
 
     const space = await reclaimSpace(db);

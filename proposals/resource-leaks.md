@@ -357,7 +357,7 @@ browser was starved as well.
   proposes tighter timeouts.
 - **Neighbors already explain failures.** The clue engine has `worker-pollution` (the previous test on this worker
   failed, `shared/failure-clues.ts`); the flake profile has a load suspect and the lab has `cpu`, `after` and
-  `alongside` conditions ([`flake-lab.md`](flake-lab.md)).
+  `alongside` conditions ([`flake-lab.md`](../adr/flake-lab.md)).
 - **Delivery routes.** The gate takes `--max-*` policies (`packages/reporter/src/cli/gate.ts`), the editor service
   publishes diagnostics with quick fixes and hovers (`packages/editor/src/server.ts`), MCP lists tools in
   `shared/mcp-tools.ts`, and every optional surface is a capability in `shared/capabilities.ts`.

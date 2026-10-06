@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
-import { selectHealEdits, type HealCandidateRow } from '../../server/utils/heal/policy';
+import { dropRejectedEdits, selectHealEdits, type HealCandidateRow } from '../../server/utils/heal/policy';
+import { healEditKey } from '#shared/auto-heal';
 import type { LocatorHealingResult, RankedLocator } from '#shared/locator-healing.types';
 
 function ranked(over: Partial<RankedLocator> = {}): RankedLocator {
@@ -111,5 +112,47 @@ describe('selectHealEdits', () => {
       minScore: 80,
     });
     expect(edits).toHaveLength(1);
+  });
+});
+
+describe('dropRejectedEdits', () => {
+  const closedAt = new Date('2026-09-01T00:00:00Z');
+
+  function edit(over: Partial<RankedLocator> = {}) {
+    const [only] = selectHealEdits(
+      [row()],
+      new Map([[1, healing({ recommendation: { ...healing().recommendation!, recommended: ranked(over) } })]]),
+      {
+        minScore: 0,
+      },
+    );
+    return only!;
+  }
+
+  test('drops an edit a PR closed without merging proposed', () => {
+    const rejected = edit();
+    const { kept, dropped } = dropRejectedEdits([rejected], new Map([[healEditKey(rejected), closedAt]]));
+    expect(kept).toEqual([]);
+    expect(dropped).toEqual([rejected]);
+  });
+
+  test('keeps an edit with another replacement for the same call site', () => {
+    const rejected = edit();
+    const other = edit({ locator: "getByRole('button', { name: 'Pay now' })" });
+    const { kept } = dropRejectedEdits([other], new Map([[healEditKey(rejected), closedAt]]));
+    expect(kept).toEqual([other]);
+  });
+
+  test('keeps the edit when a person picked the replacement after the PR closed', () => {
+    const picked = edit({ pickedByUser: true, pickedAt: '2026-09-02T00:00:00Z' });
+    expect(picked.pickedAt).toBe('2026-09-02T00:00:00Z');
+    expect(dropRejectedEdits([picked], new Map([[healEditKey(picked), closedAt]])).kept).toEqual([picked]);
+  });
+
+  test('a pick made before the PR closed, or one with no time, does not lift the block', () => {
+    const before = edit({ pickedByUser: true, pickedAt: '2026-08-31T00:00:00Z' });
+    const untimed = edit({ pickedByUser: true });
+    const rejected = new Map([[healEditKey(before), closedAt]]);
+    expect(dropRejectedEdits([before, untimed], rejected).kept).toEqual([]);
   });
 });

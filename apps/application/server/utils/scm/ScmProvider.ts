@@ -36,7 +36,10 @@ export interface ChangedFile {
 
 export interface ScmCommit {
   sha: string;
+  /** The subject: the message's first line. */
   message: string;
+  /** The whole message, trailers included, where the host returns it ({@link ScmProvider.fetchChanges} does). */
+  fullMessage?: string;
 }
 
 export interface ScmCommitDetail {
@@ -126,6 +129,12 @@ export interface ScmEntityRef {
   updatedAt: string | null;
 }
 
+/** The comment Piwi posted on a pull request. */
+export interface ScmPostedComment {
+  /** The host's id of the comment, or null when it returned none. */
+  id: string | null;
+}
+
 /** A commit status (GitHub "status", GitLab "commit status", Bitbucket "build status"). */
 export interface ScmCommitStatus {
   state: 'success' | 'failure' | 'error' | 'pending';
@@ -196,6 +205,10 @@ export abstract class ScmProvider {
 
   abstract listBranches(limit?: number): Promise<string[]>;
   abstract listCommits(limit?: number, branch?: string): Promise<ScmCommitDetail[]>;
+  /**
+   * The commits in `fromSha..toSha`, oldest first, each with its full message,
+   * and the files changed between the two.
+   */
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
   /**
@@ -253,6 +266,15 @@ export abstract class ScmProvider {
    */
   async upsertPullRequestComment(_prNumber: number, _marker: string, _body: string): Promise<boolean> {
     return false;
+  }
+
+  /**
+   * {@link upsertPullRequestComment} that also returns the host's id of the
+   * comment, for the run's PR feedback record. Null when nothing was posted;
+   * `id` is null when the host did not say.
+   */
+  async postPullRequestComment(prNumber: number, marker: string, body: string): Promise<ScmPostedComment | null> {
+    return (await this.upsertPullRequestComment(prNumber, marker, body)) ? { id: null } : null;
   }
 
   /** Attach a status to a commit. Returns true when it was accepted. */

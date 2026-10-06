@@ -13,7 +13,7 @@ defineRouteMeta({
     description:
       'Downloads a single execution in Trace Event Format: a slice for the execution with its hooks, fixtures and steps nested underneath, and an instant event at the moment it failed. Open the file at ui.perfetto.dev or in Chrome’s chrome://tracing. Attachments are referenced by URL, not embedded.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

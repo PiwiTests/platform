@@ -1,24 +1,21 @@
 import { requireResolvedProjectAccess, resolveTestFunctionProjectId, requireRouteId } from '../../utils/project-access';
 import { updateTestFunction } from '#shared/handlers/test-functions';
-import { Role } from '#shared/types';
 import { updateTestFunctionSchema } from '#shared/test-function-schemas';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Functions'],
     summary: 'Update a test function',
-    description: 'Updates a project’s catalog entry. Requires reporter or administrator role.',
+    description:
+      'Updates a project’s catalog entry. Requires `test-assets:write` (Maintainer and above on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'test-assets:write',
   },
 });
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test function ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveTestFunctionProjectId, 'Test function', [
-    Role.ADMINISTRATOR,
-    Role.REPORTER,
-  ]);
+  const { db } = await requireResolvedProjectAccess(event, id, resolveTestFunctionProjectId, 'Test function');
 
   const body = await readBody(event);
   const validation = updateTestFunctionSchema.safeParse(body);

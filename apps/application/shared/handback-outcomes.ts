@@ -30,8 +30,19 @@ export type HandbackOutcome = (typeof HANDBACK_OUTCOMES)[number];
 export const HANDBACK_CHANNELS = ['inferred', 'ui', 'mcp', 'editor', 'desktop', 'cli', 'ci'] as const;
 export type HandbackChannel = (typeof HANDBACK_CHANNELS)[number];
 
+/** The channels a report over the REST API may name; a report over MCP is `mcp`. */
+export const REST_REPORT_CHANNELS = ['ui', 'editor', 'desktop', 'cli', 'ci'] as const;
+export type RestReportChannel = (typeof REST_REPORT_CHANNELS)[number];
+
 /** What a row's `subject_id` points at. */
-export const HANDBACK_SUBJECT_TYPES = ['test-case', 'cluster', 'gap', 'bug-report', 'heal-action'] as const;
+export const HANDBACK_SUBJECT_TYPES = [
+  'test-case',
+  'cluster',
+  'gap',
+  'bug-report',
+  'heal-action',
+  'gate-evaluation',
+] as const;
 export type HandbackSubjectType = (typeof HANDBACK_SUBJECT_TYPES)[number];
 
 /**
@@ -53,6 +64,22 @@ export interface LocatorHealDetails {
   /** On `applied`: the run whose code first used the recommendation. */
   appliedRunId?: number;
   label?: string;
+}
+
+/**
+ * What a `gate` row's details carry. A failed gate records `suggested`; a pull
+ * request merged while its last gate evaluation failed records `rejected` (an
+ * override); a cluster that gate caught failing again on an eligible
+ * default-branch run after the merge records `regressed` (an escape).
+ */
+export interface GateOutcomeDetails {
+  prNumber: number | null;
+  verdict: 'passed' | 'failed' | 'inconclusive';
+  /** The rules the evaluation violated. */
+  rules: string[];
+  /** On `regressed`: the cluster that failed again, and the run it failed in. */
+  clusterId?: number;
+  escapedRunId?: number;
 }
 
 /** Who reported an outcome, for the outcomes a person or an agent reports. */

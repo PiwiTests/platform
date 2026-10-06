@@ -1,17 +1,17 @@
 import { getDatabase } from '../../database';
-import { isAuthEnabled, requireAuth } from '../../utils/auth';
+import { getRequestAccess, isAuthEnabled, requireAuth } from '../../utils/auth';
 import { getProjectScope } from '../../utils/project-access';
 import { getProjectMenu } from '#shared/handlers/projects';
 import { listVisibleUrlPatterns } from '#shared/handlers/url-patterns';
-import { Role } from '#shared/types';
+import { can } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Extension'],
     summary: 'URL patterns for the browser extension',
     description:
-      'Every URL pattern of every project the caller can see, with its environment, branch and both path prefixes, in the order Piwi Picker tries them (by project, then each project’s own order), with each visible project and whether the caller may add patterns to it, and the caller’s name. Piwi Picker reads it when it connects and when its settings open.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+      'Every URL pattern of every project the caller can see, with its environment, branch and both path prefixes, in the order Piwi Picker tries them (by project, then each project’s own order), with each visible project and whether the caller may add patterns to it (`project:manage` on it), and the caller’s name. Piwi Picker reads it when it connects and when its settings open.',
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -20,10 +20,10 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   const scope = await getProjectScope(db, user);
   const [items, menu] = await Promise.all([listVisibleUrlPatterns(db, scope), getProjectMenu(db, scope)]);
-  const canEdit = user.role === Role.ADMINISTRATOR;
+  const access = await getRequestAccess(event);
   return {
     user: isAuthEnabled(event) ? { name: user.name || user.username } : null,
     items,
-    projects: menu.map((p) => ({ id: p.id, label: p.label || p.name, canEdit })),
+    projects: menu.map((p) => ({ id: p.id, label: p.label || p.name, canEdit: can(access, 'project:manage', p.id) })),
   };
 });

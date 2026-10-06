@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Returns full details for a specific test run, including project info, attached reports, test cases with results, and storage statistics.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

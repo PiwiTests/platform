@@ -1,10 +1,11 @@
 /**
- * Desktop build: the repro requests Piwi Picker sent, kept in memory until the
- * developer runs or declines them in the window (see `shared/desktop-repro.ts`).
+ * Desktop build: the repro requests Piwi Picker and the editors sent, kept in
+ * memory until the developer runs or declines them in the window (see
+ * `shared/desktop-repro.ts`).
  *
  * A request waits `REPRO_REQUEST_TTL_MS` for the developer, then reads as
  * expired as long again; once answered, its verdict stays readable as long
- * again, for the extension polling it. A running request stays until its run
+ * again, for the extension or the editor polling it. A running request stays until its run
  * ends, however long it takes. Each open window listens on the desktop event
  * stream, which registers it here, and is told of every new request.
  */
@@ -47,16 +48,19 @@ export function createReproRequest(input: ReproRequestInput): ReproRequestView {
   const now = Date.now();
   const stored: StoredRepro = {
     id: randomBytes(8).toString('hex'),
+    kind: input.kind,
     title: input.title,
-    steps: input.steps,
-    options: input.options,
-    bugReportId: input.bugReportId,
+    steps: input.kind === 'steps' ? input.steps : null,
+    options: input.kind === 'steps' ? input.options : { headed: false, trace: false, repeatEach: 1 },
+    job: input.kind === 'steps' ? null : input.job,
+    bugReportId: input.kind === 'steps' ? input.bugReportId : null,
     instanceUrl: input.instanceUrl,
     status: 'waiting',
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + REPRO_REQUEST_TTL_MS).toISOString(),
     projectId: null,
     verdict: null,
+    jobVerdict: null,
     runId: null,
     until: now + 2 * REPRO_REQUEST_TTL_MS,
   };
@@ -97,8 +101,12 @@ export function updateReproRequest(id: string, patch: ReproRequestPatch): ReproR
   if (!allowed) return null;
   stored.status = patch.status;
   if (patch.projectId != null) stored.projectId = patch.projectId;
-  if (patch.status === 'running') stored.verdict = null;
+  if (patch.status === 'running') {
+    stored.verdict = null;
+    stored.jobVerdict = null;
+  }
   if (patch.verdict !== undefined) stored.verdict = patch.verdict ?? null;
+  if (patch.jobVerdict !== undefined) stored.jobVerdict = patch.jobVerdict ?? null;
   if (patch.runId != null) stored.runId = patch.runId;
   stored.until = Math.max(stored.until, Date.now() + REPRO_REQUEST_TTL_MS);
   return view(stored);

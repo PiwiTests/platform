@@ -1,6 +1,6 @@
 import { requireAuth, revokeUserSessions, setUserSession } from '../../../../utils/auth';
 import { unlinkProvider } from '../../../../utils/oauth';
-import { Role } from '#shared/types';
+import type { InstanceRole } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Removes the OAuth provider link from the current user. Requires the account to have a password set so the user keeps a way to sign in.',
     parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -28,7 +28,7 @@ export default eventHandler(async (event) => {
   await setUserSession(event, {
     userId: user.id,
     username: user.username,
-    role: user.role as Role,
+    role: user.role as InstanceRole,
     sessionEpoch: epoch,
   });
 

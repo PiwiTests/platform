@@ -23,7 +23,6 @@ defineRouteMeta({
     description:
       'Upload trace files and attachments for a specific test case during an active streaming run. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': [],
   },
 });
 

@@ -25,7 +25,7 @@ once.
 The tab closes, the settings say **Connected as** your name, and the instance's URL patterns appear under **From
 your Piwi instance**.
 
-Allowing creates an API key for your account, named after the browser, with your role and project access. It is
+Allowing creates an API key for your account, named after the browser, with your instance role and project roles. It is
 listed with your other keys in your account's API key settings, where you revoke it; the browser is then
 disconnected at its next request. **Deny**, or ten minutes without an answer, creates nothing.
 
@@ -70,7 +70,7 @@ The newest few runs of every environment are read, so a nightly production suite
 runs on every push. **Add** puts a suggestion in the list with its environment, **Add all** every suggestion of that
 environment; **Save patterns** stores them. When there is nothing to suggest, the editor says why: every site already
 has a pattern, or no recent run recorded a `baseURL`, opened a full address or kept the network requests of a page it
-loaded. Editing the list takes the administrator role, like the rest of the project's settings.
+loaded. Editing the list takes the Project admin role on the project, like the rest of the project's settings.
 
 ### Which project applies
 
@@ -105,4 +105,4 @@ the editor, never a script running in a page.
 - [Browser extension](./extension): everything Piwi Picker does, with or without a connection
 - [API keys](/operate/api-keys): create, list and revoke keys, those Piwi Picker created included
 - [Tested elements](./tested-elements): what a connection shows on the page
-- [Project access](/operate/project-access): which projects, and so which patterns, a user sees
+- [Access, roles and groups](/operate/project-access): which projects, and so which patterns, a user sees

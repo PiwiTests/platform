@@ -124,7 +124,7 @@ Submission steps (web form):
 
 ## 5. Ongoing updates
 
-Every store re-reviews **every version bump**, not just the first. release-please bumps `apps/extension/manifest.json`'s version repo-wide, and each release tag runs `.github/workflows/publish-extension.yml` (**Publish Browser Extension**), which:
+Every store re-reviews **every version bump**, not just the first. release-please bumps `apps/extension/manifest.json`'s version repo-wide, and each release tag runs `.github/workflows/reusable-publish-extension.yml` (**Publish browser extension**, called by `release.yml`), which:
 
 1. runs `npm run extension:zip` and keeps the four files of §1 as the run's artifacts, each one downloading as the file itself rather than inside another zip. These are the files to upload by hand;
 2. submits the package to every store whose secrets are configured (repository **Settings → Secrets and variables → Actions**), and skips the others:

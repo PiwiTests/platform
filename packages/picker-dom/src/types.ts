@@ -25,6 +25,14 @@ export interface ProbeArg {
    * them and no count, whatever the size of the page.
    */
   countMatches?: boolean;
+  /**
+   * The attribute `getByTestId` reads in the project (Playwright's
+   * `testIdAttribute`); `data-testid` when null or absent. It is read with
+   * `keep`, counted for `selectorCounts.testId`, read off each ancestor for its
+   * `testId` and `testIdCount`, and never taken as an ancestor's `dataAttr`;
+   * any other `data-*`, `data-testid` included, is an ordinary one.
+   */
+  testIdAttribute?: string | null;
 }
 
 /** Element shape the in-page probe returns — structural view of what the picker overlays need. */

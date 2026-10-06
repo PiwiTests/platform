@@ -4,7 +4,8 @@
  * hover and summary lines; this file starts it, draws the summary lines as
  * CodeLens and the latest run in the status bar, runs the commands those
  * lines name, keeps the API key in the secret store, hands Piwi's MCP
- * server to the editor's agent, and inserts what Piwi Picker sends.
+ * server to the editor's agent, inserts what Piwi Picker sends, and records
+ * tests (`recording.ts`).
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -14,6 +15,19 @@ import {
   type LanguageClientOptions,
   type ServerOptions,
 } from 'vscode-languageclient/node';
+import {
+  DESKTOP_JOB_NOTIFICATION,
+  DESKTOP_JOB_REQUEST,
+  PAGE_CANDIDATES_REQUEST,
+  SHARE_DESKTOP_JOB_REQUEST,
+  type DesktopJobParams,
+  type DesktopJobResult,
+  type DesktopJobUpdate,
+  type PageCandidatesParams,
+  type PageCandidatesResult,
+  type RenderStepsParams,
+  type ShareDesktopJobResult,
+} from '@piwitests/editor/protocol';
 import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
@@ -65,13 +79,16 @@ import {
 import {
   DOCUMENT_PATTERN,
   connectChoices,
+  desktopJobNotice,
   testDecorations,
   disconnectQuestion,
+  importInsertion,
   indentBlock,
   mcpConfiguration,
   sourceLabel,
   statusBarView,
 } from './glue';
+import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
@@ -102,6 +119,13 @@ type McpHttpServerDefinitionClass = new (label: string, uri: vscode.Uri, headers
 
 let client: LanguageClient | null = null;
 let sendListener: SendListener | null = null;
+let recording: Recording | null = null;
+
+/** The extension's API, which its integration suite reads: answers of the editor service. */
+export interface PiwiApi {
+  /** `piwi/pageCandidates`: the page expressions the steps written at a position could run on. */
+  pageCandidates(params: PageCandidatesParams): Promise<PageCandidatesResult>;
+}
 
 /**
  * The connection saved in the editor: the workspace's instance and project, that instance's key,
@@ -135,7 +159,7 @@ async function forgetSharedKey(context: vscode.ExtensionContext): Promise<void> 
   await context.globalState.update(SHARED_KEY_FORGOTTEN, true);
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(context: vscode.ExtensionContext): Promise<PiwiApi> {
   await forgetSharedKey(context);
   const serverModule = vscode.Uri.joinPath(context.extensionUri, 'dist', 'piwi-language-server.cjs').fsPath;
   const serverOptions: ServerOptions = {
@@ -462,32 +486,91 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     lc.onNotification(RUN_STATUS_NOTIFICATION, (runs: RunStatusResult) => void updateStatus(runs)),
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
   );
+  context.subscriptions.push(...registerDesktopJobs(lc));
+  recording = registerRecording(context, lc);
+  context.subscriptions.push(recording);
   await lc.start();
   await updateStatus();
+  return {
+    pageCandidates: (params) => lc.sendRequest<PageCandidatesResult>(PAGE_CANDIDATES_REQUEST, params),
+  };
 }
 
-/** Insert what Piwi Picker sent at the cursor of the active editor, or in a new editor when none is open. */
+/**
+ * Jobs passed to the desktop app: `piwi.desktopJob` (a quick fix on a failure from the team instance, or a flaky
+ * test's lens) sends one, each update of it shows as a notification, and its share button records the verdict on the
+ * instance.
+ */
+function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
+  const show = (severity: 'information' | 'warning', text: string, ...actions: string[]) =>
+    severity === 'warning'
+      ? vscode.window.showWarningMessage(text, ...actions)
+      : vscode.window.showInformationMessage(text, ...actions);
+  return [
+    vscode.commands.registerCommand('piwi.desktopJob', async (params: DesktopJobParams) => {
+      const result = await lc.sendRequest<DesktopJobResult>(DESKTOP_JOB_REQUEST, params);
+      void show(result.ok ? 'information' : 'warning', `Piwi: ${result.message}`);
+    }),
+    lc.onNotification(DESKTOP_JOB_NOTIFICATION, async (update: DesktopJobUpdate) => {
+      const notice = desktopJobNotice(update);
+      const picked = await show(notice.severity, notice.text, ...notice.actions);
+      if (!picked) return;
+      const shared = await lc.sendRequest<ShareDesktopJobResult>(SHARE_DESKTOP_JOB_REQUEST, { jobId: update.jobId });
+      const open = 'Open in the dashboard';
+      const next = await show(
+        shared.ok ? 'information' : 'warning',
+        `Piwi: ${shared.message}`,
+        ...(shared.url ? [open] : []),
+      );
+      if (next === open && shared.url) await vscode.env.openExternal(vscode.Uri.parse(shared.url));
+    }),
+  ];
+}
+
+/**
+ * Insert what Piwi Picker sent at the cursor of the active editor, or in a new editor when none is open. A recorded
+ * flow is rendered for the cursor's place, and the import lines it needs that the file lacks go after the file's
+ * imports, in the same edit.
+ */
 async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
   const active = vscode.window.activeTextEditor;
   let text: string;
+  let imports: string[] = [];
   if (payload.kind === 'locator') {
     text = payload.text;
   } else {
+    const caret = active?.selection.active;
     const rendered = await lc.sendRequest<RenderStepsResult>(RENDER_STEPS_REQUEST, {
       uri: active?.document.uri.toString() ?? '',
       steps: payload.steps,
-    });
+      line: caret?.line ?? null,
+      character: caret?.character ?? null,
+      imports: 'separate',
+    } satisfies RenderStepsParams);
     if (!rendered.code) throw new Error(rendered.warnings.join('; ') || 'nothing to insert');
     text = rendered.code;
+    imports = rendered.imports ?? [];
   }
   if (!active) {
-    const document = await vscode.workspace.openTextDocument({ language: 'typescript', content: text });
+    const content = imports.length ? `${imports.join('\n')}\n\n${text}` : text;
+    const document = await vscode.workspace.openTextDocument({ language: 'typescript', content });
     await vscode.window.showTextDocument(document);
     return { inserted: true, file: null };
   }
-  const line = active.document.lineAt(active.selection.active.line).text;
+  const { document, selection } = active;
+  const line = document.lineAt(selection.active.line).text;
   const indent = line.slice(0, line.length - line.trimStart().length);
-  const inserted = await active.edit((edit) => edit.replace(active.selection, indentBlock(text, indent)));
+  const lines = Array.from({ length: document.lineCount }, (_, i) => document.lineAt(i).text);
+  const insertion = importInsertion(lines, imports);
+  const inserted = await active.edit((edit) => {
+    if (insertion) {
+      const at = new vscode.Position(insertion.range.start.line, insertion.range.start.character);
+      // Inside the selection the code replaces, the imports go at the start of its first line.
+      const within = selection.start.isBefore(at) && at.isBefore(selection.end);
+      edit.insert(within ? new vscode.Position(selection.start.line, 0) : at, insertion.text);
+    }
+    edit.replace(selection, indentBlock(text, indent));
+  });
   if (inserted) {
     void vscode.window.showInformationMessage(
       payload.kind === 'locator'
@@ -778,6 +861,8 @@ function osName(): string {
 export async function deactivate(): Promise<void> {
   await sendListener?.close();
   sendListener = null;
+  await recording?.stopAll();
+  recording = null;
   await client?.stop();
   client = null;
 }

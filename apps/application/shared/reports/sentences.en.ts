@@ -1,11 +1,11 @@
-import type { AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
+import type { AnalyticsHandbacks, AnalyticsProgress, AnalyticsRisks, VerdictFacts } from '#shared/analytics/types';
 import { getMetric } from '#shared/analytics/metrics';
 import type { ProjectTargetVerdict } from '#shared/analytics/targets';
 import { EN_INSIGHTS, writeInsight } from '#shared/analytics/insight-rules';
 import type { GapClass } from '#shared/handlers/scenario-gaps';
 import { passRateDirection } from './verdict';
 import type { ValueFormatter } from './format';
-import type { ReportSentences, ReportTypography } from './sentences';
+import type { HandbackLine, ReportSentences, ReportTypography } from './sentences';
 
 const TYPOGRAPHY: ReportTypography = {
   locale: 'en-US',
@@ -99,6 +99,74 @@ function progress(p: AnalyticsProgress): string[] {
   return lines;
 }
 
+/** `(75%)`, or why there is no rate: none to judge, or fewer than the floor. */
+function rateText(part: number, whole: number, min: number, f: ValueFormatter, items: string): string {
+  if (whole === 0) return '';
+  if (whole < min) return ` (too few ${items} for a rate, ${whole} of the ${min} needed)`;
+  return ` (${f.value(Math.round((Math.min(part, whole) / whole) * 1000) / 10, 'percent', 0)})`;
+}
+
+function handbacks(d: AnalyticsHandbacks, f: ValueFormatter): HandbackLine[] {
+  const lines: HandbackLine[] = [];
+  const heals: string[] = [];
+  if (d.heals && (d.heals.suggested > 0 || d.heals.adopted > 0)) {
+    heals.push(
+      `${d.heals.adopted} ${plural(d.heals.adopted, 'call site now uses', 'call sites now use')} the recommended locator, of ${d.heals.suggested} suggested`,
+    );
+  }
+  const prs = d.healPullRequests;
+  if (prs && (prs.opened > 0 || prs.merged > 0 || prs.closed > 0)) {
+    const settled = prs.merged + prs.closed;
+    heals.push(
+      `${prs.merged} auto-heal pull ${plural(prs.merged, 'request', 'requests')} merged, ${prs.closed} closed${rateText(prs.merged, settled, d.minSample, f, 'closed pull requests')}`,
+    );
+  }
+  if (heals.length > 0) lines.push({ label: 'Locator heals', text: `${heals.join(' · ')}.` });
+
+  const dx = d.diagnoses;
+  if (dx && (dx.written > 0 || dx.diagnosedFixes > 0)) {
+    const parts = [`${dx.written} written`];
+    if (dx.rated > 0) {
+      parts.push(
+        `rated helpful ${dx.helpful} of ${dx.rated}${rateText(dx.helpful, dx.rated, d.minSample, f, 'ratings')}`,
+      );
+    }
+    if (dx.diagnosedFixes > 0) {
+      parts.push(
+        `the fix touched the diagnosed files in ${Math.min(dx.verified, dx.diagnosedFixes)} of ${dx.diagnosedFixes} fixed ${plural(dx.diagnosedFixes, 'cause', 'causes')}${rateText(dx.verified, dx.diagnosedFixes, d.minSample, f, 'fixes')}`,
+      );
+    }
+    if (dx.regressed > 0) parts.push(`${dx.regressed} failed again after the fix`);
+    lines.push({ label: 'AI diagnoses', text: `${parts.join(' · ')}.` });
+  }
+
+  const g = d.gate;
+  if (g && (g.blocked > 0 || g.overrides > 0 || g.escapes > 0)) {
+    const parts = [`blocked ${g.blocked} ${plural(g.blocked, 'merge', 'merges')}`];
+    if (g.overrides > 0 || g.escapes > 0) {
+      const escaped = g.escapes > 0 ? `, ${g.escapes} then failed again on the default branch` : '';
+      parts.push(`${g.overrides} merged anyway${escaped}`);
+    }
+    lines.push({ label: 'CI gate', text: `${parts.join(' · ')}.` });
+  }
+
+  const fl = d.flakes;
+  if (fl && (fl.verified > 0 || fl.regressed > 0)) {
+    const again = fl.regressed > 0 ? ` · ${fl.regressed} flaked again` : '';
+    lines.push({ label: 'Flaky tests', text: `${fl.verified} verified fixed with Flake Lab${again}.` });
+  }
+
+  const fx = d.fixAttempts;
+  if (fx && (fx.reported > 0 || fx.verified > 0 || fx.regressed > 0)) {
+    const again = fx.regressed > 0 ? ` · ${fx.regressed} failed again` : '';
+    lines.push({
+      label: 'Fix attempts',
+      text: `${fx.reported} reported · ${fx.verified} confirmed by the fix${again}.`,
+    });
+  }
+  return lines;
+}
+
 function target(v: ProjectTargetVerdict, f: ValueFormatter): string {
   const def = getMetric(v.metric);
   const goal = `${v.direction === 'min' ? 'at least' : 'at most'} ${f.value(v.target, def.unit, def.precision)}`;
@@ -184,6 +252,7 @@ export const EN_SENTENCES: ReportSentences = {
   },
   verdict,
   progress,
+  handbacks,
   risks,
   target,
   tileTarget: (mark, value) => {

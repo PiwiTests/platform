@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Hide a cluster from every inbox queue until a deadline passes (1 day / 1 week) or, in "until it recurs" mode, until a new run adds an occurrence. Snooze never changes status. Send `{ "snooze": null }` to unsnooze.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 

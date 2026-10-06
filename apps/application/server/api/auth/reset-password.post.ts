@@ -12,7 +12,6 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Reset password using token',
     description: 'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions.',
-    'x-required-roles': [],
     security: [],
   },
 });

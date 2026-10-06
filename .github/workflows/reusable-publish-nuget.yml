@@ -1,0 +1,48 @@
+name: Publish NuGet packages
+
+# Packs every packable project of the instrumentation solution (the test project
+# is not) at the one version release-please stamps on all of them, and keeps the
+# packages as the run's artifact. On a release tag it pushes them to nuget.org;
+# a run against a tag skips the packages already there. release.yml calls it.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  TAG_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  publish:
+    name: NuGet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.x'
+
+      - name: Pack
+        run: dotnet pack integrations/aspnetcore/PiwiTests.Instrumentation.slnx -c Release -o ./nupkg
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: nupkg/*.nupkg
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Push to nuget.org
+        if: env.TAG_BUILD == 'true'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

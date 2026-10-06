@@ -225,7 +225,7 @@ describe('loadDetectorPrecision — durable, per-gap verdicts (F9)', () => {
 
 describe('triageGap records the actor (F4)', () => {
   test('the triaging user id is stored on the gap', async () => {
-    await db.insert(schema.users).values({ id: 5, username: 'reporter5', password: '', role: 'reporter', name: 'A' });
+    await db.insert(schema.users).values({ id: 5, username: 'reporter5', password: '', role: 'member', name: 'A' });
     await gaps.upsertScenarioGaps(
       db,
       1,

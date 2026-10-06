@@ -10,6 +10,7 @@ import type { WireResourceFinding, WireResourceReport } from '#shared/types';
 import { findingView, formatCpuTime, formatSize } from '#shared/resource-copy';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import { machineFacts, machineHead, resourceTotals } from '~/utils/resources';
+import { ALL_RESOURCE_TRACKS, type ResourceTrackVisibility } from '~/utils/resource-tracks';
 
 const props = defineProps<{
   runId: number;
@@ -19,6 +20,8 @@ const props = defineProps<{
   /** Increments when the run finishes so the tab refetches. */
   refreshKey?: number;
 }>();
+
+const emit = defineEmits<{ openTimeline: [] }>();
 
 const data = ref<RunResources | null>(null);
 const loading = ref(false);
@@ -78,23 +81,22 @@ function splitWhere(where: string, site: string | null): { before: string; site:
   return { before: where.slice(0, at), site, after: where.slice(at + site.length) };
 }
 
-const workerRows = computed(() =>
-  parts.value.flatMap((part) =>
-    part.workers.map((worker) => ({
-      key: `${part.shardIndex ?? 0}-${worker.worker}`,
-      label: sharded.value ? `Shard ${part.shardIndex ?? '?'} · worker ${worker.worker}` : `Worker ${worker.worker}`,
-      points: worker.openPages,
-      max: Math.max(0, ...worker.openPages),
-      last: worker.openPages[worker.openPages.length - 1] ?? 0,
-    })),
-  ),
-);
-/** The scale every worker's bars share, so two workers compare at a glance. */
-const workerScale = computed(() => Math.max(1, ...workerRows.value.map((row) => row.max)));
+/** Whether the run has open pages over time for the timeline to draw. */
+const pagesOnTimeline = computed(() => parts.value.some((part) => (part.timeline?.pages?.length ?? 0) > 0));
 
-/** A bar's height, in percent of the row, on the scale every worker shares. */
-function barHeight(value: number): string {
-  return `${Math.round((value / workerScale.value) * 100)}%`;
+// The timeline's pages track, the same per-browser preference its Resources menu writes.
+const trackVisibility = useLocalStorage<ResourceTrackVisibility>(
+  'piwi-timeline-resource-tracks',
+  { ...ALL_RESOURCE_TRACKS },
+  // Synchronous, so showing the track lands before the tab switch unmounts this component.
+  { initOnMounted: true, mergeDefaults: true, writeDefaults: false, flush: 'sync' },
+);
+const pagesShown = computed(() => trackVisibility.value.pages !== false);
+
+function togglePagesOnTimeline(): void {
+  const show = !pagesShown.value;
+  trackVisibility.value = { ...trackVisibility.value, pages: show };
+  if (show) emit('openTimeline');
 }
 
 function cpuPath(series: number[], plotWidth: number, yScale: (v: number) => number): string {
@@ -212,32 +214,22 @@ const costliest = computed(() => data.value?.costliest ?? []);
         </p>
       </SectionCard>
 
-      <!-- Open pages, worker by worker -->
+      <!-- Open pages over time -->
       <SectionCard
-        v-if="workerRows.length > 0"
-        title="Open pages by worker"
-        subtitle="Pages still open at the end of each test, in the order the worker ran them"
+        v-if="pagesOnTimeline"
+        title="Open pages over time"
+        subtitle="Each worker's pages are drawn on the timeline, above its row"
         help="run.resource-pages"
         data-shot="run-resources-pages"
       >
-        <ul class="space-y-1.5">
-          <li v-for="row in workerRows" :key="row.key" class="flex items-center gap-3 min-w-0">
-            <span class="text-xs text-muted w-24 sm:w-40 shrink-0 truncate" :title="row.label">{{ row.label }}</span>
-            <div
-              class="flex items-end gap-px h-6 flex-1 min-w-0"
-              role="img"
-              :aria-label="`${row.label}: at most ${row.max} open pages, ${row.last} after its last test`"
-            >
-              <span
-                v-for="(value, i) in row.points"
-                :key="i"
-                class="flex-1 max-w-2 min-h-px rounded-t-sm bg-gray-400 dark:bg-gray-500"
-                :style="{ height: barHeight(value) }"
-              />
-            </div>
-            <span class="text-xs text-muted w-16 text-right tabular-nums shrink-0">max {{ row.max }}</span>
-          </li>
-        </ul>
+        <div class="flex flex-wrap items-center gap-3">
+          <p class="text-sm text-highlighted leading-relaxed flex-1 min-w-40">
+            A line that climbs test after test is a page left open; a clean worker stays flat.
+          </p>
+          <UButton size="sm" color="neutral" variant="outline" @click="togglePagesOnTimeline">
+            {{ pagesShown ? 'Hide on the timeline' : 'Show on the timeline' }}
+          </UButton>
+        </div>
       </SectionCard>
 
       <!-- The machine each reporter ran on -->

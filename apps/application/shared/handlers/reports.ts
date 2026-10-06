@@ -37,7 +37,6 @@ import {
   type BuiltinDashboardKey,
   type DashboardDefinition,
 } from '../analytics/dashboards';
-import { Role } from '../types';
 import { DashboardError, loadDashboardDefinition, type DashboardActor } from './dashboards';
 import type { ComparisonSpec } from '../analytics/period';
 import { collectReportBundle, type ReportDashboard } from '../reports/collect';
@@ -441,9 +440,9 @@ export interface ScheduleWriteContext {
   now?: number;
 }
 
-/** The dashboard actor a schedule's actor stands for: what saved dashboards it may open. */
+/** The dashboard actor a schedule's actor stands for: what saved dashboards it may open, which needs no right to share. */
 function dashboardActorOf(actor: ReportActor): DashboardActor {
-  return { id: actor.id, role: actor.isAdmin ? Role.ADMINISTRATOR : Role.REPORTER, authEnabled: actor.authEnabled };
+  return { id: actor.id, authEnabled: actor.authEnabled, isAdmin: actor.isAdmin, canShare: actor.isAdmin };
 }
 
 /** The dashboard a schedule renders: a built-in key, or a saved dashboard the actor may open. */

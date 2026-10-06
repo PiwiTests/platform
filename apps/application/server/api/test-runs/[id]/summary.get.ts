@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       'Returns a lightweight summary of a test run including run metadata and its test cases with titles, statuses, durations, and locations.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

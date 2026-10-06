@@ -1,8 +1,6 @@
-import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
-import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { requireResolvedProjectAccess, requireRouteId, resolveRunProjectId } from '../../../utils/project-access';
-import { computeRegressionSignals } from '../../../utils/compute-regression-signals';
+import { decideRunIncident } from '../../../utils/run-incident-decision';
 
 defineRouteMeta({
   openAPI: {
@@ -11,7 +9,7 @@ defineRouteMeta({
     description:
       "A run flagged as an environment incident (its failures come from the environment under test being down, not from the tests or the code) is left out of baselines, fix verification, flaky scores, the selection catalog and auto-heal, and the gate answers `inconclusive` for it. `incident: true` marks the run, with an optional `reason`, and adds its incident marker; `incident: false` clears the flag and removes the marker Piwi added. The decision is kept on the run, so finalizing it again never overrides it. Returns the run's `incident` (`metadata.incident`, or null) and the `review` (`metadata.incidentReview`: who decided and when).",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
     requestBody: {
       content: {
         'application/json': {
@@ -42,14 +40,7 @@ export default eventHandler(async (event) => {
 
   const by = user.id ? user.name || user.username : null;
   try {
-    const state = await setRunIncident(db, id, { ...input, by });
-    // A run flagged at finalize skipped its regression signals; a cleared one counts again.
-    if (!input.incident) {
-      computeRegressionSignals(db, id)
-        .then(() => upsertDailyRollup(db, id))
-        .catch((e) => console.error('[run-health] recomputing a cleared run failed', e));
-    }
-    return state;
+    return await decideRunIncident(db, id, input, by);
   } catch (err: any) {
     if (err?.message === 'Test run not found') throw apiError({ statusCode: 404, message: 'Test run not found' });
     throw err;

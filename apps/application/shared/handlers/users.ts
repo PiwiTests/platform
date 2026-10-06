@@ -1,29 +1,7 @@
-import { users, apiKeys, scenarioGaps, testRuns } from '../../server/database/schema';
+import { users, apiKeys, scenarioGaps, testRuns, roleBindings, groupMembers } from '../../server/database/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
-
-type UserRow = typeof users.$inferSelect;
-
-/**
- * Public projection of a user row — the shape returned to clients by the list,
- * create, and update endpoints. Drops the password hash and OAuth provider id;
- * mirrors the columns `listUsers` selects so every user-returning endpoint
- * speaks the same shape.
- */
-export function toPublicUser(user: UserRow) {
-  return {
-    id: user.id,
-    username: user.username,
-    role: user.role,
-    name: user.name,
-    email: user.email,
-    emailVerified: user.emailVerified,
-    oauthProvider: user.oauthProvider,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
-  };
-}
 
 export async function listUsers(db: DrizzleDB) {
   const allUsers = await db
@@ -77,6 +55,9 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // schema's ON DELETE SET NULL on SQLite — clear it by hand or the delete
   // fails the FK check.
   await db.update(scenarioGaps).set({ triagedBy: null }).where(eq(scenarioGaps.triagedBy, id));
+  // Deleted explicitly rather than through the foreign keys' cascade, which the demo's database does not enforce.
+  await db.delete(roleBindings).where(eq(roleBindings.userId, id));
+  await db.delete(groupMembers).where(eq(groupMembers.userId, id));
   await db.delete(users).where(eq(users.id, id));
   return { success: true };
 }

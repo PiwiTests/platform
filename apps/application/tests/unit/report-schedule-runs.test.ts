@@ -35,7 +35,7 @@ beforeAll(async () => {
   ]);
   await db.insert(schema.users).values([
     { id: 10, username: 'admin', password: '', email: 'admin@example.test', role: 'administrator' },
-    { id: 11, username: 'reporter', password: '', email: 'reporter@example.test', role: 'reporter' },
+    { id: 11, username: 'reporter', password: '', email: 'reporter@example.test', role: 'member' },
   ]);
   await db.insert(schema.notificationChannels).values([
     { id: 1, name: 'Team mail', type: 'email', config: { address: 'team@example.test' }, userId: null },

@@ -60,6 +60,20 @@ export class StreamManager {
   private heartbeatStopped = false;
   private lastActivityAt = 0;
   private readonly heartbeatInterval = 15000;
+  /**
+   * The heartbeat interval while nobody watches the run: during a long test no
+   * other request goes out, so the heartbeat's answer is how the reporter learns
+   * that someone opened the run.
+   */
+  private readonly unwatchedHeartbeatInterval = 5000;
+  /**
+   * Whether anyone has the run open live on the dashboard, from the `watched`
+   * flag of the last answer to an events or heartbeat request; `null` until the
+   * dashboard says, and for a dashboard that does not. Step events are live
+   * progress only (each `complete` event carries its test's steps), so none are
+   * queued while it is `false`.
+   */
+  private watched: boolean | null = null;
   /** Tracks cases whose files have already been uploaded live, so `uploadRemaining` can skip them. */
   private readonly uploadedCaseFiles = new WeakSet<CollectedTestCase>();
   /** Set when a test-result event left the live stream undelivered: too large to send, or still queued when the drain gave up. */
@@ -288,8 +302,13 @@ export class StreamManager {
     }
   }
 
-  /** Queue a test-case event. Triggers an immediate flush when the batch size is reached, otherwise schedules a timer-based flush. */
+  /**
+   * Queue a test-case event. Triggers an immediate flush when the batch size is
+   * reached, otherwise schedules a timer-based flush. A step event is dropped
+   * while nobody watches the run.
+   */
   queueEvent(event: StreamEvent): void {
+    if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) return;
     this.pendingEvents.enqueue(event);
 
     if (this.pendingEvents.length >= this.options.streamingBatchSize!) {
@@ -323,11 +342,12 @@ export class StreamManager {
     while (chunks.length > 0) {
       const chunk = chunks.shift()!;
       try {
-        await this.httpClient.postJSON(
+        const response = await this.httpClient.postJSON(
           `/api/test-runs/${this._runId}/events`,
           { streamToken: this._token, testCases: chunk },
           this._auth,
         );
+        this.noteWatched(response);
         this.retryCount = 0;
         this.lastActivityAt = Date.now();
       } catch (error) {
@@ -406,13 +426,33 @@ export class StreamManager {
     }, delay);
   }
 
+  // Take the dashboard's answer on whether anyone watches the run. An answer
+  // without the flag (an older dashboard) keeps step events flowing.
+  private noteWatched(response: unknown): void {
+    const watched = (response as { watched?: unknown } | null | undefined)?.watched;
+    const next = typeof watched === 'boolean' ? watched : null;
+    if (next !== null && next !== this.watched) {
+      this.logger.debug(
+        next
+          ? 'The run is open on the dashboard: streaming live steps.'
+          : 'Nobody is watching the run: live steps are not sent.',
+      );
+    }
+    this.watched = next;
+  }
+
+  // Idle time after which a heartbeat goes out.
+  private heartbeatDelay(): number {
+    return this.watched === false ? this.unwatchedHeartbeatInterval : this.heartbeatInterval;
+  }
+
   // Schedule the next idle heartbeat. Self-rescheduling; cleared by stopHeartbeat.
   private scheduleHeartbeat(): void {
     if (this.heartbeatStopped || this.heartbeatTimer) return;
     this.heartbeatTimer = setTimeout(() => {
       this.heartbeatTimer = null;
       void this.sendHeartbeat();
-    }, this.heartbeatInterval);
+    }, this.heartbeatDelay());
   }
 
   // Ping the server only when the run has actually been idle. Real event traffic
@@ -422,17 +462,18 @@ export class StreamManager {
     if (this.heartbeatStopped || !this._enabled || !this._runId || !this._token) return;
 
     const idleFor = Date.now() - this.lastActivityAt;
-    if (idleFor < this.heartbeatInterval || this.pendingEvents.length > 0) {
+    if (idleFor < this.heartbeatDelay() || this.pendingEvents.length > 0) {
       this.scheduleHeartbeat();
       return;
     }
 
     try {
-      await this.httpClient.postJSON(
+      const response = await this.httpClient.postJSON(
         `/api/test-runs/${this._runId}/heartbeat`,
         { streamToken: this._token },
         this._auth,
       );
+      this.noteWatched(response);
       this.lastActivityAt = Date.now();
     } catch (error) {
       this.logger.debug(`Heartbeat failed: ${errorMessage(error)}`);

@@ -28,7 +28,9 @@ tests behind each locator, the heal as a quick fix — install the
 With the [Piwi plugin](./editors#jetbrains-ides) installed in Rider, WebStorm,
 IntelliJ IDEA Ultimate or another JetBrains IDE (from **Settings → Plugins**, or
 **[the JetBrains Marketplace ↗](https://plugins.jetbrains.com/plugin/34674-piwi)**),
-clicking a path opens it there with **nothing to set up**:
+clicking a path opens it there with **nothing to set up** once the project is
+connected to the instance the dashboard belongs to (the reporter's `PIWI_*`
+variables, **Settings → Tools → Piwi** or the desktop app):
 
 - The dashboard asks every JetBrains IDE running, on its built-in server
   (ports 63342 to 63361: a second IDE running takes the next free port). The IDE
@@ -47,9 +49,14 @@ clicking a path opens it there with **nothing to set up**:
   you set wins; when several projects do, the one connected to the same Piwi
   project wins.
 
-When the dashboard is served from another address than `localhost` (a shared
-instance), the IDE asks once whether to trust that address, and keeps the answer
-for a day; the first click may not open the file while the question is shown.
+The IDE answers only a page of the Piwi instance one of its open projects is
+connected to (**Settings → Tools → Piwi**, or `PIWI_DASHBOARD_URL` in the
+environment or the workspace `.env`), or of the [desktop app](./desktop.md)
+running on the same machine; an instance's page finds files only in the projects
+connected to it. A page from any other address, another page on your machine
+included, gets no answer whatever the IDE's built-in server settings allow, and
+the first address refused in an IDE session is named in a notification. When the dashboard you use is the project's instance under another
+address, connect the project to that address.
 
 ## Set it up
 
@@ -69,7 +76,7 @@ for a day; the first click may not open the file while the question is shown.
 |--------|--------------|-------|
 | **VS Code** | `vscode://file/<abs-path>:<line>` URL scheme | A workspace root (for the absolute path). Flavors: VS Code, Insiders, VSCodium, Cursor. |
 | **JetBrains (URL)** | The Piwi plugin, then `jetbrains://<product>/navigate/reference?project=<name>&path=<rel>:<line>` | Without the plugin: [JetBrains Toolbox](https://www.jetbrains.com/toolbox-app/), the IDE product tag (e.g. `idea`, `rider`) and the open project name (in Rider, the solution's name). |
-| **JetBrains (local server)** | The Piwi plugin, then `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled. It cannot confirm the file opened. |
+| **JetBrains (local server)** | The Piwi plugin, then `http://localhost:63342/api/file/<path>:<line>` | Without the plugin: the IDE running with the **[IDE Remote Control](https://plugins.jetbrains.com/plugin/19991-ide-remote-control)** plugin and **Settings → Build → Debugger → "Allow unsigned requests"** enabled, which lets any page reach the IDE's local server. It cannot confirm the file opened. |
 | **Auto** | The Piwi plugin, then the other methods in turn (see below) | Whatever the method that answers needs. |
 
 ### Desktop app — direct launch (most reliable)

@@ -1,4 +1,3 @@
-import { Role } from '#shared/types';
 import { getDatabase } from '../../../../../database';
 import { requireProjectAccess, requireRouteId } from '../../../../../utils/project-access';
 import { gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
@@ -8,19 +7,19 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Triage a scenario gap',
     description:
-      'Applies an inbox verb to a gap: `accept` (queues its draft), `snooze` (1-day / 1-week / until the node changes), `dismiss` with a reason (`not-worth-testing`, `covered-elsewhere` — which records a covering test as a manual reaches edge — or `wrong`), or `covered-by` (closes the gap for good and records a covering test as a manual reaches edge). A verdict mutes detectors and closes gaps, so it is reporter/admin only — never the read-only `user` role.',
+      'Applies an inbox verb to a gap: `accept` (queues its draft), `snooze` (1-day / 1-week / until the node changes), `dismiss` with a reason (`not-worth-testing`, `covered-elsewhere` — which records a covering test as a manual reaches edge — or `wrong`), or `covered-by` (closes the gap for good and records a covering test as a manual reaches edge). A verdict mutes detectors and closes gaps, so it requires `triage:write` (Maintainer and above on the project).',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'gapId', in: 'path', required: true, schema: { type: 'integer' } },
     ],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'triage:write',
   },
 });
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
   const gapId = requireRouteId(event, 'gapId', 'gap ID');
-  const user = await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  const user = await requireProjectAccess(event, projectId);
   const db = await getDatabase();
 
   const validation = gapTriageSchema.safeParse(await readBody(event));

@@ -7,7 +7,7 @@ defineRouteMeta({
     summary: 'List share links for a failure cluster',
     description: 'Returns the share links minted for this cluster — prefixes and lifecycle only, never the tokens.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

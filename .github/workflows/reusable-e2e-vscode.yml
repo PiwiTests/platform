@@ -1,0 +1,28 @@
+name: VS Code E2E
+
+# Drives the built VS Code extension in a real VS Code (downloaded by
+# @vscode/test-electron) under Xvfb, on a fixture repository against a stub
+# instance. ci.yml calls it on pull requests that change the extension, the
+# editor service or the core package, and it runs on demand.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up the workspace
+        uses: ./.github/actions/setup-workspace
+
+      - name: Run the integration suite
+        working-directory: apps/vscode
+        run: xvfb-run -a npm run vscode:test:integration

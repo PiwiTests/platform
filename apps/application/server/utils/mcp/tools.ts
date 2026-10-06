@@ -32,12 +32,21 @@ import {
   latestSuspectResults,
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
+import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { AGENT_DIAGNOSIS_ERRORS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { parseFixAttempt } from '#shared/fix-attempts';
+import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
+import { clusterTrailerLine } from '#shared/commit-trailers';
+import { parseSetRunIncident } from '#shared/run-incident';
+import { recordAgentDiagnosisOnCluster } from '../agent-diagnosis';
+import { decideRunIncident } from '../run-incident-decision';
 import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
 import {
   getFailureCluster,
   getClusterDiagnosis,
   patchClusterStatus,
   patchClusterBaseCommit,
+  recordClusterBisect,
   getOpenFailureClusters,
   bulkTriageClusters,
   quarantineClusterTests,
@@ -99,12 +108,14 @@ import { assertDashboardScope } from '#shared/reports/request';
 import { REPORT_LANGUAGES, isReportLanguage } from '#shared/reports/languages';
 import { isBuiltinDashboardKey } from '#shared/analytics/dashboards';
 import { getMetric, isMetricId, type MetricId } from '#shared/analytics/metrics';
+import { resolveInstanceStates } from '#shared/handlers/setup-status';
 import { WIDGET_METRIC_IDS } from '#shared/analytics/registry';
 import { analyticsScopeToQuery, parseAnalyticsScope } from '#shared/analytics/scope';
 import { applyWidgetScope } from '#shared/analytics/dashboards';
 import {
   DashboardError,
   dashboardScopeWith,
+  dashboardActorFor,
   getDashboard,
   listDashboards,
   loadDashboardDefinition,
@@ -139,6 +150,8 @@ import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
+import { dismissQuarantineProposal } from '#shared/handlers/quarantine';
+import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
 import { runClusterDiagnosis, isDiagnosisRunning } from '../ai-diagnosis';
@@ -165,7 +178,16 @@ import {
 import type { ProjectScope } from '../project-access';
 import type { HandbackActor } from '#shared/handback-outcomes';
 import type { User } from '../../database/schema';
-import { Role } from '#shared/types';
+import {
+  PROJECT_ROLE_LABELS,
+  can,
+  holdsAnywhere,
+  isProjectPermission,
+  rolesGranting,
+  type AccessSummary,
+  type Permission,
+  type ProjectPermission,
+} from '#shared/permissions';
 import type { DbClient } from '../../database';
 import { stat, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, basename } from 'node:path';
@@ -247,20 +269,27 @@ function numericCursor(raw: unknown): number | undefined {
   return n;
 }
 
-// ── Authorization scope ──────────────────────────────────────────────────────
+// ── Authorization ────────────────────────────────────────────────────────────
 //
-// The dispatcher resolves the caller's project scope once and passes it in.
-// Every project- or entity-scoped tool checks it so a non-admin key can only
-// read the projects it is assigned to (mirrors the REST project-access layer).
+// The dispatcher loads the caller's access and project scope once per request
+// and passes them in. Every project- or entity-scoped tool checks the scope, so
+// a key reads only the projects its owner holds a role on, and every write tool
+// checks, on the project it acts on, the permission its REST twin declares
+// (mirrors the REST project-access layer).
 
 export interface McpContext {
   user: User | null;
+  /** The caller's instance role and project roles; every permission with authentication off (`ADMIN_ACCESS`). */
+  access: AccessSummary;
+  /** The projects the caller reads (`project:read`). */
   scope: ProjectScope;
+  /** The API key the request was made with; null for a session or with authentication off. */
+  apiKeyId?: number | null;
 }
 
 /** The caller of a write tool, as the reporter of a hand-back outcome. */
 function mcpActor(ctx: McpContext): HandbackActor {
-  return { channel: 'mcp', userId: ctx.user?.id ?? null };
+  return { channel: 'mcp', userId: ctx.user?.id ?? null, apiKeyId: ctx.apiKeyId ?? null };
 }
 
 /** Throw if the caller's scope does not include this project. */
@@ -272,27 +301,43 @@ function assertProject(ctx: McpContext, projectId: number): void {
 
 /**
  * Resolve an entity's owning project, returning 'not-found' when it doesn't
- * exist (handlers map that to null) and throwing when it's out of scope.
+ * exist (handlers map that to null) and throwing when it's out of scope, or
+ * when the caller lacks `permission` there (a write tool's permission).
  */
 async function checkEntityScope(
   db: DbClient,
   ctx: McpContext,
   id: number,
   resolve: (db: DbClient, id: number) => Promise<number | null>,
+  permission?: ProjectPermission,
 ): Promise<'ok' | 'not-found'> {
   const projectId = await resolve(db, id);
   if (projectId == null) return 'not-found';
   assertProject(ctx, projectId);
+  if (permission) assertPermission(ctx, permission, projectId);
   return 'ok';
 }
 
-/** Roles allowed to invoke write/triage tools. */
-function assertWriteRole(ctx: McpContext): void {
-  // Auth off → virtual admin (user is a synthetic admin); allow.
-  const role = ctx.user?.role as Role | undefined;
-  if (role && role !== Role.ADMINISTRATOR && role !== Role.REPORTER) {
-    throw new Error('This action requires reporter or administrator access');
+/** The refusal naming a missing permission and who holds it, so the agent can tell its user what to ask for. */
+function permissionRefusal(permission: Permission, projectId?: number): string {
+  const where = projectId === undefined ? '' : ` on project ${projectId}`;
+  let holders = 'administrators only';
+  if (isProjectPermission(permission)) {
+    const labels = rolesGranting(permission).map((role) => PROJECT_ROLE_LABELS[role]);
+    const last = labels.pop();
+    holders = labels.length ? `held by the ${labels.join(', ')} and ${last} roles` : `held by the ${last} role`;
   }
+  return `This action requires the ${permission} permission${where} (${holders})`;
+}
+
+/**
+ * Throw unless the caller holds `permission` on `projectId`, as `can` decides:
+ * a write tool checks the permission its REST twin declares on the project it
+ * acts on, and an instance permission (no project) needs an administrator.
+ * Reading a project is not enough to write to it.
+ */
+export function assertPermission(ctx: McpContext, permission: Permission, projectId?: number): void {
+  if (!can(ctx.access, permission, projectId)) throw new Error(permissionRefusal(permission, projectId));
 }
 
 // ── Tool definition type ─────────────────────────────────────────────────────
@@ -1834,7 +1879,6 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   },
 
   async create_issue(db, params, ctx) {
-    assertWriteRole(ctx);
     const entityType = String(params.entityType ?? '') as DraftEntityType;
     if (entityType !== 'failure_cluster' && entityType !== 'test_runs_case' && entityType !== 'bug_report') {
       throw new Error('entityType must be failure_cluster, test_runs_case or bug_report');
@@ -1843,6 +1887,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
+    assertPermission(ctx, 'issue:create', projectId);
 
     const include = {
       includeDiagnosis: params.includeDiagnosis === undefined ? undefined : Boolean(params.includeDiagnosis),
@@ -2155,9 +2200,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── get_instance_stats ─────────────────────────────────────────────────────
   async get_instance_stats(db, _params, ctx) {
-    if ((ctx.user?.role as Role) !== Role.ADMINISTRATOR) {
-      throw new Error('This action requires administrator access');
-    }
+    assertPermission(ctx, 'storage:manage');
     return getAdminStats(db);
   },
 
@@ -2238,9 +2281,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── set_cluster_status ─────────────────────────────────────────────────────
   async set_cluster_status(db, params, ctx) {
-    assertWriteRole(ctx);
     const id = numericParam(params.clusterId, 'clusterId');
-    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'triage:write')) === 'not-found') return null;
     const status = String(params.status ?? '');
     if (!['open', 'resolved', 'ignored'].includes(status)) {
       throw new Error('status must be one of: open, resolved, ignored');
@@ -2253,9 +2295,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── set_cluster_base_commit ────────────────────────────────────────────────
   async set_cluster_base_commit(db, params, ctx) {
-    assertWriteRole(ctx);
     const id = numericParam(params.clusterId, 'clusterId');
-    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'triage:write')) === 'not-found') return null;
     const commit = typeof params.commit === 'string' ? params.commit.trim() : null;
     const result = await patchClusterBaseCommit(db, id, commit);
     if (!result) return null;
@@ -2264,7 +2305,6 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── submit_diagnosis_feedback ──────────────────────────────────────────────
   async submit_diagnosis_feedback(db, params, ctx) {
-    assertWriteRole(ctx);
     const id = numericParam(params.diagnosisId, 'diagnosisId');
     const feedback = params.feedback == null ? null : String(params.feedback);
     if (feedback !== null && feedback !== 'up' && feedback !== 'down') {
@@ -2278,7 +2318,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!existing) return null;
     // Resolve via the diagnosis itself — cluster-scoped rows resolve through their
     // cluster, execution-scoped rows (null cluster) through their run.
-    if ((await checkEntityScope(db, ctx, existing.id, resolveDiagnosisProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, existing.id, resolveDiagnosisProjectId, 'project:read')) === 'not-found') {
+      return null;
+    }
     const note = typeof params.feedbackNote === 'string' ? params.feedbackNote.trim() || null : null;
     await db
       .update(failureDiagnoses)
@@ -2289,9 +2331,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── run_cluster_diagnosis ──────────────────────────────────────────────────
   async run_cluster_diagnosis(db, params, ctx) {
-    assertWriteRole(ctx);
     const id = numericParam(params.clusterId, 'clusterId');
-    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'ai:run')) === 'not-found') return null;
     if (isDiagnosisRunning(id)) throw new Error('Diagnosis is already running for this cluster');
 
     const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
@@ -2331,7 +2372,6 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── triage_cluster ─────────────────────────────────────────────────────────
   async triage_cluster(db, params, ctx) {
-    assertWriteRole(ctx);
     const ids = parseBulkIds(params.clusterIds);
     if (!ids) {
       throw new Error(`clusterIds must be a non-empty array of positive integers (max ${BULK_TRIAGE_MAX})`);
@@ -2385,12 +2425,21 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error('action must be one of: status, assign, snooze, quarantine, release');
     }
 
-    // Like the bulk REST route, act only on the clusters this key may write.
+    // Like the bulk REST route: refused when the caller holds the action's
+    // permission on no project, else applied only to the clusters of the
+    // projects where they hold it.
+    const permission: ProjectPermission =
+      action === 'quarantine' || action === 'release' ? 'quarantine:write' : 'triage:write';
+    if (!holdsAnywhere(ctx.access, permission)) throw new Error(permissionRefusal(permission));
     const rows = await db
       .select({ id: failureClusters.id, projectId: failureClusters.projectId })
       .from(failureClusters)
       .where(inArray(failureClusters.id, ids));
-    const allowed = new Set(rows.filter((r) => scopeAllows(ctx.scope, r.projectId)).map((r) => r.id));
+    const allowed = new Set(
+      rows
+        .filter((r) => scopeAllows(ctx.scope, r.projectId) && can(ctx.access, permission, r.projectId))
+        .map((r) => r.id),
+    );
     const result = await apply([...allowed]);
     return dropNulls({
       action,
@@ -2405,7 +2454,6 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── triage_gap ─────────────────────────────────────────────────────────────
   async triage_gap(db, params, ctx) {
-    assertWriteRole(ctx);
     const projectId = numericParam(params.projectId, 'projectId');
     const gapId = numericParam(params.gapId, 'gapId');
     const validation = gapTriageSchema.safeParse(params);
@@ -2413,6 +2461,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
     }
     assertProject(ctx, projectId);
+    assertPermission(ctx, 'triage:write', projectId);
     // The auth-disabled administrator is user 0, which no row references.
     const result = await triageGap(db, projectId, gapId, { ...validation.data, triagedByUserId: ctx.user?.id || null });
     if ('error' in result) {
@@ -2424,7 +2473,6 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── decide_merge_suggestion ────────────────────────────────────────────────
   async decide_merge_suggestion(db, params, ctx) {
-    assertWriteRole(ctx);
     const decision = String(params.decision ?? '');
     if (decision !== 'approve' && decision !== 'reject') throw new Error('decision must be approve or reject');
     let suggestionId: number;
@@ -2432,7 +2480,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       suggestionId = numericParam(params.suggestionId, 'suggestionId');
     } else if (params.clusterId != null) {
       const clusterId = numericParam(params.clusterId, 'clusterId');
-      if ((await checkEntityScope(db, ctx, clusterId, resolveClusterProjectId)) === 'not-found') return null;
+      if ((await checkEntityScope(db, ctx, clusterId, resolveClusterProjectId, 'triage:write')) === 'not-found') {
+        return null;
+      }
       const pending = await pendingSuggestionsForCluster(db, clusterId);
       if (pending.length === 0) throw new Error(`Cluster ${clusterId} has no pending merge suggestion`);
       if (pending.length > 1) {
@@ -2445,7 +2495,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     } else {
       throw new Error('Pass clusterId or suggestionId');
     }
-    if ((await checkEntityScope(db, ctx, suggestionId, getSuggestionProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, suggestionId, getSuggestionProjectId, 'triage:write')) === 'not-found') {
+      return null;
+    }
 
     if (decision === 'approve') {
       const merged = await approveSuggestedMerge(db, suggestionId, mcpActor(ctx));
@@ -2456,15 +2508,37 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     return { suggestionId, decision, ok: true };
   },
 
+  // ── dismiss_quarantine_proposal ────────────────────────────────────────────
+  async dismiss_quarantine_proposal(db, params, ctx) {
+    const projectId = numericParam(params.projectId, 'projectId');
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    const proposal = params.proposal;
+    if (!isQuarantineProposal(proposal)) throw new Error('proposal must be quarantine or release');
+    if (params.reason != null && typeof params.reason !== 'string') throw new Error('reason must be a string');
+    assertProject(ctx, projectId);
+    assertPermission(ctx, 'quarantine:write', projectId);
+    const reason = normalizeDismissReason(params.reason);
+    let dismissed: boolean;
+    try {
+      dismissed = await dismissQuarantineProposal(db, projectId, testCaseId, proposal, mcpActor(ctx), reason);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'Test case not found in this project') return null;
+      throw e;
+    }
+    if (!dismissed) throw new Error(`Test ${testCaseId} has no ${proposal} proposal to dismiss`);
+    return dropNulls({ projectId, testCaseId, proposal, dismissed, reason });
+  },
+
   // ── set_bug_report_status ──────────────────────────────────────────────────
   async set_bug_report_status(db, params, ctx) {
-    assertWriteRole(ctx);
     const id = numericParam(params.id, 'id');
     const validation = bugReportPatchSchema.safeParse({ status: params.status });
     if (!validation.success || !validation.data.status) {
       throw new Error('status must be one of: open, dismissed, closed');
     }
-    if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, id, resolveBugReportProjectId, 'bug-report:write')) === 'not-found') {
+      return null;
+    }
     const report = await updateBugReport(db, id, { status: validation.data.status });
     if (!report) return null;
     return { id, status: report.status };
@@ -2472,9 +2546,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── rerun_cluster_in_ci ────────────────────────────────────────────────────
   async rerun_cluster_in_ci(db, params, ctx) {
-    assertWriteRole(ctx);
     const id = numericParam(params.clusterId, 'clusterId');
-    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId)) === 'not-found') return null;
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'run:control')) === 'not-found') return null;
     const outcome = await rerunClusterInCi(db, id, {
       id: ctx.user?.id || null,
       name: ctx.user?.name || ctx.user?.username || null,
@@ -2487,9 +2560,82 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     return dropNulls({ clusterId: id, provider, url, args, dispatchedAt: iso(at) });
   },
 
+  // ── set_cluster_bisect ─────────────────────────────────────────────────────
+  async set_cluster_bisect(db, params, ctx) {
+    const id = numericParam(params.clusterId, 'clusterId');
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'run:control')) === 'not-found') return null;
+    const parsed = parseBisectResultBody(params);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const commit = await recordClusterBisect(db, id, parsed.value);
+    if (!commit) return null;
+    return dropNulls({
+      clusterId: id,
+      sha: commit.sha,
+      subject: commit.subject,
+      author: commit.author,
+      date: commit.date,
+    });
+  },
+
+  // ── record_diagnosis ───────────────────────────────────────────────────────
+  async record_diagnosis(db, params, ctx) {
+    const id = numericParam(params.clusterId, 'clusterId');
+    const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
+    if (!parsed.ok) throw new Error(parsed.message);
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'ai:run')) === 'not-found') return null;
+    const result = await recordAgentDiagnosisOnCluster(db, id, parsed.value, mcpActor(ctx));
+    if (!result.ok) {
+      if (result.error === 'not-found') return null;
+      throw new Error(AGENT_DIAGNOSIS_ERRORS[result.error]);
+    }
+    return dropNulls({
+      clusterId: id,
+      diagnosisId: result.diagnosisId,
+      category: parsed.value.diagnosis.category,
+      confidence: parsed.value.diagnosis.confidence,
+      patchValidation: result.patchValidation,
+      replacedPrevious: result.replacedVersion || null,
+    });
+  },
+
+  // ── report_fix_attempt ─────────────────────────────────────────────────────
+  async report_fix_attempt(db, params, ctx) {
+    const id = numericParam(params.clusterId, 'clusterId');
+    const { clusterId: _clusterId, channel: _channel, ...body } = params;
+    const parsed = parseFixAttempt(body);
+    if (!parsed.ok) throw new Error(parsed.message);
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'run:control')) === 'not-found') return null;
+    const result = await reportFixAttempt(db, id, parsed.value, mcpActor(ctx));
+    if (!result.ok) {
+      if (result.error === 'not-found') return null;
+      throw new Error(FIX_ATTEMPT_ERRORS[result.error].message);
+    }
+    return dropNulls({
+      clusterId: id,
+      key: result.attempt.key,
+      outcome: result.attempt.outcome,
+      recorded: result.recorded,
+      commitTrailer: clusterTrailerLine(id),
+    });
+  },
+
+  // ── set_run_incident ───────────────────────────────────────────────────────
+  async set_run_incident(db, params, ctx) {
+    const id = numericParam(params.runId, 'runId');
+    const input = parseSetRunIncident({ incident: params.incident, reason: params.reason });
+    if (typeof input === 'string') throw new Error(input);
+    if ((await checkEntityScope(db, ctx, id, resolveRunProjectId, 'project:read')) === 'not-found') return null;
+    const by = ctx.user?.id ? ctx.user.name || ctx.user.username : null;
+    const state = await decideRunIncident(db, id, input, by);
+    return dropNulls({
+      runId: id,
+      incident: state.incident ? { rule: state.incident.rule, reason: state.incident.reason } : null,
+      decision: state.review?.decision ?? null,
+    });
+  },
+
   // ── link_issue ─────────────────────────────────────────────────────────────
   async link_issue(db, params, ctx) {
-    assertWriteRole(ctx);
     const validation = createLinkSchema.safeParse({
       entityType: params.entityType,
       entityId: params.entityId,
@@ -2503,6 +2649,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
     if (projectId == null) return null;
     assertProject(ctx, projectId);
+    assertPermission(ctx, 'link:write', projectId);
     const link = await createEnrichedLink(db, validation.data);
     if (!link) throw new Error('Failed to create link');
     return dropNulls({
@@ -2519,9 +2666,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── create_test_function ───────────────────────────────────────────────────
   async create_test_function(db, params, ctx) {
-    assertWriteRole(ctx);
     const projectId = numericParam(params.projectId, 'projectId');
     assertProject(ctx, projectId);
+    assertPermission(ctx, 'test-assets:write', projectId);
 
     const validation = createTestFunctionSchema.safeParse(params);
     if (!validation.success) {
@@ -2788,6 +2935,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!isMetricId(metric) || !WIDGET_METRIC_IDS.includes(metric)) {
       throw new Error(`Unknown metric '${String(metric)}'. Use one of: ${WIDGET_METRIC_IDS.join(', ')}`);
     }
+    await assertMetricsOffered(db, [metric]);
     const trend = await runAnalyticsWidget(db, 'metric', toolScope(params, ctx), ctx.scope, {
       metric,
       display: 'line',
@@ -2800,6 +2948,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const raw: unknown[] = Array.isArray(params.metrics) ? params.metrics : [];
     const metrics = raw.filter((m): m is MetricId => isMetricId(m) && WIDGET_METRIC_IDS.includes(m));
     if (metrics.length !== raw.length) throw new Error('metrics must be metric ids from the catalog');
+    await assertMetricsOffered(db, metrics);
     try {
       return await compareMetricPeriods(
         db,
@@ -2925,6 +3074,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 };
 
 /** The analytics scope of a report or metric tool call, from the tool's scope properties. */
+/** Refuse a metric whose capability this instance declined, naming the capability. */
+async function assertMetricsOffered(db: DbClient, metrics: MetricId[]): Promise<void> {
+  const needed = metrics.map((id) => getMetric(id).capability).filter((c) => c !== undefined);
+  if (needed.length === 0) return;
+  const states = await resolveInstanceStates(db);
+  for (const id of metrics) {
+    const capability = getMetric(id).capability;
+    if (capability && states[capability] === 'declined') {
+      throw new Error(`Metric '${id}' needs the ${capability} capability, which this instance declined`);
+    }
+  }
+}
+
 function toolScope(params: Record<string, unknown>, ctx: McpContext) {
   return parseAnalyticsScope(toolScopeQuery(params, ctx));
 }
@@ -2957,12 +3119,8 @@ function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Recor
 
 /** Who a tool call acts as for dashboards; with authentication off every dashboard is shared. */
 function mcpDashboardActor(ctx: McpContext): DashboardActor {
-  const authEnabled = isAuthEnabled();
-  return {
-    id: authEnabled && ctx.user ? ctx.user.id : null,
-    role: authEnabled && ctx.user ? (ctx.user.role as Role) : null,
-    authEnabled,
-  };
+  if (!isAuthEnabled()) return dashboardActorFor(null, null);
+  return dashboardActorFor(ctx.user?.id ?? null, ctx.access);
 }
 
 async function resolveProjectRepoUrl(db: DbClient, projectId: number): Promise<string | null> {
@@ -3052,6 +3210,7 @@ const DESKTOP_HANDLERS: Record<DesktopMcpToolName, McpToolHandler> = {
   // ── import_local_report ──────────────────────────────────────────────────────
   async import_local_report(_db, params, ctx) {
     assertDesktop();
+    assertPermission(ctx, 'storage:manage');
     const path = String(params.path ?? '');
     const projectName = String(params.projectName ?? '').trim();
     if (!path || !isAbsolute(path) || !path.toLowerCase().endsWith('.zip')) {

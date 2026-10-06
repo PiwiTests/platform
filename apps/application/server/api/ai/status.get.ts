@@ -7,7 +7,6 @@ defineRouteMeta({
     summary: 'Get AI configuration status',
     description:
       'Returns public AI configuration status including whether AI diagnosis is configured, the provider, model, and auto-diagnose setting.',
-    'x-required-roles': [],
     security: [],
   },
 });

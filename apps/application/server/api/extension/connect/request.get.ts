@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'What the page at `/extension/connect` shows before the user allows or denies: the connecting client, the code, the expiry and the status (`pending`, `approved`, `denied`, `consumed` or `expired`). Query: `code`, the user code. Failed lookups are rate-limited.',
     parameters: [{ name: 'code', in: 'query', required: true, schema: { type: 'string' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

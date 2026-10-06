@@ -202,7 +202,10 @@ test.describe('coverage overlay on a page', () => {
     expect(await page.locator(`${HOST} .box.dim`).count()).toBeGreaterThan(20);
     await row.click();
     await expect(row).not.toContainText('showing only its elements');
-    // The list re-renders under the pointer, and hovering a row spotlights it too.
+    // The list re-renders under the pointer, and hovering a row spotlights it too. The pointer moves over the
+    // redrawn row before it leaves, as a person's does: one jump away fires no mouseleave on a row the browser
+    // has not yet seen under the pointer.
+    await row.hover();
     await page.mouse.move(5, 5);
     await expect(page.locator(`${HOST} .box.strong`)).toHaveCount(0);
   });

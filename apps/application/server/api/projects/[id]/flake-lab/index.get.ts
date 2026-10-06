@@ -17,7 +17,7 @@ defineRouteMeta({
       { name: 'limit', in: 'query', required: false, schema: { type: 'integer', default: 20 } },
       { name: 'suspects', in: 'query', required: false, schema: { type: 'boolean', default: false } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

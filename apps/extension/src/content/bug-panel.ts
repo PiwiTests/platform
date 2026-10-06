@@ -192,8 +192,8 @@ interface BugPanelGlobals {
   __piwiBugFlow?: boolean;
   /** Ends the pick of the flow on screen, as a cancel: see {@link cancelBugPick}. */
   __piwiBugPickCancel?: () => void;
-  /** The HUD on screen and its evidence line: see {@link updateBugHudEvidence}. */
-  __piwiBugHudEvidence?: { host: HTMLElement; summary: HTMLElement };
+  /** The HUD on screen, its shadow root and its evidence line: see {@link updateBugHudEvidence}. */
+  __piwiBugHud?: { host: HTMLElement; root: ShadowRoot; summary: HTMLElement };
   __piwiPickState?: string;
   __piwiPickedElement?: Element;
 }
@@ -223,7 +223,7 @@ export function cancelBugPick(): void {
  * started meanwhile leaves it be, any other tool, Escape or
  * {@link cancelBugPick} ends it. Answers the element picked, or null.
  */
-async function pickElement(): Promise<Element | null> {
+export async function pickElement(): Promise<Element | null> {
   const g = panelGlobals();
   const epoch = startTool('pick', teardownToolSurfaces);
   installEscapeToCancel();
@@ -379,11 +379,13 @@ interface DialogParts {
  * the form and answers the element to focus and a submit function: its value
  * closes the dialog, and null keeps it open (after `say` explained why). A
  * dialog removed from the page (capture stopped, the page replaced its
- * content) answers null, as Cancel does.
+ * content) answers null, as Cancel does. Its main button reads `submitLabel`.
+ * Shared by the bug report's dialogs and a test recording's checks.
  */
-function openBugDialog<T>(
+export function openRecordDialog<T>(
   title: string,
   build: (parts: DialogParts) => { focus: HTMLElement; submit: () => T | null | Promise<T | null> },
+  submitLabel: string = t('bug_addToReport'),
 ): Promise<T | null> {
   document.getElementById(BUG_DIALOG_HOST_ID)?.remove();
   const host = document.createElement('div');
@@ -427,7 +429,7 @@ function openBugDialog<T>(
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
   addBtn.className = 'action primary';
-  addBtn.textContent = t('bug_addToReport');
+  addBtn.textContent = submitLabel;
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'action';
@@ -475,7 +477,7 @@ function openBugDialog<T>(
   });
 }
 
-function input(value = '', placeholder = ''): HTMLInputElement {
+export function input(value = '', placeholder = ''): HTMLInputElement {
   const el = document.createElement('input');
   el.type = 'text';
   el.value = value;
@@ -542,7 +544,7 @@ function expectedChoices(element: Element): { locator: string | null; choices: E
 /** The expected-value dialog for a picked element. */
 function expectedDialog(element: Element): Promise<StepAssertion | null> {
   const { locator, choices } = expectedChoices(element);
-  return openBugDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
+  return openRecordDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
     if (locator) {
       const sub = document.createElement('div');
       sub.className = 'sub';
@@ -640,7 +642,7 @@ function roleLocator(role: string, name: string): string {
 }
 
 function missingDialog(): Promise<{ target: RecordedTarget; note: string | null } | null> {
-  return openBugDialog(t('bug_missing'), ({ field, say }) => {
+  return openRecordDialog(t('bug_missing'), ({ field, say }) => {
     const role = document.createElement('select');
     for (const kind of MISSING_KINDS) {
       const option = document.createElement('option');
@@ -691,7 +693,7 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
 
 function wrongPageDialog(): Promise<StepAssertion | null> {
   const here = `${location.pathname}${location.search}`;
-  return openBugDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
+  return openRecordDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
     const sub = document.createElement('div');
     sub.className = 'sub';
     sub.textContent = t('bug_youAreOn', { path: here });
@@ -717,7 +719,8 @@ function wrongPageDialog(): Promise<StepAssertion | null> {
 // ---------------------------------------------------------------------------
 // Flows started from the HUD
 
-async function exclusive(run: () => Promise<void>): Promise<void> {
+/** Runs one flow of the recorder's at a time: a flow started while another is on screen does nothing. */
+export async function exclusive(run: () => Promise<void>): Promise<void> {
   const g = panelGlobals();
   if (g.__piwiBugFlow) return;
   g.__piwiBugFlow = true;
@@ -869,16 +872,28 @@ function actualInWords(matcher: AssertionMatcher, actual: string): string {
  * False when there is no HUD to update.
  */
 export function updateBugHudEvidence(evidence: StoredBugEvidence): boolean {
-  const shown = panelGlobals().__piwiBugHudEvidence;
-  if (!shown || document.getElementById(HUD_HOST_ID) !== shown.host) return false;
+  const shown = shownBugHud();
+  if (!shown) return false;
   shown.summary.textContent = evidenceSummary(evidence);
   return true;
+}
+
+function shownBugHud(): BugPanelGlobals['__piwiBugHud'] | null {
+  const shown = panelGlobals().__piwiBugHud;
+  return shown && document.getElementById(HUD_HOST_ID) === shown.host ? shown : null;
+}
+
+/** The action of the HUD button that has the focus, or null when the focus is not in the HUD. */
+function focusedHudAction(): string | null {
+  const focused = shownBugHud()?.root.activeElement;
+  return focused instanceof HTMLElement ? (focused.dataset.action ?? null) : null;
 }
 
 /**
  * The HUD of a bug recording: the last steps, the three ways to mark what is
  * wrong, Finish, and what evidence has been collected. Its shadow root
- * delegates focus, so focusing the host reaches its first button.
+ * delegates focus, so focusing the host reaches its first button. A redraw
+ * keeps the focus in the HUD, on the button that had it when it is still there.
  */
 export function renderBugHud(
   state: RecordingState,
@@ -886,6 +901,7 @@ export function renderBugHud(
   captureError: string | null,
   handlers: BugHudHandlers,
 ): void {
+  const focusedAction = focusedHudAction();
   document.getElementById(HUD_HOST_ID)?.remove();
   const host = document.createElement('div');
   host.id = HUD_HOST_ID;
@@ -949,28 +965,28 @@ export function renderBugHud(
 
   const buttons = document.createElement('div');
   buttons.className = 'row';
-  const button = (label: string, onClick: () => void, className = '') => {
+  const button = (action: keyof BugHudHandlers, label: string, className = '') => {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
+    b.dataset.action = action;
     if (className) b.className = className;
-    b.addEventListener('click', onClick);
+    b.addEventListener('click', () => handlers[action]());
     buttons.appendChild(b);
     return b;
   };
-  button(t('bug_mark'), handlers.mark).title = t('bug_markHint');
-  button(t('bug_missing'), handlers.missing).title = t('bug_missingHint');
-  button(t('bug_wrongPage'), handlers.wrongPage).title = t('bug_wrongPageHint');
-  if (evidence.debugging?.state === 'on')
-    button(t('bug_screenshot'), handlers.screenshot).title = t('bug_screenshotHint');
-  button(t('bug_finish'), handlers.finish, 'finish');
+  button('mark', t('bug_mark')).title = t('bug_markHint');
+  button('missing', t('bug_missing')).title = t('bug_missingHint');
+  button('wrongPage', t('bug_wrongPage')).title = t('bug_wrongPageHint');
+  if (evidence.debugging?.state === 'on') button('screenshot', t('bug_screenshot')).title = t('bug_screenshotHint');
+  button('finish', t('bug_finish'), 'finish');
   bar.appendChild(buttons);
 
   const summary = document.createElement('div');
   summary.className = 'evidence';
   summary.textContent = evidenceSummary(evidence);
   bar.appendChild(summary);
-  panelGlobals().__piwiBugHudEvidence = { host, summary };
+  panelGlobals().__piwiBugHud = { host, root, summary };
 
   const note = debuggingNote(evidence);
   if (note) {
@@ -989,6 +1005,7 @@ export function renderBugHud(
   }
 
   root.append(style, bar);
+  if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();
 }
 
 // ---------------------------------------------------------------------------

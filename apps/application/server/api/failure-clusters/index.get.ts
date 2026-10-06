@@ -25,7 +25,7 @@ defineRouteMeta({
         description: 'Maximum clusters to return',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

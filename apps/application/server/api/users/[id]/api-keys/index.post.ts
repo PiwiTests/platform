@@ -1,17 +1,17 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../../database';
 import { createUserApiKeyRecord } from '#shared/handlers/users';
-import { requireAuth, generateApiKey } from '../../../../utils/auth';
-import { Role } from '#shared/types';
+import { getRequestAccess, requireAuth, generateApiKey } from '../../../../utils/auth';
+import { can } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Users'],
     summary: 'Create an API key for a user',
     description:
-      'Creates a new API key for a user. The plaintext key is returned once and cannot be retrieved again. Accepts name and optional expiresAt in the request body. Non-administrators can only create keys for themselves.',
+      'Creates a new API key for a user. The plaintext key is returned once and cannot be retrieved again. Accepts name and optional expiresAt in the request body. The key carries its owner’s access: their instance role and project roles. Anyone but an administrator can only create keys for themselves.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -29,7 +29,7 @@ export default eventHandler(async (event) => {
   }
 
   // Non-administrators can only create keys for themselves
-  if (currentUser.role !== Role.ADMINISTRATOR && currentUser.id !== targetId) {
+  if (!can(await getRequestAccess(event), 'users:manage') && currentUser.id !== targetId) {
     throw apiError({ statusCode: 403, message: 'Insufficient permissions' });
   }
 

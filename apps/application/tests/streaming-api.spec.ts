@@ -5,6 +5,7 @@ import { PROJECT } from '#shared/test-project-names';
  * Tests for the live-streaming lifecycle:
  *   POST /api/test-runs/start       – create a run in 'running' state
  *   POST /api/test-runs/:id/events  – push test-case results (batch)
+ *   POST /api/test-runs/:id/heartbeat – keep the run alive; says, like /events, whether it is watched
  *   POST /api/test-runs/:id/finish  – finalize the run
  *   GET  /api/test-runs/:id/stream  – SSE endpoint (init event check)
  *   GET  /api/test-runs/:id         – streamToken must NOT appear in response
@@ -433,6 +434,56 @@ test.describe.serial('Streaming API Tests', () => {
     ]);
   });
 
+  test('POST /events and /heartbeat say whether anyone has the run open live', async ({ request, baseURL }) => {
+    const postStep = async () => {
+      const res = await request.post(`/api/test-runs/${runId}/events`, {
+        data: {
+          streamToken,
+          testCases: [
+            {
+              type: 'step-end',
+              title: 'Click',
+              location: 'tests/streaming.spec.ts:8:5',
+              stepCategory: 'pw:api',
+              parentTitle: 'streaming test 1',
+              status: 'passed',
+              duration: 5,
+              workerIndex: 0,
+              startedAt: 1700000000000,
+            },
+          ],
+        },
+      });
+      expect(res.ok()).toBeTruthy();
+      return (await res.json()).watched;
+    };
+    const heartbeat = async () => {
+      const res = await request.post(`/api/test-runs/${runId}/heartbeat`, { data: { streamToken } });
+      expect(res.ok()).toBeTruthy();
+      return (await res.json()).watched;
+    };
+
+    // The streams the tests above opened are gone once the server sees their connections close.
+    await expect.poll(postStep).toBe(false);
+    expect(await heartbeat()).toBe(false);
+
+    const controller = new AbortController();
+    const response = await fetch(`${baseURL}/api/test-runs/${runId}/stream`, { signal: controller.signal });
+    expect(response.ok).toBeTruthy();
+    const reader = response.body!.getReader();
+    try {
+      // The stream has subscribed by the time its first event arrives.
+      await reader.read();
+      expect(await postStep()).toBe(true);
+      expect(await heartbeat()).toBe(true);
+    } finally {
+      reader.releaseLock();
+      controller.abort();
+    }
+
+    await expect.poll(postStep).toBe(false);
+  });
+
   // ── /finish ──────────────────────────────────────────────────────────────────
 
   test('POST /api/test-runs/:id/finish finalizes the run', async ({ request }) => {
@@ -676,7 +727,8 @@ test.describe.serial('Heartbeat API Tests', () => {
     });
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
-    expect(data).toEqual({ success: true });
+    // Nobody has this run open, so the answer says it is not watched.
+    expect(data).toEqual({ success: true, watched: false });
 
     const after = await (await request.get(`/api/test-runs/${runId}`)).json();
     expect(new Date(after.updatedAt).getTime()).toBeGreaterThan(new Date(before.updatedAt).getTime());

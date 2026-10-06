@@ -260,4 +260,22 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     icon: 'i-lucide-cpu',
     doc: 'features/resource-leaks',
   },
+  {
+    id: 'agent-diagnoses',
+    title: 'Agent diagnoses',
+    summary:
+      'Diagnoses your coding agent writes on a failure cluster over MCP, stored with the model it ran on and shown as written by an agent. They need no AI provider on this instance.',
+    how: 'Connect an agent through MCP; it records a diagnosis with record_diagnosis. Decline to refuse them.',
+    icon: 'i-lucide-bot',
+    doc: 'features/ai-diagnosis',
+  },
+  {
+    id: 'agent-write-log',
+    title: 'Agent write log',
+    summary:
+      'One line per write an agent makes over MCP (the key, the tool, what it acted on, the result), shown on the cluster it touched and kept as long as notifications.',
+    how: 'Automatic once an agent calls a write tool. Decline to keep no log.',
+    icon: 'i-lucide-scroll-text',
+    doc: 'features/mcp',
+  },
 ];

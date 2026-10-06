@@ -1,6 +1,9 @@
-import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { describe, test, expect, beforeAll, beforeEach, afterAll, afterEach, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { eq } from 'drizzle-orm';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -42,6 +45,13 @@ const { findHealActionForCallSite, mapHealActionsByCluster } = await import('../
 const { getAnalyticsProgress } = await import('../../shared/handlers/analytics/progress');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
 const { pruneHealActions } = await import('../../server/utils/retention');
+const { recordOutcome, pruneOutcomesOlderThan } = await import('../../server/utils/outcomes');
+
+/** Run the migration that records a `suggested` outcome for every heal PR opened before outcomes existed. */
+async function backfillSuggestedOutcomes() {
+  const file = new URL('../../server/database/migrations/0102_heal_pr_suggested_outcomes.sql', import.meta.url);
+  await db.run(sql.raw(readFileSync(fileURLToPath(file), 'utf8')));
+}
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 let seq = 0;
@@ -100,8 +110,15 @@ async function statusOf(id: number): Promise<string | undefined> {
   return row?.status;
 }
 
+let tmpDir: string;
+let client: ReturnType<typeof createClient>;
+
 beforeAll(async () => {
-  db = drizzle(createClient({ url: ':memory:' }), { schema });
+  // A file database: libSQL runs a transaction on its own connection, which an
+  // in-memory database does not share.
+  tmpDir = mkdtempSync(join(tmpdir(), 'piwi-heal-pr-state-'));
+  client = createClient({ url: `file:${join(tmpDir, 'test.db')}` });
+  db = drizzle(client, { schema });
   await migrate(db, {
     migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
   });
@@ -114,6 +131,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.delete(schema.healActions);
+  await db.delete(schema.handbackOutcomes);
+  await db.delete(schema.handbackOutcomeRollups);
   scm.tokens = {};
   scm.prStates = {};
   scm.lookups = [];
@@ -121,6 +140,11 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+afterAll(() => {
+  client.close();
+  rmSync(tmpDir, { recursive: true, force: true });
 });
 
 describe('refreshOpenHealActions', () => {
@@ -363,24 +387,55 @@ describe('heal action lookups', () => {
 });
 
 describe('heal action history', () => {
-  test('progress counts opened, merged and closed pull requests created in the period', async () => {
+  test('progress counts the pull requests opened in the period, from their suggested outcomes', async () => {
     const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
     for (const status of ['opened', 'merged', 'closed', 'pending', 'failed', 'skipped']) await seedAction({ status });
     await seedAction({ status: 'merged', createdAt: old });
+    const scope = parseAnalyticsScope({ days: '30' });
 
-    const progress = await getAnalyticsProgress(db as never, parseAnalyticsScope({ days: '30' }), 'all');
+    expect((await getAnalyticsProgress(db as never, scope, 'all')).healPullRequests).toBe(0);
+    await backfillSuggestedOutcomes();
+    await backfillSuggestedOutcomes();
 
-    expect(progress.healPullRequests).toBe(3);
+    expect((await getAnalyticsProgress(db as never, scope, 'all')).healPullRequests).toBe(3);
+    expect((await getAnalyticsProgress(db as never, parseAnalyticsScope({ days: '90' }), 'all')).healPullRequests).toBe(
+      4,
+    );
   });
 
   test('a merge does not move a pull request out of the period it was opened in', async () => {
     const opened = await seedAction({ createdAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000) });
+    await backfillSuggestedOutcomes();
     scm.prStates[opened.prNumber] = 'merged';
     await refreshOpenHealActions(db as never);
 
-    const progress = await getAnalyticsProgress(db as never, parseAnalyticsScope({ days: '30' }), 'all');
+    expect((await getAnalyticsProgress(db as never, parseAnalyticsScope({ days: '30' }), 'all')).healPullRequests).toBe(
+      0,
+    );
+    expect((await getAnalyticsProgress(db as never, parseAnalyticsScope({ days: '60' }), 'all')).healPullRequests).toBe(
+      1,
+    );
+  });
 
-    expect(progress.healPullRequests).toBe(0);
+  test('retention prunes a settled action and its outcomes, and the pull request still counts', async () => {
+    const stale = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+    const merged = await seedAction({ status: 'merged', createdAt: stale, updatedAt: stale });
+    await recordOutcome(db as never, {
+      projectId: 1,
+      kind: 'auto-heal-pr',
+      subjectType: 'heal-action',
+      subjectId: merged.id,
+      suggestionKey: 'heal:v1:1:x',
+      outcome: 'suggested',
+      at: stale,
+    });
+
+    expect(await pruneHealActions(db as never, 30)).toBe(1);
+    expect(await pruneOutcomesOlderThan(db as never, 30)).toBe(1);
+    expect(await db.select().from(schema.handbackOutcomes)).toHaveLength(0);
+
+    const progress = await getAnalyticsProgress(db as never, parseAnalyticsScope({ days: '90' }), 'all');
+    expect(progress.healPullRequests).toBe(1);
   });
 
   test('retention prunes settled merged and closed actions but keeps pending ones', async () => {

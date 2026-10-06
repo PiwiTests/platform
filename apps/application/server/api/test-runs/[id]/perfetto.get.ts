@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Downloads the whole run in Trace Event Format: one process per shard, one thread per worker, and a slice for every execution with its hooks, fixtures and steps nested underneath. Open the file at ui.perfetto.dev or in Chrome’s chrome://tracing. Attachments are referenced by URL, not embedded.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

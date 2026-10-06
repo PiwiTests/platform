@@ -14,6 +14,7 @@ import {
   analyticsDailyRollups,
   handbackOutcomes,
   handbackOutcomeRollups,
+  mcpToolCalls,
 } from '../../server/database/schema';
 import {
   asc,
@@ -40,7 +41,7 @@ import {
   type TestSearchValues,
 } from '#shared/test-search';
 import { splitSuitePath } from '#shared/utils/suites';
-import { notLabExecution, notLabRun } from './probes';
+import { notLabExecutionInProject, notLabRun } from './probes';
 import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
@@ -422,6 +423,8 @@ export async function updateProject(
     ciRerun?: unknown;
     /** Whether a quarantined failure turns the run's commit status red. */
     quarantineFailsStatus?: boolean;
+    /** Whether each gate evaluation also posts the `<statusContext>/gate` commit status. */
+    gateStatus?: boolean;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -443,6 +446,7 @@ export async function updateProject(
     serverProbes,
     ciRerun,
     quarantineFailsStatus,
+    gateStatus,
     generatedSpecs,
     targets,
     tagIds: dataTagIds,
@@ -464,6 +468,7 @@ export async function updateProject(
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
         ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
         quarantineFailsStatus,
+        gateStatus,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         updatedAt: new Date(),
@@ -577,6 +582,7 @@ export async function deleteProjectData(
   await db.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.projectId, projectId));
   await db.delete(handbackOutcomes).where(eq(handbackOutcomes.projectId, projectId));
   await db.delete(handbackOutcomeRollups).where(eq(handbackOutcomeRollups.projectId, projectId));
+  await db.delete(mcpToolCalls).where(eq(mcpToolCalls.projectId, projectId));
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources
@@ -614,7 +620,7 @@ export async function getProjectPerformance(
   if (!projectResults[0]) throw new Error('Project not found');
 
   // Build conditions
-  const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)];
+  const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)];
   if (fullRunsOnly) {
     conditions.push(eq(testRuns.isFullRun, 1));
   }
@@ -739,8 +745,8 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
   };
 }
 
-/** Test cases with an execution (outside lab runs) in the last `maxAgeDays` days. */
-function executedWithin(db: DrizzleDB, maxAgeDays: number) {
+/** Test cases of `projectId` with an execution (outside lab runs) in the last `maxAgeDays` days. */
+function executedWithin(db: DrizzleDB, projectId: number, maxAgeDays: number) {
   const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
   return exists(
     db
@@ -750,19 +756,19 @@ function executedWithin(db: DrizzleDB, maxAgeDays: number) {
         and(
           eq(testRunsCases.testCaseId, testCases.id),
           gte(testRunsCases.createdAt, cutoff),
-          notLabExecution(testRunsCases.testRunId),
+          notLabExecutionInProject(projectId, testRunsCases.testRunId),
         ),
       ),
   );
 }
 
 /** The column of a test case's latest execution (outside lab runs), as a correlated subquery. */
-function latestExecutionColumn(column: typeof testRunsCases.line | typeof testRunsCases.column) {
+function latestExecutionColumn(projectId: number, column: typeof testRunsCases.line | typeof testRunsCases.column) {
   return sql<number | null>`(
       SELECT ${column}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-        AND ${notLabExecution(testRunsCases.testRunId)}
+        AND ${notLabExecutionInProject(projectId, testRunsCases.testRunId)}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
@@ -807,6 +813,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     dir = 'desc',
   } = options;
 
+  const realExecution = notLabExecutionInProject(projectId, testRunsCases.testRunId);
+
   // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
   // (numeric) as strings, and a timestamp aggregate unparsed: each selected
   // aggregate is mapped so both dialects agree.
@@ -820,7 +828,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
         FROM ${testRunsCases}
         WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-          AND ${notLabExecution(testRunsCases.testRunId)}
+          AND ${realExecution}
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
@@ -829,7 +837,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       SELECT ${testRunsCases.status}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-        AND ${notLabExecution(testRunsCases.testRunId)}
+        AND ${realExecution}
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
@@ -863,7 +871,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
     conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
   }
-  if (maxAgeDays > 0) conditions.push(executedWithin(db, maxAgeDays));
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, projectId, maxAgeDays));
   if (statuses && statuses.length > 0) {
     conditions.push(inArray(category, statuses));
   }
@@ -887,8 +895,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   const total = Number(countRows[0]?.total ?? 0);
 
   // Where the test sits in its file, as its latest execution reported it.
-  const line = latestExecutionColumn(testRunsCases.line);
-  const column = latestExecutionColumn(testRunsCases.column);
+  const line = latestExecutionColumn(projectId, testRunsCases.line);
+  const column = latestExecutionColumn(projectId, testRunsCases.column);
 
   // Each sort is a list of keys; `file` is the order the tests are declared in,
   // file by file, which is the order Playwright lists and runs them.
@@ -904,6 +912,23 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     status: [category],
   };
   const direction = sql.raw(dir === 'asc' ? 'ASC' : 'DESC');
+  const orderBy = [...sortExpressions[sort].map((key) => sql`${key} ${direction} NULLS LAST`), asc(testCases.id)];
+
+  // A sort on the test cases' own columns picks the page first, so only the
+  // executions of that page's tests are aggregated; a sort on an aggregate
+  // needs every test's.
+  let pageIds: number[] | null = null;
+  if (sort === 'file' || sort === 'title') {
+    const page: Array<{ id: number }> = await db
+      .select({ id: testCases.id })
+      .from(testCases)
+      .where(where)
+      .orderBy(...orderBy)
+      .limit(limit)
+      .offset(offset);
+    pageIds = page.map((r) => r.id);
+    if (pageIds.length === 0) return { items: [], total, limit, offset };
+  }
 
   const rows: any[] = await db
     .select({
@@ -946,12 +971,12 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       column,
     })
     .from(testCases)
-    .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), notLabExecution(testRunsCases.testRunId)))
-    .where(where)
+    .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), realExecution))
+    .where(pageIds ? inArray(testCases.id, pageIds) : where)
     .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title)
-    .orderBy(...sortExpressions[sort].map((key) => sql`${key} ${direction} NULLS LAST`), asc(testCases.id))
+    .orderBy(...orderBy)
     .limit(limit)
-    .offset(offset);
+    .offset(pageIds ? 0 : offset);
 
   return {
     items: rows.map((row) => ({ ...row, lastRun: toEpochMs(row.lastRun) })),
@@ -974,7 +999,7 @@ export async function getProjectTestCaseFacets(
 ): Promise<{ values: TestSearchValues }> {
   const maxAgeDays = options.maxAgeDays ?? 0;
   const conditions = [eq(testCases.projectId, projectId)];
-  if (maxAgeDays > 0) conditions.push(executedWithin(db, maxAgeDays));
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, projectId, maxAgeDays));
   const rows: any[] = await db
     .select({
       filePath: testCases.filePath,
@@ -1018,7 +1043,7 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.metadata)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
@@ -1165,7 +1190,7 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1884,7 +1909,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
       totalFullRuns: count(),
     })
     .from(testRuns)
-    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata)))
+    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.origin)))
     .groupBy(testRuns.projectId);
 
   const totalFullRunsByProjectId = new Map<number, number>();
@@ -1913,7 +1938,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
           ),
         })
         .from(testRuns)
-        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata))),
+        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.origin))),
     );
 
     recentFullRuns = await db

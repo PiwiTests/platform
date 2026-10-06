@@ -7,7 +7,7 @@ import {
   getSettingsPage,
   type SettingsNavContext,
 } from '../../app/utils/settings-metadata';
-import { Role } from '#shared/types';
+import { ADMIN_ACCESS, InstanceRole, ProjectRole, buildAccessSummary, isInstancePermission } from '#shared/permissions';
 
 /** Flatten sections to the `to` paths, for terse assertions. */
 function paths(ctx: SettingsNavContext): string[] {
@@ -57,10 +57,10 @@ describe('buildSettingsNavSections', () => {
     expect(paths(WEB_ADMIN).sort()).toEqual(SETTINGS_PAGES.map((p) => p.to).sort());
   });
 
-  test('a non-admin sees no admin-only page', () => {
+  test('a non-admin sees no page needing an instance permission', () => {
     const visible = paths(WEB_MEMBER);
     for (const page of SETTINGS_PAGES) {
-      if (page.roles) expect(visible).not.toContain(page.to);
+      if (page.permission) expect(visible).not.toContain(page.to);
       else expect(visible).toContain(page.to);
     }
   });
@@ -69,7 +69,7 @@ describe('buildSettingsNavSections', () => {
     // Every Analysis page is admin-only, so a non-admin loses the whole section
     // rather than getting a separator with nothing under it.
     const analysisPages = SETTINGS_PAGES.filter((p) => p.group === 'analysis');
-    expect(analysisPages.every((p) => p.roles)).toBe(true);
+    expect(analysisPages.every((p) => p.permission)).toBe(true);
 
     const sections = buildSettingsNavSections(WEB_MEMBER);
     expect(sections.every((section) => section.length > 0)).toBe(true);
@@ -140,36 +140,45 @@ describe('buildSettingsNavSections', () => {
 });
 
 describe('canOpenSettingsPath', () => {
-  const restricted = SETTINGS_PAGES.filter((page) => page.roles);
-  const open = SETTINGS_PAGES.filter((page) => !page.roles);
+  const restricted = SETTINGS_PAGES.filter((page) => page.permission);
+  const open = SETTINGS_PAGES.filter((page) => !page.permission);
+  // Project roles grant no instance permission, even Project admin on all projects.
+  const projectAdmin = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: null, role: ProjectRole.PROJECT_ADMIN }]);
+  const viewer = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.VIEWER }]);
 
   test('the registry has both restricted and open pages to guard', () => {
     expect(restricted.length).toBeGreaterThan(0);
     expect(open.length).toBeGreaterThan(0);
   });
 
-  test('refuses every role-restricted page to a plain user or reporter', () => {
+  test('every restricted page needs an instance permission', () => {
+    // Only an administrator holds one, which is what the nav's canSeeAdmin gate relies on.
+    for (const page of restricted) expect(isInstancePermission(page.permission)).toBe(true);
+  });
+
+  test('refuses every restricted page to a member, whatever their project roles, and to nobody', () => {
     for (const page of restricted) {
-      expect(canOpenSettingsPath(page.to, Role.USER)).toBe(false);
-      expect(canOpenSettingsPath(page.to, Role.REPORTER)).toBe(false);
+      expect(canOpenSettingsPath(page.to, viewer)).toBe(false);
+      expect(canOpenSettingsPath(page.to, projectAdmin)).toBe(false);
+      expect(canOpenSettingsPath(page.to, null)).toBe(false);
       expect(canOpenSettingsPath(page.to, undefined)).toBe(false);
     }
   });
 
   test('lets an administrator open every settings page', () => {
-    for (const page of SETTINGS_PAGES) expect(canOpenSettingsPath(page.to, Role.ADMINISTRATOR)).toBe(true);
+    for (const page of SETTINGS_PAGES) expect(canOpenSettingsPath(page.to, ADMIN_ACCESS)).toBe(true);
   });
 
-  test('lets any role open the unrestricted pages (account, notifications…)', () => {
-    for (const page of open) expect(canOpenSettingsPath(page.to, Role.USER)).toBe(true);
+  test('lets any member open the unrestricted pages (account, notifications…)', () => {
+    for (const page of open) expect(canOpenSettingsPath(page.to, viewer)).toBe(true);
   });
 
   test('ignores a trailing slash', () => {
-    expect(canOpenSettingsPath('/settings/users/', Role.USER)).toBe(false);
+    expect(canOpenSettingsPath('/settings/users/', viewer)).toBe(false);
   });
 
   test('allows paths that are not a settings page', () => {
-    expect(canOpenSettingsPath('/settings', Role.USER)).toBe(true);
-    expect(canOpenSettingsPath('/projects/1', Role.USER)).toBe(true);
+    expect(canOpenSettingsPath('/settings', viewer)).toBe(true);
+    expect(canOpenSettingsPath('/projects/1', viewer)).toBe(true);
   });
 });

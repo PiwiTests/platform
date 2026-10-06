@@ -7,9 +7,9 @@ defineRouteMeta({
     tags: ['AI'],
     summary: 'Local Claude CLI status',
     description:
-      'Reports whether the local `claude` CLI (Claude Code) is installed, its version, whether it is signed in, and the running usage tally. Desktop app only. Pass `?refresh=true` to bypass the short status cache. Requires administrator role.',
+      'Reports whether the local `claude` CLI (Claude Code) is installed, its version, whether it is signed in, and the running usage tally. Desktop app only. Pass `?refresh=true` to bypass the short status cache. Requires `settings:manage` (administrators only).',
     parameters: [{ name: 'refresh', in: 'query', required: false, schema: { type: 'boolean' } }],
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'settings:manage',
   },
 });
 

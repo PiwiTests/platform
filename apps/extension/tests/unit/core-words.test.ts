@@ -36,7 +36,7 @@ describe('core’s texts in the interface language', () => {
     expect(actionLabel('selectOption')).toBe('Select option');
     expect(actionLabel('expect.not.toBeVisible')).toBe('Expect not toBeVisible');
     expect(actionLabel('somethingNew')).toBe('somethingNew');
-    expect(codegenWarningText(redacted)).toBe('A password was typed here: the test reads it from PIWI_TEST_VALUE_0.');
+    expect(codegenWarningText(redacted)).toBe('A password was typed here: the test reads it from E2E_PASSWORD.');
   });
 
   it('in French, by code, with Playwright’s names kept as code', () => {
@@ -45,8 +45,6 @@ describe('core’s texts in the interface language', () => {
     expect(stabilityText(brittle, ', ')).toBe('position, classe CSS, structure CSS');
     expect(actionLabel('click')).toBe('Clic');
     expect(actionLabel('expect.toHaveText')).toBe('Vérification toHaveText');
-    expect(codegenWarningText(redacted)).toBe(
-      'Un mot de passe a été saisi ici : le test le lit dans PIWI_TEST_VALUE_0.',
-    );
+    expect(codegenWarningText(redacted)).toBe('Un mot de passe a été saisi ici : le test le lit dans E2E_PASSWORD.');
   });
 });

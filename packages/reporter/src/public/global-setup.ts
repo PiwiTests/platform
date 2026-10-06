@@ -12,6 +12,7 @@ import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { getSetupFilePath } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
+import { checkBaseUrls } from '../internal/support/base-url-check.js';
 import {
   readCommittedManifest,
   fetchInstrumentationManifest,
@@ -26,6 +27,10 @@ import {
  *
  * The server-run ID and a one-time token are written to a temp file so the
  * reporter instance can pick them up during the streaming handshake.
+ *
+ * With `checkBaseUrl`, every `baseURL` the run's projects use is checked first,
+ * and the setup throws, stopping the run before any worker starts, when one
+ * does not answer.
  *
  * @param options   Piwi Dashboard options (uses `serverUrl`, `projectName`, …).
  * @param userSetup An existing global setup to chain after the Piwi registration.
@@ -82,6 +87,12 @@ export function createGlobalSetup(
       logger.debug('List mode detected — skipping run registration.');
       if (userSetup) return userSetup(config);
       return;
+    }
+
+    // Before the run is registered, so a run stopped here leaves none behind.
+    if (opts.checkBaseUrl === true) {
+      const checked = await checkBaseUrls(config ?? {});
+      for (const target of checked) logger.debug(`Base URL answered: ${target.url}`);
     }
 
     if (opts.enabled === false || !opts.serverUrl) {

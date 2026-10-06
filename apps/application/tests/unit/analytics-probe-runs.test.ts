@@ -18,6 +18,7 @@ const { getProjectsOverview, getProjectPerformance, getProjectSlowTests } =
 const { getRecentTestRuns } = await import('../../shared/handlers/test-runs');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/handlers/probes');
+const { runOrigin } = await import('../../shared/run-eligibility');
 const { backfillDailyRollups } = await import('../../shared/handlers/analytics/rollups');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -53,6 +54,7 @@ beforeAll(async () => {
 
   // A probe run fails on purpose. It is stamped a full run here so the
   // full-runs filter cannot hide it either.
+  const probeMetadata = { [PROBE_RUN_METADATA_KEY]: true, scm: { branch: 'main' } };
   const [probe] = await db
     .insert(schema.testRuns)
     .values({
@@ -63,7 +65,8 @@ beforeAll(async () => {
       totalTests: 1,
       failedTests: 1,
       isFullRun: 1,
-      metadata: { [PROBE_RUN_METADATA_KEY]: true, scm: { branch: 'main' } },
+      metadata: probeMetadata,
+      origin: runOrigin(probeMetadata),
     })
     .returning({ id: schema.testRuns.id });
   probeRunId = probe!.id;

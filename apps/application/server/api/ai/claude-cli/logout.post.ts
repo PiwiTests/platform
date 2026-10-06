@@ -5,8 +5,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['AI'],
     summary: 'Sign out of the local Claude CLI',
-    description: 'Runs `claude auth logout`. Desktop app only. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+    description: 'Runs `claude auth logout`. Desktop app only. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

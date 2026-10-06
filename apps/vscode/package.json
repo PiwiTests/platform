@@ -2,7 +2,7 @@
   "name": "piwi",
   "displayName": "Piwi",
   "description": "Your Playwright suite's history in the editor: CI failures at their lines, healing in place, the tests behind each locator and file, and the locators a change breaks",
-  "version": "0.45.0",
+  "version": "0.47.0",
   "publisher": "piwitests",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -107,6 +107,36 @@
         "command": "piwi.copyText",
         "title": "Copy text",
         "category": "Piwi"
+      },
+      {
+        "command": "piwi.desktopJob",
+        "title": "Reproduce, bisect or run Flake Lab in the desktop app",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.record",
+        "title": "Record here",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.recordFile",
+        "title": "Record a new test file",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.stopRecording",
+        "title": "Stop recording",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.pauseRecording",
+        "title": "Pause recording",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.resumeRecording",
+        "title": "Resume recording",
+        "category": "Piwi"
       }
     ],
     "menus": {
@@ -130,6 +160,26 @@
         {
           "command": "piwi.copyText",
           "when": "false"
+        },
+        {
+          "command": "piwi.desktopJob",
+          "when": "false"
+        },
+        {
+          "command": "piwi.record",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/"
+        },
+        {
+          "command": "piwi.stopRecording",
+          "when": "piwi.recording"
+        },
+        {
+          "command": "piwi.pauseRecording",
+          "when": "piwi.recording && !piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.resumeRecording",
+          "when": "piwi.recordingPaused"
         }
       ],
       "editor/context": [
@@ -137,6 +187,31 @@
           "command": "piwi.runTestsForFile",
           "group": "piwi@1",
           "when": "piwi.active"
+        },
+        {
+          "command": "piwi.record",
+          "group": "piwi@2",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
+        },
+        {
+          "command": "piwi.recordFile",
+          "group": "piwi@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && !piwi.recording"
+        },
+        {
+          "command": "piwi.stopRecording",
+          "group": "piwi@2",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording"
+        },
+        {
+          "command": "piwi.pauseRecording",
+          "group": "piwi@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recording && !piwi.recordingPaused"
+        },
+        {
+          "command": "piwi.resumeRecording",
+          "group": "piwi@3",
+          "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
         }
       ]
     },
@@ -174,6 +249,16 @@
           "light": "#f8514933",
           "highContrast": "#f8514966",
           "highContrastLight": "#f8514940"
+        }
+      },
+      {
+        "id": "piwi.recordingBlockBackground",
+        "description": "The background of the block a recording writes, while it records.",
+        "defaults": {
+          "dark": "#2f81f726",
+          "light": "#0969da1a",
+          "highContrast": "#2f81f740",
+          "highContrastLight": "#0969da26"
         }
       }
     ],

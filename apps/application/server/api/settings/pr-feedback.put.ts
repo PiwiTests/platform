@@ -14,8 +14,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save pull-request feedback settings',
     description:
-      'Updates what Piwi posts back to a pull request when a run finishes. Send `settings: null` to reset to the built-in defaults (feedback off). Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Updates what Piwi posts back to a pull request when a run finishes. Send `settings: null` to reset to the built-in defaults (feedback off). Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

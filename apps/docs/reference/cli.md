@@ -68,13 +68,13 @@ npx @piwitests/reporter skills list
 npx @piwitests/reporter skills add [names...] [options]
 ```
 
-The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them.
+The seven skills are `setup-piwi`, `investigate-failure`, `apply-locator-healing`, `stabilize-flaky-tests`, `run-the-right-tests`, `write-the-missing-test` and `fix-a-reported-bug`. `add` with no names installs all of them. Each installed file is stamped with the reporter's version (`piwi-version`) and a hash (`piwi-hash`); `add` reports a skill as `outdated` when an older release installed it and it was never edited, and replaces it, and as `edited` when it changed since it was installed, and keeps it.
 
 | Flag (for `add`) | Description |
 |---|---|
 | `--dir <path>` | Directory to install into (default: `.claude/skills`) |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
-| `--force` | Overwrite a skill file that already exists |
+| `--force` | Replace a skill that was edited since it was installed (an untouched skill from an older release is always updated) |
 | `--dry-run` | Report what would be written without writing |
 | `--json` | Print the results as JSON |
 
@@ -295,7 +295,7 @@ of a file.
 | `--test-import <mod>` | Module `test` and `expect` are imported from, such as your fixtures file (default `@playwright/test`) |
 | `--absolute-urls` | Keep the recorded URLs instead of paths |
 | `--no-url-checks` | Do not wait for each new page's URL |
-| `--env-values` | Read every typed value from a `PIWI_TEST_VALUE_<n>` environment variable instead of writing it into the spec |
+| `--env-values` | Read every typed value from an environment variable named after its field (`E2E_EMAIL` for a field labeled Email) instead of writing it into the spec |
 | `--fail` | Mark the test as expected to fail (`test.fail()`) |
 | `--fail-reason <text>` | The reason written beside `test.fail()`, such as a ticket key |
 | `--tag <tag>` | Add a tag; repeat for more (`@` is added when missing) |

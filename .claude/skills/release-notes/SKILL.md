@@ -23,7 +23,7 @@ annotated breakdown of v0.26.0.
 - Regenerating notes after a release, or repairing an old one.
 
 For a version with only a handful of commits and no duplicates, the deterministic CI job
-(`.github/workflows/changelog-polish.yml`) already keeps the release body clean — the rich format
+(`.github/workflows/release-notes.yml`) already keeps the release body clean — the rich format
 below is worth it for feature releases, not every patch.
 
 ## Workflow

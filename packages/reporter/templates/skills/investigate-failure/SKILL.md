@@ -27,7 +27,11 @@ Prefer the **Piwi MCP server** if it is connected to this agent (tools named `li
 
 7. **Verify.** Re-run the affected spec(s): `npx playwright test <file>`. Confirm they pass and the new run is green in the dashboard (`get_run_insights` compares against the last green run: regressions cleared, nothing new broken).
 
-8. **Close the loop (optional).** With reporter or admin access, `set_cluster_status` marks the cluster resolved with a note so it drops off the triage queue.
+8. **Report back.** Piwi learns from what you tell it, so end every investigation with these calls (they need reporter or admin access; each is logged with your API key):
+   - **Your diagnosis.** If the cluster had no diagnosis, or yours differs, record it with `record_diagnosis`: the model you run on and the diagnosis in the schema the tool describes (summary, confidenceScore, severity, ranked hypotheses with their evidence, suggestedFix with the unified-diff `patch`). Piwi validates the patch against the source that failed and shows the diagnosis as written by an agent.
+   - **Your rating of Piwi's diagnosis.** If you read one with `get_cluster_diagnosis`, rate it with `submit_diagnosis_feedback`: `up` when it pointed at the real cause, `down` with a one-line note on what it got wrong when it did not. A `down` keeps the next diagnosis from repeating it.
+   - **Your fix.** Commit the change with the trailer `get_fix_plan` returns in `verify.commitTrailer` (`Piwi-Cluster: <clusterId>`) as the last line of the commit message, then call `report_fix_attempt` with the cluster, the kind (`patch`, `locator-edit` or `fix-plan`), the commit or the branch, the patch you applied and the `diagnosisId` you followed. When the tests pass on that commit, Piwi records the attempt verified and shows it on the cluster's activity.
+   - Leave the cluster's status alone: the run that passes on your commit records the fix.
 
 ## Guardrails
 

@@ -16,7 +16,9 @@
  */
 
 import { test, expect } from './fixtures';
+import { ProjectRole } from '#shared/permissions';
 import { MailpitClient } from './utils/mailpit';
+import { createMember } from './utils/access';
 
 // All tests in this file share one Mailpit inbox — must run serially.
 test.describe.configure({ mode: 'serial' });
@@ -112,18 +114,10 @@ test.describe.serial('Forgot & reset password', () => {
     const cookie = await adminLogin();
 
     // Create a user with email via admin
-    const res = await apiPost(
-      '/api/users',
-      {
-        username: 'resettest',
-        password: 'OldPassword1!',
-        role: 'user',
-        email: RESET_EMAIL,
-      },
-      cookie,
-    );
-    const data = (await res.json()) as { user?: { id: number } };
-    userId = data.user?.id ?? 0;
+    ({ id: userId } = await createMember(
+      { baseUrl: EMAIL_SERVER, cookie },
+      { username: 'resettest', password: 'OldPassword1!', email: RESET_EMAIL, role: ProjectRole.VIEWER },
+    ));
   });
 
   test.afterAll(async () => {
@@ -211,17 +205,10 @@ test.describe.serial('Change password', () => {
 
   test.beforeAll(async () => {
     const adminCookie = await adminLogin();
-    const res = await apiPost(
-      '/api/users',
-      {
-        username: USERNAME,
-        password: INITIAL_PW,
-        role: 'user',
-      },
-      adminCookie,
-    );
-    const data = (await res.json()) as { user?: { id: number } };
-    userId = data.user?.id ?? 0;
+    ({ id: userId } = await createMember(
+      { baseUrl: EMAIL_SERVER, cookie: adminCookie },
+      { username: USERNAME, password: INITIAL_PW, role: ProjectRole.VIEWER },
+    ));
 
     const loginRes = await apiPost('/api/auth/login', { username: USERNAME, password: INITIAL_PW });
     cookie = loginRes.headers.get('set-cookie')?.split(';')[0] ?? '';
@@ -281,18 +268,10 @@ test.describe.serial('User invite email', () => {
   test.beforeAll(async () => {
     mailpit = new MailpitClient(MAILPIT_URL);
     const cookie = await adminLogin();
-    const res = await apiPost(
-      '/api/users',
-      {
-        username: 'invitetest',
-        password: 'TempPassword1!',
-        role: 'user',
-        email: INVITE_EMAIL,
-      },
-      cookie,
-    );
-    const data = (await res.json()) as { user?: { id: number } };
-    userId = data.user?.id ?? 0;
+    ({ id: userId } = await createMember(
+      { baseUrl: EMAIL_SERVER, cookie },
+      { username: 'invitetest', password: 'TempPassword1!', email: INVITE_EMAIL, role: ProjectRole.VIEWER },
+    ));
   });
 
   test.afterAll(async () => {
@@ -349,18 +328,10 @@ test.describe.serial('Notification dispatch', () => {
     cookie = await adminLogin();
 
     // Create a user with email
-    const userRes = await apiPost(
-      '/api/users',
-      {
-        username: 'notifytest',
-        password: 'NotifyPw1!',
-        role: 'user',
-        email: NOTIFY_EMAIL,
-      },
-      cookie,
-    );
-    const userData = (await userRes.json()) as { id?: number; userId?: number };
-    userId = userData.id ?? userData.userId ?? 0;
+    ({ id: userId } = await createMember(
+      { baseUrl: EMAIL_SERVER, cookie },
+      { username: 'notifytest', password: 'NotifyPw1!', email: NOTIFY_EMAIL, role: ProjectRole.VIEWER },
+    ));
 
     // Create a project by submitting a run
     const runRes = await apiPost(

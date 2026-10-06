@@ -20,7 +20,7 @@ defineRouteMeta({
         description: 'How many recent runs to analyse',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

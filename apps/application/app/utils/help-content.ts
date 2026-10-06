@@ -186,6 +186,11 @@ export const HELP_TOPICS = {
     title: 'Fixes and triage',
     text: 'Failure causes fixed in the period and whether the fixes held, open causes assigned or linked to a ticket, tests quarantined and released, and auto-heal pull requests opened.',
   },
+  'analytics.handbacks': {
+    title: 'Hand-back outcomes',
+    text: 'What became of what Piwi handed back in the period: locator heals now used in the code, auto-heal pull requests merged or closed, AI diagnoses rated and confirmed by the fix, merges the gate blocked or that were merged anyway, and flaky tests Flake Lab proved fixed. Counted per project and day, so branch and environment filters do not narrow it, and a rate needs ten ratings, pull requests or fixes before it is given. A kind whose capability a project declined leaves that project out.',
+    doc: 'features/analytics#hand-back-outcomes',
+  },
   'analytics.risks': {
     title: 'Risks',
     text: 'Metrics that moved the wrong way against the comparison period, projects failing run after run, the oldest open failure causes, and the tests waiting in quarantine.',
@@ -252,7 +257,7 @@ export const HELP_TOPICS = {
   },
   'dashboards.sharing': {
     title: 'Sharing a dashboard',
-    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the reporter or administrator role, and shows nobody a project they cannot open.',
+    text: 'A shared dashboard is listed for every signed-in user; only its owner and administrators change it, everyone else duplicates it. Sharing needs the Maintainer role or above on at least one project, and shows nobody a project they cannot open.',
     doc: 'features/dashboards#sharing-and-access',
   },
   'reports.schedule': {
@@ -401,9 +406,9 @@ export const HELP_TOPICS = {
     doc: 'reference/test-search',
   },
   'project.members': {
-    title: 'Project access',
-    text: 'Who can see this project. Admins always have access; reporters and users see only the projects assigned to them.',
-    doc: 'operate/project-access',
+    title: 'Project members',
+    text: 'The users and groups holding a role on this project, granted here or on All projects. A Project admin can grant any project role here; administrators can do everything on every project.',
+    doc: 'operate/project-access#who-manages-access',
   },
   'project.ai-instructions': {
     title: 'AI diagnosis instructions',
@@ -445,7 +450,7 @@ export const HELP_TOPICS = {
   'project.ci-rerun': {
     title: 'CI re-run',
     text: [
-      'Lets a reporter or admin re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
+      'Lets a Maintainer or Project admin re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
       '',
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
@@ -479,7 +484,7 @@ export const HELP_TOPICS = {
   },
   'run.keep': {
     title: 'Kept runs',
-    text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only an administrator can release it.',
+    text: 'Retention (the nightly sweep and the storage cleanup) never deletes a kept run. Keep one from the run menu, or have the reporter keep it at ingest with keep: true. Only a Project admin can release it.',
     doc: 'operate/storage#keeping-runs-forever',
     envVars: ['PIWI_RETENTION_DAYS'],
   },
@@ -527,8 +532,8 @@ export const HELP_TOPICS = {
     doc: 'features/resource-leaks#what-it-reports',
   },
   'run.resource-pages': {
-    title: 'Open pages by worker',
-    text: 'How many pages were still open in each worker at the end of each of its tests. A line that keeps rising is a page left open test after test; every line shares one scale.',
+    title: 'Open pages over time',
+    text: 'How many pages each worker kept open over the run, drawn on the timeline above the worker rows. A line that keeps rising is a page left open test after test.',
     doc: 'features/resource-leaks#in-the-dashboard',
   },
   'run.resource-machine': {
@@ -567,6 +572,11 @@ export const HELP_TOPICS = {
     title: 'Capabilities',
     text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
     doc: 'guide/getting-started',
+  },
+  'cluster.activity': {
+    title: 'Activity',
+    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it.',
+    doc: 'features/agent-skills#what-agents-report-back',
   },
   'fix.toolbox': {
     title: 'More ways to fix',
@@ -820,12 +830,22 @@ export const HELP_TOPICS = {
   },
   'settings.users': {
     title: 'Users & roles',
-    text: 'Manage accounts and their role. Administrators control everything; reporters submit results; users have read-only access.',
+    text: 'Accounts and their instance role. An Administrator can do everything on every project; a Member only what the project roles granted to them or to their groups allow.',
     doc: 'operate/authentication#roles',
   },
+  'settings.groups': {
+    title: 'Groups',
+    text: 'Named sets of users, such as QA or Product owners. A group receives project roles the way a user does, and its members hold them; rights add up, and groups do not nest. A group never makes anyone an Administrator.',
+    doc: 'operate/project-access#groups',
+  },
+  'settings.roles': {
+    title: 'What each role can do',
+    text: 'The five project roles and what each one allows, read from the same definitions the server enforces. The roles are fixed: to give someone rights, grant them a role on the permission grid or in a project’s Members.',
+    doc: 'operate/project-access#what-each-role-can-do',
+  },
   'settings.permissions': {
-    title: 'Project access',
-    text: 'Which projects each reporter and user can open, one tick per project — every click saves at once. All projects also covers projects created later; administrators always open every project.',
+    title: 'Permission grid',
+    text: 'Every group and user against every project: pick a role in a cell to grant it there, or none to remove it. Each change saves at once. All projects also covers projects created later, and a role held only through a group or All projects shows faint.',
     doc: 'operate/project-access#permission-grid',
   },
   'settings.api-keys': {
@@ -988,7 +1008,7 @@ export const HELP_TOPICS = {
     text: [
       'Click a source path to open it in your local editor.',
       '',
-      '- **JetBrains IDE with the Piwi plugin** (Rider, WebStorm, IntelliJ IDEA) — nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms.',
+      '- **JetBrains IDE with the Piwi plugin** (Rider, WebStorm, IntelliJ IDEA) whose project is connected to this instance — nothing to set: the IDE finds the file in its open projects, opens it at the line and confirms.',
       '- **Otherwise** set your local workspace folder (so VS Code gets an absolute path) or a JetBrains project name, then pick a method and hit **Test** to check it works.',
       '- **Desktop app** — also opens files through your IDE’s command-line launcher (`code`, `rider`, …).',
       '- **Browser** — **Auto** falls back to the JetBrains local server, then to a `vscode://` or `jetbrains://` launch, which cannot confirm.',

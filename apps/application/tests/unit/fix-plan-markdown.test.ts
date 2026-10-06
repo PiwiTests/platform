@@ -20,6 +20,7 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
     verify: {
       command: 'npx playwright test tests/checkout.spec.ts',
       expectation: 'When these pass, Piwi records the fix.',
+      commitTrailer: 'Piwi-Cluster: 7',
     },
     reproduce: {
       steps: [
@@ -76,6 +77,7 @@ describe('fixPlanToMarkdown', () => {
     expect(md).toContain('checkout completes');
     expect(md).toContain('## Verify');
     expect(md).toContain('npx playwright test tests/checkout.spec.ts');
+    expect(md).toContain('Piwi-Cluster: 7');
     // No diagnosis / edits / owner sections when those are absent.
     expect(md).not.toContain('## Diagnosis');
     expect(md).not.toContain('## Suggested locator edits');

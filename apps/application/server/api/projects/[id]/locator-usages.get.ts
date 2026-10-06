@@ -33,7 +33,7 @@ defineRouteMeta({
           'The branch to describe: its tests’ uses where they ran on it, the default branch’s for the others. `*` for every branch together; the default branch when absent.',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

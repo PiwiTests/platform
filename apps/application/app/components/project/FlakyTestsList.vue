@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FlakyTest, VerifiedFixedFlakyTest } from '~~/types/api';
+import type { ApiResponse, FlakyTest, VerifiedFixedFlakyTest } from '~~/types/api';
 import type { TopFlakeSuspect } from '#shared/handlers/flake-profile';
 import type { FlakeLabSummary } from '#shared/handlers/flake-lab';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
@@ -15,7 +15,9 @@ const props = defineProps<{
 const emit = defineEmits<{ count: [total: number]; quarantined: [] }>();
 
 const toast = useToast();
-const { canWrite } = useAuth();
+// Quarantining and dismissing a proposal need `quarantine:write` on the project.
+const { can } = useAuth();
+const canQuarantine = computed(() => can('quarantine:write', props.projectId));
 const quarantiningId = ref<number | null>(null);
 
 const runsWindow = ref(50);
@@ -70,6 +72,29 @@ watch(
   { immediate: true },
 );
 
+// Piwi's quarantine proposals among the listed tests, read after the list so the
+// list never waits on them. A proposal dismissed since the newest run is not marked.
+type QuarantineResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/quarantine.get').default>;
+const proposals = ref(new Map<number, QuarantineResponse['candidates'][number]>());
+
+async function loadProposals() {
+  if (capabilityHidden('quarantine')) return;
+  try {
+    const res = await $fetch<QuarantineResponse>(`/api/projects/${props.projectId}/quarantine`);
+    proposals.value = new Map(res.candidates.filter((c) => !c.dismissed).map((c) => [c.testCaseId, c]));
+  } catch {
+    // The proposals are optional; the list reads the same without them.
+  }
+}
+
+watch(
+  tests,
+  (list) => {
+    if (list?.length) loadProposals();
+  },
+  { immediate: true },
+);
+
 /** The latest Flake Lab experiment, when it reproduced the test. */
 function reproducedBy(testCaseId: number): FlakeLabSummary | null {
   const lab = topSuspects.value.get(testCaseId)?.lab;
@@ -82,12 +107,21 @@ function suspectLink(testCaseId: number, suspectId: string): string {
 
 async function quarantineTest(test: FlakyTest) {
   quarantiningId.value = test.testCaseId;
+  // Quarantining a proposed test applies Piwi's proposal, with its reasons.
+  const proposal = proposals.value.get(test.testCaseId);
   try {
     await $fetch(`/api/projects/${props.projectId}/quarantine`, {
       method: 'POST',
-      body: { testCaseId: test.testCaseId, reason: 'Flaky', source: 'manual' },
+      body: proposal
+        ? { testCaseId: test.testCaseId, reason: proposal.rationale, source: 'proposed' }
+        : { testCaseId: test.testCaseId, reason: 'Flaky', source: 'manual' },
     });
     toast.add({ title: 'Test quarantined', description: test.title, color: 'success' });
+    if (proposal) {
+      const next = new Map(proposals.value);
+      next.delete(test.testCaseId);
+      proposals.value = next;
+    }
     emit('quarantined');
   } catch (error: unknown) {
     const message =
@@ -222,8 +256,15 @@ function flakyBadges(test: FlakyTest) {
             <UBadge color="neutral" variant="outline" size="xs">Reproduced</UBadge>
           </NuxtLink>
           <span class="tabular-nums" title="Failure rate">{{ Math.round(test.failureRate * 100) }}% fail</span>
+          <QuarantineDismissButton
+            v-if="canQuarantine && proposals.has(test.testCaseId)"
+            :project-id="projectId"
+            :test-case-id="test.testCaseId"
+            proposal="quarantine"
+            @dismissed="loadProposals"
+          />
           <UButton
-            v-if="canWrite"
+            v-if="canQuarantine"
             size="xs"
             variant="outline"
             color="warning"
@@ -237,6 +278,13 @@ function flakyBadges(test: FlakyTest) {
 
         <template #subline>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+            <span
+              v-if="proposals.has(test.testCaseId)"
+              :title="proposals.get(test.testCaseId)!.reasons.join('\n')"
+              data-testid="flaky-quarantine-proposed"
+            >
+              Proposed for quarantine
+            </span>
             <NuxtLink
               v-if="topSuspects.get(test.testCaseId)?.suspect"
               :to="suspectLink(test.testCaseId, topSuspects.get(test.testCaseId)!.suspect!.id)"

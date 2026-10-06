@@ -1,41 +1,49 @@
 <script setup lang="ts">
+/**
+ * The demo banner's "Acting as" picker: every seeded persona, administrators
+ * first, each with what it can do. Picking one reloads the demo as that user
+ * (`setDemoUser`). On load it takes the persona's live access, which the
+ * demo's access screens may have changed (`refreshDemoAccess`).
+ */
 import type { DropdownMenuItem } from '@nuxt/ui';
-import { Role } from '#shared/types';
+import { InstanceRole } from '#shared/permissions';
 
-const { demoUsers, currentDemoUserId, setDemoUser } = useAuth();
+const { demoUsers, currentDemoUserId, setDemoUser, refreshDemoAccess } = useAuth();
 
-const roleLabel: Record<string, string> = {
-  [Role.ADMINISTRATOR]: 'Admin',
-  [Role.REPORTER]: 'Reporter',
-  [Role.USER]: 'User',
-};
+// The seeded access until the in-browser database answers with the live one.
+onMounted(refreshDemoAccess);
 
 const current = computed(() => demoUsers.find((u) => u.id === currentDemoUserId.value) ?? demoUsers[0]);
 
-function accessSummary(u: (typeof demoUsers)[number]): string {
-  if (u.role === Role.ADMINISTRATOR) return 'All projects';
-  if (u.assignment.global) return 'All projects';
-  if (u.assignment.projectIds.length === 0) return 'No project access';
-  return `${u.assignment.projectIds.length} project${u.assignment.projectIds.length > 1 ? 's' : ''}`;
-}
-
-const items = computed<DropdownMenuItem[][]>(() => [
-  demoUsers.map((u) => ({
-    label: `${u.name} · ${roleLabel[u.role]}`,
-    icon: u.role === Role.ADMINISTRATOR ? 'i-lucide-shield' : 'i-lucide-user',
-    // checkbox so the active identity is marked
-    type: 'checkbox' as const,
+function personaItem(u: (typeof demoUsers)[number]): DropdownMenuItem {
+  return {
+    label: u.label,
+    description: u.description,
+    icon: u.instanceRole === InstanceRole.ADMINISTRATOR ? 'i-lucide-shield' : 'i-lucide-user',
+    // A checkbox item, so the active identity is marked.
+    type: 'checkbox',
     checked: u.id === currentDemoUserId.value,
     onSelect: (e: Event) => {
       e.preventDefault();
       if (u.id !== currentDemoUserId.value) setDemoUser(u.id);
     },
-  })),
-]);
+  };
+}
+
+const items = computed<DropdownMenuItem[][]>(() =>
+  [InstanceRole.ADMINISTRATOR, InstanceRole.MEMBER]
+    .map((role) => demoUsers.filter((u) => u.instanceRole === role).map(personaItem))
+    .filter((group) => group.length > 0),
+);
 </script>
 
 <template>
-  <UDropdownMenu :items="items" :content="{ align: 'end', collisionPadding: 12 }" :ui="{ content: 'w-64' }">
+  <!-- Above the demo banner (z-index 60), which wraps under the menu on a phone. -->
+  <UDropdownMenu
+    :items="items"
+    :content="{ align: 'end', collisionPadding: 12 }"
+    :ui="{ content: 'w-80 z-[70]', itemDescription: 'whitespace-normal' }"
+  >
     <UButton
       color="warning"
       variant="soft"
@@ -43,7 +51,7 @@ const items = computed<DropdownMenuItem[][]>(() => [
       icon="i-lucide-user-round-cog"
       trailing-icon="i-lucide-chevrons-up-down"
       :label="`Acting as: ${current?.name}`"
-      :title="`Switch demo user — currently ${current?.name} (${accessSummary(current!)})`"
+      :title="`Switch demo user — currently ${current?.name}: ${current?.description}`"
     />
   </UDropdownMenu>
 </template>

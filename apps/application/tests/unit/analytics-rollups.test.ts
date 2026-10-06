@@ -25,6 +25,7 @@ const { deleteRunsByIds, deleteRunsOlderThan } = await import('../../server/util
 const { releaseRun, keepRun } = await import('../../shared/handlers/run-keep');
 const { dayKey } = await import('../../shared/handlers/analytics/common');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/handlers/probes');
+const { runOrigin } = await import('../../shared/run-eligibility');
 const { rollupMetricValue } = await import('../../shared/handlers/analytics/metric-values');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -95,6 +96,7 @@ async function seedRun(seed: RunSeed): Promise<number> {
       branch: seed.branch ?? null,
       isFullRun: seed.isFullRun ?? 1,
       metadata: seed.metadata,
+      origin: runOrigin(seed.metadata),
       avgTestDuration: seed.p90TestDuration === null ? null : 1_000,
       p90TestDuration: seed.p90TestDuration === undefined ? 2_000 : seed.p90TestDuration,
     })

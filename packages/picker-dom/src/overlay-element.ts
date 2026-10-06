@@ -21,14 +21,20 @@ export interface PickerOverlayArg {
   probeArg?: ProbeArg;
   /** The banner's texts, for a host that shows another language than English. */
   strings?: PickerOverlayStrings;
+  /**
+   * The attribute `getByTestId` reads in the project (Playwright's
+   * `testIdAttribute`); `data-testid` when null or absent. The overlay's own
+   * description of an element and its snapping to a test id read it.
+   */
+  testIdAttribute?: string | null;
 }
 
 /**
  * Runs inside the browser — installs the element-picking overlay: a hover
  * highlight, an instruction banner, and capture-phase listeners that suppress
  * the app's own handlers while picking. The hover target snaps to the nearest
- * actionable ancestor (button/link/field/role/testid) and up/down walk the DOM
- * chain before the click commits.
+ * actionable ancestor (button/link/field/role/test id) and up/down walk the
+ * DOM chain before the click commits.
  *
  * `transport` picks how a pick/skip is reported, since the two hosts cross
  * fundamentally different boundaries:
@@ -69,6 +75,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
     return;
   }
   const Z = 2147483600;
+  const testIdAttr = arg.testIdAttribute || 'data-testid';
   const words = {
     banner: 'Piwi inspector — click any element to generate locators for it',
     keys: '↑ parent · ↓ child · Esc skip',
@@ -188,7 +195,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
   const describe = (el: any): string => {
     const tag = (el.tagName || '?').toLowerCase();
 
-    const testId = el.getAttribute && el.getAttribute('data-testid');
+    const testId = el.getAttribute && el.getAttribute(testIdAttr);
     if (testId) return `getByTestId('${escJs(testId)}')`;
 
     if (el.labels && el.labels.length > 0) {
@@ -235,7 +242,7 @@ export function installPickerOverlay(arg: PickerOverlayArg): void {
       const el = chain[i];
       const tag = (el.tagName || '').toLowerCase();
       if (ACTIONABLE_TAGS.includes(tag)) return i;
-      if (el.getAttribute && (el.getAttribute('role') || el.getAttribute('data-testid'))) return i;
+      if (el.getAttribute && (el.getAttribute('role') || el.getAttribute(testIdAttr))) return i;
     }
     return 0;
   };

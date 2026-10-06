@@ -32,8 +32,8 @@ On an execution page, a failure-cluster page or a report snapshot page, open **S
 2. **Copy the link immediately — it is shown only once.** The server stores a hash of the token, not the token, so
    there is no way to display the URL again later. Mint a new link instead.
 
-Creating and revoking links requires the administrator or reporter role; any project member can see which links
-exist. Each entry in the dialog shows the link's prefix, its expiry state, and how many times it was opened.
+Creating and revoking links requires the **Maintainer** role or above on the project, or an administrator; anyone
+who can read the project can see which links exist. Each entry in the dialog shows the link's prefix, its expiry state, and how many times it was opened.
 
 ## What the viewer sees
 
@@ -70,7 +70,7 @@ A live dashboard link renders a saved dashboard as a quality report computed at 
 itself every minute: a bookmark for a stakeholder, or a wall screen with nobody signed in. Built-in dashboards have
 none; duplicate one first.
 
-- The numbers are computed with the project access of the person who minted the link, checked again at every view
+- The numbers are computed with the access of the person who minted the link, checked again at every view
   (at most a minute behind). The link dies when that access or the dashboard goes, when it expires, or when it is
   revoked.
 - It shows the aggregates and the lists the dashboard carries, never evidence files: no screenshot, no trace, no

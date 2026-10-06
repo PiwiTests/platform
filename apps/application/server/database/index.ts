@@ -1,14 +1,13 @@
 // Import SQLite drizzle for static type inference.
 // At runtime the correct driver is selected based on PIWI_DATABASE_URL;
 // TypeScript uses the SQLite types as the canonical reference throughout.
-import { getTableName } from 'drizzle-orm';
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
-import { backfillProjectAssignments } from '#shared/handlers/project-assignments';
 import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { configureSqliteConnections } from './sqlite-connections';
+import { isOtelTracingEnabled, traceSqlStatements } from '../utils/otel';
 import { existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -17,12 +16,6 @@ type DB = ReturnType<typeof sqliteDrizzle<typeof sqliteSchema>>;
 
 /** The resolved database client returned by getDatabase(). Import this instead of re-deriving it locally. */
 export type DbClient = Awaited<ReturnType<typeof getDatabase>>;
-
-/**
- * Whether this table exists before migrations run tells a database meeting project
- * access for the first time from one already enforcing it (backfillProjectAssignments).
- */
-const PROJECT_ACCESS_TABLE = getTableName(sqliteSchema.projectAssignments);
 
 let db: DB;
 let initPromise: Promise<DB> | null = null;
@@ -100,6 +93,7 @@ async function openDatabase(): Promise<DB> {
 
       const client = postgres(databaseUrl);
       const pgDb = drizzle(client);
+      if (isOtelTracingEnabled()) traceSqlStatements('postgres', pgDb, client);
       // Cast to the canonical SQLite DB type so callers retain typed query results
       db = pgDb as unknown as DB;
 
@@ -108,16 +102,8 @@ async function openDatabase(): Promise<DB> {
           const migrationsFolder = await resolveMigrationsFolder('migrations-pg');
           console.log(`[Database] Running PostgreSQL migrations from ${migrationsFolder}`);
           const target = postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder }));
-          const projectAccessIsNew = !(await target.tableExists(PROJECT_ACCESS_TABLE));
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
-          // Grant existing users global access, once, on a database meeting project access for the first time
-          try {
-            await backfillProjectAssignments(db as any, { tableIsNew: projectAccessIsNew });
-            console.log('[Database] Project assignments backfill completed');
-          } catch (bfErr) {
-            console.error('[Database] Project assignments backfill failed:', bfErr);
-          }
           try {
             const { updated, merged } = await reclusterFailureFingerprints(db as any);
             if (updated || merged) {
@@ -159,22 +145,15 @@ async function openDatabase(): Promise<DB> {
       await client.execute('PRAGMA journal_mode=WAL');
       await configureSqliteConnections(client);
       db = sqliteDrizzle(client, { schema: sqliteSchema });
+      if (isOtelTracingEnabled()) traceSqlStatements('sqlite', db, client);
 
       migrationPromise = (async () => {
         try {
           const migrationsFolder = await resolveMigrationsFolder('migrations');
           console.log(`[Database] Running SQLite migrations from ${migrationsFolder}`);
           const target = sqliteMigrationTarget(client, () => migrate(db, { migrationsFolder }));
-          const projectAccessIsNew = !(await target.tableExists(PROJECT_ACCESS_TABLE));
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] SQLite migrations completed successfully');
-          // Grant existing users global access, once, on a database meeting project access for the first time
-          try {
-            await backfillProjectAssignments(db, { tableIsNew: projectAccessIsNew });
-            console.log('[Database] Project assignments backfill completed');
-          } catch (bfErr) {
-            console.error('[Database] Project assignments backfill failed:', bfErr);
-          }
           try {
             const { updated, merged } = await reclusterFailureFingerprints(db);
             if (updated || merged) {

@@ -8,9 +8,9 @@ defineRouteMeta({
     tags: ['System'],
     summary: 'Record what the window did with a repro request (desktop app)',
     description:
-      'Desktop build only — 404 on the server build. The window records that the developer started the request in a linked project (`running`), declined it (`declined`), or that its run ended (`done`, with the verdict and the Piwi run). 409 when the request is not in a state that step follows from.',
+      'Desktop build only — 404 on the server build. The window records that the developer started the request in a linked project (`running`), declined it (`declined`), or that its run ended (`done`, with the verdict, or the `jobVerdict` of a job, and the Piwi run). 409 when the request is not in a state that step follows from.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'signed-in',
   },
 });
 

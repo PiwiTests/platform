@@ -8,7 +8,7 @@ export interface PickedAnchorInfo {
   ariaLabel: string | null;
   /** Resolved anchor role (explicit attribute or tag-implied). */
   role: string | null;
-  /** Document-wide match count for the anchor's own data-testid. */
+  /** Document-wide match count for the anchor's own test id. */
   testIdCount?: number;
   /** Document-wide match count for the anchor's own id. */
   idCount?: number;
@@ -58,6 +58,12 @@ export interface AnchorPickerArg {
   leafRole: string;
   leafLevel: number | null;
   leafTestId: string | null;
+  /**
+   * The attribute `getByTestId` reads in the project (Playwright's
+   * `testIdAttribute`), which `leafTestId` and each parent's test id are read
+   * from; `data-testid` when null or absent.
+   */
+  testIdAttribute?: string | null;
   /** The panel's texts, for a host that shows another language than English. */
   strings?: AnchorPickerStrings;
 }
@@ -86,6 +92,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   }
   const Z = 2147483600;
   const { tagRoles, inputRoles, roleSources, leafRole, leafLevel, leafTestId } = arg;
+  const testIdAttr = arg.testIdAttribute || 'data-testid';
   const words = {
     title: 'Scope to stable parents (optional)',
     hint: 'Pick one or more parents to anchor the locator to. Hover a row to see the parent.',
@@ -95,7 +102,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     countUnavailable: 'Match count unavailable',
     containsOne: 'contains exactly 1 matching element',
     containsMany: 'contains {count} matching elements',
-    needsTestId: 'add a data-testid to make this usable',
+    needsTestId: `add a ${testIdAttr} to make this usable`,
     noHook: 'no stable hook',
     use: 'Use selected parents',
     skip: 'Skip (Esc)',
@@ -127,11 +134,11 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   // counted from them: its counts are unavailable rather than 0.
   const leafCountable = !!leafTestId || roleOf(el) === leafRole;
 
-  // Leaf matches inside a scope: same data-testid when the element has one,
+  // Leaf matches inside a scope: same test id when the element has one,
   // otherwise same resolved role (level-scoped for headings). -1 when unknown.
   const leafMatches = (scope: any): number => {
     try {
-      if (leafTestId) return scope.querySelectorAll(`[data-testid=${JSON.stringify(leafTestId)}]`).length;
+      if (leafTestId) return scope.querySelectorAll(`[${testIdAttr}=${JSON.stringify(leafTestId)}]`).length;
       if (!leafCountable) return -1;
       const nodes = scope.querySelectorAll(roleSources);
       if (nodes.length > 2000) return -1;
@@ -178,12 +185,12 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     depth++;
     const tag = (node.tagName || '').toLowerCase();
     if (tag === 'body' || tag === 'html') break;
-    const testId = node.getAttribute('data-testid');
+    const testId = node.getAttribute(testIdAttr);
     const id = node.getAttribute('id');
     const ariaLabel = node.getAttribute('aria-label');
     const role = roleOf(node);
     const info: any = { tag, depth, testId: testId || null, id: id || null, ariaLabel: ariaLabel || null, role };
-    if (testId) info.testIdCount = count(`[data-testid=${JSON.stringify(testId)}]`);
+    if (testId) info.testIdCount = count(`[${testIdAttr}=${JSON.stringify(testId)}]`);
     if (id) {
       try {
         info.idCount = count(`#${doc.defaultView.CSS.escape(id)}`);
@@ -205,7 +212,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
     info.scopedLeafCount = leafMatches(node);
 
     const hookLabel = testId
-      ? `data-testid="${testId}"`
+      ? `${testIdAttr}="${testId}"`
       : id
         ? `#${id}`
         : ariaLabel && role
@@ -272,7 +279,7 @@ export function showAnchorPicker(arg: AnchorPickerArg): void {
   // emitted chain agree: testid > id > labeled role > bare role.
   const segMatches = (scope: any, info: any): any[] => {
     try {
-      if (info.testId) return Array.from(scope.querySelectorAll(`[data-testid=${JSON.stringify(info.testId)}]`));
+      if (info.testId) return Array.from(scope.querySelectorAll(`[${testIdAttr}=${JSON.stringify(info.testId)}]`));
       if (info.id) return Array.from(scope.querySelectorAll(`#${doc.defaultView.CSS.escape(info.id)}`));
       const nodes = Array.from(scope.querySelectorAll(roleSources));
       if (nodes.length > 2000) return [];

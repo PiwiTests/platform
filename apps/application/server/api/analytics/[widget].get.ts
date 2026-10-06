@@ -8,7 +8,7 @@ defineRouteMeta({
       'The former path of `GET /api/widgets/{widget}`, same answer, kept for scripts. The app calls the new path: ad blockers (uBlock Origin among them) refuse requests whose address contains "analytics".',
     deprecated: true,
     parameters: [{ name: 'widget', in: 'path', required: true, schema: { type: 'string' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

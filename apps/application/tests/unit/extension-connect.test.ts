@@ -40,7 +40,7 @@ beforeEach(async () => {
   });
   const [user] = await db
     .insert(schema.users)
-    .values({ username: 'tester', password: 'x', role: 'reporter', name: 'Test User' })
+    .values({ username: 'tester', password: 'x', role: 'member', name: 'Test User' })
     .returning();
   userId = user!.id;
 });

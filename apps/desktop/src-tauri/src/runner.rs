@@ -516,6 +516,9 @@ pub(crate) struct RunEventPayload {
     /// For `repro`: the spec's recorded outcome, `null` when it recorded none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repro: Option<serde_json::Value>,
+    /// For `lab`: the report `piwi flake --json` printed, `null` when it printed none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lab: Option<serde_json::Value>,
 }
 
 impl RunEventPayload {
@@ -528,6 +531,7 @@ impl RunEventPayload {
             phase: None,
             bisect: None,
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn exit(id: u32, code: Option<i32>) -> Self {
@@ -539,6 +543,7 @@ impl RunEventPayload {
             phase: None,
             bisect: None,
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn phase(id: u32, phase: &str) -> Self {
@@ -550,6 +555,7 @@ impl RunEventPayload {
             phase: Some(phase.to_string()),
             bisect: None,
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn bisect(id: u32, event: crate::worktree::BisectEvent) -> Self {
@@ -561,6 +567,7 @@ impl RunEventPayload {
             phase: None,
             bisect: Some(event),
             repro: None,
+            lab: None,
         }
     }
     pub(crate) fn repro(id: u32, recorded: Option<serde_json::Value>) -> Self {
@@ -572,6 +579,19 @@ impl RunEventPayload {
             phase: None,
             bisect: None,
             repro: Some(recorded.unwrap_or(serde_json::Value::Null)),
+            lab: None,
+        }
+    }
+    pub(crate) fn lab(id: u32, report: Option<serde_json::Value>) -> Self {
+        Self {
+            id,
+            kind: "lab",
+            line: None,
+            code: None,
+            phase: None,
+            bisect: None,
+            repro: None,
+            lab: Some(report.unwrap_or(serde_json::Value::Null)),
         }
     }
 }
@@ -590,8 +610,13 @@ pub async fn desktop_run_local_tests(
     project_id: String,
     args: Vec<String>,
     cwd: Option<String>,
+    origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
+    let origin = crate::worktree::origin_env(
+        "desktop",
+        crate::worktree::origin_reference(None, origin_ref)?.as_deref(),
+    );
 
     let folder = match cwd {
         Some(dir) => crate::worktree::validate_worktree_cwd(&app, &dir)?,
@@ -622,7 +647,7 @@ pub async fn desktop_run_local_tests(
         // Plain text for the in-app output pane.
         .env("NO_COLOR", "1")
         .env("FORCE_COLOR", "0")
-        .env("PIWI_ORIGIN", "desktop");
+        .envs(origin);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 

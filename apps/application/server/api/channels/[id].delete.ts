@@ -1,15 +1,15 @@
 import { eq, and } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { notificationChannels } from '../../database/schema';
-import { requireAuth } from '../../utils/auth';
-import { Role } from '#shared/types';
+import { getRequestAccess, requireAuth } from '../../utils/auth';
+import { isAdministrator } from '#shared/permissions';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Notifications'],
     summary: 'Delete a notification channel',
     description: 'Deletes a channel and all associated subscriptions and deliveries.',
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
   },
 });
@@ -23,7 +23,7 @@ export default eventHandler(async (event) => {
   const [channel] = await db.select().from(notificationChannels).where(eq(notificationChannels.id, id));
   if (!channel) throw apiError({ statusCode: 404, message: 'Channel not found' });
 
-  const isAdmin = user.role === Role.ADMINISTRATOR;
+  const isAdmin = isAdministrator(await getRequestAccess(event));
   if (channel.type === 'personal_email') {
     throw apiError({
       statusCode: 400,

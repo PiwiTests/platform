@@ -519,10 +519,13 @@ const visibleTestCount = computed(() => rows.value.filter((r) => r.kind === 'tes
 
 // ── Bulk triage (works in every grouping) ────────────────────────────────────
 const toast = useToast();
-const { canWrite } = useAuth();
+const { can } = useAuth();
 const { quarantineMany } = useQuarantine(() => props.projectKey ?? null);
+// Each bulk action shows to the holders of its permission on the run's project.
+const canQuarantine = computed(() => can('quarantine:write', props.projectKey));
+const canTriage = computed(() => can('triage:write', props.projectKey));
 
-const selectionEnabled = computed(() => canWrite.value && failedCount.value > 0);
+const selectionEnabled = computed(() => (canQuarantine.value || canTriage.value) && failedCount.value > 0);
 const selectedIds = ref<Set<number>>(new Set());
 
 const selectableRows = computed(() => filteredTestCases.value.filter((tc) => isFailedStatus(tc.status)));
@@ -751,6 +754,7 @@ defineExpose({ scrollToCase });
       <span class="text-sm font-medium" aria-live="polite">{{ selectedCount }} selected</span>
       <div class="flex flex-wrap items-center gap-2 ml-auto">
         <UButton
+          v-if="canQuarantine"
           size="xs"
           color="warning"
           variant="soft"
@@ -761,7 +765,7 @@ defineExpose({ scrollToCase });
           Quarantine selected
         </UButton>
         <UDropdownMenu
-          v-if="allSelectedInCluster"
+          v-if="canTriage && allSelectedInCluster"
           :items="[
             { label: 'Open', onSelect: () => setClusterStatus('open') },
             { label: 'Resolved', onSelect: () => setClusterStatus('resolved') },

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { testRuns } from '../database/schema';
 import { eq } from 'drizzle-orm';
 import type { DbClient as DB } from '../database';
+import { runOrigin } from '#shared/run-eligibility';
 
 /**
  * How a shard token is kept, in run metadata (which every project member can
@@ -36,6 +37,22 @@ export function readShardTokensFromMeta(metadata: unknown): Set<string> | undefi
 }
 
 /**
+ * Every shard token a run holds: the digests cached in memory together with the
+ * ones stored in its metadata. A new set, so the caller may change it freely.
+ */
+export function knownShardTokens(cached: Set<string> | undefined, metadata: unknown): Set<string> {
+  return new Set([...(cached ?? []), ...(readShardTokensFromMeta(metadata) ?? [])]);
+}
+
+/** A copy of a run's metadata whose stored shard tokens are `tokens`, every other key kept. */
+export function withShardTokens(metadata: unknown, tokens: Set<string>): Record<string, unknown> {
+  const meta = metadata && typeof metadata === 'object' ? { ...(metadata as Record<string, unknown>) } : {};
+  if (tokens.size > 0) meta.shardTokens = [...tokens];
+  else delete meta.shardTokens;
+  return meta;
+}
+
+/**
  * Append a shard token's digest to a test run's stored metadata in the database.
  * Reads current metadata, appends the token, writes back via Drizzle JSON serialization.
  */
@@ -59,7 +76,10 @@ export async function persistShardToken(
   tokens.push(digest);
   meta.shardTokens = tokens;
 
-  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
+  await db
+    .update(testRuns)
+    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .where(eq(testRuns.id, runId));
 }
 
 /**
@@ -80,5 +100,8 @@ export async function removeStoredShardToken(db: DB, runId: number, token: strin
     delete meta.shardTokens;
   }
 
-  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
+  await db
+    .update(testRuns)
+    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .where(eq(testRuns.id, runId));
 }

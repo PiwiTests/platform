@@ -19,7 +19,7 @@ defineRouteMeta({
         description: 'Maximum number of kept runs to include',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

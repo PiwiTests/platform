@@ -9,6 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // PIWI_DATABASE_URL is set, so clear it before importing the handler.
 delete process.env.PIWI_DATABASE_URL;
 const { getFlakeProfile, mayHaveFlakeSuspects } = await import('../../shared/handlers/flake-profile');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -55,6 +56,11 @@ beforeAll(async () => {
     opts: { fails: boolean; ageDays: number; branch?: string; probe?: boolean; lab?: boolean },
   ) => {
     const start = NOW.getTime() - opts.ageDays * DAY;
+    const metadata = opts.probe
+      ? { piwiProbe: true }
+      : opts.lab
+        ? { piwiFlakeLab: { experimentId: 'exp-1', armId: 'delay-cart' } }
+        : null;
     runs.push({
       id,
       projectId: 1,
@@ -63,11 +69,8 @@ beforeAll(async () => {
       duration: 600_000,
       branch: opts.branch ?? 'main',
       environment: 'staging',
-      metadata: opts.probe
-        ? { piwiProbe: true }
-        : opts.lab
-          ? { piwiFlakeLab: { experimentId: 'exp-1', armId: 'delay-cart' } }
-          : null,
+      metadata,
+      origin: runOrigin(metadata),
     });
     const created = new Date(start);
     if (opts.fails) {
@@ -193,6 +196,31 @@ beforeAll(async () => {
   addRun(14, { fails: true, ageDays: 1, branch: 'feature/x' });
   addRun(15, { fails: true, ageDays: 40 });
   addRun(16, { fails: true, ageDays: 1, lab: true });
+
+  // A run started with run 1, whose execution on a worker and shard of the same
+  // numbers starts between case 3 and the flaky attempt: it ran in another run,
+  // so it is never the attempt's predecessor.
+  const concurrentStart = NOW.getTime() - DAY;
+  runs.push({
+    id: 17,
+    projectId: 1,
+    status: 'passed',
+    startTime: new Date(concurrentStart),
+    duration: 600_000,
+    branch: 'main',
+    environment: 'staging',
+    metadata: null,
+  });
+  exec({
+    testRunId: 17,
+    testCaseId: FAR,
+    status: 'passed',
+    startedAt: concurrentStart + 4_500,
+    duration: 300,
+    workerIndex: 0,
+    shardIndex: 1,
+    createdAt: new Date(concurrentStart),
+  });
 
   await db.insert(schema.testRuns).values(runs);
   await db.insert(schema.testRunsCases).values(executions);

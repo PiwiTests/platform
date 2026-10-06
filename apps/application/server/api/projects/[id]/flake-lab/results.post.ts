@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { Role } from '#shared/types';
 import { FlakeResultsRejected, recordFlakeResults } from '#shared/handlers/flake-lab';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { getDatabase } from '../../../../database';
@@ -11,7 +10,7 @@ defineRouteMeta({
     description:
       'Stores the arms of an experiment the flake plan recorded, as `piwi flake` measured them: each arm’s id, conditions, runs, matching failures (same error signature as history), other failures, discarded rounds and whether it stopped early. The server computes each arm’s verdict against the control with the one-sided Fisher exact test (reproduced at a rate of at least half with p < 0.05, amplified at p < 0.05 below it), or, for a verify experiment, whether the rerun arm stayed clean for enough runs that a failure at the reproduced rate would have shown with 95% confidence (⌈ln 0.05 / ln(1 − rate)⌉, at least 5). The experiment must be unfinished (409 otherwise). Requires a reporter API key.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
   },
 });
 
@@ -38,7 +37,7 @@ const bodySchema = z.object({
 
 export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
-  const user = await requireProjectAccess(event, projectId, [Role.ADMINISTRATOR, Role.REPORTER]);
+  const user = await requireProjectAccess(event, projectId);
 
   const validation = bodySchema.safeParse(await readBody(event));
   if (!validation.success) {

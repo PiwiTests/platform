@@ -127,9 +127,109 @@ data class McpServerDefinition(val label: String? = null, val url: String? = nul
 
 data class McpServersResult(val servers: List<McpServerDefinition>? = null)
 
-data class RenderStepsParams(val uri: String, val steps: Any?)
+/**
+ * `piwi/renderSteps`: a steps document from Piwi Picker, rendered for the file at `uri`. `line` and `character` are
+ * the caret (0-based), whose page expression the steps run on; with `imports` `separate`, the import lines the code
+ * needs and the file does not bind come in the result's `imports` rather than as comments in its `code`.
+ */
+data class RenderStepsParams(
+    val uri: String,
+    val steps: Any?,
+    val line: Int? = null,
+    val character: Int? = null,
+    val imports: String? = null,
+)
 
-data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null)
+data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null, val imports: List<String>? = null)
+
+/**
+ * `piwi/record`: open a browser through the Playwright of the file's config and write what is done there into the
+ * file at `uri`, from the caret (0-based). `into` is `steps` (lines of the test the caret is in), `test` (a new test at
+ * the caret) or `file` (a whole new spec). `project` names the Playwright project whose `use` options the browser
+ * gets, `startUrl` the page it opens (a path on the `baseURL`, or a URL), `title` the test's, `page` the expression
+ * the steps run on, and `language` the editor's display language (a BCP 47 tag) for the recorder's panel.
+ */
+data class RecordParams(
+    val uri: String,
+    val line: Int,
+    val character: Int,
+    val into: String,
+    val project: String? = null,
+    val startUrl: String? = null,
+    val title: String? = null,
+    val page: String? = null,
+    val language: String? = null,
+)
+
+/**
+ * Where the recorded block goes: its first line (0-based), whether that line is a new one inserted first (otherwise
+ * a blank line the block takes the place of), and what every line of the block that is not empty starts with.
+ */
+data class RecordingPlacement(val line: Int = 0, val newLine: Boolean = false, val indent: String = "")
+
+/** `piwi/record`'s answer: the session and where its block goes, or the sentence to show; `projects` to ask which. */
+data class RecordResult(
+    val ok: Boolean = false,
+    val sessionId: String? = null,
+    val message: String? = null,
+    val projects: List<String>? = null,
+    val placement: RecordingPlacement? = null,
+)
+
+data class StopRecordingParams(val sessionId: String)
+
+/** `piwi/recordingCommand`: `pause` or `resume`. */
+data class RecordingCommandParams(val sessionId: String, val command: String)
+
+/**
+ * A recorded step: in words, the 0-based line of `RecordingUpdate.code` it starts on, the locators verified for its
+ * element (best first) and the index of the one written, and the project function it is part of, if any.
+ */
+data class RecordingStep(
+    val words: String? = null,
+    val line: Int = 0,
+    val locators: List<String>? = null,
+    val chosen: Int? = null,
+    val functionName: String? = null,
+)
+
+/** What a reader of the recorded code should check about the step `step`, on the 0-based line `line` of the code. */
+data class RecordingWarning(val step: Int = 0, val line: Int = 0, val message: String? = null)
+
+/**
+ * `piwi/recordingChanged`: what the recorded block holds now (`code`: its lines joined with `\n`, not indented) and
+ * the session's `state` (`starting`, `recording`, `paused`, `stopped` or `failed`), with the import lines the code
+ * needs whose names the file does not bind yet, its steps and warnings, and a sentence on what happened with the action
+ * it offers.
+ */
+data class RecordingUpdate(
+    val sessionId: String? = null,
+    val uri: String? = null,
+    val into: String? = null,
+    val state: String? = null,
+    val code: String? = null,
+    val imports: List<String>? = null,
+    val steps: List<RecordingStep>? = null,
+    val warnings: List<RecordingWarning>? = null,
+    val message: String? = null,
+    val command: PiwiCommand? = null,
+)
+
+data class PageCandidatesParams(val uri: String, val line: Int, val character: Int)
+
+/** A page expression the steps written at a position could run on, and why it is offered. */
+data class PageCandidate(val expression: String? = null, val reason: String? = null)
+
+/**
+ * `piwi/pageCandidates`: the candidates, best first, the default, and where the position is: `test` (in the body of a
+ * test's or a hook's callback), `function` (in the body of any other function or method), `class` (in a class body,
+ * outside its methods) or `file` (anywhere else).
+ */
+data class PageCandidatesResult(
+    val candidates: List<PageCandidate>? = null,
+    val default: String? = null,
+    val context: String? = null,
+)
 
 data class SelectionsParams(val uri: String?)
 
@@ -155,6 +255,38 @@ data class EditorCredentials(
     val desktop: Boolean = false,
     val desktopProject: String? = null,
 )
+
+/**
+ * `piwi/desktopJob`, and the arguments of the client command `piwi.desktopJob`: ask the desktop app to reproduce
+ * (`kind` `reproduce`) or bisect (`bisect`) the failure `executionId` of the instance the context at `root` reads, or
+ * to run Flake Lab (`flake-lab`) on the test `testCaseId`.
+ */
+data class DesktopJobParams(
+    val root: String = "",
+    val executionId: Int? = null,
+    val testCaseId: Int? = null,
+    val kind: String = "reproduce",
+)
+
+data class DesktopJobResult(val ok: Boolean = false, val message: String? = null, val jobId: String? = null)
+
+data class DesktopJobShare(val label: String? = null)
+
+/**
+ * `piwi/desktopJobChanged`: a job's `status` (`running`, `done`, `declined`, `expired`, `gone`), the sentence to
+ * show, and `share` when its verdict can be shared on the instance (`piwi/shareDesktopJob`).
+ */
+data class DesktopJobUpdate(
+    val jobId: String? = null,
+    val kind: String? = null,
+    val status: String? = null,
+    val message: String? = null,
+    val share: DesktopJobShare? = null,
+)
+
+data class ShareDesktopJobParams(val jobId: String)
+
+data class ShareDesktopJobResult(val ok: Boolean = false, val message: String? = null, val url: String? = null)
 
 /** The service's custom requests beside the language server protocol. */
 interface PiwiLanguageServer : LanguageServer {
@@ -199,6 +331,24 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/refresh")
     fun refresh(): CompletableFuture<Any?>
+
+    @JsonRequest("piwi/desktopJob")
+    fun desktopJob(params: DesktopJobParams): CompletableFuture<DesktopJobResult?>
+
+    @JsonRequest("piwi/shareDesktopJob")
+    fun shareDesktopJob(params: ShareDesktopJobParams): CompletableFuture<ShareDesktopJobResult?>
+
+    @JsonRequest("piwi/record")
+    fun record(params: RecordParams): CompletableFuture<RecordResult?>
+
+    @JsonRequest("piwi/stopRecording")
+    fun stopRecording(params: StopRecordingParams): CompletableFuture<Any?>
+
+    @JsonRequest("piwi/recordingCommand")
+    fun recordingCommand(params: RecordingCommandParams): CompletableFuture<Any?>
+
+    @JsonRequest("piwi/pageCandidates")
+    fun pageCandidates(params: PageCandidatesParams): CompletableFuture<PageCandidatesResult?>
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)

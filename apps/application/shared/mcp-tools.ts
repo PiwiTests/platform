@@ -12,6 +12,7 @@
  * server; only the pure data lives here.
  */
 import type { CapabilityId, CapabilityModule } from '#shared/capabilities';
+import type { Permission } from '#shared/permissions';
 import { EXTRACT_SYSTEM_PROMPT } from './test-function-extract-prompt';
 import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 import { REPORT_LANGUAGES } from './reports/languages';
@@ -32,9 +33,24 @@ export interface McpToolDef {
    * is declined at instance level; a tool with no `capability` is never dropped.
    */
   capability?: CapabilityId;
+  /**
+   * The permission a write or administrator tool needs, the one its REST twin
+   * declares in `x-required-permission`; with several, any one of them (the
+   * handler checks the one its arguments call for). `tools/list` leaves out a
+   * tool whose permission the caller holds on no project, and the handler
+   * checks it on the project it acts on. Read tools declare none: the project
+   * scope decides what they read.
+   */
+  permission?: Permission | readonly Permission[];
   // `required` is `readonly` so the catalog below can be declared `as const`
   // (needed to derive the `McpToolName` union) while still satisfying this type.
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: readonly string[] };
+}
+
+/** A tool's `permission` as a list; empty for a read tool. */
+export function toolPermissions(tool: Pick<McpToolDef, 'permission'>): readonly Permission[] {
+  if (tool.permission === undefined) return [];
+  return typeof tool.permission === 'string' ? [tool.permission] : tool.permission;
 }
 
 /** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
@@ -615,8 +631,9 @@ export const MCP_TOOL_DEFS = [
     name: 'create_issue',
     module: 'workflow',
     capability: 'integrations',
+    permission: 'issue:create',
     description:
-      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type); the binding's field defaults fill the fields the project requires. Reporter or administrator access.",
+      "File a Jira issue from a failure cluster or a failing execution, with the fix plan as its body — the same ticket the dashboard's Create issue button produces. The issue is deduped by cluster, so calling twice for the same cluster returns the existing action rather than a second ticket. Returns the issue { key, url } and any `existing` issues that already track the cluster (a pinned link, a matching label, or a fixed-before match) so you can link instead of filing again. Requires a Jira connection and a project binding (project key and issue type); the binding's field defaults fill the fields the project requires. Requires `issue:create` (Contributor and above on the project).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -791,8 +808,9 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_instance_stats',
     module: 'core',
+    permission: 'storage:manage',
     description:
-      'Instance-wide counts (projects, runs, test cases, executions, files) and total storage size. Admin only.',
+      'Instance-wide counts (projects, runs, test cases, executions, files) and total storage size. Requires `storage:manage` (administrators only).',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -809,8 +827,9 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'set_cluster_status',
     module: 'core',
+    permission: 'triage:write',
     description:
-      'Triage a failure cluster: set its status to open, resolved, or ignored with an optional note. Requires reporter or admin access. Use after fixing the underlying issue.',
+      'Triage a failure cluster: set its status to open, resolved, or ignored with an optional note. Requires `triage:write` (Maintainer and above on the project). Use after fixing the underlying issue.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -827,8 +846,9 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'set_cluster_base_commit',
     module: 'core',
+    permission: 'triage:write',
     description:
-      'Pin the baseline commit SHA a cluster uses for its SCM-diff diagnosis context, so "what changed since green" is accurate. Requires reporter or admin access.',
+      'Pin the baseline commit SHA a cluster uses for its SCM-diff diagnosis context, so "what changed since green" is accurate. Requires `triage:write` (Maintainer and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -842,8 +862,9 @@ export const MCP_TOOL_DEFS = [
     name: 'submit_diagnosis_feedback',
     module: 'agents',
     capability: 'ai',
+    permission: 'project:read',
     description:
-      'Record thumbs up/down feedback on a stored diagnosis, with an optional note. Requires reporter or admin access.',
+      'Record thumbs up/down feedback on a stored diagnosis, with an optional note. Requires `project:read` (any role on the project).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -858,8 +879,9 @@ export const MCP_TOOL_DEFS = [
     name: 'run_cluster_diagnosis',
     module: 'agents',
     capability: 'ai',
+    permission: 'ai:run',
     description:
-      'Trigger an AI diagnosis for a failure cluster and return the result (category, confidence, root cause, suggested fix). Returns the existing completed diagnosis unless force is set. Requires reporter or admin access and a configured AI provider.',
+      'Trigger an AI diagnosis for a failure cluster and return the result (category, confidence, root cause, suggested fix). Returns the existing completed diagnosis unless force is set. Requires `ai:run` (Maintainer and above on the project) and a configured AI provider.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -873,8 +895,9 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'triage_cluster',
     module: 'core',
+    permission: ['triage:write', 'quarantine:write'],
     description:
-      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires reporter or administrator access.",
+      "Triage one or more failure clusters at once, as the failure inbox does: set their status (open, resolved, ignored) with an optional note, assign them, snooze or unsnooze them, quarantine every test in them or release those tests from quarantine. Clusters you cannot reach or that do not exist are skipped and listed in `skippedIds`. `quarantine` and `release` report how many of the clusters' tests changed. Use list_open_clusters (queue quarantine-ready, mine, regressions…) to pick them. Requires `triage:write`, or `quarantine:write` for quarantine and release (Maintainer and above on the project).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -905,8 +928,9 @@ export const MCP_TOOL_DEFS = [
     name: 'triage_gap',
     module: 'workflow',
     capability: 'test-map',
+    permission: 'triage:write',
     description:
-      'Give a verdict on a scenario gap, as the gap inbox does: `accept` (queue its draft, optionally for someone), `snooze` (1-day, 1-week, or until the node changes), `dismiss` with a reason (not-worth-testing, covered-elsewhere with the covering test, wrong), or `covered-by` (record the test that covers it without dismissing). A verdict counts for or against the detector that raised the gap. Pass the gap id from list_scenario_gaps. Returns the gap’s new status. Requires reporter or administrator access.',
+      'Give a verdict on a scenario gap, as the gap inbox does: `accept` (queue its draft, optionally for someone), `snooze` (1-day, 1-week, or until the node changes), `dismiss` with a reason (not-worth-testing, covered-elsewhere with the covering test, wrong), or `covered-by` (record the test that covers it without dismissing). A verdict counts for or against the detector that raised the gap. Pass the gap id from list_scenario_gaps. Returns the gap’s new status. Requires `triage:write` (Maintainer and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -935,8 +959,9 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'decide_merge_suggestion',
     module: 'core',
+    permission: 'triage:write',
     description:
-      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters, or a suggestionId from get_cluster’s mergeSuggestions; when a cluster has more than one pending suggestion, pass suggestionId. Requires reporter or administrator access.',
+      'Approve or reject a suggestion to merge two failure clusters that look like one root cause. Approving merges them (the lower id survives, keeps its triage state and takes the other’s executions, diagnoses and occurrences; the other is deleted); rejecting leaves both as they are. Pass the clusterId of a cluster in the merge-suggestions queue of list_open_clusters, or a suggestionId from get_cluster’s mergeSuggestions; when a cluster has more than one pending suggestion, pass suggestionId. Requires `triage:write` (Maintainer and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -952,11 +977,34 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'dismiss_quarantine_proposal',
+    module: 'workflow',
+    capability: 'quarantine',
+    permission: 'quarantine:write',
+    description:
+      'Dismiss what Piwi proposed for a test, as the dashboard’s Dismiss does: the proposal to quarantine it, or the proposed release of it from quarantine. `quarantine` applies to a quarantine candidate (one of the costliest flaky tests, by the CI minutes their flakiness wastes, which the flaky list marks proposed); `release` to a quarantined test whose passing streak or verified fix earned its way out (list_open_clusters with queue quarantine-ready finds their clusters). Records the proposal as rejected, with your optional reason; nothing else changes, so the test stays out of, or in, quarantine. Dismissing the same proposal again records nothing more; a dismissed quarantine proposal counts again once a newer run arrives. Fails when the test has no such proposal. Requires `quarantine:write` (Maintainer and above on the project).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+        testCaseId: { type: 'number', description: 'The test (testCaseId)' },
+        proposal: {
+          type: 'string',
+          enum: ['quarantine', 'release'],
+          description: 'Which proposal: quarantining the test, or releasing it from quarantine',
+        },
+        reason: { type: 'string', description: 'Why you dismiss it (up to 500 characters)' },
+      },
+      required: ['projectId', 'testCaseId', 'proposal'],
+    },
+  },
+  {
     name: 'set_bug_report_status',
     module: 'workflow',
     capability: 'bug-reports',
+    permission: 'bug-report:write',
     description:
-      'Set a bug report’s status by hand: `dismissed` (not a bug, or not worth a test), `open` (reopen it) or `closed`. The other statuses (test-committed, looks-fixed) follow the runs of the test that names the report. Requires reporter or administrator access.',
+      'Set a bug report’s status by hand: `dismissed` (not a bug, or not worth a test), `open` (reopen it) or `closed`. The other statuses (test-committed, looks-fixed) follow the runs of the test that names the report. Requires `bug-report:write` (Contributor and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -970,8 +1018,9 @@ export const MCP_TOOL_DEFS = [
     name: 'rerun_cluster_in_ci',
     module: 'core',
     capability: 'scm',
+    permission: 'run:control',
     description:
-      "Re-run exactly a failure cluster's affected tests in CI, as the cluster page's Re-run in CI button does: dispatches the project's configured workflow or pipeline with the project's SCM token. Returns the provider and the URL to watch the runs (the re-run's own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository. Requires reporter or administrator access.",
+      "Re-run exactly a failure cluster's affected tests in CI, as the cluster page's Re-run in CI button does: dispatches the project's configured workflow or pipeline with the project's SCM token. Returns the provider and the URL to watch the runs (the re-run's own id is not known). Fails with the reason when CI re-run is off for the project, no target or token is configured, or the cluster has no supported repository. Requires `run:control` (Maintainer and above on the project).",
     inputSchema: {
       type: 'object',
       properties: { clusterId: { type: 'number', description: 'Cluster ID' } },
@@ -979,11 +1028,98 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'set_cluster_bisect',
+    module: 'core',
+    permission: 'run:control',
+    description:
+      'Record the first bad commit a `git bisect` found for a failure cluster, as the desktop app does when its bisect ends: the commit then shows in the fix plan (get_fix_plan) next to the regression window. Pass the SHA (7 to 40 hex characters) and, when known, its subject, author and ISO date. Requires `run:control` (Maintainer and above on the project).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        sha: { type: 'string', description: 'The first bad commit (7 to 40 hex characters)' },
+        subject: { type: 'string', description: "The commit's subject line" },
+        author: { type: 'string', description: "The commit's author" },
+        date: { type: 'string', description: 'ISO date the commit was authored' },
+      },
+      required: ['clusterId', 'sha'],
+    },
+  },
+  {
+    name: 'record_diagnosis',
+    module: 'agents',
+    capability: 'agent-diagnoses',
+    permission: 'ai:run',
+    description:
+      "Record the diagnosis you wrote for a failure cluster as its current diagnosis, written by an agent: pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for (summary; confidenceScore 0-100; severity blocker|high|medium|low; affectedArea or null; hypotheses, ranked, each with category app-bug|test-bug|flaky-test|infrastructure|environment|unknown, rootCause, likelihood 0-100 and evidence; suggestedFix with description, file, code and patch, each null when unknown; investigationSteps; preventionTips). The previous diagnosis is kept in the cluster's history. Your patch (a unified diff) is validated against the source the cluster failed at when source control is connected; the answer says whether it applies. Works without an AI provider on this instance. Returns the diagnosisId to pass to report_fix_attempt. Requires `ai:run` (Maintainer and above on the project).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        model: { type: 'string', description: 'The model you run on, e.g. claude-opus-5-5' },
+        diagnosis: {
+          type: 'object',
+          description: 'The diagnosis, in the schema Piwi asks a model for (see the description)',
+        },
+      },
+      required: ['clusterId', 'model', 'diagnosis'],
+    },
+  },
+  {
+    name: 'report_fix_attempt',
+    module: 'core',
+    permission: 'run:control',
+    description:
+      "Record that you changed the code to fix a failure cluster, after making the change: `kind` is patch, locator-edit or fix-plan; pass the `commit` (7 to 40 hex characters) or the `branch` the change is on, the `patch` you applied (stored as its hash) or its `patchHash`, the `edit` for a locator edit (filePath, line, from, to), and the `diagnosisId` you followed (from get_fix_plan or record_diagnosis). It is recorded as applied; when the cluster's tests pass on a later commit, Piwi records it verified (tied by the commit, a `Piwi-Cluster: <clusterId>` trailer in the commit message, or the branch) and shows it on the cluster's timeline; a later failure records it regressed. Add the trailer get_fix_plan suggests (verify.commitTrailer) to your commit message. Reporting the same change twice records it once. Requires `run:control` (Maintainer and above on the project).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'Cluster ID' },
+        kind: { type: 'string', enum: ['patch', 'locator-edit', 'fix-plan'], description: 'What you changed' },
+        commit: { type: 'string', description: 'The commit the change is in' },
+        branch: { type: 'string', description: 'The branch the change is on, when not committed yet' },
+        patch: { type: 'string', description: 'The unified diff you applied' },
+        patchHash: { type: 'string', description: 'A hash of the patch, instead of the patch' },
+        edit: {
+          type: 'object',
+          description: 'For a locator edit: the file, the line, the old and the new locator',
+          properties: {
+            filePath: { type: 'string' },
+            line: { type: 'number' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['filePath'],
+        },
+        diagnosisId: { type: 'number', description: 'The diagnosis the change followed' },
+        note: { type: 'string', description: 'One line on what you changed' },
+      },
+      required: ['clusterId', 'kind'],
+    },
+  },
+  {
+    name: 'set_run_incident',
+    module: 'core',
+    permission: 'project:read',
+    description:
+      'Mark a test run as an environment incident (its failures come from the environment under test being down, not from the tests or the code), or clear the flag, as the run page does. A flagged run is left out of baselines, fix verification, flaky scores and auto-heal, and the gate answers inconclusive for it. Pass `incident: true` with an optional `reason`, or `incident: false` to clear it. Requires `project:read` (any role on the project).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'number', description: 'Test run ID' },
+        incident: { type: 'boolean', description: 'true marks the run; false clears the flag' },
+        reason: { type: 'string', description: 'What happened (up to 500 characters), with incident: true' },
+      },
+      required: ['runId', 'incident'],
+    },
+  },
+  {
     name: 'link_issue',
     module: 'workflow',
     capability: 'integrations',
+    permission: 'link:write',
     description:
-      'Link an existing ticket or pull request (any http(s) URL) to a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does. A URL from a connected tracker is matched to its connection and shows its live status. Use create_issue to file a new Jira issue instead. Returns the stored link. Requires reporter or administrator access.',
+      'Link an existing ticket or pull request (any http(s) URL) to a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does. A URL from a connected tracker is matched to its connection and shows its live status. Use create_issue to file a new Jira issue instead. Returns the stored link. Requires `link:write` (Contributor and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1002,7 +1138,8 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'create_test_function',
     module: 'workflow',
-    description: `Register a page-object method or helper in a project's test-function catalog, so the Piwi Picker browser extension (and its recorder) can match a live page or a recorded session against it and substitute a call to your own code instead of raw locator lines. This tool does not call an AI itself — you (the calling agent) read the function's real source in your own context and fill in these fields directly; the tool only validates the shape and persists it. Follow these extraction rules when deciding the field values:\n\n${EXTRACT_SYSTEM_PROMPT}\n\nThe fields below map onto that guidance one-for-one, plus "module" and "urlPattern", which no amount of code-reading can infer — supply them from where the function actually lives and, optionally, which page it applies to. Requires reporter or administrator access.`,
+    permission: 'test-assets:write',
+    description: `Register a page-object method or helper in a project's test-function catalog, so the Piwi Picker browser extension (and its recorder) can match a live page or a recorded session against it and substitute a call to your own code instead of raw locator lines. This tool does not call an AI itself — you (the calling agent) read the function's real source in your own context and fill in these fields directly; the tool only validates the shape and persists it. Follow these extraction rules when deciding the field values:\n\n${EXTRACT_SYSTEM_PROMPT}\n\nThe fields below map onto that guidance one-for-one, plus "module" and "urlPattern", which no amount of code-reading can infer — supply them from where the function actually lives and, optionally, which page it applies to. Requires \`test-assets:write\` (Maintainer and above on the project).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1238,7 +1375,7 @@ export const MCP_TOOL_DEFS = [
     name: 'get_metric_trend',
     module: 'core',
     description:
-      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt.',
+      'One metric from the metric catalog over a scope: its value and change against the comparison period, its definition, and its series bucketed over the period with the comparison period aligned bucket for bucket. Metrics: test-pass-rate, run-success-rate, runs, suite-size, flaky-occurrences, flaky-tests, wasted-ci-minutes, wasted-ci-cost, ci-time, new-regressions, newly-flaky, average-run-duration, average-p90-test-duration, open-failure-causes, failure-causes-opened, failure-causes-fixed, median-time-to-fix, oldest-open-failure-cause, fixes-that-held, quarantine-debt, and the hand-back metrics heal-adoption, heal-pr-merge-rate, diagnosis-helpful-rate, diagnosis-verified-rate, gate-blocked-merges, gate-overrides, flakes-verified-fixed (a rate is null with a `sample` under its floor until enough items count; a metric whose capability is declined is refused).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1383,8 +1520,9 @@ export const DESKTOP_MCP_TOOL_DEFS = [
   {
     name: 'import_local_report',
     module: 'core',
+    permission: 'storage:manage',
     description:
-      'Desktop app only. Import a Playwright blob report or trace .zip straight from a path on THIS machine into a Piwi project — the local server reads the file itself, nothing is uploaded. Use after a local or CI run to pull its results in for analysis (a hosted Piwi cannot read your disk). Idempotent by content hash: re-importing the same archive is a no-op. Returns the created/updated run.',
+      'Desktop app only. Import a Playwright blob report or trace .zip straight from a path on THIS machine into a Piwi project — the local server reads the file itself, nothing is uploaded. Use after a local or CI run to pull its results in for analysis (a hosted Piwi cannot read your disk). Idempotent by content hash: re-importing the same archive is a no-op. Returns the created/updated run. Requires `storage:manage` (administrators only).',
     inputSchema: {
       type: 'object',
       properties: {

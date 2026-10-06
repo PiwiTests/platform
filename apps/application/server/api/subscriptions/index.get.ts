@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'List subscriptions',
     description: "Returns the current user's subscriptions plus global (admin-managed) ones.",
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
     parameters: [{ name: 'projectId', in: 'query', schema: { type: 'integer' } }],
   },
 });

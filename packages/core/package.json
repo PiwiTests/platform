@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/core",
-  "version": "0.45.0",
+  "version": "0.47.0",
   "description": "Pure cross-cutting logic and wire shapes shared by the Piwi Dashboard app and the Playwright reporter",
   "private": true,
   "type": "module",
@@ -22,8 +22,10 @@
     "./test-meta": "./src/test-meta.ts",
     "./wire": "./src/wire.ts",
     "./recording": "./src/recording.ts",
+    "./ide-recorder": "./src/ide-recorder.ts",
     "./function-match": "./src/function-match.ts",
     "./codegen": "./src/codegen.ts",
+    "./piwi-config": "./src/piwi-config.ts",
     "./locator-chain": "./src/locator-chain.ts",
     "./step-locators": "./src/step-locators.ts",
     "./locator-index": "./src/locator-index.ts",
@@ -42,10 +44,13 @@
     "./code-reach": "./src/code-reach.ts",
     "./line-diff": "./src/line-diff.ts",
     "./editor-send": "./src/editor-send.ts",
+    "./bisect": "./src/bisect.ts",
+    "./desktop-job": "./src/desktop-job.ts",
     "./file-routes": "./src/file-routes.ts",
     "./error-signature": "./src/error-signature.ts",
     "./flake-plan": "./src/flake-plan.ts",
-    "./flake-verdict": "./src/flake-verdict.ts"
+    "./flake-verdict": "./src/flake-verdict.ts",
+    "./skill-stamp": "./src/skill-stamp.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

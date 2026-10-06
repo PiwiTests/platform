@@ -587,6 +587,26 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/**
+ * `prepare` for a scene that needs a signed-in viewer, such as a project's
+ * Members, which exist with authentication on only: signs in with
+ * PIWI_SCREENS_LOGIN (`<username>:<password>`) through the context's request
+ * client, whose cookies the page shares. Refuses with the way to run the scene
+ * when the server has authentication off or no login is given.
+ */
+async function signInForScene({ base, request }) {
+  const hint =
+    'this scene needs a signed-in viewer: pass --url of a server with PIWI_AUTH_ENABLED=true and set PIWI_SCREENS_LOGIN=<username>:<password>';
+  const login = process.env.PIWI_SCREENS_LOGIN ?? '';
+  const separator = login.indexOf(':');
+  if (separator < 1) throw new Error(hint);
+  const res = await request.post(`${base}/api/auth/login`, {
+    data: { username: login.slice(0, separator), password: login.slice(separator + 1) },
+  });
+  // With authentication off the server refuses any login.
+  if (!res.ok()) throw new Error(`signing in as ${login.slice(0, separator)} failed (${res.status()}): ${hint}`);
+}
+
 /** Ticks the row checkboxes of the `count` newest runs in project 1's runs list that are not kept. */
 async function selectNewestRuns(page, count) {
   const kept = await (await page.request.get(new URL('/api/projects/1/kept-runs', page.url()).href)).json();
@@ -683,6 +703,49 @@ async function classifyFlakyTests({ base, request }) {
   for (const test of flaky.items ?? []) {
     await request.post(`${base}/api/projects/1/flaky-classify`, { data: { testCaseId: test.testCaseId } });
   }
+}
+
+/** An agent's diagnosis and two fix attempts on cluster 2, once per server. */
+async function prepareClusterActivity({ base, request }) {
+  const activity = await (await request.get(`${base}/api/failure-clusters/2/activity`)).json();
+  if (activity.items?.length) return;
+  await request.post(`${base}/api/failure-clusters/2/agent-diagnosis`, {
+    data: {
+      model: 'claude-opus-5-5',
+      diagnosis: {
+        summary: 'The checkout total is computed before the coupon applies',
+        confidenceScore: 78,
+        severity: 'high',
+        affectedArea: 'checkout',
+        hypotheses: [
+          {
+            category: 'app-bug',
+            rootCause: 'applyCoupon() runs after computeTotal(), so the total shown is the pre-discount one',
+            likelihood: 78,
+            evidence: ['expected 90.00, received 100.00'],
+          },
+        ],
+        suggestedFix: {
+          description: 'Compute the total once the coupon resolves',
+          file: 'src/checkout.ts',
+          code: null,
+          patch: null,
+        },
+        investigationSteps: [],
+        preventionTips: [],
+      },
+    },
+  });
+  await request.post(`${base}/api/failure-clusters/2/fix-attempts`, {
+    data: { kind: 'patch', commit: '4f2a9c1', channel: 'editor' },
+  });
+  await request.post(`${base}/api/failure-clusters/2/fix-attempts`, {
+    data: {
+      kind: 'locator-edit',
+      branch: 'fix/checkout',
+      edit: { filePath: 'tests/checkout.spec.ts', line: 42, from: '#pay', to: "getByRole('button', { name: 'Pay' })" },
+    },
+  });
 }
 
 /** A global email channel, a weekly schedule on it and one *Run now*, once per server. */
@@ -920,6 +983,111 @@ async function prepareNeverGreenRuns({ base, request }) {
   neverGreenRuns = { interrupted, firstFailed, latest };
 }
 
+/** The project a costly flaky test makes a quarantine candidate in, once per server. */
+let quarantineProposalsProjectId = null;
+async function prepareQuarantineProposals({ base, request }) {
+  if (quarantineProposalsProjectId) return;
+  const projects = await (await request.get(`${base}/api/projects`)).json();
+  const existing = (projects.items ?? projects).find((p) => p.name === 'quarantine-proposals');
+  if (existing) {
+    quarantineProposalsProjectId = existing.id;
+    return;
+  }
+  // Six runs: the card payment times out then passes on retry in each one (a costly flake, so a candidate);
+  // the coupon test flakes on half of them in 50 ms (cheap, so not proposed).
+  for (let i = 0; i < 6; i++) {
+    const testCases = [
+      {
+        title: 'pays with a saved card',
+        status: 'failed',
+        duration: 95_000,
+        retries: 0,
+        location: 'tests/checkout.spec.ts:12:3',
+        error: 'TimeoutError: locator.click: Timeout 90000ms exceeded.',
+      },
+      {
+        title: 'pays with a saved card',
+        status: 'passed',
+        duration: 4200,
+        retries: 1,
+        location: 'tests/checkout.spec.ts:12:3',
+      },
+      {
+        title: 'applies a coupon',
+        status: 'passed',
+        duration: 900,
+        retries: 0,
+        location: 'tests/checkout.spec.ts:30:3',
+      },
+    ];
+    if (i % 2 === 0) {
+      testCases.push({
+        title: 'applies a coupon',
+        status: 'failed',
+        duration: 50,
+        retries: 1,
+        location: 'tests/checkout.spec.ts:30:3',
+        error: 'Error: expect(locator).toHaveText() failed',
+      });
+    }
+    const res = await request.post(`${base}/api/test-runs/submit`, {
+      data: {
+        projectName: 'quarantine-proposals',
+        status: 'passed',
+        startTime: new Date(Date.now() - (6 - i) * 3_600_000).toISOString(),
+        duration: 120_000,
+        totalTests: 2,
+        passedTests: 2,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases,
+      },
+    });
+    quarantineProposalsProjectId = (await res.json()).projectId;
+  }
+}
+
+/**
+ * The Dismiss action on both quarantine proposals: a candidate in the flaky
+ * list with its reason popover open, then project 3's proposed release in the
+ * quarantine view. Opens the popover without submitting, so the scene repeats.
+ */
+function quarantineDismissScene(width, suffix) {
+  return {
+    name: `quarantine-dismiss${suffix}`,
+    description: `Dismiss on a quarantine candidate (flaky list) and on a proposed release (quarantine view), at ${width} px`,
+    tags: ['desktop'],
+    route: '/',
+    viewport: { width, height: 1000 },
+    prepare: prepareQuarantineProposals,
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/projects/${quarantineProposalsProjectId}?tab=flaky-tests`);
+      await page.locator('[data-testid="flaky-quarantine-proposed"]').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('candidate', { of: '[data-shot="flaky-table"]', pad: 12 });
+      await page.locator('[data-shot="flaky-table"] [data-testid="quarantine-dismiss"]').first().click();
+      const reason = page.getByPlaceholder('e.g. the fix is in review');
+      await reason.waitFor();
+      await reason.fill('Card sandbox times out, payments team on it');
+      await settle();
+      await shoot('popover');
+      await page.keyboard.press('Escape');
+      await goto('/projects/3?tab=quarantine');
+      await page
+        .locator('[data-shot="quarantine-table"] [data-testid="quarantine-dismiss"]')
+        .first()
+        .waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('release', { of: '[data-shot="quarantine-table"]', pad: 12 });
+    },
+    outputs: [
+      `quarantine-dismiss${suffix}-candidate.png`,
+      `quarantine-dismiss${suffix}-popover.png`,
+      `quarantine-dismiss${suffix}-release.png`,
+    ],
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -1030,6 +1198,34 @@ const SCENES = [
     outputs: ['analytics-headline-tiles.png', 'analytics-headline-trend.png'],
   },
   ...[
+    { name: 'analytics-handbacks', width: 1280, height: 3600, docs: true },
+    { name: 'analytics-handbacks-mobile', width: 390, height: 7000, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    description: `Analytics, the Overview dashboard: the Hand-back outcomes section (locator heals, AI diagnoses, the CI gate, a verified flaky test), at ${width} px`,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    route: '/analytics?period=last-30d',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="analytics-handbacks"] dl').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="analytics-handbacks"]', pad: 12 });
+    },
+  })),
+  {
+    name: 'ai-usage',
+    description: "Settings → AI: the AI usage panel, tokens per model, then how each model's diagnoses fared",
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/ai',
+    viewport: { width: 1280, height: 2600 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="ai-usage-quality"]').waitFor({ timeout: 60000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="ai-usage"]', pad: 12 });
+    },
+  },
+  ...[
     { name: 'quality-report-preview', width: 1280, height: 1800 },
     { name: 'quality-report-preview-mobile', width: 375, height: 1400 },
   ].map(({ name, width, height }) => ({
@@ -1073,6 +1269,19 @@ const SCENES = [
       await page.getByRole('menuitem', { name: 'Excel' }).waitFor();
       await shoot();
     },
+  })),
+  // A failure cluster's Activity: the fix attempts reported on it and the agent's writes.
+  ...[
+    { suffix: '', width: 1280 },
+    { suffix: '-mobile', width: 375 },
+  ].map(({ suffix, width }) => ({
+    name: `cluster-activity${suffix}`,
+    description: `A failure cluster’s Activity section with reported fix attempts, at ${width} px`,
+    prepare: prepareClusterActivity,
+    route: '/failure-clusters/2',
+    viewport: { width, height: 1400 },
+    of: '[data-shot="cluster-activity"]',
+    pad: 8,
   })),
   // The Reports page and a snapshot: `prepare` makes a channel, a weekly
   // schedule and one run of it, so the page has a snapshot to list.
@@ -1606,7 +1815,7 @@ const SCENES = [
   {
     name: 'permission-grid-mobile',
     description:
-      'Settings → Permissions at phone width: the user column stays pinned while the projects scroll sideways',
+      'Settings → Permissions at phone width: the group and user column stays pinned while the projects scroll sideways',
     route: '/settings/permissions',
     viewport: { width: 390, height: 1100 },
     async run({ page, shoot, settle }) {
@@ -1615,6 +1824,97 @@ const SCENES = [
       await shoot();
     },
   },
+  ...[
+    { name: 'settings-users', width: 1280, height: 900 },
+    { name: 'settings-users-mobile', width: 390, height: 2000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Users: each user's instance role and groups, changed in place, at ${width} px`,
+    route: '/settings/users',
+    viewport: { width, height },
+    of: '[data-shot="users-table"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-user-project-roles', width: 1280, height: 900 },
+    { name: 'settings-user-project-roles-mobile', width: 390, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Users → Project roles of the QA lead: All projects, one role per project, and the groups adding to them, at ${width} px`,
+    route: '/settings/users',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Project roles of quinn-qa-lead' }).filter({ visible: true }).click();
+      await page.locator('[data-shot="user-project-roles"]').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
+  ...[
+    { name: 'settings-roles', width: 1280, height: 1100 },
+    { name: 'settings-roles-mobile', width: 390, height: 2600 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Roles: what each project role can do, read-only, at ${width} px`,
+    route: '/settings/roles',
+    viewport: { width, height },
+    of: '[data-shot="roles-matrix"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="roles-matrix"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-groups', width: 1280, height: 800 },
+    { name: 'settings-groups-mobile', width: 390, height: 1000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Groups: each group with its description and member count, at ${width} px`,
+    route: '/settings/groups',
+    viewport: { width, height },
+    of: '[data-shot="groups-table"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="groups-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-group-edit', width: 1280, height: 800 },
+    { name: 'settings-group-edit-mobile', width: 390, height: 900 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Groups: editing the QA group, its name, description and members, at ${width} px`,
+    route: '/settings/groups',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Edit QA' }).filter({ visible: true }).click();
+      await page.locator('[data-shot="group-form"]').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
+  ...[
+    { name: 'project-members', width: 1280, height: 1000 },
+    { name: 'project-members-mobile', width: 390, height: 1800 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Members: the groups and users holding a role on the project and where it comes from, at ${width} px. Members exist with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator or a Project admin of project 1`,
+    route: '/projects/1?tab=settings&section=members',
+    viewport: { width, height },
+    of: '[data-shot="project-members"]',
+    prepare: signInForScene,
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="project-members"] [data-member]').first().waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
   {
@@ -1654,13 +1954,14 @@ const SCENES = [
   {
     name: 'permission-grid',
     description:
-      'Settings → Permissions: every user against every project by role, the hovered cell’s row and column highlighted',
+      'Settings → Permissions: groups above users against every project, a role in each cell, the focused cell’s row and column highlighted',
     tags: ['docs'],
     out: 'docs',
     route: '/settings/permissions',
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 1440, height: 900 },
     async run({ page, shoot, settle }) {
-      const cell = page.getByRole('checkbox', { name: 'Priya (API & UI team) — E2E Checkout' });
+      // Jordan holds Maintainer on API Integration through the QA group: a faint, inherited role.
+      const cell = page.getByRole('button', { name: 'Jordan (QA engineer) — API Integration', exact: true });
       await cell.waitFor({ timeout: 15000 });
       await settle();
       // The crosshair follows focus as well as the pointer. Focus survives the
@@ -3038,6 +3339,8 @@ const SCENES = [
     of: '[data-shot="flake-lab-inbox"]',
     pad: 8,
   },
+  quarantineDismissScene(1280, ''),
+  quarantineDismissScene(390, '-mobile'),
   {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',
@@ -3062,7 +3365,7 @@ const SCENES = [
   // Run 62 is Web Dashboard's newest run in the demo seed: a leaky one.
   {
     name: 'run-resources',
-    description: 'Run Resources tab: findings, open pages by worker, the machine and the costliest tests',
+    description: 'Run Resources tab: findings, the open-pages pointer, the machine and the costliest tests',
     tags: ['desktop'],
     route: '/test-runs/62?tab=resources',
     viewport: { width: 1280, height: 2900 },

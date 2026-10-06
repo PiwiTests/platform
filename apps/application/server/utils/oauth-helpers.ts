@@ -5,7 +5,7 @@
 // security-relevant decisions to these functions.
 
 import { randomBytes, createHash } from 'node:crypto';
-import { Role } from '#shared/types';
+import { InstanceRole } from '#shared/permissions';
 
 // ---------------------------------------------------------------------------
 // PKCE (RFC 7636)
@@ -203,7 +203,7 @@ export function resolveProvisioningAction(
     values: {
       username: email,
       password: '',
-      role: Role.USER,
+      role: InstanceRole.MEMBER,
       name: name || null,
       email: email || null,
       emailVerified,

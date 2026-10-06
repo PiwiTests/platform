@@ -50,7 +50,7 @@ defineRouteMeta({
         description: 'Which snapshot of the `callId` action: before it ran or after it',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

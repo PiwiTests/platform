@@ -17,5 +17,7 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
+  // On CI a failed test runs once more; one that passes then is reported as flaky, not hidden.
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : [['line']],
 });

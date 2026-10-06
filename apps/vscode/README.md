@@ -13,6 +13,9 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
 - **Brittle locators and breaking changes.** A warning on a brittle locator, with the stable alternative stored at that
   call site; a warning on the line of an unsaved change that renames a string tests find elements by, with a quick fix
   that updates every call site.
+- **Record a test.** **Piwi: Record here** opens a browser through your project's own Playwright and writes what you
+  do there at the cursor, as you do it: steps inside a test, or a new test between tests. **Piwi: Record a new test
+  file** records a whole spec. It needs no instance.
 - **The status bar.** The latest run on the branch, live while it runs.
 - **Piwi's MCP server for the agent**, with the connection the extension already has.
 

@@ -68,7 +68,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
         and(
           eq(testRunsCases.testCaseId, testCaseId),
           inArray(testRunsCases.status, statuses),
-          notLabRun(testRuns.metadata),
+          notLabRun(testRuns.origin),
         ),
       )
       .orderBy(desc(testRunsCases.createdAt))
@@ -133,7 +133,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number): Pr
         eq(testRunsCases.testCaseId, testCaseId),
         eq(testRunsCases.status, 'passed'),
         gt(testRunsCases.retries, 0),
-        notLabRun(testRuns.metadata),
+        notLabRun(testRuns.origin),
       ),
     )
     .orderBy(desc(testRunsCases.createdAt))

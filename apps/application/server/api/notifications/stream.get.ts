@@ -19,7 +19,7 @@ defineRouteMeta({
     summary: 'Notification event stream',
     description:
       "Server-sent events stream (text/event-stream) of the signed-in user's browser notifications, filtered to their subscriptions and project scope.",
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

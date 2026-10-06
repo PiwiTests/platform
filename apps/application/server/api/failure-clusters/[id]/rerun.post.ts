@@ -8,7 +8,7 @@ defineRouteMeta({
     description:
       "Dispatches a CI workflow/pipeline to re-run exactly the cluster's affected tests, using the project's SCM token and the configured CI re-run target. Returns the provider's runs URL.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:control',
   },
 });
 

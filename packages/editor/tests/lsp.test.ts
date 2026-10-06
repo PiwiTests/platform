@@ -15,13 +15,16 @@ import {
 } from 'vscode-jsonrpc/node';
 import { createConnection } from 'vscode-languageserver/node';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { buildSession } from '@piwitests/core/recording';
+import { buildSession, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { startServer } from '../src/server';
 import type {
   FailuresResult,
   FileSummary,
   McpServersResult,
+  PageCandidatesResult,
+  RecordResult,
+  RecordingUpdate,
   RenderStepsResult,
   RunCommand,
   RunStatusResult,
@@ -30,6 +33,8 @@ import type {
   TestsForFile,
   TraceResult,
 } from '../src/protocol';
+import type { LaunchRequest, ServiceToLauncher } from '../src/recorder/ipc';
+import type { LauncherEvents } from '../src/recorder/sessions';
 
 const use = (test: number, site: string, actions = ['click']) => ({
   test,
@@ -366,6 +371,21 @@ beforeAll(async () => {
                 standing: 'reproduced',
                 lab: 'reproduced 7 of 10',
               },
+            },
+            {
+              testCaseId: 3,
+              state: 'untested',
+              nextCommand: 'npx @piwitests/reporter flake 3',
+              flaky: false,
+              reproducedBy: null,
+              flakeRate: null,
+              suspect: {
+                id: 'slow-route:GET /api/rows',
+                label: 'slow GET /api/rows',
+                standing: 'untested',
+                lab: 'untested',
+              },
+              untestedSuspects: 2,
             },
           ],
         }),
@@ -1087,6 +1107,374 @@ describe('the desktop app chosen with Connect', () => {
       stopChosen();
       chosenClient.dispose();
     }
+  });
+});
+
+describe('jobs for the desktop app running beside a team instance', () => {
+  test('offer Flake Lab on a flaky test and on a failure whose test has an untested suspect', async () => {
+    const desktopFile = path.join(dir, '.desktop-beside.json');
+    // The app runs, but the environment names the team instance, which the context reads.
+    fs.writeFileSync(desktopFile, JSON.stringify({ url: 'http://127.0.0.1:9', token: 'pd_desktop', projects: [] }));
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopBeside = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: desktopFile },
+      debounceMs: 10,
+    });
+    const beside = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const published = new Map<string, Array<{ code?: string; range: unknown; source?: string }>>();
+    beside.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: never[] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    beside.listen();
+    const openHere = (file: string, text: string) =>
+      beside.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: uri(file), languageId: 'typescript', version: 1, text },
+      });
+    try {
+      await beside.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await beside.sendNotification('initialized', {});
+      await openHere('tests/checkout.spec.ts', fs.readFileSync(path.join(dir, 'tests/checkout.spec.ts'), 'utf8'));
+      await openHere('tests/pages/checkout.page.ts', PAGE_OBJECT);
+
+      const lines = await waitFor(async () => {
+        const summary = (await beside.sendRequest('piwi/fileSummary', {
+          uri: uri('tests/checkout.spec.ts'),
+        })) as FileSummary;
+        return summary.lines.some((l) => l.command?.command === 'piwi.desktopJob') ? summary.lines : undefined;
+      });
+      expect(lines.map((l) => l.title).slice(-4)).toEqual([
+        'flaky 18% · top suspect: slow GET /api/cart (reproduced 7 of 10)',
+        'Reproduce this flake',
+        'Reproduce this flake in the desktop app',
+        'Verify the flake fix',
+      ]);
+      expect(lines.find((l) => l.command?.command === 'piwi.desktopJob')!.command).toEqual({
+        title: 'Reproduce this flake in the desktop app',
+        command: 'piwi.desktopJob',
+        arguments: [{ root: dir, testCaseId: 1, kind: 'flake-lab' }],
+      });
+
+      const failure = await waitFor(() =>
+        published.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.code === 'ci-failure'),
+      );
+      const actions = (await beside.sendRequest('textDocument/codeAction', {
+        textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+        range: failure.range,
+        context: { diagnostics: [failure] },
+      })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
+      const jobs = actions.filter((a) => a.command?.command === 'piwi.desktopJob');
+      expect(jobs.map((a) => [a.title, a.command!.arguments[0]])).toEqual([
+        ['Reproduce in the desktop app', { root: dir, executionId: 900, kind: 'reproduce' }],
+        ['Find the breaking commit in the desktop app', { root: dir, executionId: 900, kind: 'bisect' }],
+        [
+          'Run Flake Lab on its untested suspects in the desktop app',
+          { root: dir, executionId: 900, testCaseId: 3, kind: 'flake-lab' },
+        ],
+      ]);
+    } finally {
+      fs.rmSync(desktopFile, { force: true });
+      stopBeside();
+      beside.dispose();
+    }
+  });
+});
+
+describe('recording from the editor', () => {
+  const pay = (pageUrl: string): RecordedStep => ({
+    action: 'fill',
+    target: {
+      tagName: 'input',
+      role: 'textbox',
+      accessibleName: 'Amount',
+      testId: 'not-on-the-page',
+      text: null,
+      alternatives: [{ locator: "getByTestId('not-on-the-page')", method: 'getByTestId', score: 100 }],
+    },
+    value: '42',
+    redacted: false,
+    pageUrl,
+    timestamp: 2,
+  });
+  const goto = (url: string): RecordedStep => ({
+    action: 'goto',
+    target: null,
+    value: url,
+    redacted: false,
+    pageUrl: url,
+    timestamp: 1,
+  });
+  const payNow: RecordedStep = {
+    action: 'click',
+    target: {
+      tagName: 'button',
+      role: 'button',
+      accessibleName: 'Pay now',
+      testId: null,
+      text: 'Pay now',
+      alternatives: [{ locator: "getByRole('button', { name: 'Pay now' })", method: 'getByRole', score: 90 }],
+    },
+    value: null,
+    redacted: false,
+    pageUrl: 'https://shop.test/checkout',
+    timestamp: 3,
+  };
+
+  let recorder: MessageConnection;
+  let stopRecorder: () => void;
+  let distDir = '';
+  const updates: RecordingUpdate[] = [];
+  const launchers: Array<{ cwd: string; events: LauncherEvents; sent: ServiceToLauncher[] }> = [];
+  const optionsRead: string[] = [];
+
+  beforeAll(async () => {
+    distDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-editor-dist-'));
+    fs.writeFileSync(path.join(distDir, 'record-ide.js'), '');
+    fs.writeFileSync(path.join(distDir, 'record-ide-messages.json'), JSON.stringify({ en: { a: { message: 'A' } } }));
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopRecorder = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+      distDir,
+      readProjectOptions: async (configFile) => {
+        optionsRead.push(configFile);
+        return {
+          configFile,
+          rootDir: dir,
+          projects: [{ name: 'chromium', testDir: path.join(dir, 'tests'), use: { baseURL: 'https://shop.test/' } }],
+        };
+      },
+      launchRecorder: (cwd, events) => {
+        const launcher = { cwd, events, sent: [] as ServiceToLauncher[] };
+        launchers.push(launcher);
+        return { send: (m) => launcher.sent.push(m), kill: () => {} };
+      },
+    });
+    recorder = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    recorder.onNotification('piwi/recordingChanged', (u: RecordingUpdate) => {
+      updates.push(u);
+    });
+    recorder.listen();
+    await recorder.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+    });
+    await recorder.sendNotification('initialized', {});
+    await waitFor(async () => {
+      const s = (await recorder.sendRequest('piwi/status')) as StatusResult;
+      return s.contexts[0]?.connected ? s : undefined;
+    });
+  });
+
+  afterAll(() => {
+    stopRecorder?.();
+    recorder?.dispose();
+    fs.rmSync(distDir, { recursive: true, force: true });
+  });
+
+  const openHere = (file: string, text: string) =>
+    recorder.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: uri(file), languageId: 'typescript', version: 1, text },
+    });
+
+  test('offers the page expressions at the caret, and where it is', async () => {
+    const text = [
+      "import { test } from '@playwright/test';",
+      "test('approves', async ({ adminPage, userPage }) => {",
+      "  await userPage.goto('/inbox');",
+      '',
+      '});',
+    ].join('\n');
+    await openHere('tests/approve.spec.ts', text);
+    const result = (await recorder.sendRequest('piwi/pageCandidates', {
+      uri: uri('tests/approve.spec.ts'),
+      line: 3,
+      character: 0,
+    })) as PageCandidatesResult;
+    expect(result).toEqual({
+      context: 'test',
+      default: 'userPage',
+      candidates: [
+        { expression: 'userPage', reason: 'used on line 3' },
+        { expression: 'adminPage', reason: 'fixture of this test' },
+      ],
+    });
+    const atTop = (await recorder.sendRequest('piwi/pageCandidates', {
+      uri: uri('tests/approve.spec.ts'),
+      line: 0,
+      character: 0,
+    })) as PageCandidatesResult;
+    expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
+  });
+
+  test('renders steps on the page expression at the caret, with their imports apart when asked', async () => {
+    const steps = toStepsDocument(
+      buildSession([goto('https://shop.test/checkout'), pay('https://shop.test/checkout')], 1),
+    );
+    const inPageObject = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/pages/checkout.page.ts'),
+      steps: toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1)),
+      line: 2,
+      character: 0,
+    })) as RenderStepsResult;
+    expect(inPageObject.code).toContain("  await this.page.getByRole('button', { name: 'Pay now' }).click();");
+    expect(inPageObject.code).toContain("  await this.page.goto('/checkout');");
+    expect(inPageObject.imports).toBeUndefined();
+
+    const separate = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/checkout.spec.ts'),
+      steps,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(separate.imports).toEqual(["import { CheckoutPage } from 'tests/pages/checkout.page.ts';"]);
+    expect(separate.code).not.toContain('// Needs:');
+    expect(separate.code).toContain("  await checkoutPage.pay('');");
+
+    const comments = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/checkout.spec.ts'),
+      steps,
+    })) as RenderStepsResult;
+    expect(comments.code).toContain("  // Needs: import { CheckoutPage } from 'tests/pages/checkout.page.ts';");
+    expect(comments.imports).toBeUndefined();
+  });
+
+  test('renders steps without the imports the open file has, nor a page object the test declares already', async () => {
+    const text = [
+      "import { test } from '@playwright/test';",
+      'import {',
+      '  CheckoutPage,',
+      '} from "tests/pages/checkout.page.ts"',
+      "test('pays', async ({ page }) => {",
+      '  const checkoutPage = new CheckoutPage(page);',
+      '',
+      '});',
+    ].join('\n');
+    await openHere('tests/declared.spec.ts', text);
+    const rendered = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/declared.spec.ts'),
+      steps: toStepsDocument(buildSession([goto('https://shop.test/checkout'), pay('https://shop.test/checkout')], 1)),
+      line: 6,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(rendered.imports).toEqual([]);
+    expect(rendered.code).not.toContain('new CheckoutPage');
+    expect(rendered.code).toContain("  await checkoutPage.pay('');");
+  });
+
+  test('writes paths only when the flow was recorded on the baseURL’s origin', async () => {
+    const elsewhere = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/checkout.spec.ts'),
+      steps: toStepsDocument(buildSession([goto('https://staging.shop.test/cart')], 1)),
+    })) as RenderStepsResult;
+    expect(elsewhere.code).toContain("await page.goto('https://staging.shop.test/cart');");
+    const onBase = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/checkout.spec.ts'),
+      steps: toStepsDocument(buildSession([goto('https://shop.test/cart')], 1)),
+    })) as RenderStepsResult;
+    expect(onBase.code).toContain("await page.goto('/cart');");
+    expect(optionsRead).toContain(path.join(dir, 'playwright.config.ts'));
+  });
+
+  test('records into a file through the launcher: the block, pause and resume, and Stop', async () => {
+    const text = ["import { test } from '@playwright/test';", "test('pays', async ({ page }) => {", '', '});', ''].join(
+      '\n',
+    );
+    await openHere('tests/recorded.spec.ts', text);
+    const result = (await recorder.sendRequest('piwi/record', {
+      uri: uri('tests/recorded.spec.ts'),
+      line: 2,
+      character: 0,
+      into: 'steps',
+      startUrl: '/checkout',
+      language: 'fr',
+    })) as RecordResult;
+    expect(result).toMatchObject({ ok: true, placement: { line: 2, newLine: false, indent: '  ' } });
+    const launcher = launchers[launchers.length - 1]!;
+    expect(launcher.cwd).toBe(dir);
+    const start = launcher.sent[0] as { type: 'start'; request: LaunchRequest };
+    expect(start.request).toMatchObject({
+      startUrl: 'https://shop.test/checkout',
+      settings: { file: 'recorded.spec.ts', testIdAttribute: null },
+      language: { code: 'fr', messages: { a: { message: 'A' } } },
+    });
+
+    const count = updates.length;
+    launcher.events.message({ type: 'started' });
+    launcher.events.message({
+      type: 'event',
+      event: {
+        kind: 'navigate',
+        target: null,
+        value: 'https://shop.test/checkout',
+        checked: null,
+        inputType: null,
+        isPasswordField: false,
+        pageUrl: 'https://shop.test/checkout',
+        timestamp: Date.now(),
+      },
+    });
+    const latest = await waitFor(() => (updates.length >= count + 2 ? updates[updates.length - 1] : undefined));
+    expect(latest).toMatchObject({
+      sessionId: result.sessionId,
+      uri: uri('tests/recorded.spec.ts'),
+      into: 'steps',
+      state: 'recording',
+      code: "await page.goto('/checkout');",
+    });
+
+    await recorder.sendRequest('piwi/recordingCommand', { sessionId: result.sessionId, command: 'pause' });
+    await recorder.sendRequest('piwi/recordingCommand', { sessionId: result.sessionId, command: 'resume' });
+    await waitFor(() => (updates.length >= count + 4 ? true : undefined));
+    expect(updates[count + 2]).toMatchObject({ state: 'paused', code: "await page.goto('/checkout');" });
+    expect(updates[count + 3]).toMatchObject({ state: 'recording', code: "await page.goto('/checkout');" });
+
+    const stopping = recorder.sendRequest('piwi/stopRecording', { sessionId: result.sessionId });
+    await waitFor(() =>
+      updates.some((u) => u.sessionId === result.sessionId && u.state === 'stopped') ? true : undefined,
+    );
+    expect(launcher.sent.map((m) => m.type)).toEqual(['start', 'pause', 'pause', 'stop']);
+    launcher.events.exit(0, null);
+    expect(await stopping).toBeNull();
+  });
+
+  test('a new test between the lines of a file; closing the file stops its recording', async () => {
+    const text = "import { test } from '@playwright/test';\n\n";
+    await openHere('tests/closing.spec.ts', text);
+    const result = (await recorder.sendRequest('piwi/record', {
+      uri: uri('tests/closing.spec.ts'),
+      line: 1,
+      character: 0,
+      into: 'test',
+    })) as RecordResult;
+    expect(result).toMatchObject({ ok: true, placement: { line: 1, newLine: false, indent: '' } });
+    const launcher = launchers[launchers.length - 1]!;
+    launcher.events.message({ type: 'started' });
+    await recorder.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/closing.spec.ts') } });
+    const last = await waitFor(() => updates.find((u) => u.sessionId === result.sessionId && u.state === 'stopped'));
+    expect(last.message).toBe('The file was closed: the recording stopped.');
+    expect(last.code).toBe("test('recorded flow', async ({ page }) => {\n});");
+  });
+
+  test('a file outside every Playwright config cannot be recorded into', async () => {
+    const outside = (await recorder.sendRequest('piwi/record', {
+      uri: pathToFileURL(path.join(os.tmpdir(), 'nowhere.spec.ts')).href,
+      line: 0,
+      character: 0,
+      into: 'file',
+    })) as RecordResult;
+    expect(outside).toEqual({
+      ok: false,
+      message: 'No Playwright config holds this file: open the folder of its playwright.config.ts.',
+    });
   });
 });
 

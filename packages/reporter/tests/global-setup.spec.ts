@@ -295,4 +295,76 @@ describe('createGlobalSetup', () => {
       await new Promise<void>((r) => server.close(() => r()));
     }
   });
+
+  describe('checkBaseUrl', () => {
+    /** A port nothing listens on. */
+    async function closedPortUrl(): Promise<string> {
+      const { server, url } = await startServer(() => {});
+      await new Promise<void>((r) => server.close(() => r()));
+      return url;
+    }
+
+    it('stops the run before registering it when the base URL does not answer', async () => {
+      const { server, url, requests } = await startServer((_req, res) =>
+        jsonRes(res, 200, { runId: 3, setupToken: 't' }),
+      );
+      cleanupNames.push('base-url-down');
+      const baseURL = await closedPortUrl();
+      let userSetupCalled = false;
+      try {
+        const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'base-url-down', checkBaseUrl: true }, () => {
+          userSetupCalled = true;
+        });
+        const config = { reporter: [PIWI_REPORTER_ENTRY], projects: [{ name: 'chromium', use: { baseURL } }] };
+        await expect(setupFn(config)).rejects.toThrow(
+          `[Piwi Dashboard] The app under test did not answer, so no test ran:\n  ${baseURL} (chromium): connect ECONNREFUSED`,
+        );
+        expect(requests).toHaveLength(0);
+        expect(readSetupInfo('base-url-down')).toBeNull();
+        expect(userSetupCalled).toBe(false);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }, 20_000);
+
+    it('registers the run as usual when the base URL answers', async () => {
+      const { server, url, requests } = await startServer((req, res) =>
+        req.url === '/' ? jsonRes(res, 404, {}) : jsonRes(res, 200, { runId: 4, setupToken: 't' }),
+      );
+      cleanupNames.push('base-url-up');
+      try {
+        const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'base-url-up', checkBaseUrl: true });
+        await setupFn({
+          reporter: [PIWI_REPORTER_ENTRY],
+          projects: [{ name: 'chromium', use: { baseURL: `${url}/` } }],
+        });
+        expect(requests.map((r) => r.url)).toContain('/api/test-runs/setup');
+        expect(requests[0]!.url).toBe('/');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('is off by default, and PIWI_CHECK_BASE_URL turns it on', async () => {
+      const { server, url, requests } = await startServer((_req, res) =>
+        jsonRes(res, 200, { runId: 5, setupToken: 't' }),
+      );
+      cleanupNames.push('base-url-default');
+      const baseURL = await closedPortUrl();
+      const config = { reporter: [PIWI_REPORTER_ENTRY], projects: [{ name: 'chromium', use: { baseURL } }] };
+      try {
+        await createGlobalSetup({ serverUrl: url, projectName: 'base-url-default' })(config);
+        expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
+
+        process.env.PIWI_CHECK_BASE_URL = 'true';
+        await expect(createGlobalSetup({ serverUrl: url, projectName: 'base-url-default' })(config)).rejects.toThrow(
+          'The app under test did not answer',
+        );
+        expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
+      } finally {
+        delete process.env.PIWI_CHECK_BASE_URL;
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }, 20_000);
+  });
 });

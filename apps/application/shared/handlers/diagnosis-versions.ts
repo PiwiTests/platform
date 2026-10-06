@@ -84,6 +84,7 @@ export async function listDiagnosisVersions(db: DrizzleDB, clusterId: number, op
     confidence: v.confidence,
     summary: v.summary,
     rootCause: v.rootCause,
+    provider: v.provider ?? null,
     model: v.model,
     inputTokens: v.inputTokens,
     outputTokens: v.outputTokens,

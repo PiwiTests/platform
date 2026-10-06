@@ -94,3 +94,33 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
 
   return lines.join('\n');
 }
+
+/** Marks the comment auto-heal posts on its PR once a run on the heal branch passes. */
+export const HEAL_BRANCH_VERIFIED_MARKER = '<!-- piwi-dashboard:auto-heal-branch-verified -->';
+
+/**
+ * The comment posted on an auto-heal PR the first time a run on its branch
+ * passes every healed test. It leaves the PR as it is: marking a draft ready
+ * for review stays a person's call.
+ */
+export function buildHealBranchVerifiedComment(input: {
+  runId: number;
+  commit: string | null;
+  testCount: number;
+  siteUrl: string | null;
+  draft: boolean;
+}): string {
+  const base = input.siteUrl ? input.siteUrl.replace(/\/$/, '') : null;
+  const run = base ? `[run #${input.runId}](${base}/test-runs/${input.runId})` : `run #${input.runId}`;
+  const at = input.commit ? ` at \`${input.commit.slice(0, 7)}\`` : '';
+  const tests = `${input.testCount} healed test${input.testCount === 1 ? '' : 's'}`;
+  const next = input.draft
+    ? 'Mark the pull request ready for review once you have checked the diff.'
+    : 'Review the diff as you would any change.';
+  return [
+    HEAL_BRANCH_VERIFIED_MARKER,
+    `✅ **Verified on this branch:** ${run} passed the ${tests}${at}.`,
+    '',
+    `_${next}_`,
+  ].join('\n');
+}

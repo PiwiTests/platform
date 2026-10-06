@@ -7,6 +7,7 @@ import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
@@ -23,7 +24,7 @@ defineRouteMeta({
     summary: 'Submit test results as JSON',
     description:
       'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'run:submit',
     requestBody: {
       content: {
         'application/json': {
@@ -45,7 +46,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  // Require reporter or administrator role for submitting test results
+  // `run:submit` on at least one project, from the route meta; the project itself is checked below.
   const user = await requireAuth(event);
 
   const body = await readBody(event);
@@ -61,7 +62,7 @@ export default eventHandler(async (event) => {
   const incomingResources = sanitizeResourceReport(body.resourceReport);
 
   const db = await getDatabase();
-  const scope = await getProjectScope(db, user as any);
+  const scope = await getProjectScope(db, user as any, 'run:submit');
 
   const project = await resolveIngestProject(db, scope, body.projectName, body.projectDescription);
 
@@ -215,6 +216,7 @@ export default eventHandler(async (event) => {
   // Non-sharded or first shard of a sharded batch run: create a new run
   await cancelInstanceRuns(db, project.id, instanceId, undefined, isSharded);
 
+  const metadata = sanitizeMetadata(body.metadata || null);
   const testRunResult = await db
     .insert(testRuns)
     .values({
@@ -230,7 +232,8 @@ export default eventHandler(async (event) => {
       environment: body.environment || null,
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
-      metadata: sanitizeMetadata(body.metadata || null),
+      metadata,
+      origin: runOrigin(metadata),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

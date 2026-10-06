@@ -76,7 +76,7 @@ the default branch, older than the binding's age (default 2 days), with no issue
 
 ## The project binding
 
-An administrator binds a project under **Project → Settings → Issue tracker**: the connection, Jira project and issue
+A Project admin or an administrator binds the project under **Project → Settings → Issue tracker**: the connection, Jira project and issue
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route and fills the rest from the defaults, so a team's failures
@@ -114,7 +114,8 @@ modal asks for it.
 
 - A connected **Jira Cloud** site — see [Operate → Integrations](/operate/integrations#connecting-jira-cloud).
 - **`PIWI_SITE_URL`** set, so the issue body's links resolve back to the dashboard.
-- **Reporter or administrator** to create or link an issue; any project member can read the key and status.
+- The **Contributor** [role](/operate/project-access#what-each-role-can-do) or above to create or link an issue; anyone
+  who reads the project sees the key and status.
 
 ## Enable it
 

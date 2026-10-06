@@ -10,7 +10,7 @@ defineRouteMeta({
     description:
       'Gaps accepted more than a week ago whose node still has no trusted edge — the draft was never turned into a test. Drives the Home "gaps" inbox queue.',
     parameters: [],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

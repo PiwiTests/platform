@@ -9,7 +9,7 @@ defineRouteMeta({
     summary: 'Create an entity link',
     description:
       'Attach an external URL to a run, test-case run, test case, or failure cluster. Provider is auto-detected from the URL.',
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'link:write',
   },
 });
 

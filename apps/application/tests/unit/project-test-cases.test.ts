@@ -114,6 +114,31 @@ describe('getProjectTestCases', () => {
     expect(new Set(ids).size).toBe(4);
   });
 
+  test('pages sorted by file or title carry the same rows and aggregates as one page', async () => {
+    const byId = new Map((await getProjectTestCases(db, 1)).items.map((i: any) => [i.id, i]));
+    for (const sort of ['file', 'title'] as const) {
+      for (const dir of ['asc', 'desc'] as const) {
+        const whole = await getProjectTestCases(db, 1, { sort, dir });
+        const pages = [];
+        for (const offset of [0, 2, 4])
+          pages.push(...(await getProjectTestCases(db, 1, { sort, dir, limit: 2, offset })).items);
+        expect(pages.map((i: any) => i.id)).toEqual(whole.items.map((i: any) => i.id));
+        for (const item of pages) expect(item).toEqual(byId.get((item as any).id));
+      }
+    }
+    const past = await getProjectTestCases(db, 1, { sort: 'title', limit: 2, offset: 6 });
+    expect(past).toEqual({ items: [], total: 6, limit: 2, offset: 6 });
+    const filtered = await getProjectTestCases(db, 1, {
+      sort: 'title',
+      dir: 'asc',
+      statuses: ['failed', 'flaky'],
+      limit: 1,
+      offset: 1,
+    });
+    expect(filtered.total).toBe(2);
+    expect(filtered.items.map((i: any) => i.title)).toEqual(['login works']);
+  });
+
   test('search matches title and file path case-insensitively', async () => {
     const byTitle = await getProjectTestCases(db, 1, { q: 'LOGIN' });
     expect(byTitle.items.map((i: any) => i.title)).toContain('login works');

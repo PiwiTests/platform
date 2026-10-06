@@ -8,7 +8,7 @@ defineRouteMeta({
     summary: 'Find the test case at a file and line',
     description:
       'The test case `piwi flake <file:line>` names: the test declared on that line of the spec file, else the last one declared before it (the test whose body holds the line), from each test’s latest execution. The file is the stored path or its end from a folder boundary. 404 when no test fits.',
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {

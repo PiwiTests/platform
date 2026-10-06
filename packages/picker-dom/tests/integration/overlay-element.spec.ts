@@ -180,3 +180,35 @@ test.describe('installPickerOverlay — postMessage transport (snapshot picker)'
     expect(picked[picked.length - 1]!.attrs.attributes.id).toBe('wrap');
   });
 });
+
+test.describe('installPickerOverlay — the project’s test id attribute', () => {
+  const CARD = `<!doctype html><html><body>
+    <div id="card" data-test="card"><span id="inner">Card</span></div>
+    <button id="go" data-test="go-btn" data-testid="lib-button">Go</button>
+  </body></html>`;
+
+  test('the overlay’s own description reads it', async ({ page }) => {
+    await page.setContent(CARD);
+    await install(page, { transport: 'global', failing: null, testIdAttribute: 'data-test' });
+    await page.hover('#go');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("getByTestId('go-btn')");
+  });
+
+  test('a hover snaps to an ancestor that carries it', async ({ page }) => {
+    await page.setContent(CARD);
+    await install(page, { transport: 'global', failing: null, testIdAttribute: 'data-test' });
+    await page.hover('#inner');
+    await page.click('#inner', { force: true });
+    expect(await page.evaluate(() => (globalThis as any).__piwiPickedElement.id)).toBe('card');
+  });
+
+  test('without it, data-testid is what the overlay reads', async ({ page }) => {
+    await page.setContent(CARD);
+    await install(page, { transport: 'global', failing: null });
+    await page.hover('#go');
+    await expect(page.locator('#__piwi_picker_locator')).toContainText("getByTestId('lib-button')");
+    await page.hover('#inner');
+    await page.click('#inner', { force: true });
+    expect(await page.evaluate(() => (globalThis as any).__piwiPickedElement.id)).toBe('inner');
+  });
+});

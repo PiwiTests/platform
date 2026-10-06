@@ -7,13 +7,16 @@
  */
 import type { FailureClusterDetail } from '~~/types/api';
 
-defineProps<{
+const props = defineProps<{
   cluster: FailureClusterDetail;
-  canWrite: boolean;
   signatureLine: string | null;
 }>();
 
 const emit = defineEmits<{ refresh: [] }>();
+
+// Pinning and editing the known issue needs `link:write` on the cluster's project.
+const { can } = useAuth();
+const canEditLinks = computed(() => can('link:write', props.cluster.project?.id ?? null));
 
 const disclosure = ref<{ reveal: () => void } | null>(null);
 function revealRawError() {
@@ -49,7 +52,7 @@ defineExpose({ revealRawError });
               entity-type="failure_cluster"
               :entity-id="cluster.id"
               :links="cluster.links"
-              :readonly="!canWrite"
+              :readonly="!canEditLinks"
               @updated="emit('refresh')"
             />
           </div>

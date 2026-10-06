@@ -165,7 +165,7 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
     order: 4,
     intro:
       'Authentication is optional and off by default. When disabled, all endpoints behave as a single virtual administrator.',
-    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for roles, [API keys](/operate/api-keys) for keys, and [Project access](/operate/project-access) for project assignments.',
+    note: '> Behind a reverse proxy, set `PIWI_SITE_URL` so the OAuth `redirect_uri` is built from your public URL and matches what you registered with the provider (instead of being inferred from the request `Host`).\n\nSee [Authentication](/operate/authentication) for instance roles, [API keys](/operate/api-keys) for keys, and [Access, roles and groups](/operate/project-access) for project roles and groups.',
   },
   oauth: { title: 'OAuth (SSO)', order: 5, mergeInto: 'auth' },
   'wasted-time': {
@@ -346,7 +346,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_RETENTION_NOTIFICATION_DAYS: {
     description:
-      'Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever).',
+      "Days to keep sent/failed notification outbox rows before the nightly sweep prunes them (default 30; 0 keeps them forever). Settled auto-heal and integration actions and the agents' write log follow the same horizon.",
     category: 'database',
     type: 'number',
     default: '30',

@@ -191,12 +191,26 @@ async function expectPage(url, what) {
 
 async function waitForSettledRun(baseUrl, runId) {
   const deadline = Date.now() + RUN_SETTLED_TIMEOUT_MS;
+  let lastError = null;
   while (Date.now() < deadline) {
-    const response = await get(`${baseUrl}/api/test-runs/${runId}`);
+    let response;
+    try {
+      response = await get(`${baseUrl}/api/test-runs/${runId}`);
+    } catch (error) {
+      // The server can reset a connection while it is still storing the run's
+      // files; the run is settling, so ask again rather than failing here.
+      lastError = error;
+      await delay(1_000);
+      continue;
+    }
+    lastError = null;
     if (!response.ok) throw new Error(`GET /api/test-runs/${runId} answered HTTP ${response.status}`);
     const testRun = await response.json();
     if (!ACTIVE_RUN_STATUSES.has(testRun.status)) return testRun;
     await delay(1_000);
+  }
+  if (lastError) {
+    throw new Error(`GET /api/test-runs/${runId} kept failing: ${lastError.message} (${lastError.cause ?? 'no cause'})`);
   }
   throw new Error(`run ${runId} was still active after ${RUN_SETTLED_TIMEOUT_MS / 1000}s`);
 }
@@ -291,6 +305,8 @@ async function main() {
     await smoke(tarballDir, projectDir, (started) => (server = started));
   } catch (error) {
     console.error(`[package-smoke] FAILED: ${error.message}`);
+    if (error.cause) console.error(`[package-smoke] Cause: ${error.cause}`);
+    if (server) console.error(`[package-smoke] Server exit code: ${server.exitCode ?? 'still running'}`);
     log(`Left the project at ${projectDir}`);
     return 1;
   } finally {

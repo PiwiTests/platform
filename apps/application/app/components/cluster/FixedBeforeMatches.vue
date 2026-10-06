@@ -10,8 +10,8 @@ import { formatRelativeTime, formatLongDuration } from '~/utils';
 
 defineProps<{
   matches: FixedBeforeMatch[];
-  /** Reporter/admin — whether the apply action is offered. */
-  canWrite: boolean;
+  /** Whether the apply action is offered: `triage:write` on the cluster's project. */
+  canTriage: boolean;
   /** The cluster id currently being applied, so its button shows a spinner. */
   applyingId?: number | null;
 }>();
@@ -80,7 +80,7 @@ function onApply(match: FixedBeforeMatch) {
         </p>
         <p v-if="m.triageNote" class="text-xs text-toned line-clamp-2 italic">“{{ m.triageNote }}”</p>
 
-        <div v-if="canWrite" class="pt-0.5">
+        <div v-if="canTriage" class="pt-0.5">
           <UButton
             size="xs"
             color="neutral"

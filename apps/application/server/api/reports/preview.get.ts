@@ -50,7 +50,7 @@ defineRouteMeta({
         description: 'Comma-separated project ids',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 
@@ -65,8 +65,8 @@ export default eventHandler(async (event) => {
   }
   const db = await getDatabase();
   const access = await getProjectScope(db, user as any);
-  const dashboard = await dashboardRoute(() =>
-    reportDashboardFor(db as any, request.dashboard, dashboardActor(event, user as any)),
+  const dashboard = await dashboardRoute(async () =>
+    reportDashboardFor(db as any, request.dashboard, await dashboardActor(event, user as any)),
   );
   const bundle = await collectReportBundle(db, {
     dashboard,

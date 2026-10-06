@@ -12,7 +12,7 @@ defineRouteMeta({
     description:
       'Resolves a definition supplied in the request body without saving it — the builder’s live preview and an agent’s dry-run both use this. Returns the same shape as the resolve endpoint.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
     requestBody: {
       content: {
         'application/json': {

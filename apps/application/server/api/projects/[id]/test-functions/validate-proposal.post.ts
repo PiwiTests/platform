@@ -1,16 +1,15 @@
 import { z } from 'zod';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { validateExtractedFunction } from '#shared/test-function-extract-prompt';
-import { Role } from '#shared/types';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Functions'],
     summary: 'Validate a pasted AI response into a proposed catalog entry (no AI call)',
     description:
-      'For instances with no AI provider configured: paste the JSON reply from your own AI chat (seeded with the dashboard\'s "Copy prompt for your own AI" button) and get back the same validated, reviewable proposal shape as the AI-calling extract endpoint — no AI call, no credits spent here. Requires reporter or administrator role.',
+      'For instances with no AI provider configured: paste the JSON reply from your own AI chat (seeded with the dashboard\'s "Copy prompt for your own AI" button) and get back the same validated, reviewable proposal shape as the AI-calling extract endpoint — no AI call, no credits spent here. Requires `ai:run` (Maintainer and above on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'ai:run',
   },
 });
 
@@ -20,7 +19,7 @@ const validateProposalSchema = z.object({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, id, [Role.ADMINISTRATOR, Role.REPORTER]);
+  await requireProjectAccess(event, id);
 
   const body = await readBody(event);
   const validation = validateProposalSchema.safeParse(body);

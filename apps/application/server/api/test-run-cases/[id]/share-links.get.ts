@@ -11,7 +11,7 @@ defineRouteMeta({
     summary: 'List share links for one execution',
     description: 'Returns the share links minted for this execution — prefixes and lifecycle only, never the tokens.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

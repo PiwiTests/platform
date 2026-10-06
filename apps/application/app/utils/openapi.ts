@@ -7,6 +7,20 @@
  * (honoring the "zero telemetry, no phone-home" promise). Only the subset of
  * OpenAPI the generated spec actually uses is modeled here.
  */
+import {
+  INSTANCE_ROLE_LABELS,
+  InstanceRole,
+  PROJECT_ROLES,
+  PROJECT_ROLE_LABELS,
+  ProjectRole,
+  ROLE_PERMISSIONS,
+  SIGNED_IN,
+  isProjectPermission,
+  roleGrants,
+  rolesGranting,
+  routePermissionList,
+  type Permission,
+} from '#shared/permissions';
 
 export interface JsonSchema {
   type?: string | string[];
@@ -62,8 +76,11 @@ export interface OpenApiOperation {
   requestBody?: OpenApiRequestBody;
   responses?: Record<string, OpenApiResponse>;
   security?: SecurityRequirement[];
-  /** Roles allowed to call the endpoint (custom extension emitted by the routes). */
-  'x-required-roles'?: string[];
+  /**
+   * The permission the endpoint needs (custom extension emitted by the routes):
+   * one, a list where any one is enough, or `signed-in`.
+   */
+  'x-required-permission'?: string | string[];
 }
 
 export interface OpenApiPathItem {
@@ -199,37 +216,65 @@ export function resolveSchema(
   return spec?.components?.schemas?.[match[1]] ?? schema;
 }
 
-const ALL_ROLES = ['administrator', 'reporter', 'user'];
-
-function capitalize(role: string): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
-
-export interface RoleRequirement {
-  /** The raw roles that may call the endpoint. */
-  roles: string[];
-  /** Full readable requirement, e.g. "Administrator or Reporter" / "Any signed-in user". */
-  label: string;
-  /** Compact chip label, e.g. "Admin" / "Admin / Reporter". */
-  shortLabel: string;
-  /** True when a plain user cannot call it (admin/reporter-only) — worth flagging. */
+export interface PermissionRequirement {
+  /** The permissions the endpoint declares, any one of them enough; empty when any signed-in user may call it. */
+  permissions: Permission[];
+  /** Who holds them, in words: "Contributor and above on the project", "Administrator", "Any signed-in user". */
+  holders: string;
+  /** True when a Viewer cannot call it, which is worth flagging. */
   elevated: boolean;
 }
 
 /**
- * The role requirement for an operation, read from its `x-required-roles`
- * extension. Returns null for public or token-authenticated routes (which carry
- * no role restriction) — the caller shows its own public/auth indicator instead.
+ * The project roles that build on each other, lowest first: the leading run of
+ * `PROJECT_ROLES` in which each role holds every permission of the one before
+ * it. A role outside the chain (Uploader) is named on its own.
  */
-export function routeRoleRequirement(operation: OpenApiOperation): RoleRequirement | null {
-  const roles = operation['x-required-roles'];
-  if (!roles || roles.length === 0) return null;
-  const isAny = ALL_ROLES.every((role) => roles.includes(role));
+function roleChain(): ProjectRole[] {
+  const chain: ProjectRole[] = [];
+  for (const role of PROJECT_ROLES) {
+    const previous = chain[chain.length - 1];
+    if (previous && !ROLE_PERMISSIONS[previous].every((p) => roleGrants(role, p))) break;
+    chain.push(role);
+  }
+  return chain;
+}
+const ROLE_CHAIN = roleChain();
+
+function joinWithOr(words: string[]): string {
+  return words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}`;
+}
+
+/** The project roles granting a permission, in words, e.g. "Maintainer and above on the project". */
+function describeProjectRoles(roles: ProjectRole[]): string {
+  if (roles.length === PROJECT_ROLES.length) return 'Any role on the project';
+  const lowest = ROLE_CHAIN.findIndex((role) => roles.includes(role));
+  const tail = lowest === -1 ? [] : ROLE_CHAIN.slice(lowest);
+  if (tail.length > 1 && roles.length === tail.length && tail.every((role) => roles.includes(role))) {
+    return `${PROJECT_ROLE_LABELS[tail[0]!]} and above on the project`;
+  }
+  return `${joinWithOr(roles.map((role) => PROJECT_ROLE_LABELS[role]))} on the project`;
+}
+
+/**
+ * The permission requirement for an operation, read from its
+ * `x-required-permission` extension, with who holds it derived from the role
+ * matrix of `#shared/permissions`: the project roles granting a project
+ * permission, an administrator for an instance permission. Returns null for
+ * public or token-authenticated routes (which declare none); the caller shows
+ * its own public/auth indicator instead.
+ */
+export function routePermissionRequirement(operation: OpenApiOperation): PermissionRequirement | null {
+  const declared = routePermissionList(operation['x-required-permission']);
+  if (declared.length === 0) return null;
+  if (declared.includes(SIGNED_IN)) return { permissions: [], holders: 'Any signed-in user', elevated: false };
+  const permissions = declared.filter((p): p is Permission => p !== SIGNED_IN);
+  const granted = new Set(permissions.filter(isProjectPermission).flatMap((p) => rolesGranting(p)));
+  const roles = PROJECT_ROLES.filter((role) => granted.has(role));
   return {
-    roles,
-    label: isAny ? 'Any signed-in user' : roles.map(capitalize).join(' or '),
-    shortLabel: isAny ? 'Any user' : roles.map((r) => (r === 'administrator' ? 'Admin' : capitalize(r))).join(' / '),
-    elevated: !isAny && !roles.includes('user'),
+    permissions,
+    holders: roles.length === 0 ? INSTANCE_ROLE_LABELS[InstanceRole.ADMINISTRATOR] : describeProjectRoles(roles),
+    elevated: !roles.includes(ProjectRole.VIEWER),
   };
 }
 

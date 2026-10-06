@@ -1,11 +1,11 @@
 import { getDatabase } from '../../database';
 import { notificationChannels } from '../../database/schema';
-import { requireAuth, isAuthEnabled } from '../../utils/auth';
+import { getRequestAccess, requireAuth, isAuthEnabled } from '../../utils/auth';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
 import { sanitizeChannelConfig } from '../../utils/channels';
 import { wasDestinationTested } from '../../utils/notifications/channel-test';
 import { CHANNEL_TYPES, channelConfigProblem, isDeliverableChannelType } from '#shared/notifications/channel-setup';
-import { Role } from '#shared/types';
+import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -14,7 +14,7 @@ defineRouteMeta({
     summary: 'Create a notification channel',
     description:
       'Creates a new notification channel (`email`, `slack`, `teams` for a Microsoft Teams incoming webhook, `webhook` or `browser`). The destination is required: an email `address`, a `webhookUrl` for Slack and Teams, a `url` for a webhook. Webhook secrets are encrypted at rest, so a webhook `secret` answers HTTP 409 while `PIWI_SECRET_KEY` is unset. A channel whose destination the same user reached with `POST /api/channels/test` in the last few minutes is saved as verified. Administrators can create global channels; with authentication disabled every channel is global.',
-    'x-required-roles': [],
+    'x-required-permission': 'signed-in',
   },
 });
 
@@ -35,7 +35,7 @@ export default eventHandler(async (event) => {
 
   const { name, type, config, global: requestedGlobal } = parsed.data;
 
-  if (requestedGlobal && user.role !== Role.ADMINISTRATOR) {
+  if (requestedGlobal && !isAdministrator(await getRequestAccess(event))) {
     throw apiError({ statusCode: 403, message: 'Only administrators can create global channels' });
   }
   const problem = channelConfigProblem(type, config);

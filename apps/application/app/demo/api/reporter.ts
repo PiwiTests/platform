@@ -38,6 +38,7 @@ import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
 import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
@@ -153,7 +154,10 @@ async function persistDemoShardToken(
   tokens.push(token);
   meta.shardTokens = tokens;
 
-  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
+  await db
+    .update(testRuns)
+    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .where(eq(testRuns.id, runId));
 }
 
 /** Remove a shard token from a run's stored metadata (mirrors server shard-tokens.ts). */
@@ -171,7 +175,10 @@ async function removeStoredDemoShardToken(db: DemoDb, runId: number, token: stri
     delete meta.shardTokens;
   }
 
-  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
+  await db
+    .update(testRuns)
+    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .where(eq(testRuns.id, runId));
 }
 
 async function cancelInstanceRuns(
@@ -188,7 +195,12 @@ async function cancelInstanceRuns(
 }
 
 /** POST /api/test-runs/setup */
-export async function apiSetupTestRun(body: TestRunStartPayload) {
+/**
+ * `scope` is where the acting user holds `run:submit`, with the server's rules
+ * (`resolveIngestProject`): an existing project must be in it, and creating
+ * one takes it on all projects.
+ */
+export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | Set<number> = 'all') {
   if (!body?.projectName) {
     throw demoHttpError(400, 'Missing required field: projectName');
   }
@@ -198,6 +210,12 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
   const existingProjects = await db.select().from(projects).where(eq(projects.name, body.projectName));
   let project = existingProjects[0];
 
+  if (project && scope !== 'all' && !scope.has(project.id)) {
+    throw demoHttpError(403, 'No access to this project');
+  }
+  if (!project && scope !== 'all') {
+    throw demoHttpError(403, 'Cannot create a new project — no global access');
+  }
   if (!project) {
     const result = await db
       .insert(projects)
@@ -225,7 +243,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
         and(
           eq(testRuns.projectId, project.id),
           eq(testRuns.instanceId, instanceId),
-          eq(testRuns.status, 'initializing'),
+          or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         ),
       );
 
@@ -242,6 +260,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
     const setupToken = randomToken();
+    const metadata = { shardTokens: [setupToken] } as Record<string, unknown>;
     const testRunResult = await db
       .insert(testRuns)
       .values({
@@ -256,7 +275,8 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
+        metadata,
+        origin: runOrigin(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -295,6 +315,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload) {
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: null,
+      origin: runOrigin(null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,
@@ -340,8 +361,13 @@ export async function apiBeginTestRun(
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
 
   // Parallel worker processes race to /begin on the same run; a running run is
-  // tolerated and handed back its existing stream token (server behavior).
-  if (!isSharded && testRun.status !== 'initializing' && testRun.status !== 'running') {
+  // tolerated and handed back its existing stream token (server behavior). A
+  // sharded run also takes a shard after the stale-run sweep marked it interrupted.
+  const canBegin =
+    testRun.status === 'initializing' ||
+    testRun.status === 'running' ||
+    (isSharded && testRun.status === 'interrupted');
+  if (!canBegin) {
     throw demoHttpError(409, 'Test run cannot be transitioned to running state');
   }
 
@@ -351,12 +377,26 @@ export async function apiBeginTestRun(
   if (testRun.streamToken !== body.setupToken && !isValidShardSetupToken) {
     throw demoHttpError(403, 'Invalid setup token');
   }
+  // A setup token opens one /begin.
+  shardTokenSet?.delete(body.setupToken);
 
   const streamToken = randomToken();
 
   if (testRun.status === 'initializing') {
+    if (isSharded) {
+      // A shard's stream token is one of the run's shard tokens, so two shards
+      // that begin at once both keep theirs (server behavior).
+      const tokens = demoShardTokens.get(id) ?? new Set();
+      tokens.add(streamToken);
+      demoShardTokens.set(id, tokens);
+    }
+
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
+    const metadata = carryIngestHealth(
+      sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+      testRun.metadata,
+    );
     await db
       .update(testRuns)
       .set({
@@ -364,10 +404,8 @@ export async function apiBeginTestRun(
         streamToken,
         totalTests: body.totalTests || 0,
         branch: resolveRunBranch(body.metadata || testRun.metadata),
-        metadata: carryIngestHealth(
-          sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
-          testRun.metadata,
-        ),
+        metadata,
+        origin: runOrigin(metadata),
         playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
@@ -379,11 +417,18 @@ export async function apiBeginTestRun(
   } else if (isSharded) {
     // Subsequent shard in a sharded run: register the per-shard stream token
     // in memory and in the run's stored metadata (so a service-worker restart
-    // mid-run keeps accepting the shard's events).
+    // mid-run keeps accepting the shard's events), and add the shard's slice
+    // of the planned suite to the run's total.
     const tokens = demoShardTokens.get(id) ?? new Set();
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
+    if (body.totalTests) {
+      await db
+        .update(testRuns)
+        .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
+        .where(eq(testRuns.id, id));
+    }
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
@@ -831,6 +876,13 @@ export async function persistRunCases(
   return result;
 }
 
+/**
+ * The `watched` flag of the events and heartbeat answers. The demo cannot see
+ * who listens on its BroadcastChannel, so it always answers that someone does,
+ * which keeps a reporter's step events flowing.
+ */
+const DEMO_RUN_WATCHED = true;
+
 /** POST /api/test-runs/:id/events */
 export async function apiPostRunEvents(
   id: number,
@@ -878,7 +930,7 @@ export async function apiPostRunEvents(
   }
 
   if (completeEvents.length === 0) {
-    return { success: true, processed: beginEvents.length + stepRunEvents.length };
+    return { success: true, processed: beginEvents.length + stepRunEvents.length, watched: DEMO_RUN_WATCHED };
   }
 
   const parsedEvents = completeEvents.map((tc) => {
@@ -967,7 +1019,7 @@ export async function apiPostRunEvents(
     },
   });
 
-  return { success: true, processed: insertedRunCases.length + beginEvents.length };
+  return { success: true, processed: insertedRunCases.length + beginEvents.length, watched: DEMO_RUN_WATCHED };
 }
 
 /** POST /api/test-runs/:id/heartbeat */
@@ -984,7 +1036,7 @@ export async function apiHeartbeatTestRun(id: number, body: { streamToken?: stri
 
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
 
-  return { success: true };
+  return { success: true, watched: DEMO_RUN_WATCHED };
 }
 
 /** POST /api/test-runs/:id/finish (demo mode has no pending uploads) */
@@ -1033,6 +1085,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
         metadata: { ...currentMeta, shardDurations: allDurations },
+        origin: runOrigin(currentMeta),
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
@@ -1100,6 +1153,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
+          origin: runOrigin(finalMeta),
           updatedAt: new Date(),
         })
         .where(eq(testRuns.id, id));
@@ -1166,6 +1220,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
     : testRun.failedTests;
 
+  const reportedMetadata = body.metadata ? carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata) : null;
+
   await db
     .update(testRuns)
     .set({
@@ -1181,7 +1237,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {
-        metadata: carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        metadata: reportedMetadata,
+        origin: runOrigin(reportedMetadata),
         branch: resolveRunBranch(body.metadata),
       }),
       ...(body.label !== undefined && { label: body.label }),

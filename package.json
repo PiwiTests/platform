@@ -1,7 +1,7 @@
 {
   "name": "platform",
   "private": true,
-  "version": "0.45.0",
+  "version": "0.47.0",
   "type": "module",
   "workspaces": [
     "packages/core",
@@ -14,9 +14,6 @@
     "apps/vscode",
     "integrations/nitro"
   ],
-  "engines": {
-    "node": ">=24.0.0"
-  },
   "scripts": {
     "prepare": "husky",
     "knip": "knip"
@@ -32,5 +29,8 @@
     "oxlint": "^1.74.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

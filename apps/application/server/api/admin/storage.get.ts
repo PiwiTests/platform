@@ -11,8 +11,8 @@ defineRouteMeta({
     tags: ['Admin'],
     summary: 'Get storage analysis',
     description:
-      'Returns a breakdown of stored evidence by project, by file kind and over time, plus the physical storage location and (for local storage) the measured on-disk size. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'Returns a breakdown of stored evidence by project, by file kind and over time, plus the physical storage location and (for local storage) the measured on-disk size. Requires `storage:manage` (administrators only).',
+    'x-required-permission': 'storage:manage',
   },
 });
 

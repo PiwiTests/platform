@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Body: `{ title?, status? }`, where `status` is `open`, `dismissed` or `closed` — the states a person sets; the others follow the runs of the test that names the report.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter'],
+    'x-required-permission': 'bug-report:write',
   },
 });
 

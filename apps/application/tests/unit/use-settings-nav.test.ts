@@ -6,8 +6,9 @@ import type { SettingsPageId } from '../../app/utils/settings-metadata';
 /**
  * `useSettingsNav` is a thin reactive wrapper — the filtering and grouping live
  * in `buildSettingsNavSections` (covered in settings-metadata.test.ts). What is
- * only testable here is the wiring: how the viewer's role is derived, and how
- * the `envManaged` ref-or-getter is unwrapped.
+ * only testable here is the wiring: whether the viewer sees the pages needing
+ * an instance permission (only an administrator holds one), and how the
+ * `envManaged` ref-or-getter is unwrapped.
  *
  * Nuxt auto-imports are globals at runtime, so they are stubbed rather than
  * imported. `computed` is the real Vue one, so the returned ref behaves.
@@ -50,6 +51,16 @@ describe('useSettingsNav', () => {
     const visible = pathsOf(await useSettingsNav());
     expect(visible).not.toContain('/settings/storage');
     expect(visible).toContain('/settings/account');
+  });
+
+  test('hides the user and permission pages from a non-admin, project admins included', async () => {
+    // Project roles carry no instance permission: a Project admin manages their
+    // project's members from the project's own settings, not from here.
+    stubNuxt({ authEnabled: true, isAdmin: false });
+
+    const visible = pathsOf(await useSettingsNav());
+    expect(visible).not.toContain('/settings/users');
+    expect(visible).not.toContain('/settings/permissions');
   });
 
   test('shows admin pages to an admin when auth is enabled', async () => {

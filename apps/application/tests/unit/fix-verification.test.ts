@@ -21,10 +21,11 @@ vi.mock('../../server/utils/notifications/emit', () => ({
 }));
 
 let changedFiles: string[] = [];
+let changedCommits: Array<{ sha: string; message: string; fullMessage?: string }> = [];
 let commitAuthor: { name: string; email: string } | null = null;
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
-    fetchChanges: async () => ({ files: changedFiles.map((filename) => ({ filename })) }),
+    fetchChanges: async () => ({ commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) }),
     getCommitAuthor: async () => commitAuthor,
     getDefaultBranch: async () => 'main',
   }),
@@ -34,7 +35,8 @@ vi.mock('../../server/utils/scm', () => ({
 // import time when PIWI_DATABASE_URL is set, so clear it before the module
 // under test (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { verifyClusterFixes, appendTriageNote, classifyQuietRun } = await import('../../server/utils/fix-verification');
+const { verifyClusterFixes, appendTriageNote, classifyQuietRun, healKeysFromCommits } =
+  await import('../../server/utils/fix-verification');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -119,6 +121,7 @@ beforeAll(async () => {
 beforeEach(() => {
   emitted.length = 0;
   changedFiles = [];
+  changedCommits = [];
   commitAuthor = null;
 });
 
@@ -456,5 +459,71 @@ describe('verifyClusterFixes — diagnosis outcomes', () => {
     await verifyClusterFixes(db, red);
 
     expect(await diagnosisOutcomes(clusterId)).toEqual([]);
+  });
+});
+
+describe('verifyClusterFixes — the auto-heal PR that landed the fix', () => {
+  async function insertHealAction(dedupeKey: string, clusterId: number, prNumber: number, status = 'merged') {
+    await db.insert(schema.healActions).values({
+      projectId: 1,
+      dedupeKey,
+      status,
+      payload: { repositoryUrl: REMOTE, branch: `piwi/heal/1-${prNumber}`, edits: [{ clusterId, executionId: 1 }] },
+      result: { prNumber, prUrl: `https://github.com/acme/shop/pull/${prNumber}`, commitSha: 'h', branch: 'b' },
+    });
+  }
+
+  test('a Piwi-Heal trailer in the commits since the last failure names the PR on the fix and the event', async () => {
+    const failing = await insertRun('failed', 'b1aaaa');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertHealAction('heal:v1:1:trailer1', clusterId, 41);
+    changedCommits = [
+      { sha: 'c1', message: 'chore: unrelated' },
+      {
+        sha: 'c2',
+        message: 'test: heal broken locators',
+        fullMessage: 'test: heal broken locators\n\nPiwi-Heal: heal:v1:1:trailer1',
+      },
+    ];
+
+    const green = await insertRun('passed', 'b1bbbb');
+    await insertCase(green, 'passed', null, 2);
+    const fixed = await verifyClusterFixes(db, green);
+
+    const mine = fixed.find((f) => f.clusterId === clusterId);
+    expect(mine?.verification).toBe('stopped-failing');
+    expect(mine?.healPr).toMatchObject({ number: 41, url: 'https://github.com/acme/shop/pull/41' });
+    const event = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
+    expect(event?.event).toBe('cluster.fixed');
+    expect(event?.payload).toMatchObject({ verification: 'stopped-failing', healPr: { number: 41 } });
+  });
+
+  test('a trailer naming a heal PR whose edits are about another cluster names no PR', async () => {
+    const failing = await insertRun('failed', 'b2aaaa');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertHealAction('heal:v1:1:trailer2', clusterId + 1000, 42);
+    changedCommits = [{ sha: 'c3', message: 'x', fullMessage: 'x\n\nPiwi-Heal: heal:v1:1:trailer2' }];
+
+    const green = await insertRun('passed', 'b2bbbb');
+    await insertCase(green, 'passed', null, 2);
+    const fixed = await verifyClusterFixes(db, green);
+
+    const mine = fixed.find((f) => f.clusterId === clusterId);
+    expect(mine).toBeDefined();
+    expect(mine?.healPr).toBeUndefined();
+    const event = emitted.find((e) => (e.payload as { clusterId?: number }).clusterId === clusterId);
+    expect(event?.payload.healPr).toBeUndefined();
+  });
+
+  test('reads the keys from full messages, falling back to the subject', () => {
+    expect(
+      healKeysFromCommits([
+        { sha: 'a', message: 'fix: a', fullMessage: 'fix: a\n\nPiwi-Heal: k1\nCo-authored-by: Ada <a@b.c>' },
+        { sha: 'b', message: 'fix: b' },
+        { sha: 'c', message: 'fix: c', fullMessage: 'fix: c\n\npiwi-heal: k1' },
+      ]),
+    ).toEqual(['k1']);
   });
 });

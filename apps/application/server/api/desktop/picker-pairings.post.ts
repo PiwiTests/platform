@@ -14,7 +14,6 @@ defineRouteMeta({
     summary: 'Ask to pair Piwi Picker with the desktop app (desktop app)',
     description:
       'Desktop build only — 404 on the server build. Open without the desktop token: answers only a request whose `Origin` is a browser extension’s (403 otherwise) and whose body is `application/json` (415 otherwise). Body: `{ browser?, os? }`, which name the asking client. Shows the pairing in the app window with its code, for the developer to allow or deny; at most three wait at once (429). Answers `{ id, secret, code, interval, expiresIn, windowOpen }`; poll `GET /api/desktop/picker-pairings/:id` with the secret in `x-pairing-secret`.',
-    'x-required-roles': [],
     security: [],
     responses: {
       201: { description: 'The pairing, waiting for the developer' },

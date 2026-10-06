@@ -9,7 +9,6 @@ defineRouteMeta({
     summary: 'Get reporter configuration for the desktop app',
     description:
       'Desktop build only. Returns the local server URL and the access token to point the Playwright reporter at this app. 404 on the server build.',
-    'x-required-roles': [],
     security: [],
   },
 });

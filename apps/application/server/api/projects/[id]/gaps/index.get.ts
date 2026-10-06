@@ -27,7 +27,7 @@ defineRouteMeta({
       { name: 'pr', in: 'query', required: false, schema: { type: 'integer' } },
       { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

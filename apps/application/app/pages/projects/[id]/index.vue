@@ -23,7 +23,7 @@ useHead(computed(() => ({ title: `${project.value?.label || project.value?.name 
 
 const toast = useToast();
 
-const { isAdmin, isReporter } = useAuth();
+const { can } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
 // Gaps tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
@@ -33,12 +33,15 @@ const reportOpen = ref(false);
 const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
 // *Schedule…*: a report schedule over this project.
 const scheduleOpen = ref(false);
-const { canWrite } = useAuth();
 const runtimeConfig = useRuntimeConfig();
 const { isDesktop, openReport } = useDesktopReportLink();
-const authEnabled = computed(() => Boolean(runtimeConfig.public.authEnabled));
-const canManage = computed(() => !authEnabled.value || isAdmin.value);
-const canEditMarkers = computed(() => !authEnabled.value || isAdmin.value || isReporter.value);
+// What the viewer may do on this project; the server checks each route's permission.
+const canEditSettings = computed(() => can('project:manage', projectId));
+const canDeleteRuns = computed(() => can('run:delete', projectId));
+const canDeleteProject = computed(() => can('project:delete', projectId));
+// Importing runs from a blob report or a trace is an instance permission.
+const canImport = computed(() => can('storage:manage'));
+const canScheduleReport = computed(() => can('report:write', projectId));
 
 const showDeleteProjectModal = ref(false);
 const deleteProjectConfirmInput = ref('');
@@ -142,6 +145,11 @@ const availableBranches = computed(() => {
 
 function matchesFilters(run: TestRunSummary): boolean {
   if (filters.value.fullRunsOnly && run.isFullRun === false) return false;
+  return matchesScope(run);
+}
+
+/** Every filter but "Full runs only": environment, branch and the analytics drill-down. */
+function matchesScope(run: TestRunSummary): boolean {
   if (
     filters.value.environments.length > 0 &&
     !(run.environment && filters.value.environments.includes(run.environment))
@@ -175,6 +183,32 @@ const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestR
 );
 const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
 const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
+
+// The table shows one page of runs at a time, so the page's HTML and its
+// hydration stay the same size however many runs are loaded; the chart above it
+// draws them all.
+const RUNS_PAGE_SIZE = 50;
+const runsPage = ref(1);
+const pagedRuns = computed(() =>
+  tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
+);
+// A narrower filter (or a deleted run) can leave the page past the last one.
+watch(tableRuns, (rows) => {
+  const last = Math.max(1, Math.ceil(rows.length / RUNS_PAGE_SIZE));
+  if (runsPage.value > last) runsPage.value = last;
+});
+
+// Partial runs the other filters keep but "Full runs only" hides — the filter is
+// on by default, so without a notice a project's partial runs look missing.
+const hiddenPartialRunsCount = computed(() => {
+  if (!filters.value.fullRunsOnly) return 0;
+  const runs = keptOnly.value ? (keptRunsData.value?.items ?? []) : (project.value?.testRuns ?? []);
+  return runs.filter((r) => r.isFullRun === false && matchesScope(r)).length;
+});
+
+function showPartialRuns(): void {
+  filters.value = { ...filters.value, fullRunsOnly: false };
+}
 
 const keepRunId = ref<number | null>(null);
 const isKeepOpen = ref(false);
@@ -229,7 +263,7 @@ const { data: clustersCount, refresh: refreshClustersCount } = await useFetch(
 );
 
 const { data: flakyCount, refresh: refreshFlakyCount } = await useFetch(
-  () => `/api/projects/${projectId}/flaky-tests?runs=50`,
+  () => `/api/projects/${projectId}/flaky-tests?runs=50&enrich=false`,
   {
     lazy: true,
     server: false,
@@ -239,7 +273,7 @@ const { data: flakyCount, refresh: refreshFlakyCount } = await useFetch(
 );
 
 const { data: quarantineCount, refresh: refreshQuarantineCount } = await useFetch(
-  `/api/projects/${projectId}/quarantine`,
+  `/api/projects/${projectId}/quarantine?candidates=false`,
   {
     lazy: true,
     server: false,
@@ -403,8 +437,9 @@ function goToTab(tab: TabValue, segment?: FailureSegment) {
 // === RUNS TAB: selection → compare or delete ===
 const selectedRunIds = ref<number[]>([]);
 const isRunSelected = (runId: number) => selectedRunIds.value.includes(runId);
+// The header checkbox selects (or clears) the runs of the page on screen.
 const allRunsSelected = computed(
-  () => tableRuns.value.length > 0 && tableRuns.value.every((r) => selectedRunIds.value.includes(r.id)),
+  () => pagedRuns.value.length > 0 && pagedRuns.value.every((r) => selectedRunIds.value.includes(r.id)),
 );
 const someRunsSelected = computed(() => selectedRunIds.value.length > 0 && !allRunsSelected.value);
 
@@ -415,7 +450,10 @@ function toggleRunSelection(runId: number) {
 }
 
 function toggleAllRuns() {
-  selectedRunIds.value = allRunsSelected.value ? [] : tableRuns.value.map((r) => r.id);
+  const page = new Set(pagedRuns.value.map((r) => r.id));
+  selectedRunIds.value = allRunsSelected.value
+    ? selectedRunIds.value.filter((id) => !page.has(id))
+    : [...new Set([...selectedRunIds.value, ...page])];
 }
 
 // A filter that hides a selected run drops it from the selection, so a bulk
@@ -511,7 +549,7 @@ function runMenuItems(run: TestRunSummary) {
         isKeepOpen.value = true;
       },
     });
-  } else if (canRelease.value) {
+  } else if (canRelease(projectId)) {
     items.push({
       label: 'Release keep',
       icon: 'i-lucide-lock-open',
@@ -521,7 +559,7 @@ function runMenuItems(run: TestRunSummary) {
     });
   }
   // A kept run cannot be deleted until it is released.
-  if (canManage.value) {
+  if (canDeleteRuns.value) {
     items.push({
       label: run.keptAt ? 'Delete run (release it first)' : 'Delete run',
       icon: 'i-lucide-trash-2',
@@ -579,10 +617,15 @@ const slowTestsLoading = ref(false);
 const performanceInitialLoading = computed(() => performanceLoading.value && performanceData.value === null);
 
 // Whether the project ships committed AI-step artifacts; the coverage card only
-// appears when it does.
-const { data: hasAiSteps } = await useFetch(`/api/projects/${projectId}/ai-steps?days=90`, {
+// appears when it does, so the check waits for the Performance tab.
+const {
+  data: hasAiSteps,
+  status: aiStepsStatus,
+  execute: checkAiSteps,
+} = useFetch(`/api/projects/${projectId}/ai-steps?days=90`, {
   lazy: true,
   server: false,
+  immediate: false,
   default: () => false,
   transform: (r: { artifacts?: unknown[] }) => (r.artifacts?.length ?? 0) > 0,
 });
@@ -594,6 +637,7 @@ watch(
     performanceLoading.value = true;
     if (!slowTests.value) slowTestsLoading.value = true;
     if (import.meta.server) return;
+    if (aiStepsStatus.value === 'idle') void checkAiSteps();
     const params = new URLSearchParams({ runs: String(runsWindow) });
     if (!filters.value.fullRunsOnly) params.set('fullRunsOnly', 'false');
     const perfRes = await $fetch<{ items: PerformanceTrendPoint[] }>(
@@ -644,7 +688,8 @@ const clustersRefreshKey = ref(0);
 // === NAVBAR MORE MENU ===
 const moreMenuItems = computed(() => {
   const items: { label: string; icon: string; color?: 'error'; onSelect: () => void; to?: string }[] = [];
-  items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
+  if (canEditSettings.value)
+    items.push({ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => goToTab('settings') });
   items.push({
     label: 'Test functions',
     icon: 'i-lucide-square-function',
@@ -666,13 +711,13 @@ const moreMenuItems = computed(() => {
       icon: 'i-lucide-bug',
       onSelect: () => navigateTo(`/projects/${projectId}/bug-reports`),
     });
-  if (canWrite.value && !projCapHidden('quality-reports'))
+  if (canScheduleReport.value && !projCapHidden('quality-reports'))
     items.push({
       label: 'Schedule a quality report…',
       icon: 'i-lucide-calendar-clock',
       onSelect: () => (scheduleOpen.value = true),
     });
-  if (canManage.value)
+  if (canDeleteProject.value)
     items.push({
       label: 'Delete',
       icon: 'i-lucide-trash-2',
@@ -721,7 +766,7 @@ const moreMenuItems = computed(() => {
               @click="reportOpen = true"
             />
             <UButton
-              v-if="canManage"
+              v-if="canImport"
               label="Import"
               icon="i-lucide-import"
               size="sm"
@@ -844,6 +889,23 @@ const moreMenuItems = computed(() => {
               Show every run
             </button>
           </p>
+          <UAlert
+            v-if="hiddenPartialRunsCount > 0"
+            icon="i-lucide-info"
+            color="primary"
+            variant="subtle"
+            class="mb-4"
+            data-testid="hidden-partial-runs"
+            :title="
+              hiddenPartialRunsCount === 1
+                ? '1 partial run is hidden'
+                : `${hiddenPartialRunsCount} partial runs are hidden`
+            "
+            description="The “Full runs only” filter hides runs that only cover part of the suite (e.g. a single spec or --grep)."
+            :actions="[
+              { label: 'Show them', color: 'primary', variant: 'solid', size: 'xs', onClick: showPartialRuns },
+            ]"
+          />
           <ChartCard
             v-if="filteredRuns.length > 0"
             title="Run trend"
@@ -886,7 +948,7 @@ const moreMenuItems = computed(() => {
                 Select another run to compare
               </span>
               <UButton
-                v-if="canManage"
+                v-if="canDeleteRuns"
                 icon="i-lucide-trash-2"
                 size="sm"
                 color="neutral"
@@ -920,7 +982,7 @@ const moreMenuItems = computed(() => {
             <div class="hidden md:block">
               <UTable
                 v-if="tableRuns.length > 0"
-                :data="tableRuns"
+                :data="pagedRuns"
                 :columns="runsColumns"
                 :ui="{
                   base: 'w-full border-separate border-spacing-0',
@@ -1064,7 +1126,7 @@ const moreMenuItems = computed(() => {
 
             <!-- Below md: one card per run -->
             <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in tableRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
+              <div v-for="run in pagedRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
                 <div class="flex items-start gap-2">
                   <input
                     type="checkbox"
@@ -1111,6 +1173,16 @@ const moreMenuItems = computed(() => {
                   </UDropdownMenu>
                 </div>
               </div>
+            </div>
+
+            <div v-if="tableRuns.length > RUNS_PAGE_SIZE" class="flex justify-center mt-3">
+              <UPagination
+                v-model:page="runsPage"
+                :total="tableRuns.length"
+                :items-per-page="RUNS_PAGE_SIZE"
+                size="sm"
+                data-testid="runs-pagination"
+              />
             </div>
 
             <div
@@ -1338,7 +1410,6 @@ const moreMenuItems = computed(() => {
           :project-id="Number(projectId)"
           :markers="markers"
           :environments="availableEnvironments"
-          :can-edit="canEditMarkers"
           :focus-marker-id="focusMarkerId"
           @changed="refreshMarkers"
           @clear-focus="focusMarkerId = null"

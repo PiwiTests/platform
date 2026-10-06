@@ -8,8 +8,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Get auto-heal settings',
     description:
-      'The current auto-heal configuration — whether Piwi opens fix pull requests for broken locators, and on which projects. Requires administrator role.',
-    'x-required-roles': ['administrator'],
+      'The current auto-heal configuration — whether Piwi opens fix pull requests for broken locators, and on which projects. Requires `settings:manage` (administrators only).',
+    'x-required-permission': 'settings:manage',
   },
 });
 

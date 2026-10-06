@@ -48,7 +48,7 @@ defineRouteMeta({
           "Inline the trace's stylesheets and images so the returned HTML renders as recorded on its own; the rendered page views load `dom-snapshot-frame`, which always does",
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

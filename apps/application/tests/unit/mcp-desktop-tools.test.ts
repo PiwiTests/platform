@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { DESKTOP_MCP_TOOLS, planLocatorSourceEdit } from '../../server/utils/mcp/tools';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { mcpServerInfo } from '../../server/utils/mcp/protocol';
+import { ADMIN_ACCESS } from '#shared/permissions';
 
 const handler = (name: string) => {
   const tool = DESKTOP_MCP_TOOLS.find((t) => t.name === name);
@@ -14,7 +15,7 @@ const handler = (name: string) => {
 
 // A minimal context: the desktop server runs with auth off (virtual admin),
 // and the desktop tools under test here do not read the scope.
-const ctx = { user: null, scope: 'all' as const };
+const ctx = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
 
 describe('desktop MCP catalog', () => {
   it('every declared desktop tool has exactly one handler', () => {

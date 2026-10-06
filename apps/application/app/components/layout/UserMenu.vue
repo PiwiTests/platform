@@ -53,8 +53,8 @@ const user = computed(() => {
 });
 
 const items = computed<DropdownMenuItem[][]>(() => {
-  // Every viewer gets the settings pages their role can open — `useSettingsNav`
-  // already drops the admin-only ones, so a plain user still reaches Account,
+  // Every viewer gets the settings pages they can open — `useSettingsNav`
+  // already drops the admin-only ones, so a Member still reaches Account,
   // API keys, Notifications… Nav items are reused as dropdown items (both are
   // link items); the cast bridges the slightly different `type` union between
   // the two Nuxt UI types. `settingsNav` is grouped into sections — this menu

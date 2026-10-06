@@ -31,6 +31,7 @@ import {
   buildCommitStatus,
   buildPrComment,
   DEFAULT_PR_FEEDBACK,
+  isQuietRun,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
   PR_FEEDBACK_KEY,
@@ -42,6 +43,7 @@ import {
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage } from './change-coverage';
+import { recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
@@ -322,6 +324,7 @@ export async function buildRunPrSummary(
       testCount: fix.testCount,
       verification: fix.verification,
       timeToResolutionMs: fix.timeToResolutionMs,
+      ...(fix.healPr ? { healPr: { number: fix.healPr.number, url: fix.healPr.url } } : {}),
     })),
     wastedMinutes: wastedTotalMs > 0 ? wastedTotalMs / 60000 : null,
     selection: (() => {
@@ -393,43 +396,53 @@ export async function postRunPrFeedback(
   summary.newLeaks = states.resources === 'declined' ? null : await readNewLeaks(db, runId);
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
-  // cluster or opened a new leak is news.
-  const quiet =
-    settings.onlyOnFailure &&
-    summary.failedTests === 0 &&
-    (summary.fixedClusters?.length ?? 0) === 0 &&
-    (summary.newLeaks?.leaks.length ?? 0) === 0;
+  // cluster or opened a new leak is news. Quarantined failures follow the
+  // commit status's rule.
+  const quiet = isQuietRun(settings, summary);
 
   let commentPosted = false;
+  let prNumber = runPrNumber(run.metadata);
+  let commentId: string | null = null;
   if (settings.comment && branch && !quiet) {
     const pullRequest = await provider.findPullRequestForBranch(branch);
     if (pullRequest) {
-      commentPosted = await provider.upsertPullRequestComment(
+      prNumber = pullRequest.number;
+      const comment = await provider.postPullRequestComment(
         pullRequest.number,
         PR_COMMENT_MARKER,
         buildPrComment(summary),
       );
+      commentPosted = comment !== null;
+      commentId = comment?.id ?? null;
     }
   }
 
   // A commit status is a state rather than a message, so it is still worth
   // setting on a green run that `onlyOnFailure` silences the comment for.
   let statusPosted = false;
+  const statuses: string[] = [];
   if (settings.status && commit) {
     statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    if (statusPosted) statuses.push(settings.statusContext);
     // A second, informational status for change coverage — warn-only.
     if (effectiveChangeCoverage) {
-      await provider
-        .postCommitStatus(
-          commit,
-          buildChangeCoverageStatus(
-            effectiveChangeCoverage,
-            summary.runUrl,
-            `${settings.statusContext}/change-coverage`,
-          ),
-        )
+      const coverageContext = `${settings.statusContext}/change-coverage`;
+      const coveragePosted = await provider
+        .postCommitStatus(commit, buildChangeCoverageStatus(effectiveChangeCoverage, summary.runUrl, coverageContext))
         .catch(() => false);
+      if (coveragePosted) statuses.push(coverageContext);
     }
+  }
+
+  if (commentPosted || statuses.length > 0) {
+    await recordPrFeedbackPost(db, {
+      projectId: run.projectId,
+      runId,
+      repositoryUrl,
+      prNumber,
+      commentId,
+      statuses,
+    }).catch((e) => console.error(`[pr-feedback] could not record the feedback of run #${runId}`, e));
   }
 
   return { posted: commentPosted || statusPosted, comment: commentPosted, status: statusPosted };

@@ -9,7 +9,6 @@ defineRouteMeta({
     summary: 'Start connecting the browser extension or an editor',
     description:
       'Starts an RFC 8628 device authorization for Piwi Picker, the VS Code extension or the JetBrains plugin. Answers a device code for the client to poll `/api/extension/connect/token` with, and a user code with the page where a signed-in user allows or denies the connection. The request expires after 10 minutes. Body: `{ browser?, os? }` from Piwi Picker or `{ editor, os? }` from an editor, which name the connecting client. Rate-limited per client address.',
-    'x-required-roles': [],
     security: [],
     responses: {
       200: {

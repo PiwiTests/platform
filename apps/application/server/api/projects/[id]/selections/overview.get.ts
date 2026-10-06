@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'For every selection: what it resolves to against the current catalog (count, quarantined members, estimated duration, warnings) and whether that differs from what its most recent stamped run recorded — a silent drift. Plus suite-wide coverage: how many tests are matched by no stored selection (the "unselected" gap), with a sample. Read-only.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

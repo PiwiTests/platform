@@ -2,8 +2,11 @@ import { test, expect } from './fixtures';
 import { spawn } from 'child_process';
 import { join, resolve } from 'path';
 import { existsSync, rmSync } from 'fs';
+import type { APIRequestContext } from '@playwright/test';
 import { PROJECT } from '#shared/test-project-names';
+import { InstanceRole, ProjectRole } from '#shared/permissions';
 import { waitForHydration } from './utils';
+import { createMember } from './utils/access';
 
 function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
   try {
@@ -54,6 +57,11 @@ test.describe.serial('Reporter with authentication enabled', () => {
   test.afterAll(() => {
     safeRmSync(STORAGE_PATH, { recursive: true, force: true });
   });
+
+  async function loginAs(request: APIRequestContext, username: string, password: string) {
+    const res = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
+    expect(res.ok()).toBeTruthy();
+  }
 
   // ---------------------------------------------------------------------------
   // Auth server sanity checks
@@ -163,37 +171,28 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Create a dedicated reporter user
+  // Create a dedicated CI account: a member holding Uploader on all projects,
+  // which lets it create a project on its first submission.
   // ---------------------------------------------------------------------------
 
-  test('admin can create a reporter user', async ({ request }) => {
-    // Log in as admin first
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'admin', password: 'adminpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  test('admin can create a CI account holding the Uploader role on all projects', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
 
-    // Create a reporter user
-    const res = await request.post(`${AUTH_SERVER_URL}/api/users`, {
-      data: {
-        username: 'ci-reporter',
-        password: 'reporterpassword123',
-        role: 'reporter',
-        name: 'CI Reporter',
-      },
-    });
-    expect(res.ok()).toBeTruthy();
-    const data = await res.json();
-    expect(data.user.username).toBe('ci-reporter');
-    expect(data.user.role).toBe('reporter');
+    const { id } = await createMember(
+      { request, baseUrl: AUTH_SERVER_URL },
+      { username: 'ci-reporter', password: 'reporterpassword123', name: 'CI Reporter', role: ProjectRole.UPLOADER },
+    );
 
-    // Grant the reporter global project access. With the project-affectation
-    // feature, newly created users have no project access by default, so the
-    // reporter must be assigned access before it can create/submit projects.
-    const assignRes = await request.put(`${AUTH_SERVER_URL}/api/users/${data.user.id}/projects`, {
-      data: { global: true, projectIds: [] },
+    const users = (await (await request.get(`${AUTH_SERVER_URL}/api/users`)).json()) as {
+      items: Array<{ id: number; username: string; role: string; instanceRole: string }>;
+    };
+    expect(users.items.find((u) => u.id === id)).toMatchObject({
+      username: 'ci-reporter',
+      role: InstanceRole.MEMBER,
+      instanceRole: InstanceRole.MEMBER,
     });
-    expect(assignRes.ok()).toBeTruthy();
+    const roles = await (await request.get(`${AUTH_SERVER_URL}/api/users/${id}/projects`)).json();
+    expect(roles).toMatchObject({ allProjects: ProjectRole.UPLOADER, projects: [] });
   });
 
   // ---------------------------------------------------------------------------
@@ -243,24 +242,21 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(data.projectId).toBeDefined();
   });
 
-  // Roles are enforced from each route's `x-required-roles` OpenAPI meta (the
-  // single source of truth). A reporter must be refused an administrator-only
-  // route but allowed on an any-authenticated one.
-  test('reporter is refused an admin-only route but allowed an any-auth route', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-reporter', password: 'reporterpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  // Permissions are enforced from each route's `x-required-permission` meta
+  // (the single source of truth). An Uploader must be refused a route needing
+  // an instance permission but allowed to read projects.
+  test('an Uploader is refused an instance route but allowed a project read', async ({ request }) => {
+    await loginAs(request, 'ci-reporter', 'reporterpassword123');
 
-    // admin-only (x-required-roles: ['administrator'])
+    // instance permissions (storage:manage, users:manage): administrators only
     const adminOnly = await request.get(`${AUTH_SERVER_URL}/api/admin/stats`);
     expect(adminOnly.status()).toBe(403);
     const createUser = await request.post(`${AUTH_SERVER_URL}/api/users`, {
-      data: { username: 'nope-user', password: 'nopepassword123', role: 'user' },
+      data: { username: 'nope-user', password: 'nopepassword123', role: InstanceRole.MEMBER },
     });
     expect(createUser.status()).toBe(403);
 
-    // any authenticated user (x-required-roles: ['administrator', 'reporter', 'user'])
+    // project:read, which the Uploader role grants
     const anyAuth = await request.get(`${AUTH_SERVER_URL}/api/projects`);
     expect(anyAuth.ok()).toBeTruthy();
   });
@@ -590,6 +586,52 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(result.runId).toBeDefined();
   });
 
+  // The key carries its owner's access: Uploader reads the project and submits
+  // runs, nothing else.
+  test('an Uploader key submits a run but is refused a triage route', async ({ request }) => {
+    expect(reporterApiKey).not.toBeNull();
+    const headers = { Authorization: `Bearer ${reporterApiKey}` };
+
+    const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
+      headers,
+      data: {
+        projectName: PROJECT.API_KEY_SUBMIT,
+        status: 'failed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 1,
+        passedTests: 0,
+        failedTests: 1,
+        skippedTests: 0,
+        testCases: [
+          {
+            title: 'uploader triage check',
+            status: 'failed',
+            duration: 300,
+            location: 'tests/uploader.spec.ts:1:1',
+            error:
+              "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('uploader-check')",
+          },
+        ],
+      },
+    });
+    expect(submitRes.ok()).toBeTruthy();
+    const { runId } = await submitRes.json();
+
+    const run = (await (await request.get(`${AUTH_SERVER_URL}/api/test-runs/${runId}`, { headers })).json()) as {
+      testCases: Array<{ status: string; failureClusterId?: number }>;
+    };
+    const clusterId = run.testCases.find((c) => c.status === 'failed')?.failureClusterId;
+    expect(clusterId).toBeTruthy();
+
+    const triage = await request.patch(`${AUTH_SERVER_URL}/api/failure-clusters/${clusterId}/status`, {
+      headers,
+      data: { status: 'resolved' },
+    });
+    expect(triage.status()).toBe(403);
+    expect((await triage.json()).message).toBe('Insufficient permissions');
+  });
+
   test('PiwiDashboardReporter submits results with apiKey option', async ({ request }) => {
     expect(reporterApiKey).not.toBeNull();
 
@@ -750,44 +792,60 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Project members API — administrator-only authorization
+  // Project members API — `project:members`, held by a Project admin
   //
-  // These checks need a real authenticated non-admin session (a "user" role
-  // request must actually be rejected), which only exists on this auth-enabled
-  // server — with auth disabled (the default dev/test server) `requireAuth`
-  // always returns a synthetic system-admin user and no 403 can ever be
-  // observed. See `tests/user-management.spec.ts` for the GET/PUT shape and
-  // validation tests that run against the auth-disabled server instead.
+  // These checks need a real authenticated member session (a member's request
+  // must actually be rejected), which only exists on this auth-enabled server:
+  // with auth disabled (the default dev/test server) `requireAuth` always
+  // returns a virtual administrator and no 403 can ever be observed. See
+  // `tests/user-management.spec.ts` for the GET/PUT shape and validation tests
+  // that run against the auth-disabled server instead.
   // ---------------------------------------------------------------------------
 
   let membersProjectId: number;
   let ciUserId: number;
   let ciReporterId: number;
 
-  test('create a dedicated "user"-role account for authorization checks', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'admin', password: 'adminpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  type MemberRow = { subject: { type: string; id: number }; username: string | null; role: string; source: string };
 
-    const res = await request.post(`${AUTH_SERVER_URL}/api/users`, {
-      data: { username: 'ci-user', password: 'userpassword123', role: 'user', name: 'CI User' },
-    });
-    expect(res.ok()).toBeTruthy();
-    const data = await res.json();
-    expect(data.user.role).toBe('user');
-    ciUserId = data.user.id;
+  test('create a member with no role binding for the authorization checks', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+
+    ({ id: ciUserId } = await createMember(
+      { request, baseUrl: AUTH_SERVER_URL },
+      { username: 'ci-user', password: 'userpassword123', name: 'CI User', role: null },
+    ));
 
     const usersRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
     const usersData = await usersRes.json();
     ciReporterId = usersData.items.find((u: { username: string }) => u.username === 'ci-reporter').id;
   });
 
-  test('admin creates a project for the members checks', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'admin', password: 'adminpassword123' },
+  test('a member without a role binding sees no project and cannot upload', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
+
+    const projects = await request.get(`${AUTH_SERVER_URL}/api/projects`);
+    expect(projects.ok()).toBeTruthy();
+    expect(((await projects.json()) as { items: unknown[] }).items).toEqual([]);
+
+    const submit = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
+      data: {
+        projectName: PROJECT.AUTH_ROLE_CHECKS,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        duration: 1000,
+        totalTests: 0,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases: [],
+      },
     });
-    expect(loginRes.ok()).toBeTruthy();
+    expect(submit.status()).toBe(403);
+  });
+
+  test('admin creates a project for the members checks', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
 
     const res = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       data: {
@@ -807,84 +865,65 @@ test.describe.serial('Reporter with authentication enabled', () => {
     membersProjectId = data.projectId;
   });
 
-  test('GET /api/projects/:id/members is rejected for non-admin roles', async ({ request }) => {
-    // ci-reporter (role: reporter) has global project access but is not an admin.
-    let loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-reporter', password: 'reporterpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  test('GET /api/projects/:id/members is rejected without the Project admin role', async ({ request }) => {
+    // ci-reporter reads every project (Uploader on all projects) but cannot manage members.
+    await loginAs(request, 'ci-reporter', 'reporterpassword123');
     let res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`);
     expect(res.status()).toBe(403);
 
-    // ci-user (role: user, and not yet assigned to any project) is rejected too.
-    loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-user', password: 'userpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+    // ci-user, with no role binding at all, is rejected too.
+    await loginAs(request, 'ci-user', 'userpassword123');
     res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`);
     expect(res.status()).toBe(403);
   });
 
-  test('PUT /api/projects/:id/members is rejected for non-admin roles', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-reporter', password: 'reporterpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  test('PUT /api/projects/:id/members is rejected without the Project admin role', async ({ request }) => {
+    await loginAs(request, 'ci-reporter', 'reporterpassword123');
 
     const res = await request.put(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`, {
-      data: { userIds: [ciReporterId] },
+      data: { entries: [{ subject: { type: 'user', id: ciReporterId }, role: ProjectRole.PROJECT_ADMIN }] },
     });
     expect(res.status()).toBe(403);
   });
 
-  test('admin can GET then PUT project members, assigning ci-user and ci-reporter', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'admin', password: 'adminpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
-
-    // ci-reporter already has global access at this point (proven by the
-    // "GET rejected for non-admin roles" test above, and required for its
-    // earlier submit-as-reporter tests to have worked) — this file's own
-    // project-assignments backfill grants any unassigned REPORTER/USER a
-    // global row whenever the server (re)initializes, and that can happen
-    // more than once across this file's ~450 tests. Reset it to a known,
-    // explicit "no access" state so the "before" assertion below is
-    // deterministic regardless of that timing.
-    const resetReporter = await request.put(`${AUTH_SERVER_URL}/api/users/${ciReporterId}/projects`, {
-      data: { global: false, projectIds: [] },
-    });
-    expect(resetReporter.ok()).toBeTruthy();
+  test('admin can GET then PUT project members, granting ci-user and ci-reporter a role there', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
 
     const before = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`);
     expect(before.ok()).toBeTruthy();
-    const beforeBody = (await before.json()) as { items: Array<{ username: string }> };
-    // Only the implicit admin has access before any explicit assignment.
-    expect(beforeBody.items.some((u) => u.username === 'ci-user')).toBe(false);
-    expect(beforeBody.items.some((u) => u.username === 'ci-reporter')).toBe(false);
+    const beforeBody = (await before.json()) as { members: MemberRow[] };
+    expect(beforeBody.members.some((m) => m.username === 'ci-user')).toBe(false);
+    // ci-reporter holds a role here only through its binding on all projects.
+    expect(beforeBody.members.filter((m) => m.username === 'ci-reporter')).toEqual([
+      expect.objectContaining({ role: ProjectRole.UPLOADER, source: 'all-projects' }),
+    ]);
 
     const put = await request.put(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`, {
-      data: { userIds: [ciUserId, ciReporterId] },
+      data: {
+        entries: [
+          { subject: { type: 'user', id: ciUserId }, role: ProjectRole.VIEWER },
+          { subject: { type: 'user', id: ciReporterId }, role: ProjectRole.MAINTAINER },
+        ],
+      },
     });
     expect(put.ok()).toBeTruthy();
-    expect(await put.json()).toEqual({ success: true });
+    expect((await put.json()).success).toBe(true);
 
     const after = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`);
-    const afterBody = (await after.json()) as { items: Array<{ username: string; global: boolean }> };
-    const ciUserEntry = afterBody.items.find((u) => u.username === 'ci-user');
-    const ciReporterEntry = afterBody.items.find((u) => u.username === 'ci-reporter');
-    expect(ciUserEntry).toMatchObject({ username: 'ci-user', global: false });
-    expect(ciReporterEntry).toMatchObject({ username: 'ci-reporter', global: false });
+    const afterBody = (await after.json()) as { members: MemberRow[] };
+    expect(afterBody.members.filter((m) => m.username === 'ci-user')).toEqual([
+      expect.objectContaining({ subject: { type: 'user', id: ciUserId }, role: ProjectRole.VIEWER, source: 'direct' }),
+    ]);
+    expect(afterBody.members.filter((m) => m.username === 'ci-reporter')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: ProjectRole.MAINTAINER, source: 'direct' }),
+        expect.objectContaining({ role: ProjectRole.UPLOADER, source: 'all-projects' }),
+      ]),
+    );
   });
 
-  test('being assigned as a member does not itself grant access to manage members', async ({ request }) => {
-    // ci-user is now an explicit (non-global) member of the project, but members
-    // management stays administrator-only — assignment grants data access
-    // elsewhere, not membership-management rights.
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-user', password: 'userpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  test('a Viewer of the project cannot manage its members', async ({ request }) => {
+    await loginAs(request, 'ci-user', 'userpassword123');
 
     const res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/members`);
     expect(res.status()).toBe(403);
@@ -894,67 +933,60 @@ test.describe.serial('Reporter with authentication enabled', () => {
   // Permission grid API — administrator-only, and a grant changes what the user sees
   // ---------------------------------------------------------------------------
 
-  test('the permission grid API is rejected for non-admin roles', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-reporter', password: 'reporterpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  test('the permission grid API is rejected for members', async ({ request }) => {
+    await loginAs(request, 'ci-reporter', 'reporterpassword123');
 
     expect((await request.get(`${AUTH_SERVER_URL}/api/project-access`)).status()).toBe(403);
     const put = await request.put(`${AUTH_SERVER_URL}/api/project-access`, {
-      data: { userId: ciReporterId, projectId: null, granted: true },
+      data: { subject: { type: 'user', id: ciReporterId }, projectId: null, role: ProjectRole.PROJECT_ADMIN },
     });
     expect(put.status()).toBe(403);
   });
 
-  test('admin grants and revokes all-projects access through the permission grid', async ({ request }) => {
+  test('admin grants and revokes a role on all projects through the permission grid', async ({ request }) => {
     const projectIdsSeenBy = async (username: string, password: string) => {
-      const login = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
-      expect(login.ok()).toBeTruthy();
+      await loginAs(request, username, password);
       const res = await request.get(`${AUTH_SERVER_URL}/api/projects`);
       expect(res.ok()).toBeTruthy();
       return ((await res.json()) as { items: { id: number }[] }).items.map((p) => p.id);
     };
-    const setAccessAsAdmin = async (granted: boolean) => {
-      const login = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-        data: { username: 'admin', password: 'adminpassword123' },
-      });
-      expect(login.ok()).toBeTruthy();
+    const setAllProjectsRoleAsAdmin = async (role: ProjectRole | null) => {
+      await loginAs(request, 'admin', 'adminpassword123');
       const res = await request.put(`${AUTH_SERVER_URL}/api/project-access`, {
-        data: { userId: ciUserId, projectId: null, granted },
+        data: { subject: { type: 'user', id: ciUserId }, projectId: null, role },
       });
       expect(res.ok()).toBeTruthy();
-      return ((await res.json()) as { user: { global: boolean; projectIds: number[] } }).user;
+      const { bindings } = (await res.json()) as { bindings: Array<{ projectId: number | null; role: string }> };
+      return bindings.map((b) => ({ projectId: b.projectId, role: b.role }));
     };
 
-    // ci-user is an explicit member of the members-check project only.
+    // ci-user is a Viewer of the members-check project only.
     expect(await projectIdsSeenBy('ci-user', 'userpassword123')).toEqual([membersProjectId]);
 
-    expect(await setAccessAsAdmin(true)).toEqual(
-      expect.objectContaining({ global: true, projectIds: [membersProjectId] }),
+    const granted = await setAllProjectsRoleAsAdmin(ProjectRole.VIEWER);
+    expect(granted).toHaveLength(2);
+    expect(granted).toEqual(
+      expect.arrayContaining([
+        { projectId: null, role: ProjectRole.VIEWER },
+        { projectId: membersProjectId, role: ProjectRole.VIEWER },
+      ]),
     );
     const seenWithAll = await projectIdsSeenBy('ci-user', 'userpassword123');
     expect(seenWithAll).toContain(membersProjectId);
     expect(seenWithAll.length).toBeGreaterThan(1);
 
-    // Revoking all-projects falls back to the projects granted one by one.
-    expect(await setAccessAsAdmin(false)).toEqual(
-      expect.objectContaining({ global: false, projectIds: [membersProjectId] }),
-    );
+    // Removing the all-projects role leaves the role held on the one project.
+    expect(await setAllProjectsRoleAsAdmin(null)).toEqual([{ projectId: membersProjectId, role: ProjectRole.VIEWER }]);
     expect(await projectIdsSeenBy('ci-user', 'userpassword123')).toEqual([membersProjectId]);
   });
 
   // ---------------------------------------------------------------------------
   // Capability endpoints — reads open to any signed-in user with access, writes
-  // administrator-only, and a project decision overriding the instance default.
+  // for administrators (instance) or Project admins (project), and a project
+  // decision overriding the instance default.
   // ---------------------------------------------------------------------------
 
-  async function loginAs(request: import('@playwright/test').APIRequestContext, username: string, password: string) {
-    const res = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, { data: { username, password } });
-    expect(res.ok()).toBeTruthy();
-  }
-
-  test('GET /api/capabilities is readable by a "user" role', async ({ request }) => {
+  test('GET /api/capabilities is readable by a member', async ({ request }) => {
     await loginAs(request, 'ci-user', 'userpassword123');
     const res = await request.get(`${AUTH_SERVER_URL}/api/capabilities`);
     expect(res.ok()).toBeTruthy();
@@ -963,7 +995,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(body.items.length).toBeGreaterThan(0);
   });
 
-  test('PATCH /api/capabilities is rejected for a "user" role', async ({ request }) => {
+  test('PATCH /api/capabilities is rejected for a member', async ({ request }) => {
     await loginAs(request, 'ci-user', 'userpassword123');
     const res = await request.patch(`${AUTH_SERVER_URL}/api/capabilities`, {
       data: { decisions: { notifications: 'declined' } },
@@ -971,7 +1003,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(res.status()).toBe(403);
   });
 
-  test('GET /api/projects/:id/capabilities is readable by a member "user" role', async ({ request }) => {
+  test('GET /api/projects/:id/capabilities is readable by a Viewer of the project', async ({ request }) => {
     await loginAs(request, 'ci-user', 'userpassword123');
     const res = await request.get(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`);
     expect(res.ok()).toBeTruthy();
@@ -979,7 +1011,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(body.items.some((i) => i.id === 'fixtures')).toBe(true);
   });
 
-  test('PATCH /api/projects/:id/capabilities is rejected for a "user" role', async ({ request }) => {
+  test('PATCH /api/projects/:id/capabilities is rejected for a Viewer', async ({ request }) => {
     await loginAs(request, 'ci-user', 'userpassword123');
     const res = await request.patch(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/capabilities`, {
       data: { decisions: { quarantine: 'declined' } },
@@ -1032,20 +1064,19 @@ test.describe.serial('Reporter with authentication enabled', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // POST /api/failure-clusters/:id/diagnose/stream — required-role enforcement.
+  // POST /api/failure-clusters/:id/diagnose/stream — permission enforcement.
   //
-  // The route declares `x-required-roles: ['administrator', 'reporter']`, which
-  // `requireAuth` enforces from the route meta (the single source of truth). So
-  // a "user"-role caller — even one with access to the project — is rejected
-  // with 403 before the request reaches the cluster-lookup / AI-config checks.
+  // The route declares `x-required-permission: 'ai:run'` (Maintainer and up),
+  // which `requireAuth` enforces from the route meta (the single source of
+  // truth). So a Viewer of the project is rejected with 403 before the request
+  // reaches the cluster-lookup / AI-config checks.
   // ---------------------------------------------------------------------------
 
-  test('a "user"-role caller with project access is blocked from diagnose/stream', async ({ request }) => {
-    // Give ci-user project access via a run + failing test case so we have a cluster.
-    const adminLogin = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'admin', password: 'adminpassword123' },
-    });
-    expect(adminLogin.ok()).toBeTruthy();
+  let roleChecksClusterId: number;
+
+  test('a Viewer of the project is blocked from diagnose/stream', async ({ request }) => {
+    // A failing run in the members-check project, so there is a cluster.
+    await loginAs(request, 'admin', 'adminpassword123');
 
     const submitRes = await request.post(`${AUTH_SERVER_URL}/api/test-runs/submit`, {
       data: {
@@ -1077,31 +1108,74 @@ test.describe.serial('Reporter with authentication enabled', () => {
     };
     const clusterId = run.testCases.find((c) => c.status === 'failed')?.failureClusterId;
     expect(clusterId).toBeTruthy();
+    roleChecksClusterId = clusterId!;
 
-    // ci-user was already made an explicit member of PROJECT.AUTH_ROLE_CHECKS
-    // above, so project-scope access is not in question here — only the role.
-    const userLogin = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'ci-user', password: 'userpassword123' },
-    });
-    expect(userLogin.ok()).toBeTruthy();
+    // ci-user is a Viewer of PROJECT.AUTH_ROLE_CHECKS (granted above), so it
+    // reads the cluster; only the permission is in question here.
+    await loginAs(request, 'ci-user', 'userpassword123');
 
     const streamRes = await request.post(`${AUTH_SERVER_URL}/api/failure-clusters/${clusterId}/diagnose/stream`);
-    // The "user" role is not in [administrator, reporter], so enforcement from
-    // the route meta rejects the request with 403 (before the AI-config check).
+    // A Viewer holds `ai:run` on no project, so the request is rejected with
+    // 403 before the AI-config check.
     expect(streamRes.status()).toBe(403);
+    expect((await streamRes.json()).message).toBe('Insufficient permissions');
+  });
+
+  // A Contributor files issues but does not triage: the draft is served, the
+  // cluster status change is refused.
+  test('a Contributor drafts an issue but is refused a triage route', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
+    await createMember(
+      { request, baseUrl: AUTH_SERVER_URL },
+      {
+        username: 'ci-contributor',
+        password: 'contributorpassword123',
+        role: ProjectRole.CONTRIBUTOR,
+        projectId: membersProjectId,
+      },
+    );
+    // A draft needs a tracker connection with credentials; one that cannot be
+    // reached only leaves the draft's duplicate search empty.
+    const connection = await request.post(`${AUTH_SERVER_URL}/api/integrations/connections`, {
+      data: {
+        provider: 'jira',
+        name: 'Role checks Jira',
+        baseUrl: 'http://127.0.0.1:9',
+        credentials: { email: 'ci@piwi.dev', apiToken: 'unused-token' },
+      },
+    });
+    expect(connection.ok()).toBeTruthy();
+    const connectionId = ((await connection.json()) as { connection: { id: number } }).connection.id;
+
+    try {
+      await loginAs(request, 'ci-contributor', 'contributorpassword123');
+      const draft = await request.get(
+        `${AUTH_SERVER_URL}/api/integrations/issue-draft?entityType=failure_cluster&entityId=${roleChecksClusterId}`,
+      );
+      expect(draft.status()).toBe(200);
+      const body = (await draft.json()) as { clusterId: number; title: string; connectionId: number };
+      expect(body).toMatchObject({ clusterId: roleChecksClusterId, connectionId });
+      expect(body.title).toBeTruthy();
+
+      const triage = await request.patch(`${AUTH_SERVER_URL}/api/failure-clusters/${roleChecksClusterId}/status`, {
+        data: { status: 'resolved' },
+      });
+      expect(triage.status()).toBe(403);
+      expect((await triage.json()).message).toBe('Insufficient permissions');
+    } finally {
+      await loginAs(request, 'admin', 'adminpassword123');
+      await request.delete(`${AUTH_SERVER_URL}/api/integrations/connections/${connectionId}`);
+    }
   });
 
   // ---------------------------------------------------------------------------
-  // PATCH /api/users/:id — admins can reassign a role (the only way to promote
-  // an OAuth-provisioned account, which self-registers as `user`), but the last
-  // administrator can never be demoted into a lockout.
+  // PATCH /api/users/:id — admins can change the instance role (the only way to
+  // promote an OAuth-provisioned account, which signs up as a member), but the
+  // last administrator can never be demoted into a lockout.
   // ---------------------------------------------------------------------------
 
-  test('admin can reassign a role but cannot demote the last administrator', async ({ request }) => {
-    const loginRes = await request.post(`${AUTH_SERVER_URL}/api/auth/login`, {
-      data: { username: 'admin', password: 'adminpassword123' },
-    });
-    expect(loginRes.ok()).toBeTruthy();
+  test('admin can change the instance role but cannot demote the last administrator', async ({ request }) => {
+    await loginAs(request, 'admin', 'adminpassword123');
 
     const usersRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
     const usersData = await usersRes.json();
@@ -1110,39 +1184,42 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(adminUser).toBeDefined();
     expect(targetUser).toBeDefined();
 
-    // Promote ci-user (role: user) to reporter, then restore it.
+    // Promote ci-user (a member) to administrator, then restore it.
     const promote = await request.patch(`${AUTH_SERVER_URL}/api/users/${targetUser.id}`, {
-      data: { role: 'reporter' },
+      data: { role: InstanceRole.ADMINISTRATOR },
     });
     expect(promote.ok()).toBeTruthy();
-    expect((await promote.json()).user.role).toBe('reporter');
+    expect((await promote.json()).user.instanceRole).toBe(InstanceRole.ADMINISTRATOR);
 
     const restore = await request.patch(`${AUTH_SERVER_URL}/api/users/${targetUser.id}`, {
-      data: { role: 'user' },
+      data: { role: InstanceRole.MEMBER },
     });
     expect(restore.ok()).toBeTruthy();
+    expect((await restore.json()).user.instanceRole).toBe(InstanceRole.MEMBER);
 
     // `admin` is the only administrator, so demoting it is refused and the
     // account keeps its role.
     const demote = await request.patch(`${AUTH_SERVER_URL}/api/users/${adminUser.id}`, {
-      data: { role: 'user' },
+      data: { role: InstanceRole.MEMBER },
     });
     expect(demote.status()).toBe(400);
     expect((await demote.json()).message).toContain('last administrator');
 
     const afterRes = await request.get(`${AUTH_SERVER_URL}/api/users`);
     const afterData = await afterRes.json();
-    expect(afterData.items.find((u: { username: string }) => u.username === 'admin').role).toBe('administrator');
+    expect(afterData.items.find((u: { username: string }) => u.username === 'admin').role).toBe(
+      InstanceRole.ADMINISTRATOR,
+    );
   });
 
   // ---------------------------------------------------------------------------
-  // Capability roles in the browser: a "user" sees the effect of an undecided capability (the
+  // Capability roles in the browser: a Viewer sees the effect of an undecided capability (the
   // one naming line) but none of the decline controls, and cannot reach Setup.
-  // Reuses ci-user, who already has access to a fixtureless failing run in
-  // PROJECT.AUTH_ROLE_CHECKS from an earlier test in this serial suite.
+  // Reuses ci-user, a Viewer of PROJECT.AUTH_ROLE_CHECKS, which holds a
+  // fixtureless failing run from an earlier test in this serial suite.
   // ---------------------------------------------------------------------------
 
-  test('a "user" sees the evidence footer sentence with no decline controls, and Setup is unreachable', async ({
+  test('a Viewer sees the evidence footer sentence with no decline controls, and Setup is unreachable', async ({
     page,
     request,
   }) => {
@@ -1160,7 +1237,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     };
     const execId = run.testCases.find((c) => c.status === 'failed')!.executionId;
 
-    // Sign in as the "user"-role account in the browser.
+    // Sign in as the Viewer in the browser.
     await page.goto(`${AUTH_SERVER_URL}/login`);
     await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
     await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
@@ -1176,7 +1253,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     await expect(footer.getByRole('button', { name: 'Not for this instance' })).toHaveCount(0);
     await expect(footer.getByRole('link', { name: 'Add fixtures' })).toHaveCount(0);
 
-    // Setup is administrator-only: the user is redirected away from it.
+    // Setup is administrator-only: the Viewer is redirected away from it.
     await page.goto(`${AUTH_SERVER_URL}/setup`);
     await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/setup`);
   });

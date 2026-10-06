@@ -9,7 +9,7 @@ defineRouteMeta({
     description:
       'Returns the tests whose most recent passing-page ARIA snapshot is older than 24 hours, or that have none. The reporter calls this once at run start and captures the ARIA snapshot only at the end of those passing tests, so steady-state sampling costs nothing.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

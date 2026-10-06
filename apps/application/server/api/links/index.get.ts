@@ -17,7 +17,7 @@ defineRouteMeta({
       },
       { name: 'entityId', in: 'query', required: true, schema: { type: 'integer' } },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

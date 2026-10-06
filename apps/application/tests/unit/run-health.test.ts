@@ -10,8 +10,16 @@ import * as schema from '../../server/database/schema.sqlite';
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 
-const { INCIDENT_THRESHOLDS, classifyRunHealth, failingHosts, readFailureSignal, recordRunHealth, setRunIncident } =
-  await import('#shared/handlers/run-health');
+const {
+  INCIDENT_THRESHOLDS,
+  classifyRunHealth,
+  failingHosts,
+  measureRunHealth,
+  readFailureSignal,
+  readRequestSignal,
+  recordRunHealth,
+  setRunIncident,
+} = await import('#shared/handlers/run-health');
 const { keepIncidentMetadata, parseSetRunIncident, readIncidentReview, readRunIncident } =
   await import('#shared/run-incident');
 const { isEligibleRun } = await import('#shared/run-eligibility');
@@ -56,7 +64,40 @@ describe('what a failure says about the environment', () => {
   });
 });
 
-function run(failures: Array<{ error: string; fingerprint?: string }>, executedTests: number, extra = {}) {
+describe("what a failing execution's network capture says", () => {
+  const app = new Set(['staging.example.test']);
+  const request = (url: string, status: number, failure: string | null = null) => ({ url, status, failure });
+
+  test('a refused request to the app host counts, with its cause', () => {
+    expect(readRequestSignal([request(`${STAGING}/api/cart`, 0, 'net::ERR_CONNECTION_REFUSED')], app)).toEqual({
+      kind: 'request',
+      host: 'staging.example.test',
+      cause: 'connection refused',
+    });
+  });
+
+  test("a gateway's 502, 503 or 504 counts; an application error does not", () => {
+    expect(readRequestSignal([request(`${STAGING}/api/cart`, 503)], app)?.cause).toBe('service unavailable');
+    expect(readRequestSignal([request(`${STAGING}/api/cart`, 504)], app)?.cause).toBe('gateway timeout');
+    expect(readRequestSignal([request(`${STAGING}/api/cart`, 500)], app)).toBeNull();
+  });
+
+  test('a third-party host, an aborted route and an empty capture do not count', () => {
+    expect(
+      readRequestSignal([request('https://cdn.vendor.example/lib.js', 0, 'net::ERR_NAME_NOT_RESOLVED')], app),
+    ).toBeNull();
+    expect(readRequestSignal([request(`${STAGING}/api/cart`, 0, 'net::ERR_FAILED')], app)).toBeNull();
+    expect(readRequestSignal(undefined, app)).toBeNull();
+  });
+});
+
+type Failure = {
+  error: string;
+  fingerprint?: string;
+  failedRequests?: Array<{ url: string; status: number; failure: string | null }>;
+};
+
+function run(failures: Failure[], executedTests: number, extra = {}) {
   return {
     runId: 10,
     executedTests,
@@ -155,6 +196,49 @@ describe('classifyRunHealth', () => {
     ).toBe('browser-crash');
   });
 
+  describe('failed requests in the network capture', () => {
+    // The page loads, but the API behind it refuses: the tests fail on assertions.
+    const apiDown = (i: number): Failure => ({
+      error: assertionError,
+      failedRequests: [{ url: `${STAGING}/api/items/${i}`, status: 0, failure: 'net::ERR_CONNECTION_REFUSED' }],
+    });
+
+    test('assertions failing while their requests to the app host fail make an incident', () => {
+      const failures = [...times(36, apiDown), ...times(4, () => ({ error: assertionError }))];
+      const verdict = classifyRunHealth(run(failures, 44));
+      expect(verdict).toMatchObject({ rule: 'host-unreachable', host: 'staging.example.test', hostFailures: 36 });
+      expect(verdict!.reason).toBe(
+        '40 of 44 tests failed, 36 of them navigating or connecting to staging.example.test (connection refused), 36 of those seen only in their network capture.',
+      );
+    });
+
+    test('a failure whose error already reaches the host counts once', () => {
+      const failures = times(40, (i) => ({ ...apiDown(i), error: refused(`/p${i}`) }));
+      const measure = measureRunHealth(run(failures, 44));
+      expect(measure).toMatchObject({ hostFailures: 40, requestFailures: 0 });
+    });
+
+    test('failed requests to a third-party host are no incident', () => {
+      const failures = times(40, () => ({
+        error: assertionError,
+        failedRequests: [
+          { url: 'https://cdn.vendor.example/lib.js', status: 0, failure: 'net::ERR_NAME_NOT_RESOLVED' },
+        ],
+      }));
+      expect(classifyRunHealth(run(failures, 44))).toBeNull();
+    });
+
+    test('without a baseURL the capture is not read', () => {
+      expect(classifyRunHealth(run(times(40, apiDown), 44, { baseUrls: [] }))).toBeNull();
+    });
+
+    test('a browser crash keeps its own rule', () => {
+      const crash = 'Error: page.click: Target page, context or browser has been closed';
+      const failures = times(10, (i) => ({ ...apiDown(i), error: crash }));
+      expect(classifyRunHealth(run(failures, 10))?.rule).toBe('browser-crash');
+    });
+  });
+
   describe('the cross-project signal', () => {
     const borderline = times(30, (i) => ({ error: refused(`/p${i}`) }));
     const neighbor = {
@@ -239,6 +323,8 @@ async function seedRun(
     failing: number;
     error: (i: number) => string;
     metadata?: Record<string, unknown>;
+    /** Requests in the network capture of failing test `i`. */
+    requests?: (i: number) => Array<{ url: string; status: number; failure?: string }>;
   },
 ) {
   await db.insert(schema.testRuns).values({
@@ -264,8 +350,9 @@ async function seedRun(
         .insert(schema.testCases)
         .values({ id: caseId, projectId: opts.projectId, filePath: 'a.spec.ts', title: `t${i}` });
     }
+    const executionId = nextExecutionId++;
     await db.insert(schema.testRunsCases).values({
-      id: nextExecutionId++,
+      id: executionId,
       testRunId: opts.id,
       testCaseId: caseId,
       status: i < opts.failing ? 'failed' : 'passed',
@@ -273,6 +360,17 @@ async function seedRun(
       duration: 1000,
       createdAt: new Date(opts.startTime.getTime() + i),
     });
+    const requests = i < opts.failing ? (opts.requests?.(i) ?? []) : [];
+    for (const r of requests) {
+      await db.insert(schema.networkRequests).values({
+        testRunsCaseId: executionId,
+        testRunId: opts.id,
+        method: 'GET',
+        url: r.url,
+        status: r.status,
+        failure: r.failure ?? null,
+      });
+    }
   }
 }
 const firstRunOf = new Map<number, number>();
@@ -407,6 +505,72 @@ describe('recordRunHealth and setRunIncident', () => {
     const later = new Date(T0.getTime() + 2 * 3_600_000);
     await seedRun(db, { id: 2, projectId: 2, startTime: later, total: 10, failing: 6, error: (i) => refused(`/${i}`) });
     expect((await recordRunHealth(db, 2, later)).incident).toBeNull();
+  });
+
+  describe('with the network capture', () => {
+    const unavailable = (i: number) => [
+      { url: `${STAGING}/`, status: 200 },
+      { url: `${STAGING}/api/items/${i}`, status: 503 },
+    ];
+
+    test("flags a run whose tests failed on assertions while the app's API was unavailable", async () => {
+      firstRunOf.set(1, 1);
+      await seedRun(db, {
+        id: 1,
+        projectId: 1,
+        startTime: T0,
+        total: 10,
+        failing: 9,
+        error: () => assertionError,
+        requests: unavailable,
+      });
+      const result = await recordRunHealth(db, 1, T0);
+      expect(result.incident).toMatchObject({
+        rule: 'host-unreachable',
+        host: 'staging.example.test',
+        hostFailures: 9,
+      });
+      expect(result.incident!.reason).toBe(
+        '9 of 10 tests failed, 9 of them navigating or connecting to staging.example.test (service unavailable), 9 of those seen only in their network capture.',
+      );
+    });
+
+    test('reads the capture of at most the capped number of executions', async () => {
+      firstRunOf.set(1, 1);
+      await seedRun(db, {
+        id: 1,
+        projectId: 1,
+        startTime: T0,
+        total: 10,
+        failing: 9,
+        error: () => assertionError,
+        requests: unavailable,
+      });
+      const limits = INCIDENT_THRESHOLDS as { networkExecutionLimit: number };
+      const cap = limits.networkExecutionLimit;
+      limits.networkExecutionLimit = 5;
+      try {
+        // 5 of 9 failures read is under the 70% share: the unread ones never count.
+        expect((await recordRunHealth(db, 1, T0)).incident).toBeNull();
+      } finally {
+        limits.networkExecutionLimit = cap;
+      }
+    });
+
+    test('a person marking the run gets the host from the capture', async () => {
+      firstRunOf.set(1, 1);
+      await seedRun(db, {
+        id: 1,
+        projectId: 1,
+        startTime: T0,
+        total: 10,
+        failing: 4,
+        error: () => assertionError,
+        requests: unavailable,
+      });
+      const marked = await setRunIncident(db, 1, { incident: true, reason: null, by: 'Ada' }, T0);
+      expect(marked.incident).toMatchObject({ host: 'staging.example.test', hostFailures: 4 });
+    });
   });
 
   test('an incident run leaves the flaky scores as they were', async () => {

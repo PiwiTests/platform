@@ -26,12 +26,18 @@ message (one whose SCM or AI provider is not configured returns `{ error }`).
 asks about. Declining a capability drops the tools that depend on it. Append `?modules=core` (comma-separated) to the
 MCP URL to narrow the list further; narrowing never re-enables a declined tool.
 
-**Access.** The server follows the REST API's project assignments: with authentication on, a non-admin key reads only
-its projects, and cross-project tools (`list_recent_activity`, `list_open_clusters`, `search`) are filtered to them.
-The write tools (triaging clusters and gaps, deciding a merge suggestion, setting a bug report's status, re-running a
-cluster in CI, linking or filing an issue, setting a cluster's baseline commit, running or rating a diagnosis,
-registering a test function) need the **reporter** or **administrator** role, as the same actions do in the
-dashboard and the REST API, and `get_instance_stats` the administrator role.
+**Access.** The server follows the REST API's [roles](/operate/project-access): with authentication on, a Member's key
+reads only the projects its owner holds a role on, and cross-project tools (`list_recent_activity`,
+`list_open_clusters`, `search`) are filtered to them. The write tools (triaging clusters and gaps, deciding a merge
+suggestion, dismissing a quarantine proposal, setting a bug report's status or a run's incident flag, re-running a
+cluster in CI, linking or filing an issue, setting a cluster's baseline commit, running, recording or rating a
+diagnosis, reporting a fix attempt, registering a test function) need the same
+[permission](/operate/project-access#what-each-role-can-do) as the same action in the dashboard and the REST API, on
+the project they act on, and `get_instance_stats` needs an administrator.
+
+**The write log.** Every call of a write tool is logged with the API key that made it, the tool, what it acted on and
+the result; read tools never are. A cluster's **Activity** section shows the calls on it, the log is pruned after
+`PIWI_RETENTION_NOTIFICATION_DAYS`, and declining the **Agent write log** capability on the Setup page keeps none.
 
 **Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no SSE or WebSocket. Protocol versions
 `2025-06-18`, `2025-03-26` and `2024-11-05` are supported.
@@ -157,10 +163,12 @@ Windsurf reads `~/.codeium/windsurf/mcp_config.json`; Continue reads `~/.continu
 
 ## Prompts
 
-The server also exposes one MCP **prompt**, which a client offers as a slash command: `setup_piwi` generates the
-setup for a Playwright project that does not report here yet. It fills in this instance's URL, whether it requires a
-key and its existing projects, then walks the agent through `npx @piwitests/reporter init`, the API key and a first
-run. The `setup-piwi` [agent skill](/features/agent-skills) does the same without MCP.
+The server also exposes MCP **prompts**, which a client offers as slash commands. `setup_piwi` generates the setup
+for a Playwright project that does not report here yet. It fills in this instance's URL, whether it requires a key
+and its existing projects, then walks the agent through `npx @piwitests/reporter init`, the API key and a first run.
+The six workflow [agent skills](/features/agent-skills) are prompts too (`investigate_failure`,
+`apply_locator_healing`, `stabilize_flaky_tests`, `run_the_right_tests`, `write_the_missing_test`,
+`fix_a_reported_bug`), each with an optional `focus` argument, in the version this server ships.
 
 ## Related
 

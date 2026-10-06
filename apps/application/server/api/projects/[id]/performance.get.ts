@@ -40,7 +40,7 @@ defineRouteMeta({
         description: 'Restrict to full runs; pass "false" to include partial runs.',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

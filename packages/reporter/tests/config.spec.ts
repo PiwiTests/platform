@@ -62,7 +62,7 @@ describe('resolveOptions', () => {
     expect(opts.collectCiInfo).toBe(true);
     expect(opts.collectPerformanceMetrics).toBe(true);
     expect(opts.streaming).toBe(true);
-    expect(opts.streamingBatchSize).toBe(5);
+    expect(opts.streamingBatchSize).toBe(20);
     expect(opts.streamingBatchDelay).toBe(2000);
     expect(opts.maxStreamBufferBytes).toBe(100 * 1024 * 1024);
     expect(opts.submitTimeout).toBe(15 * 60 * 1000);

@@ -13,7 +13,7 @@ defineRouteMeta({
     summary: 'Check blob-report archives before importing them',
     description:
       'Judge a batch of archives from their name, size and SHA-256 alone: too large for this server, already imported into the project, or safe to upload. Lets a client skip uploads that would be rejected or ignored.',
-    'x-required-roles': ['administrator'],
+    'x-required-permission': 'storage:manage',
     requestBody: {
       content: {
         'application/json': {

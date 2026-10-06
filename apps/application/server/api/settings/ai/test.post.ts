@@ -9,8 +9,8 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Test AI provider connection',
     description:
-      'Sends a connectivity test to the configured AI provider for a given model role (`diagnosis`, `research`, or `embedding` — the embedding role is probed via the embeddings endpoint). Accepts optional role, provider, apiKey, model, and baseUrl in the request body; omitted fields fall back to the saved configuration. Requires administrator role. Soft-fail: a reachable provider that rejects the probe (bad key, wrong model, network error) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the provider call failed. HTTP error statuses are reserved for request-level problems (unconfigured role → 503).',
-    'x-required-roles': ['administrator'],
+      'Sends a connectivity test to the configured AI provider for a given model role (`diagnosis`, `research`, or `embedding` — the embedding role is probed via the embeddings endpoint). Accepts optional role, provider, apiKey, model, and baseUrl in the request body; omitted fields fall back to the saved configuration. Requires `settings:manage` (administrators only). Soft-fail: a reachable provider that rejects the probe (bad key, wrong model, network error) returns HTTP 200 with `{ success: false, error }` — the request was processed, only the provider call failed. HTTP error statuses are reserved for request-level problems (unconfigured role → 503).',
+    'x-required-permission': 'settings:manage',
     responses: {
       '200': {
         description: 'Probe result. `success` reports the outcome; a failed probe still returns 200.',

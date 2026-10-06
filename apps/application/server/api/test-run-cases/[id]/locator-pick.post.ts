@@ -10,10 +10,11 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: 'Save a user-picked locator for a failing test case',
     description:
-      'Saves a locator picked by a user from the interactive DOM snapshot picker. The pick is keyed to the failing locator call site (location and signature re-derived server-side from the stored error) and appears first in subsequent locator-healing responses. Any authenticated project member may save a pick.',
+      'Saves a locator picked by a user from the interactive DOM snapshot picker. The pick is keyed to the failing locator call site (location and signature re-derived server-side from the stored error) and appears first in subsequent locator-healing responses. Requires `project:read` on the project: any project member may save a pick.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
     ],
+    'x-required-permission': 'project:read',
     requestBody: {
       required: true,
       content: {

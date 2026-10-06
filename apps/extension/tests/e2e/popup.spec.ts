@@ -110,13 +110,17 @@ test.describe('popup.html', () => {
         }),
     );
     await page.reload();
+    // The select's row shows once the popup has read the connection: a hidden select takes no focus.
+    const select = page.locator('#active-project');
+    await expect(select).toBeVisible();
     await page.evaluate(() => {
       (globalThis as unknown as { clicked: string[] }).clicked = [];
       for (const b of document.querySelectorAll<HTMLElement>('.actions button')) {
         b.addEventListener('click', () => (globalThis as unknown as { clicked: string[] }).clicked.push(b.id));
       }
-      document.getElementById('active-project')!.focus();
     });
+    await select.focus();
+    await expect(select).toBeFocused();
     await page.keyboard.press('2');
     expect(await page.evaluate(() => (globalThis as unknown as { clicked: string[] }).clicked)).toEqual([]);
   });

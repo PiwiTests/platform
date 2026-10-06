@@ -2,7 +2,9 @@ import { describe, test, expect } from 'vitest';
 import {
   buildChangeCoverageStatus,
   buildCommitStatus,
+  buildGateStatus,
   buildPrComment,
+  isQuietRun,
   DEFAULT_PR_FEEDBACK,
   PR_COMMENT_MARKER,
   PR_EXCERPT_MAX,
@@ -267,6 +269,24 @@ describe('buildPrComment — fixed clusters', () => {
     expect(body).toContain('matches the diagnosed change');
   });
 
+  test('names the auto-heal pull request that landed the fix', () => {
+    const body = buildPrComment(
+      summary({
+        fixedClusters: [
+          {
+            id: 9,
+            label: 'Locator',
+            testCount: 1,
+            verification: 'stopped-failing',
+            timeToResolutionMs: null,
+            healPr: { number: 12, url: 'https://github.com/acme/app/pull/12' },
+          },
+        ],
+      }),
+    );
+    expect(body).toContain('landed by auto-heal [#12](https://github.com/acme/app/pull/12)');
+  });
+
   test('says nothing when no cluster was closed', () => {
     expect(buildPrComment(summary())).not.toContain('Fixed by this change');
     expect(buildPrComment(summary({ fixedClusters: [] }))).not.toContain('Fixed by this change');
@@ -331,6 +351,56 @@ describe('buildCommitStatus', () => {
 
   test('caps the description at what GitHub accepts', () => {
     const status = buildCommitStatus(summary({ projectName: 'x'.repeat(500) }), 'piwi/tests');
+    expect(status.description.length).toBeLessThanOrEqual(140);
+  });
+});
+
+describe('isQuietRun', () => {
+  const onlyOnFailure = { onlyOnFailure: true };
+
+  test('keeps the comment off a run whose only failures are quarantined', () => {
+    expect(isQuietRun(onlyOnFailure, summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2 }))).toBe(true);
+  });
+
+  test('posts it when the project counts quarantined failures', () => {
+    const run = summary({ failedTests: 2, passedTests: 118, quarantinedFailures: 2, quarantineFailsStatus: true });
+    expect(isQuietRun(onlyOnFailure, run)).toBe(false);
+  });
+
+  test('posts it when a test outside quarantine failed too', () => {
+    expect(isQuietRun(onlyOnFailure, summary({ failedTests: 3, passedTests: 117, quarantinedFailures: 2 }))).toBe(
+      false,
+    );
+  });
+
+  test('posts every run when only-on-failure is off', () => {
+    expect(isQuietRun({ onlyOnFailure: false }, summary())).toBe(false);
+  });
+});
+
+describe('buildGateStatus', () => {
+  const url = 'https://piwi.example.com/test-runs/42';
+
+  test('is a success when the policy passed', () => {
+    expect(buildGateStatus({ verdict: 'passed', violations: [] }, url, 'piwi/tests/gate')).toEqual({
+      state: 'success',
+      description: 'Gate policy satisfied',
+      targetUrl: url,
+      context: 'piwi/tests/gate',
+    });
+  });
+
+  test('is a failure naming the first violation and how many there are', () => {
+    const status = buildGateStatus(
+      { verdict: 'failed', violations: [{ message: '2 failed (limit 0)' }, { message: '1 new cluster' }] },
+      url,
+      'piwi/tests/gate',
+    );
+    expect(status).toMatchObject({ state: 'failure', description: '2 violations: 2 failed (limit 0)' });
+  });
+
+  test('caps the description at what GitHub accepts', () => {
+    const status = buildGateStatus({ verdict: 'failed', violations: [{ message: 'x'.repeat(500) }] }, url, 'g');
     expect(status.description.length).toBeLessThanOrEqual(140);
   });
 });

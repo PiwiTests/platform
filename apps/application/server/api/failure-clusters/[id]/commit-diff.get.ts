@@ -20,7 +20,7 @@ defineRouteMeta({
         description: 'Commit SHA to diff.',
       },
     ],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

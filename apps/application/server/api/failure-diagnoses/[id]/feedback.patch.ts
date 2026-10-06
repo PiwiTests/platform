@@ -8,7 +8,7 @@ defineRouteMeta({
     summary: 'Submit feedback on a diagnosis',
     description: 'Record thumbs up/down feedback on a diagnosis result, with an optional note.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-    'x-required-roles': ['administrator', 'reporter', 'user'],
+    'x-required-permission': 'project:read',
   },
 });
 

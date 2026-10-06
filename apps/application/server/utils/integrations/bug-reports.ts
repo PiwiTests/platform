@@ -5,7 +5,6 @@
  * write-backs when a report's test says the bug looks fixed.
  */
 import type { DbClient } from '../../database';
-import { Role } from '#shared/types';
 import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
 import { readProjectIntegration } from './binding';
 import { getConnectionRow, listTrackerConnections } from './connections';
@@ -19,7 +18,7 @@ export interface BugReportIntake {
   projectKey: string | null;
   /** The language the ticket is written in. */
   locale: IssueLocale | null;
-  /** The sender's role may create issues (administrator or reporter). */
+  /** The sender holds `issue:create` on the project. */
   canCreate: boolean;
   /** The project files every report, whoever sends it. */
   fileEvery: boolean;
@@ -54,18 +53,15 @@ async function usableBinding(db: DbClient, projectId: number): Promise<Binding |
   };
 }
 
-export function roleCanCreateIssues(role: string | null | undefined): boolean {
-  return role === Role.ADMINISTRATOR || role === Role.REPORTER;
-}
-
-export async function bugReportIntake(db: DbClient, projectId: number, role: string | null): Promise<BugReportIntake> {
+/** The intake answer for a sender; `canCreate` is whether they hold `issue:create` on the project. */
+export async function bugReportIntake(db: DbClient, projectId: number, canCreate: boolean): Promise<BugReportIntake> {
   const binding = await usableBinding(db, projectId);
   if (!binding) return { tracker: null, projectKey: null, locale: null, canCreate: false, fileEvery: false };
   return {
     tracker: 'jira',
     projectKey: binding.projectKey,
     locale: binding.locale,
-    canCreate: roleCanCreateIssues(role),
+    canCreate,
     fileEvery: binding.fileEvery,
   };
 }
@@ -94,14 +90,14 @@ export async function fileBugReportIssue(
   });
 }
 
-/** Whether a send files an issue: asked by a role that may, or the project files every report. */
+/** Whether a send files an issue: asked by a sender who may (`canCreate`), or the project files every report. */
 export async function shouldFileOnSend(
   db: DbClient,
   projectId: number,
   asked: boolean,
-  role: string | null,
+  canCreate: boolean,
 ): Promise<boolean> {
-  const intake = await bugReportIntake(db, projectId, role);
+  const intake = await bugReportIntake(db, projectId, canCreate);
   if (!intake.tracker) return false;
   return intake.fileEvery || (asked && intake.canCreate);
 }
