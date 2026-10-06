@@ -13,7 +13,7 @@ and a **Learn more** link into these docs, and every source path [opens in your 
 
 ## Home
 
-`/`: a health check across all projects. A **stat strip** whose every number but the average pass rate is a link, the **failure inbox** of open clusters, triaged from the row or the keyboard
+`/`: a health check across all projects. A **Filters** block (environment, full runs only), a **stat strip** whose every number but the average pass rate is a link, the **failure inbox** of open clusters, triaged from the row or the keyboard
 ([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)), a **Project health** table with run-history
 bars and a tendency badge, and recent activity.
 
@@ -37,12 +37,14 @@ first result, or with **New project**.
 
 ## Project detail
 
-`/projects/:id`: one project's history. A **status line** gives the latest run, the pass rate over the last 20 runs and
-the open clusters, flaky and quarantined counts, and one **filter bar** (environment, branch,
-full runs only) scopes every list. The **More** menu holds Edit, [Test functions](./test-functions),
+`/projects/:id`: one project's history. The **header** names the project, its description and tags, and where it
+stands: the latest run and the pass rate of the last 20 runs, then the open clusters, flaky tests and quarantined
+tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the header and every
+tab that reads run history; with no branch picked it reads the [default branch](./branches#the-default-branch), and a
+note counts the runs it hides. The **More** menu holds Edit, [Test functions](./test-functions),
 [Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The tabs:
 
-- **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over every run, and the runs table,
+- **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   50 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
   number, page by page (the header box selects the page's runs), and [delete them](/operate/storage#storage-management).
 - **Tests**: every test case with its pass rate and last run, in file order, with the

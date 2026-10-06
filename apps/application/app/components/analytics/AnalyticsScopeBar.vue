@@ -56,13 +56,9 @@ const singleProjectId = computed(() => {
 
 // The default branch, or every branch. Picking branches by
 // hand overrides the policy, so the policy control steps aside.
-const BRANCH_POLICY_ITEMS = [
-  { label: 'Default branch', value: 'default' },
-  { label: 'All branches', value: 'all' },
-];
-const branchPolicy = computed({
-  get: () => (props.modelValue.allBranches ? 'all' : 'default'),
-  set: (val: string) => patch({ allBranches: val === 'all' }),
+const allBranches = computed({
+  get: () => props.modelValue.allBranches,
+  set: (val: boolean) => patch({ allBranches: val }),
 });
 
 // The environment, branch and full-runs controls come from the shared FilterBar,
@@ -110,165 +106,102 @@ const activeSummary = computed(() => {
   if (hasTestFilter(scopeFromState(state))) parts.push('test filter');
   return parts.join(' · ');
 });
-
-// Open or folded: null follows the viewport (folded below `sm`, open above) in
-// CSS alone, so the server render already matches; a click fixes it either way.
-const expanded = ref<boolean | null>(null);
-const wide = ref(true);
-onMounted(() => {
-  wide.value = window.matchMedia('(min-width: 640px)').matches;
-});
-const isOpen = computed(() => expanded.value ?? wide.value);
-
-function toggle() {
-  wide.value = window.matchMedia('(min-width: 640px)').matches;
-  expanded.value = !isOpen.value;
-}
-
-const bodyClass = computed(() => (expanded.value === null ? 'hidden sm:block' : expanded.value ? '' : 'hidden'));
-const summaryClass = computed(() => (expanded.value === null ? 'sm:hidden' : expanded.value ? 'hidden' : ''));
 </script>
 
 <template>
-  <section
-    class="rounded-lg border border-default bg-default"
+  <FiltersBlock
+    :title="title"
+    :summary="activeSummary"
+    :resettable="!isDefault"
+    test-id="analytics-filters"
     data-shot="analytics-scope-bar"
-    data-testid="analytics-filters"
+    @reset="reset"
   >
-    <div class="flex items-center gap-2 px-3 py-2 sm:px-4 min-h-11">
-      <h2 class="shrink-0 text-sm font-semibold text-highlighted">
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-primary"
-          :aria-expanded="isOpen"
-          aria-controls="analytics-filters-body"
-          data-testid="analytics-filters-toggle"
-          @click="toggle"
+    <dl class="grid gap-y-3 gap-x-4 sm:grid-cols-[4rem_minmax(0,1fr)] sm:items-start">
+      <dt class="text-xs font-medium text-muted sm:pt-1.5">Period</dt>
+      <dd class="min-w-0 space-y-1">
+        <AnalyticsPeriodPicker
+          :period="modelValue.period"
+          :compare="modelValue.compare"
+          :granularity="modelValue.granularity"
+          :summary="summary"
+          @update:period="patch({ period: $event })"
+          @update:compare="patch({ compare: $event })"
+          @update:granularity="patch({ granularity: $event })"
+        />
+        <p v-if="summary" class="text-xs text-muted" data-testid="analytics-scope-line">
+          <ClientOnly>
+            <span>{{ periodRange(summary) }}</span>
+          </ClientOnly>
+          <template v-if="summary.comparison"> · compared with {{ summary.comparison.label.toLowerCase() }} </template>
+          <template v-for="note in [summary.period.fallback, ...summary.notes].filter(Boolean)" :key="note!">
+            · {{ note }}
+          </template>
+        </p>
+      </dd>
+
+      <dt class="text-xs font-medium text-muted sm:pt-1.5">Runs</dt>
+      <dd class="min-w-0">
+        <FilterBar
+          v-model="filterBar"
+          :available-environments="availableEnvironments"
+          :available-branches="availableBranches"
+          branch-placeholder="Pick branches"
+          :show-reset="false"
         >
-          <UIcon
-            :name="isOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-            class="size-4 shrink-0 text-muted"
-          />
-          {{ title }}
-        </button>
-      </h2>
-      <span
-        class="min-w-0 flex-1 line-clamp-2 text-xs text-muted cursor-pointer"
-        :class="summaryClass"
-        :title="activeSummary"
-        data-testid="analytics-filters-summary"
-        @click="toggle"
-      >
-        {{ activeSummary }}
-      </span>
-      <UButton
-        v-if="!isDefault"
-        class="ml-auto shrink-0"
-        variant="ghost"
-        size="sm"
-        color="neutral"
-        icon="i-lucide-x"
-        @click="reset"
-      >
-        Reset
-      </UButton>
-    </div>
+          <template #leading>
+            <USelectMenu
+              v-if="projectItems.length > 0"
+              v-model="projectIds"
+              :items="projectItems"
+              value-key="value"
+              multiple
+              searchable
+              size="sm"
+              class="min-w-[170px]"
+              placeholder="All projects"
+            >
+              <template #default="{ modelValue: selected }">
+                <div class="flex items-center gap-1.5">
+                  <UIcon
+                    name="i-lucide-folder"
+                    class="size-3.5 shrink-0"
+                    :class="(selected as number[]).length ? 'text-primary' : 'text-gray-400'"
+                  />
+                  <span v-if="!(selected as number[]).length" class="text-gray-500">All projects</span>
+                  <span v-else-if="(selected as number[]).length === 1" class="truncate">{{
+                    projectLabel((selected as number[])[0]!)
+                  }}</span>
+                  <span v-else>{{ (selected as number[]).length }} projects</span>
+                </div>
+              </template>
+            </USelectMenu>
+          </template>
 
-    <div id="analytics-filters-body" class="border-t border-default px-3 py-3 sm:px-4" :class="bodyClass">
-      <dl class="grid gap-y-3 gap-x-4 sm:grid-cols-[4rem_minmax(0,1fr)] sm:items-start">
-        <dt class="text-xs font-medium text-muted sm:pt-1.5">Period</dt>
-        <dd class="min-w-0 space-y-1">
-          <AnalyticsPeriodPicker
-            :period="modelValue.period"
-            :compare="modelValue.compare"
-            :granularity="modelValue.granularity"
-            :summary="summary"
-            @update:period="patch({ period: $event })"
-            @update:compare="patch({ compare: $event })"
-            @update:granularity="patch({ granularity: $event })"
-          />
-          <p v-if="summary" class="text-xs text-muted" data-testid="analytics-scope-line">
-            <ClientOnly>
-              <span>{{ periodRange(summary) }}</span>
-            </ClientOnly>
-            <template v-if="summary.comparison">
-              · compared with {{ summary.comparison.label.toLowerCase() }}
-            </template>
-            <template v-for="note in [summary.period.fallback, ...summary.notes].filter(Boolean)" :key="note!">
-              · {{ note }}
-            </template>
-          </p>
-        </dd>
+          <template #after-branches>
+            <BranchPolicySelect
+              v-if="modelValue.branches.length === 0"
+              v-model="allBranches"
+              help="analytics.branch-policy"
+              data-testid="analytics-branch-policy"
+            />
+          </template>
+        </FilterBar>
+      </dd>
 
-        <dt class="text-xs font-medium text-muted sm:pt-1.5">Runs</dt>
-        <dd class="min-w-0">
-          <FilterBar
-            v-model="filterBar"
-            :available-environments="availableEnvironments"
-            :available-branches="availableBranches"
-            branch-placeholder="Pick branches"
-            :show-reset="false"
-          >
-            <template #leading>
-              <USelectMenu
-                v-if="projectItems.length > 0"
-                v-model="projectIds"
-                :items="projectItems"
-                value-key="value"
-                multiple
-                searchable
-                size="sm"
-                class="min-w-[170px]"
-                placeholder="All projects"
-              >
-                <template #default="{ modelValue: selected }">
-                  <div class="flex items-center gap-1.5">
-                    <UIcon
-                      name="i-lucide-folder"
-                      class="size-3.5 shrink-0"
-                      :class="(selected as number[]).length ? 'text-primary' : 'text-gray-400'"
-                    />
-                    <span v-if="!(selected as number[]).length" class="text-gray-500">All projects</span>
-                    <span v-else-if="(selected as number[]).length === 1" class="truncate">{{
-                      projectLabel((selected as number[])[0]!)
-                    }}</span>
-                    <span v-else>{{ (selected as number[]).length }} projects</span>
-                  </div>
-                </template>
-              </USelectMenu>
-            </template>
-
-            <template #after-branches>
-              <div v-if="modelValue.branches.length === 0" class="flex items-center gap-1">
-                <USelect
-                  v-model="branchPolicy"
-                  :items="BRANCH_POLICY_ITEMS"
-                  size="sm"
-                  icon="i-lucide-git-branch"
-                  class="min-w-[150px]"
-                  aria-label="Branch policy"
-                  data-testid="analytics-branch-policy"
-                />
-                <HelpHint topic="analytics.branch-policy" />
-              </div>
-            </template>
-          </FilterBar>
-        </dd>
-
-        <dt class="text-xs font-medium text-muted sm:pt-1.5">Tests</dt>
-        <dd class="min-w-0">
-          <AnalyticsTestFilter
-            :selection="modelValue.selection"
-            :tests="modelValue.tests"
-            :browsers="modelValue.browsers"
-            :summary="summary"
-            :single-project-id="singleProjectId"
-            @update:selection="patch({ selection: $event })"
-            @update:tests="patch({ tests: $event })"
-            @update:browsers="patch({ browsers: $event })"
-          />
-        </dd>
-      </dl>
-    </div>
-  </section>
+      <dt class="text-xs font-medium text-muted sm:pt-1.5">Tests</dt>
+      <dd class="min-w-0">
+        <AnalyticsTestFilter
+          :selection="modelValue.selection"
+          :tests="modelValue.tests"
+          :browsers="modelValue.browsers"
+          :summary="summary"
+          :single-project-id="singleProjectId"
+          @update:selection="patch({ selection: $event })"
+          @update:tests="patch({ tests: $event })"
+          @update:browsers="patch({ browsers: $event })"
+        />
+      </dd>
+    </dl>
+  </FiltersBlock>
 </template>

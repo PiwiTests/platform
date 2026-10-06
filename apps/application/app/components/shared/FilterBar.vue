@@ -7,9 +7,9 @@
  * value and persists it (the project page keeps one cookie per project).
  *
  * Environments and branches are multi-select so a run matches when it is in any
- * of the chosen values; a single chosen value also scopes the server-side flaky
- * analysis. A control renders only when the data offers more than nothing to
- * pick from.
+ * of the chosen values. With `branchPolicy`, a branch select with nothing picked
+ * sits beside the policy for that case: the default branch, or every branch.
+ * A control renders only when the data offers more than nothing to pick from.
  *
  * Slots: `leading` before the environment select, `after-branches` right after
  * the branch select (a control that belongs with it), `trailing` at the end.
@@ -18,6 +18,8 @@ export interface FilterBarState {
   environments: string[];
   branches: string[];
   fullRunsOnly: boolean;
+  /** With no branch picked: every branch, or only the default branch. Read where the bar offers the policy. */
+  allBranches?: boolean;
 }
 
 const props = withDefaults(
@@ -27,10 +29,14 @@ const props = withDefaults(
     availableBranches: string[];
     /** Hide the built-in reset button when the caller supplies its own via #trailing. */
     showReset?: boolean;
-    /** What the branch select reads with nothing picked (the caller's branch policy). */
+    /** What the branch select reads with nothing picked (the caller's branch policy); *Pick branches* beside the built-in policy. */
     branchPlaceholder?: string;
+    /** Offer the branch policy (default branch or every branch) while no branch is picked. */
+    branchPolicy?: boolean;
+    /** The default branch the policy names. */
+    defaultBranch?: string | null;
   }>(),
-  { showReset: true, branchPlaceholder: 'All branches' },
+  { showReset: true, branchPlaceholder: 'All branches', branchPolicy: false, defaultBranch: null },
 );
 
 const emit = defineEmits<{
@@ -52,13 +58,31 @@ const fullRunsOnly = computed({
   set: (val) => emit('update:modelValue', { ...props.modelValue, fullRunsOnly: val }),
 });
 
+const allBranches = computed({
+  get: () => !!props.modelValue.allBranches,
+  set: (val) => emit('update:modelValue', { ...props.modelValue, allBranches: val }),
+});
+
+// The policy matters only while no branch is picked and some run is off the default branch.
+const showBranchPolicy = computed(
+  () =>
+    props.branchPolicy &&
+    props.modelValue.branches.length === 0 &&
+    props.availableBranches.some((branch) => branch !== props.defaultBranch),
+);
+
+const branchSelectPlaceholder = computed(() => (showBranchPolicy.value ? 'Pick branches' : props.branchPlaceholder));
+
 const hasActiveFilters = computed(
   () =>
-    props.modelValue.environments.length > 0 || props.modelValue.branches.length > 0 || !props.modelValue.fullRunsOnly,
+    props.modelValue.environments.length > 0 ||
+    props.modelValue.branches.length > 0 ||
+    !props.modelValue.fullRunsOnly ||
+    (props.branchPolicy && !!props.modelValue.allBranches),
 );
 
 function reset() {
-  emit('update:modelValue', { environments: [], branches: [], fullRunsOnly: true });
+  emit('update:modelValue', { environments: [], branches: [], fullRunsOnly: true, allBranches: false });
 }
 </script>
 
@@ -95,7 +119,7 @@ function reset() {
       :items="availableBranches"
       multiple
       searchable
-      :placeholder="branchPlaceholder"
+      :placeholder="branchSelectPlaceholder"
       size="sm"
       class="min-w-[160px] max-w-[16rem]"
     >
@@ -106,12 +130,14 @@ function reset() {
             class="size-3.5 shrink-0"
             :class="(selected as string[]).length ? 'text-primary' : 'text-gray-400'"
           />
-          <span v-if="!(selected as string[]).length" class="text-gray-500">{{ branchPlaceholder }}</span>
+          <span v-if="!(selected as string[]).length" class="text-gray-500">{{ branchSelectPlaceholder }}</span>
           <span v-else-if="(selected as string[]).length === 1" class="truncate">{{ (selected as string[])[0] }}</span>
           <span v-else>{{ (selected as string[]).length }} branches</span>
         </div>
       </template>
     </USelectMenu>
+
+    <BranchPolicySelect v-if="showBranchPolicy" v-model="allBranches" :default-branch="defaultBranch" />
 
     <slot name="after-branches" />
 

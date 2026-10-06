@@ -382,6 +382,8 @@ export interface ProjectWithTestRuns {
   aiLanguage?: string | null;
   hasScmToken?: boolean;
   defaultBranch?: string | null;
+  /** The project's setting, else its most common run branch, else `main`: what a run scope reads with no branch picked. */
+  effectiveDefaultBranch?: string;
   openApiUrl?: string | null;
   serverProbes?: import('#shared/server-probes').ServerProbeSettings | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */

@@ -26,6 +26,9 @@ types/        Front-end API response types (`api.ts`)
 - `shared/permissions.ts` holds the **authorization model**: `InstanceRole`, `ProjectRole`, `Permission`, the matrix
   `ROLE_PERMISSIONS`, a user's `AccessSummary` and the checks on it (`can`, `passesEarlyCheck`, `projectScopeFor`).
   Pure, imported by the server, the MCP tools, the demo and `useAuth`.
+- `shared/project-run-scope.ts` is the **project run scope**: the runs a project page's filters pick (environments,
+  branches, the branch policy, full runs only), its query keys (the analytics ones) and the in-browser matcher;
+  `shared/handlers/project-run-scope.ts` turns it into the SQL every project tab's handler adds.
 - The small wire **leaf shapes** (`BrowserConfig`, `TestStepEvent`, `SuiteConfigEntry`, `TestAnnotation`,
   `FilterDetails`, `TestSourceFrame`) live in `@piwitests/core/wire` and are re-exported here — one source of truth
   shared with the reporter. Per-case payloads stay app-side; the reporter's `WireTestCase` stays reporter-side. The two
@@ -189,6 +192,9 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `#folded` peek slot), `FoldableSummary`, `DetailPageLayout` (summary + tabs + panels with correct flex height at `lg`+,
   single-document scroll below).
 - **States** — `EmptyState`, `LoadingState`, `ErrorState` (with an `action` slot).
+- **Filters** — `FiltersBlock` (the bordered _Filters_ block every page's filters sit in, folding to a summary on a
+  phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
+  `HiddenRunsNote` (what the filters hide, with the action that shows it).
 - **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
   `FilterToolbar`, `ChartCard` (header + `legend`), the SVG chart primitives `ChartFrame` (self-measuring plot area,
   y-axis) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,
