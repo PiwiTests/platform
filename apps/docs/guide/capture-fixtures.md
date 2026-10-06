@@ -127,8 +127,8 @@ snapshots and pages, and `capturePageState: false` only the test-end app state (
 values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
 [let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs);
-a third, `PIWI_PAUSE_AT`, is set by an editor on a run it starts, to
-[pause at its breakpoints](/features/editor-breakpoints).
+a third, `PIWI_PAUSE_AT` (semicolon-separated `file:line`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`),
+is set by an editor on a run it starts, to [pause at its breakpoints](/features/editor-breakpoints).
 Set all but `collectPerformanceMetrics` through [`wrapConfig`](./reporter#installing-via-wrapconfig) or their `PIWI_*`
 variable: the test workers never see a plain reporter entry's options.
 

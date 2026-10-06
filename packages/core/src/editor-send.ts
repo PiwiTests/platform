@@ -59,7 +59,7 @@ export function parsePairing(text: string): EditorPairing | null {
 }
 
 /** Whether `file` is a relative path that stays inside the directory it is relative to. */
-function isInsidePath(file: string): boolean {
+export function isInsidePath(file: string): boolean {
   if (!file || file.length > 1000 || file.includes('\0')) return false;
   if (file.startsWith('/') || file.startsWith('\\') || /^[A-Za-z]:/.test(file)) return false;
   return file.split(/[\\/]/).every((part) => part !== '..');

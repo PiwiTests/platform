@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { Page, TestInfo } from '@playwright/test';
-import { parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
+import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
 import { isCi } from './inspect-on-failure.js';
 import { pickLocator, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
@@ -8,7 +8,7 @@ import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 
 /**
  * Breakpoints from the editor: `PIWI_PAUSE_AT` lists lines (`file:line`,
- * comma-separated, relative to the working directory or absolute), and a
+ * semicolon-separated, relative to the working directory or absolute), and a
  * locator action or assertion whose call site is one of them pauses before it
  * runs, with Piwi's pause bar in the browser: Resume, Step, Pick a locator,
  * Finish. A locator picked there is folded into the run's snapshots, printed,
@@ -47,15 +47,27 @@ function callSiteFile(file: string, cwd: string): string {
   return rel;
 }
 
-/** Read `PIWI_PAUSE_AT`: `tests/login.spec.ts:42,tests/pages/checkout.page.ts:9`. An entry without a line is skipped. */
+const ignoredLogged = new Set<string>();
+
+/**
+ * Read `PIWI_PAUSE_AT`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`. An entry without a line is skipped
+ * and logged once per process.
+ */
 export function parsePauseAt(value: string | undefined, cwd: string = process.cwd()): PauseSet {
   if (!value?.trim()) return EMPTY;
   const lines = new Set<string>();
-  for (const entry of value.split(',')) {
-    const m = /^(.+):(\d+)$/.exec(entry.trim());
-    if (!m) continue;
-    const line = Number(m[2]);
-    if (!m[1] || line < 1) continue;
+  for (const raw of value.split(';')) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const m = /^(.+):(\d+)$/.exec(entry);
+    const line = m ? Number(m[2]) : 0;
+    if (!m?.[1] || line < 1) {
+      if (!ignoredLogged.has(entry)) {
+        ignoredLogged.add(entry);
+        console.log(`[piwi] ${PIWI_LOCAL_DEBUG_ENV.pauseAt}: ignoring "${entry}": expected file:line`);
+      }
+      continue;
+    }
     lines.add(`${callSiteFile(m[1], cwd)}:${line}`);
   }
   return lines.size ? new PauseSet(lines) : EMPTY;
@@ -118,7 +130,7 @@ export function pickPlace(callerLocation: string): { file: string; line: number 
   const m = /^(.+):(\d+):\d+$/.exec(callerLocation);
   if (!m) return null;
   const file = m[1]!;
-  if (path.isAbsolute(file) || file.split('/').includes('..')) return null;
+  if (!isInsidePath(file)) return null;
   return { file, line: Number(m[2]) };
 }
 
@@ -169,6 +181,7 @@ export async function postPickToEditor(
 export function resetPauseLogs(): void {
   postFailureLogged = false;
   skipLogged = false;
+  ignoredLogged.clear();
 }
 
 let skipLogged = false;

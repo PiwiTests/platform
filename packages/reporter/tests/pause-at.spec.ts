@@ -30,7 +30,7 @@ describe('parsePauseAt', () => {
   const cwd = path.resolve('/work/shop');
 
   it('matches a call site on a listed line, whatever its column', () => {
-    const set = parsePauseAt('tests/login.spec.ts:42, tests/pages/checkout.page.ts:9', cwd);
+    const set = parsePauseAt('tests/login.spec.ts:42; tests/pages/checkout.page.ts:9', cwd);
     expect(set.size).toBe(2);
     expect(set.matches('tests/login.spec.ts:42:5')).toBe(true);
     expect(set.matches('tests/login.spec.ts:42:17')).toBe(true);
@@ -42,7 +42,7 @@ describe('parsePauseAt', () => {
 
   it('reads absolute paths, backslashes and ./ the way call sites are written', () => {
     const set = parsePauseAt(
-      `${path.join(cwd, 'tests', 'login.spec.ts')}:42,./tests/a.spec.ts:3,tests\\b.spec.ts:4,../shared/c.ts:5`,
+      `${path.join(cwd, 'tests', 'login.spec.ts')}:42;./tests/a.spec.ts:3;tests\\b.spec.ts:4;../shared/c.ts:5`,
       cwd,
     );
     expect(set.matches('tests/login.spec.ts:42:1')).toBe(true);
@@ -51,10 +51,29 @@ describe('parsePauseAt', () => {
     expect(set.matches('../shared/c.ts:5:1')).toBe(true);
   });
 
-  it('is empty for an unset value and skips an entry without a line', () => {
-    expect(parsePauseAt(undefined, cwd).size).toBe(0);
-    expect(parsePauseAt(' ', cwd).size).toBe(0);
-    expect(parsePauseAt('tests/a.spec.ts,tests/b.spec.ts:0,:4', cwd).size).toBe(0);
+  it('reads a path holding a comma', () => {
+    const set = parsePauseAt('tests/a,b.spec.ts:7;tests/c.spec.ts:2', cwd);
+    expect(set.size).toBe(2);
+    expect(set.matches('tests/a,b.spec.ts:7:3')).toBe(true);
+    expect(set.matches('tests/c.spec.ts:2:3')).toBe(true);
+  });
+
+  it('is empty for an unset value and skips an entry without a line, saying so once', () => {
+    resetPauseLogs();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(parsePauseAt(undefined, cwd).size).toBe(0);
+      expect(parsePauseAt(' ', cwd).size).toBe(0);
+      expect(parsePauseAt('tests/a.spec.ts;tests/b.spec.ts:0;:4;', cwd).size).toBe(0);
+      expect(parsePauseAt('tests/a.spec.ts;tests/c.spec.ts:1', cwd).size).toBe(1);
+      expect(log.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
+        '[piwi] PIWI_PAUSE_AT: ignoring "tests/a.spec.ts": expected file:line',
+        '[piwi] PIWI_PAUSE_AT: ignoring "tests/b.spec.ts:0": expected file:line',
+        '[piwi] PIWI_PAUSE_AT: ignoring ":4": expected file:line',
+      ]);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 
@@ -88,6 +107,16 @@ describe('what the pause says', () => {
       kind: 'locator',
       text: "getByRole('button')",
     });
+  });
+
+  it('names no line for a call site outside the run’s folder, Windows-style absolute included', () => {
+    for (const location of [
+      'C:/work/shop/tests/a.spec.ts:3:1',
+      'C:\\work\\shop\\a.spec.ts:3:1',
+      '/work/a.spec.ts:3:1',
+    ]) {
+      expect(pickPayload("getByRole('button')", location)).toEqual({ kind: 'locator', text: "getByRole('button')" });
+    }
   });
 });
 
@@ -351,7 +380,7 @@ describe('breakpoints in the capture fixtures', () => {
 
     const again = thisLine();
     const finished = await runWithBreakpoints(
-      () => `${here}:${again + 6},${here}:${again + 7}`,
+      () => `${here}:${again + 6};${here}:${again + 7}`,
       ['finish'],
       async (page) => {
         for (let i = 0; i < 2; i++) {
@@ -373,9 +402,7 @@ describe('breakpoints in the capture fixtures', () => {
         await locator._expect('to.be.visible', { isNot: false, timeout: 5000 });
       },
     );
-    expect(shown).toEqual([
-      expect.objectContaining({ place: `pause-at.spec.ts:${start + 6}`, action: 'toBeVisible' }),
-    ]);
+    expect(shown).toEqual([expect.objectContaining({ place: `pause-at.spec.ts:${start + 6}`, action: 'toBeVisible' })]);
   });
 
   it('folds a locator picked while paused into the call site’s snapshot, and posts it to the editor', async () => {
@@ -411,9 +438,7 @@ describe('breakpoints in the capture fixtures', () => {
       expect(attached[0]!.used.method).toBe('getByText');
       expect(attached[0]!.element?.attributes['data-testid']).toBe('pay-now');
       expect(attached[0]!.alternatives[0]).toMatchObject({ locator: "getByTestId('pay-now')", pickedByUser: true });
-      expect(posts).toEqual([
-        { kind: 'locator', text: "getByTestId('pay-now')", at: { file: here, line: start + 5 } },
-      ]);
+      expect(posts).toEqual([{ kind: 'locator', text: "getByTestId('pay-now')", at: { file: here, line: start + 5 } }]);
       expect(log.mock.calls.map((c: unknown[]) => String(c[0]))).toContain(
         `[piwi] Locator picked at ${here}:${start + 5}: getByTestId('pay-now')`,
       );
@@ -434,7 +459,9 @@ describe('breakpoints in the capture fixtures', () => {
     );
     expect(shown).toEqual([]);
     expect(clicks).toEqual(['click']);
-    expect(log.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('PIWI_PAUSE_AT'))).toEqual([
+    expect(
+      log.mock.calls.map((c: unknown[]) => String(c[0])).filter((l: string) => l.includes('PIWI_PAUSE_AT')),
+    ).toEqual([
       '[piwi] PIWI_PAUSE_AT is set but breakpoints are skipped: the browser is headless — re-run with --headed (or set use: { headless: false })',
     ]);
   });
