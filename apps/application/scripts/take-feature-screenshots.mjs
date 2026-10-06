@@ -2599,6 +2599,41 @@ const SCENES = [
     },
   },
   {
+    name: 'project-header',
+    description:
+      'Project page header: name, description and tags, the Runs and Failures lines, then the Filters block with what it hides',
+    // Project 3 has runs on a feature branch and partial runs, so the note counts both.
+    route: '/projects/3',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('hidden-runs').waitFor();
+      await page
+        .getByTestId('project-state')
+        .getByText(/open cluster|Nothing open/)
+        .waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'project-header-mobile',
+    description: 'The project header at phone width, the Filters block folded to its summary, then open',
+    route: '/projects/3',
+    viewport: { width: 390, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page
+        .getByTestId('project-state')
+        .getByText(/open cluster|Nothing open/)
+        .waitFor();
+      await settle();
+      await shoot('folded');
+      await page.getByTestId('project-filters-toggle').click();
+      await settle();
+      await shoot('open');
+    },
+    outputs: ['project-header-mobile-folded.png', 'project-header-mobile-open.png'],
+  },
+  {
     name: 'project-delete-progress',
     description: 'Project menu › Delete: the modal following a running deletion, phase by phase with the run count',
     route: '/projects/1',

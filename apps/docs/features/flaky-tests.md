@@ -24,7 +24,7 @@ The **failure rate** is shown but not scored.
 
 The project's **Failures** tab has a **Flaky** view with a **configurable lookback window** so you can focus on recent behavior or a longer baseline. Each flaky test links to its history and carries a **Quarantine** action.
 
-**Per-environment scoping**: select one environment in the filter bar to score only its runs (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`).
+**Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">

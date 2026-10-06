@@ -1,3 +1,4 @@
+import { parseProjectRunScope } from '#shared/project-run-scope';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { optionalIntQuery, queryFlag } from '../../../utils/query-params';
 import { getDatabase } from '../../../database';
@@ -11,6 +12,29 @@ defineRouteMeta({
       'Returns test run duration, average test duration, and p90 test duration for trend charts with optional date range filtering',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'environments',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated environments; only their runs count. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'branches',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated branches; only their runs count. Without it, the project’s default branch and runs with no branch count, unless `allBranches`.',
+      },
+      {
+        name: 'allBranches',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `branches`, count every branch instead of the default branch.',
+      },
       {
         name: 'runs',
         in: 'query',
@@ -37,7 +61,8 @@ defineRouteMeta({
         in: 'query',
         required: false,
         schema: { type: 'boolean', default: true },
-        description: 'Restrict to full runs; pass "false" to include partial runs.',
+        description:
+          'Restrict to full runs; pass "false" to include partial runs. With a run scope it is the scope’s full-runs filter.',
       },
     ],
     'x-required-permission': 'project:read',
@@ -58,7 +83,9 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
 
   try {
-    return { items: await getProjectPerformance(db, id, runs, from, to, fullRunsOnly) };
+    return {
+      items: await getProjectPerformance(db, id, runs, from, to, fullRunsOnly, parseProjectRunScope(query)),
+    };
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw apiError({ statusCode: 404, message: 'Project not found' });

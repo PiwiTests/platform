@@ -1,3 +1,4 @@
+import { parseProjectRunScope } from '#shared/project-run-scope';
 import { getDatabase } from '../../../database';
 import { optionalIntQuery } from '../../../utils/query-params';
 import { getProjectSlowTests } from '#shared/handlers/projects';
@@ -11,6 +12,36 @@ defineRouteMeta({
       'Returns the slowest test cases for a project with average, max, min duration, run count, and trend direction',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'environments',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated environments; only their runs count. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'branches',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated branches; only their runs count. Without it, the project’s default branch and runs with no branch count, unless `allBranches`.',
+      },
+      {
+        name: 'allBranches',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `branches`, count every branch instead of the default branch.',
+      },
+      {
+        name: 'fullRunsOnly',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: true },
+        description: 'Run scope: only full-suite runs count; `false` adds partial runs.',
+      },
       {
         name: 'runs',
         in: 'query',
@@ -33,7 +64,7 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
 
   try {
-    return { items: await getProjectSlowTests(db, id, runsCount) };
+    return { items: await getProjectSlowTests(db, id, runsCount, parseProjectRunScope(getQuery(event))) };
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw apiError({ statusCode: 404, message: 'Project not found' });

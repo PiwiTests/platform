@@ -2,33 +2,30 @@
 /**
  * The project's Flake Lab: where each flaky test stands in the lab and the
  * `piwi flake` command it needs next, then the newest experiments across the
- * project's tests. The flaky ranking follows the page's environment and
- * branch filters, like the Flaky view.
+ * project's tests. The flaky ranking follows the page's run scope, like the
+ * Flaky view.
  */
 import { flakeLabNextStep } from '#shared/flake-lab';
 import type { FlakeLabTest, ProjectFlakeLab } from '#shared/handlers/flake-lab';
 import { FLAKE_LAB_STATE_WORDS } from '~/utils/flake-lab';
+import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
 
 const props = defineProps<{
   projectId: number;
-  environment?: string | null;
-  branch?: string | null;
+  /** The project page's run scope: the flaky ranking reads its runs. */
+  scope?: ProjectRunScope | null;
   /** Piwi project name, threaded so the IDE opener can default the JetBrains project. */
   projectName?: string | null;
 }>();
 
 const { data: lab, status } = await useFetch(
   () => {
-    const params = new URLSearchParams();
-    if (props.environment) params.set('environment', props.environment);
-    if (props.branch) params.set('branch', props.branch);
-    const query = params.toString();
+    const query = new URLSearchParams(props.scope ? projectRunScopeQuery(props.scope) : {}).toString();
     return `/api/projects/${props.projectId}/flake-lab${query ? `?${query}` : ''}`;
   },
   {
     lazy: true,
     server: false,
-    watch: [() => props.environment, () => props.branch],
     transform: (r: ProjectFlakeLab) => r,
   },
 );

@@ -386,14 +386,14 @@ export const HELP_TOPICS = {
     text: 'Backend routes exercised during a run, aggregated per route and ranked by time. Needs the Piwi capture fixtures. Pick a run to inspect its endpoint timings.',
     doc: 'features/slow-tests',
   },
-  'project.status-line': {
+  'project.status': {
     title: 'Project status',
-    text: 'The project’s condition at a glance: the latest run and its age, the pass rate over the last 20 runs, and the open clusters, flaky and quarantined counts. Each figure links to the tab that holds it.',
+    text: 'Where the project stands within the page’s filters. Runs: the latest run, its age, and the pass rate of the last 20 runs. Failures: the open failure clusters, the flaky tests and the quarantined ones. Each figure links to what it counts.',
     doc: 'features/ui-overview#project-detail',
   },
   'project.filters': {
     title: 'Filters',
-    text: 'Environment, branch and full-runs-only scope every list on the page — the runs table, the trend chart, the flaky analysis and performance. The choice is remembered per project.',
+    text: 'Environment, branch and full runs only scope the whole page: the status above, the runs, the test catalog, the failures, the Flake Lab and the performance trends. With no branch picked, the page reads the default branch and the runs that report no branch; pick All branches to read every branch. The quarantine list and the Gaps tab are the project’s, whatever the filters. The choice is remembered per project.',
     doc: 'features/ui-overview#project-detail',
   },
   'project.test-cases': {

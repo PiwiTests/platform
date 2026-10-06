@@ -46,6 +46,7 @@ import { notLabRun } from './probes';
 import { getVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { TERMINAL_STATUSES, getProjectFlakyTestsWithVerified } from './projects';
 import type { DrizzleDB } from './db';
+import type { ProjectRunScope } from '../project-run-scope';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import type { FlakeLabStepFacts } from '../next-step';
 import { recordOutcome } from '../../server/utils/outcomes';
@@ -1050,6 +1051,8 @@ export async function getProjectFlakeLab(
     runs?: number;
     environment?: string | null;
     branch?: string | null;
+    /** The project page's run scope; replaces `environment` and `branch`. */
+    scope?: ProjectRunScope | null;
     limit?: number;
     /** Also read each listed test's suspects, for the first {@link TOP_SUSPECTS_MAX_TESTS} tests that need a step. */
     suspects?: boolean;
@@ -1067,6 +1070,7 @@ export async function getProjectFlakeLab(
     opts.environment,
     undefined,
     opts.branch,
+    opts.scope,
   );
 
   // Every finished experiment, light: enough to place each test.

@@ -303,12 +303,20 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
 - **A page's filters sit in one `FiltersBlock`** (`app/components/shared/FiltersBlock.vue`): a bordered block with the
   _Filters_ heading, the block's help hint and _Reset_ on its header row, folded to a one-line summary of the active
   filters below `sm` (`filterBarSummary`, `app/utils/filter-summary.ts`). `inline` puts a single row of controls on the
-  heading's row. Home and Analytics use it. Never put page filters in the navbar or loose above the content.
+  heading's row. Home, a project page and Analytics use it. Never put page filters in the navbar or loose above the
+  content.
 - **What a filter hides is a note in the block, never an alert.** Its `notes` slot names the count and the action that
   brings the rows back (`HiddenRunsNote`: _Include partial runs_, _Show all branches_); no full-width `UAlert`, no solid
   button.
 - **A list's own controls stay with the list**: a search box, status chips, a sort or a window that only one list
   reads go in that list's card or toolbar (`FilterToolbar`), not in the Filters block.
+- **The project page's filters are a run scope every tab that reads run history follows** (`#shared/project-run-scope`:
+  environments, branches, the branch policy, full runs only). The page passes `projectRunScopeQuery(scope)`, the
+  endpoint reads it with `parseProjectRunScope` and its handler adds `projectRunScopeConditions`
+  (`shared/handlers/project-run-scope.ts`), so the header, the runs, the catalog, the failures, the Flake Lab and the
+  performance tab read the same runs. With no branch picked the scope reads the default branch
+  (`projectDefaultBranch`) and the runs that report none, as Analytics does. A new tab or endpoint that reads runs
+  takes the scope; a request without its keys keeps its unscoped reading for API callers.
 
 ### Test outcome colors (MUST follow)
 

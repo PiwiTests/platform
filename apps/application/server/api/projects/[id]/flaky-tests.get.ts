@@ -1,3 +1,4 @@
+import { parseProjectRunScope } from '#shared/project-run-scope';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { optionalIntQuery, queryFlag } from '../../../utils/query-params';
 import { getDatabase } from '../../../database';
@@ -15,6 +16,36 @@ defineRouteMeta({
       'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment or SCM branch. A test whose Flake Lab verify experiment held, and that has not retry-passed in a run started since, leaves `items` and is listed in `verifiedFixed` (`{ testCaseId, title, filePath, retryPassRuns, lastFlakeAt, verifiedFix }`) until it retry-passes again. A test with no root cause yet is classified as the list is read, so `rootCause` is set on every item, unless `enrich=false`.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'environments',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated environments; only their runs count. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'branches',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated branches; only their runs count. Without it, the project’s default branch and runs with no branch count, unless `allBranches`.',
+      },
+      {
+        name: 'allBranches',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `branches`, count every branch instead of the default branch.',
+      },
+      {
+        name: 'fullRunsOnly',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: true },
+        description: 'Run scope: only full-suite runs count; `false` adds partial runs.',
+      },
       { name: 'runs', in: 'query', required: false, schema: { type: 'integer' } },
       { name: 'environment', in: 'query', required: false, schema: { type: 'string' } },
       { name: 'branch', in: 'query', required: false, schema: { type: 'string' } },
@@ -79,6 +110,7 @@ export default eventHandler(async (event) => {
       environment,
       filter,
       branch,
+      parseProjectRunScope(query),
     );
     if (!queryFlag(event, 'enrich', { default: true })) return { items, verifiedFixed };
     const classified = await withFlakyRootCauses(db, projectId, items);
