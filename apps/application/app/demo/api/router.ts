@@ -919,6 +919,7 @@ const routes: RouteEntry[] = [
         { tags, owner, priority },
         branch,
       );
+      if (['false', '0'].includes(q?.get('enrich') ?? '')) return { items, verifiedFixed };
       // CODEOWNERS resolution needs an SCM client the browser cannot reach —
       // ownership stays annotation-only here (seeded cases carry `piwi:` owners).
       return { items: await withFlakyRootCauses(db, +m[1]!, items), verifiedFixed };

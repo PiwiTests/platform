@@ -61,8 +61,9 @@ const { can } = useAuth();
 const canQuarantine = computed(() => can('quarantine:write', props.projectId));
 const busy = ref<number | null>(null);
 
+// The proposals cost a flaky analysis; the server skips it when the card is hidden.
 const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
-  () => `/api/projects/${props.projectId}/quarantine`,
+  () => `/api/projects/${props.projectId}/quarantine${props.hideCandidates ? '?candidates=false' : ''}`,
 );
 
 watch(data, (d) => emit('count', d?.debt.active ?? 0));

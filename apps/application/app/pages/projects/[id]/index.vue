@@ -232,7 +232,7 @@ const { data: clustersCount, refresh: refreshClustersCount } = await useFetch(
 );
 
 const { data: flakyCount, refresh: refreshFlakyCount } = await useFetch(
-  () => `/api/projects/${projectId}/flaky-tests?runs=50`,
+  () => `/api/projects/${projectId}/flaky-tests?runs=50&enrich=false`,
   {
     lazy: true,
     server: false,
@@ -242,7 +242,7 @@ const { data: flakyCount, refresh: refreshFlakyCount } = await useFetch(
 );
 
 const { data: quarantineCount, refresh: refreshQuarantineCount } = await useFetch(
-  `/api/projects/${projectId}/quarantine`,
+  `/api/projects/${projectId}/quarantine?candidates=false`,
   {
     lazy: true,
     server: false,
