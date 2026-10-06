@@ -42,7 +42,7 @@ import {
 } from '#shared/test-search';
 import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecutionInProject, notLabRun } from './probes';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, notLabExecutionInProjectJoin } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -975,7 +975,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       testRunsCases,
       and(
         eq(testCases.id, testRunsCases.testCaseId),
-        realExecution,
+        notLabExecutionInProjectJoin(projectId, testRunsCases.testRunId),
         // PostgreSQL does not carry the page's ids across the join: named on the executions too,
         // they are read through the test case index instead of a scan of every execution.
         pageIds ? inArray(testRunsCases.testCaseId, pageIds) : undefined,

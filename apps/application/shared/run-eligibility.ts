@@ -377,3 +377,16 @@ export function notLabExecution(testRunId: SQLWrapper): SQL {
 export function notLabExecutionInProject(projectId: number, testRunId: SQLWrapper): SQL {
   return sql`${testRunId} IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${testRuns.projectId} = ${projectId} AND ${notLabRun(testRuns.origin)})`;
 }
+
+/**
+ * `notLabExecutionInProject` for a join that reads every execution of some of
+ * the project's test cases. The project's lab runs, usually none, are listed
+ * once, and an execution is kept unless its run is on that list, so no run is
+ * looked up per execution. Every execution of a project's test case is of one
+ * of the project's runs, so both keep the same executions. A lookup that stops
+ * at a test's first executions (`EXISTS`, `LIMIT`) plans better with
+ * `notLabExecutionInProject`.
+ */
+export function notLabExecutionInProjectJoin(projectId: number, testRunId: SQLWrapper): SQL {
+  return sql`${testRunId} NOT IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${testRuns.projectId} = ${projectId} AND ${runOriginIn(testRuns.origin, LAB_RUN_ORIGINS)})`;
+}
