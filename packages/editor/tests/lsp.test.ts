@@ -156,6 +156,8 @@ const instanceStreams = new Set<http.ServerResponse>();
 const runStreams = new Map<number, Set<http.ServerResponse>>();
 /** Runs as `GET /api/test-runs/:id` answers them. */
 const runDetails = new Map<number, Record<string, unknown>>();
+/** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
+const goneRunStreams = new Map<number, number>();
 /** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
 const refRuns = new Map<string, { id: number; status: string }>();
 /** The `latest-run` lookups of each ref. */
@@ -230,6 +232,12 @@ beforeAll(async () => {
       return;
     }
     const runStream = /^\/api\/test-runs\/(\d+)\/stream$/.exec(u);
+    if (runStream && goneRunStreams.has(Number(runStream[1]))) {
+      const id = Number(runStream[1]);
+      goneRunStreams.set(id, goneRunStreams.get(id)! + 1);
+      res.statusCode = 404;
+      return res.end('{}');
+    }
     const streamed = runStream ? runDetails.get(Number(runStream[1])) : undefined;
     if (runStream && streamed) {
       const id = Number(runStream[1]);
@@ -331,6 +339,12 @@ beforeAll(async () => {
       const answer = (run: Record<string, unknown> | null, failures: unknown[] = [], overlays: unknown[] = []) =>
         res.end(JSON.stringify({ run, overlays, failures, resolved: [] }));
       const ci = { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit };
+      if (query.get('run') === '119') {
+        // A run on a developer's machine, chosen as the baseline.
+        const local = { ...MAIN_RUN, id: 119, origin: 'local', commit: null };
+        const failure = { ...ROW_FAILURE, executionId: 1190, source: 'baseline', runId: 119, screenshot: null };
+        return answer(local, [failure]);
+      }
       if (query.get('run')) {
         if (query.get('run') !== '118') {
           res.statusCode = 404;
@@ -1216,7 +1230,7 @@ describe('breakpoints', () => {
       env: {
         PIWI_ORIGIN: 'editor',
         PIWI_ORIGIN_REF: command.ref,
-        PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3,tests/pages/checkout.page.ts:4',
+        PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4',
       },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
       notice: 'Breakpoints need @piwitests/reporter 0.48.0 or later; this project has 0.46.0.',
@@ -1230,7 +1244,7 @@ describe('breakpoints', () => {
       breakpoints: breakpoints(),
     })) as RunCommand;
     expect(selection.command).toBe('npx playwright test tests/checkout.spec.ts:3 --headed');
-    expect(selection.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3,tests/pages/checkout.page.ts:4');
+    expect(selection.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4');
   });
 
   test('need nothing more of a reporter that pauses, and change nothing without one in the folder', async () => {
@@ -1242,7 +1256,7 @@ describe('breakpoints', () => {
       breakpoints: breakpoints(),
     })) as RunCommand;
     expect(command.notice).toBeUndefined();
-    expect(command.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3,tests/pages/checkout.page.ts:4');
+    expect(command.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4');
 
     const outside = (await client.sendRequest('piwi/runArgs', {
       uri: uri('tests/checkout.spec.ts'),
@@ -2042,6 +2056,77 @@ describe('runs as they happen', () => {
   });
 });
 
+describe('a live run whose stream closed', () => {
+  test('is read again within the active interval while the instance’s stream is connected', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopLive = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: RUNS_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      // A run in progress is read every 100 ms; with the stream connected, the latest run every 2 s.
+      runPollMs: 400,
+    });
+    const liveClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const statuses: RunStatusResult[] = [];
+    liveClient.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
+      statuses.push(p);
+    });
+    liveClient.listen();
+    try {
+      await liveClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await liveClient.sendNotification('initialized', {});
+      await waitFor(async () => {
+        const s = (await liveClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+        return s.contexts[0]?.run && s.contexts[0].stream === 'live' ? s : undefined;
+      });
+
+      // A run on the branch starts; its own stream answers 404, and is not opened again.
+      const run = {
+        id: 70,
+        status: 'running',
+        branch: 'main',
+        startTime: '2026-09-27T13:00:00.000Z',
+        metadata: {},
+        totalTests: 2,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        didNotRunTests: 0,
+      };
+      goneRunStreams.set(70, 0);
+      runDetails.set(70, run);
+      pushInstanceEvent({ type: 'run-started', runId: 70, projectId: 7 });
+      await waitFor(() => (statuses.some((s) => s.contexts[0]?.live?.runId === 70) ? true : undefined));
+      await waitFor(() => (goneRunStreams.get(70) ? true : undefined));
+
+      // It ends without a word from either stream, just after a read.
+      const reads = runsReads;
+      await waitFor(() => (runsReads > reads ? true : undefined), 3_000);
+      const seen = statuses.length;
+      runDetails.set(70, { ...run, status: 'passed', passedTests: 2 });
+      const at = Date.now();
+      const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null), 3_000);
+      expect(Date.now() - at).toBeLessThan(1_000);
+      expect(ended.contexts[0]).toMatchObject({ stream: 'live', live: null });
+    } finally {
+      stopLive();
+      liveClient.dispose();
+      goneRunStreams.delete(70);
+      runDetails.delete(70);
+    }
+  });
+});
+
 describe('the desktop app', () => {
   test('is picked up when it starts, with the project linked to the folder, and offered to Connect', async () => {
     const desktopFile = path.join(dir, '.desktop.json');
@@ -2091,6 +2176,7 @@ describe('the desktop app', () => {
 describe('the baseline chosen in the editor', () => {
   let baselineClient: MessageConnection;
   let stopBaseline: () => void;
+  const baselinePublished = new Map<string, Array<{ message: string }>>();
 
   /** The status once its baseline reads `label`. */
   const statusWith = (label: string) =>
@@ -2121,6 +2207,9 @@ describe('the baseline chosen in the editor', () => {
       runPollMs: 60 * 60_000,
     });
     baselineClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    baselineClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      baselinePublished.set(p.uri, p.diagnostics);
+    });
     baselineClient.listen();
     // A service started again: the client sends the choice it keeps with the credentials.
     await baselineClient.sendRequest('initialize', {
@@ -2149,6 +2238,23 @@ describe('the baseline chosen in the editor', () => {
     const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
     expect(failures.items.map((f) => f.executionId)).toEqual([1180]);
     expect(failures.baseline).toEqual({ choice: { kind: 'run', runId: 118 }, label: 'CI run #118 on feature/x' });
+  });
+
+  test('a run on a developer’s machine chosen as the baseline lists its failures as local ones', async () => {
+    await choose({ kind: 'run', runId: 119 }, 'local run #119 on main');
+    const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.items).toMatchObject([{ executionId: 1190, runId: 119, source: 'local' }]);
+    const onPage = await waitFor(() =>
+      baselinePublished.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.message.includes('#119')),
+    );
+    expect(onPage.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, local run #119)");
+    const hover = (await baselineClient.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      position: { line: 4, character: 30 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(
+      `**Local failure** · [removes a row](${url}/test-run-cases/1190) · local run #119`,
+    );
   });
 
   test('the ladder reads the checked-out branch, as without a choice', async () => {

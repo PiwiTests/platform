@@ -61,7 +61,8 @@ With the setting off, a run started from Piwi ignores the editor's breakpoints.
   the run starts anyway and the editor warns once: `Breakpoints need @piwitests/reporter 0.48.0 or later; this project
   has 0.46.0.`
 - **A run started from Piwi.** The editor passes the breakpoints under the Playwright config's folder to the run as
-  `PIWI_PAUSE_AT` (`tests/login.spec.ts:42`, relative to that folder), with its pairing address as
+  `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`, relative to that folder, separated by
+  semicolons), with its pairing address as
   `PIWI_EDITOR_SEND`, and adds `--headed` to the command unless it already has `--headed`, `--ui` or `--debug`. Set
   `PIWI_PAUSE_AT` yourself to [pause a run you start](/features/locator-healing#pause-at-a-breakpoint-local-runs).
 

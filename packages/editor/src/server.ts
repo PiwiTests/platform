@@ -297,6 +297,13 @@ interface Placement {
   frames: Array<{ file: string; line: number }>;
 }
 
+/** What a placing pass hands the next one: the texts it read, the files it diffed and where it placed each failure. */
+interface PlacerSeed {
+  texts: ReadonlyMap<string, string | null>;
+  diffed: ReadonlySet<string>;
+  placed: ReadonlyMap<Placeable, Placement | null>;
+}
+
 /** The titles of the `test(…)` calls of a file's text. */
 function testTitles(text: string): Set<string> {
   const titles = new Set<string>();
@@ -329,9 +336,9 @@ function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
   return false;
 }
 
-/** Whether a failure is listed from a run laid over the latest complete run that did not run in CI. */
+/** Whether a failure is listed from a run that did not run in CI: a run laid over the baseline, or the baseline itself. */
 function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
-  return f.source === 'overlay' && !isCiRun(context, f.runId);
+  return !isCiRun(context, f.runId ?? context.failures?.run?.id);
 }
 
 /**
@@ -352,7 +359,7 @@ function isOwnRun(context: PiwiContext, runId: number | undefined): boolean {
 
 /**
  * The run a failure is listed from: `run #120`, `your run #124` for a run the editor started, or `local run #124` for
- * another later run that did not run in CI.
+ * another run that did not run in CI, the baseline included.
  */
 function runLabel(context: PiwiContext, f: BranchFailure): string {
   const runId = f.runId ?? context.failures?.run?.id;
@@ -606,10 +613,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /**
    * One pass placing failures on the files as they stand (an open file's buffer, else the disk): each file is read
    * once, diffed against each text a failure is followed from when either changed, and scanned once for its tests.
-   * `known` is a file's text the pass reads as given.
+   * `known` is a file's text the pass reads as given. `seed` is an earlier pass whose texts and placements this one
+   * starts from: a file it read is not read again, a failure it placed is not placed again.
    */
-  const placer = (known?: { file: string; text: string }) => {
-    const texts = new Map<string, string | null>(known ? [[known.file, known.text]] : []);
+  const placer = (known?: { file: string; text: string }, seed?: PlacerSeed) => {
+    const texts = new Map<string, string | null>(seed?.texts ?? []);
+    if (known) texts.set(known.file, known.text);
     const read = (file: string): string | null => {
       if (!texts.has(file)) texts.set(file, readText(file));
       return texts.get(file) ?? null;
@@ -622,13 +631,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
     const saved = new Map<string, string | null>();
     /** The files this pass placed a line of. */
-    const diffed = new Set<string>();
+    const diffed = new Set<string>(seed?.diffed ?? []);
     const titles = new Map<string, Set<string>>();
     const titlesIn = (text: string): Set<string> => {
       if (!titles.has(text)) titles.set(text, testTitles(text));
       return titles.get(text)!;
     };
-    const placed = new Map<Placeable, Placement | null>();
+    const placed = new Map<Placeable, Placement | null>(seed?.placed ?? []);
 
     /**
      * The text a file had for the run a failure is listed from: at the run's commit when it ran in CI and the
@@ -706,9 +715,32 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return result;
     };
 
-    return { place, lineAt, diffed };
+    return { place, lineAt, diffed, texts, placed };
   };
   type Placer = ReturnType<typeof placer>;
+
+  /** The latest pass of `publishFailures`. */
+  let lastPass: PlacerSeed | null = null;
+
+  /**
+   * The latest pass without the placements of the failures `file` holds: their site, a frame of their stack or their
+   * spec, or a failure not placed yet. The files it read stand as they were, but `file`.
+   */
+  const seedWithout = (seed: PlacerSeed, file: string): PlacerSeed => {
+    const placed = new Map(seed.placed);
+    for (const context of contexts) {
+      for (const f of [...(context.failures?.failures ?? []), ...(context.failures?.resolved ?? [])]) {
+        const reported = reportedAt.get(f);
+        const holds =
+          !reported ||
+          (!!reported.site && samePath(reported.site.file, file)) ||
+          reported.frames.some((frame) => samePath(frame.file, file)) ||
+          (!!reported.spec && samePath(reported.spec, file));
+        if (holds) placed.delete(f);
+      }
+    }
+    return { texts: seed.texts, diffed: seed.diffed, placed };
+  };
 
   /** The commit reads whose end places the failures again. */
   const awaitedReads = new WeakSet<Promise<string | null>>();
@@ -718,12 +750,35 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     void read.then(() => placeAgainSoon());
   };
   let placeTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Place the failures again on the next turn: once for the edits and the reads that ask meanwhile. */
-  const placeAgainSoon = () => {
-    if (stopped || placeTimer) return;
+  /** Whether the next placement places every failure again. */
+  let placeAll = false;
+  /** The URIs of the documents edited since the latest placement, by file. */
+  const editedSincePlaced = new Map<string, string>();
+  /**
+   * Place the failures again on the next turn: once for the edits and the reads that ask meanwhile. With `edited`, a
+   * document that changed, only the failures it holds are placed again, unless another caller asks for all of them.
+   */
+  const placeAgainSoon = (edited?: TextDocument) => {
+    if (stopped) return;
+    const file = edited ? uriToPath(edited.uri) : null;
+    // A document that is no file holds no failure.
+    if (edited && !file) return;
+    if (edited && file) editedSincePlaced.set(file, edited.uri);
+    else placeAll = true;
+    if (placeTimer) return;
     placeTimer = setTimeout(() => {
       placeTimer = null;
-      publishFailures();
+      const edits = [...editedSincePlaced];
+      editedSincePlaced.clear();
+      if (placeAll || !lastPass) {
+        placeAll = false;
+        publishFailures();
+        return;
+      }
+      for (const [file, uri] of edits) {
+        const document = documents.get(uri);
+        publishFailures(document ? { file, text: document.getText() } : undefined);
+      }
     }, 0);
   };
 
@@ -853,10 +908,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /**
    * Place every context's failures on the files as they stand, publish the files whose failure diagnostics changed,
    * and send `piwi/failuresChanged` when the failures' list did. A failure whose test left its spec publishes nothing;
-   * one whose line changed since its run is an information.
+   * one whose line changed since its run is an information. With `edited`, a document's text as it stands, only the
+   * failures it holds are placed again, on the texts the latest pass read for the other files.
    */
-  const publishFailures = () => {
-    const pass = placer();
+  const publishFailures = (edited?: { file: string; text: string }) => {
+    const pass = edited && lastPass ? placer(edited, seedWithout(lastPass, edited.file)) : placer();
+    lastPass = { texts: pass.texts, diffed: pass.diffed, placed: pass.placed };
     const next = new Map<string, Diagnostic[]>();
     for (const context of contexts) {
       for (const f of context.failures?.failures ?? []) {
@@ -958,13 +1015,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * How often a context's latest run is read: every `runPollMs`, a quarter of it while a run is in progress, five times
-   * it while the instance's event stream is connected, which says when a run ends.
+   * it while the instance's event stream is connected, which says when a run ends. A live run is read a quarter of it
+   * whatever the stream: its own stream may have closed for good.
    */
   const pollEvery = (c: PiwiContext): number => {
     const base = options.runPollMs ?? RUN_POLL_MS;
+    const active = Math.min(base, RUN_POLL_ACTIVE_MS, Math.max(1, Math.floor(base / 4)));
+    if (c.live) return active;
     if (runWatch.isConnected(c)) return base * STREAM_POLL_FACTOR;
-    const active = !!c.live || ACTIVE_RUN.has(c.failures?.run?.status ?? '');
-    return active ? Math.min(base, RUN_POLL_ACTIVE_MS, Math.max(1, Math.floor(base / 4))) : base;
+    return ACTIVE_RUN.has(c.failures?.run?.status ?? '') ? active : base;
   };
 
   /** When each context was last polled, read or not. */
@@ -1266,7 +1325,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       setTimeout(() => {
         timers.delete(document.uri);
         // The failures follow the edit: placed again on the edited buffer.
-        placeAgainSoon();
+        placeAgainSoon(document);
         void validate(document).catch((e) => connection.console.error(`Piwi: ${(e as Error).message}`));
       }, delay),
     );
@@ -1303,6 +1362,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   async function refreshAll(): Promise<void> {
     await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
     runWatch.sync();
+    // A key the instance refused may be valid again: the streams it refused are opened again on each refresh.
+    runWatch.retryRefused();
     runChanged();
     const next = currentStatus();
     const serialized = JSON.stringify(next);
@@ -2289,8 +2350,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
     applyBaselines();
-    // The streams the instance refused are opened again with these credentials.
-    void refreshAll().then(() => runWatch.retryRefused());
+    // The refresh opens the streams the instance refused again, with these credentials.
+    void refreshAll();
   });
 
   connection.onShutdown(() => recordings.dispose());

@@ -35,14 +35,13 @@ import java.util.concurrent.TimeoutException
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name
- * none, and when a run started from the IDE says what it changed (`always`, `failures`,
- * `never`): **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in
- * the password safe, per instance.
+ * none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in the
+ * password safe, per instance.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiSettings", storages = [Storage("piwi.xml")])
 class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
-    data class State(var serverUrl: String = "", var project: String = "", var runNotifications: String = "always")
+    data class State(var serverUrl: String = "", var project: String = "")
 
     private var state = State()
 
@@ -59,8 +58,9 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
- * at the IDE's breakpoints; and the baseline chosen with **Compare With…** for each
- * Playwright config folder (`Glue.encodeBaseline`; the ladder is no entry).
+ * at the IDE's breakpoints; when a run started from the IDE says what it changed (`always`,
+ * `failures`, `never`); and the baseline chosen with **Compare With…** for each Playwright
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry).
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -74,6 +74,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordPage: String = "",
         var failuresGrouping: String = "file",
         var breakpoints: Boolean = true,
+        var runNotifications: String = "always",
         var baselines: MutableMap<String, String> = mutableMapOf(),
     )
 

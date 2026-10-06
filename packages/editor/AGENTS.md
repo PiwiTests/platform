@@ -38,8 +38,9 @@ clients stay thin and both editors give the same answers.
   open documents. The instance lays over that run the runs of its branch finished since, whole or partial (a test
   re-run from the editor, `piwi run`, the desktop app: `branch-failures?overlays=1`), per test and Playwright project,
   the newest result winning: a failure may be listed from a later run (`source: 'overlay'`, labeled `local run #N`
-  when it did not run in CI, `your run #N` when the editor started it), and a failure a later run passed moves to
-  `resolved`, which publishes no diagnostic: its test's line says `fixed locally in run #N` with `status: 'passed'`,
+  when it did not run in CI, like a failure of a baseline that did not, `your run #N` when the editor started it),
+  and a failure a later run passed moves to `resolved`, which publishes no diagnostic: its test's line says
+  `fixed locally in run #N` with `status: 'passed'`,
   `piwi/failures` lists it as `fixed-locally`, and `piwi/runStatus` counts it in `resolved` beside `failingTests` and
   `overlays`, which the status bars show.
   A failure follows the edits since its run (`placeLine` in `src/analysis.ts`, through the hunks of `diffLines`): its
@@ -67,13 +68,15 @@ clients stay thin and both editors give the same answers.
 - Runs are pushed, and the poll is the fallback (`src/run-stream.ts`, `src/run-watch.ts`). One server-sent events
   stream per instance and key (`GET /api/stream`, `InstanceStream`), shared by the contexts that read it, says when a
   run of their project starts or ends; it is opened again after 1 s, doubling to a minute, every five minutes after a
-  404 (an instance without the route), not after a 401 or 403 until the credentials change. Half a second after a run
-  ends (runs that end together are read once), the context reads its latest run again; while its stream is connected,
-  the poll reads it every five minutes, otherwise every minute, every 15 seconds while a run is in progress (`stream`
-  and `updatedAt` in `piwi/runStatus`). A run in progress on the context's branch, or the editor's own wherever it
+  404 (an instance without the route), after a 401 or 403 only on the next refresh, the periodic one or the one new
+  credentials bring. Half a second after a run ends (runs that end together are read once), the context reads its
+  latest run again; while its stream is connected, the poll reads it every five minutes, otherwise every minute, every
+  15 seconds while a run is in progress, and every 15 seconds while a run is `live`, connected or not (`stream` and
+  `updatedAt` in `piwi/runStatus`). A run in progress on the context's branch, or the editor's own wherever it
   runs, is `live` in `piwi/runStatus`, counted through its own stream (`GET /api/test-runs/:id/stream`), with at most
   one notification every 300 ms; it goes back to null in the notification that brings the failures read once it
-  ended. The tests its stream begins and ends (`test-begin`, named by its title in its spec through the catalog, and
+  ended. The tests its stream begins and ends (`test-begin`, named by its title and suite path in its spec through the
+  catalog, none when the catalog cannot tell them apart: `catalogCaseOf`, and
   `test-completed`, by its id) are `PiwiContext.liveTests` until then: `running`, then their result (a pass after a
   failed attempt is flaky; a test on several projects shows the first of running, failed, flaky, passed, skipped),
   which `piwi/fileSummary` gives their line as `status` and `piwi/runStatus` as `liveTests`, so the clients draw the
@@ -95,7 +98,8 @@ clients stay thin and both editors give the same answers.
   ref (`piwi/commandStarted` with `terminalRef`) is not looked for by its own: its run carries the terminal's ref.
 - Breakpoints: `piwi/runArgs` and `piwi/runSelection` take the editor's enabled line breakpoints (`breakpoints`,
   0-based lines). Those in files under the context's folder go in the command's environment as `PIWI_PAUSE_AT`
-  (`tests/login.spec.ts:42`, relative to that folder, 1-based: `pauseAtValue` in `src/analysis.ts`), and `--headed`
+  (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`, relative to that folder, 1-based, separated by semicolons:
+  `pauseAtValue` in `src/analysis.ts`), and `--headed`
   is appended to the arguments and the command unless it carries `--headed`, `--ui` or `--debug` (`headedCommand`);
   the client adds its Send to editor address as `PIWI_EDITOR_SEND`. The reporter's capture fixtures pause the run
   before a locator action or assertion on those lines, with Piwi's pause bar, and post a locator picked there to that

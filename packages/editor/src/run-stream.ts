@@ -110,7 +110,7 @@ export class EventStream {
     void this.connect();
   }
 
-  /** Open it again now, unless it is open: the credentials it was refused with changed. */
+  /** Open it again at once, unless it is open: the credentials it was refused with may be accepted this time. */
   retry(): void {
     if (this.closed || this.abort) return;
     this.refused = false;

@@ -86,8 +86,11 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
             group("Runs") {
                 row("When a run started here ends:") {
                     comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
-                        .bindItem({ settings.runNotifications }, { settings.runNotifications = it ?: "always" })
-                        .comment("A balloon says what the run changed: the failures it fixed, those still failing, its new ones")
+                        .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "always" })
+                        .comment(
+                            "A balloon says what the run changed: the failures it fixed, those still failing, its new ones. " +
+                                "Kept for you only, in .idea/workspace.xml",
+                        )
                 }
                 row {
                     checkBox("Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker")
@@ -152,7 +155,7 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
     }
 }
 
-/** A choice of `PiwiSettings.runNotifications`, in words. */
+/** A choice of `PiwiLocalSettings.runNotifications`, in words. */
 private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
     override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
         text = when (value) {

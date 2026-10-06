@@ -8,7 +8,6 @@
  * agent, inserts what Piwi Picker sends, and records tests (`recording.ts`).
  */
 import { randomBytes } from 'node:crypto';
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -120,13 +119,15 @@ import {
   withBaseline,
   type FailureNode,
 } from './glue';
-import { runBreakpoints, terminalEnvKey } from './breakpoints';
+import { isUnder, runBreakpoints, terminalEnvKey } from './breakpoints';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
 const STATUS_TICK_MS = 30_000;
+/** A terminal whose shell has not activated shell integration this long after it opened never will. */
+const SHELL_INTEGRATION_WAIT_MS = 10_000;
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
@@ -356,7 +357,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // terminal, a test run opens a terminal of its own, which replaces the previous run's once that run's command ended.
   // Without shell integration, or in a shell that never activates it, the test runs of a directory share one terminal,
   // whose environment keeps the first run's ref: the service is told so (`piwi/commandStarted`), and recognizes the
-  // later runs as the editor's own by that ref, through the instance's event stream.
+  // later runs as the editor's own by that ref, through the instance's event stream. A run terminal whose command has
+  // not ended is never reused while its shell may still activate integration and report that end.
   const terminals = new Map<string, vscode.Terminal>();
   const runTerminals = new Map<string, vscode.Terminal>();
   /** The ref of each run terminal's environment: the ref of the first command sent to it. */
@@ -367,6 +369,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const running = new Map<vscode.Terminal, { ref: string; command: string }>();
   /** The terminals whose last command ended. */
   const idle = new WeakSet<vscode.Terminal>();
+  /** When each run terminal opened. */
+  const openedAt = new WeakMap<vscode.Terminal, number>();
   const shell = vscode.window as unknown as ShellIntegrationApi;
   const shellIntegration = !!shell.onDidStartTerminalShellExecution && !!shell.onDidEndTerminalShellExecution;
   /** Whether a terminal's shell activated shell integration (VS Code 1.93 and later, read at runtime). */
@@ -375,12 +379,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const runInTerminal = (cwd: string, command: string, env?: Record<string, string>, ref?: string) => {
     let terminal: vscode.Terminal | undefined;
     if (ref) {
-      // By the next run, the previous run's terminal has activated shell integration, or never will.
       const previous = runTerminals.get(cwd);
       const envKey = terminalEnvKey(env);
+      // A shell that has not activated integration this long after its terminal opened never reports the end of the
+      // command sent to it.
+      if (
+        previous &&
+        running.has(previous) &&
+        !integrated(previous) &&
+        Date.now() - (openedAt.get(previous) ?? 0) >= SHELL_INTEGRATION_WAIT_MS
+      ) {
+        running.delete(previous);
+      }
       if (
         previous &&
         !previous.exitStatus &&
+        !running.has(previous) &&
         (!shellIntegration || !integrated(previous)) &&
         terminalEnvs.get(previous) === envKey
       ) {
@@ -389,6 +403,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         if (previous && idle.has(previous)) previous.dispose();
         terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
         runTerminals.set(cwd, terminal);
+        openedAt.set(terminal, Date.now());
         terminalRefs.set(terminal, ref);
         terminalEnvs.set(terminal, envKey);
         if (shellIntegration) running.set(terminal, { ref, command });
@@ -569,12 +584,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       const file = vscode.window.activeTextEditor?.document.uri.fsPath;
       // The context of the active file: the deepest config folder holding it.
       const inFile = file
-        ? contexts
-            .filter((c) => {
-              const relative = path.relative(c.root, file);
-              return !relative.startsWith('..') && !path.isAbsolute(relative);
-            })
-            .sort((a, b) => b.root.length - a.root.length)
+        ? contexts.filter((c) => isUnder(c.root, file)).sort((a, b) => b.root.length - a.root.length)
         : [];
       const target =
         inFile[0] ??

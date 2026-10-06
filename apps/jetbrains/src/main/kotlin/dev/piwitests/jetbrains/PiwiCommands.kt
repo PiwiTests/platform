@@ -127,7 +127,7 @@ object PiwiCommands {
      * page and **Re-run Failing** one click away.
      */
     fun runEnded(project: Project, ended: RunEnded) {
-        val setting = project.service<PiwiProjectService>().settings().runNotifications
+        val setting = project.service<PiwiProjectService>().local().runNotifications
         val verdict = Glue.runVerdict(ended, setting) ?: return
         val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
             .createNotification(verdict.text, if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION)

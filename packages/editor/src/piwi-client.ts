@@ -37,6 +37,8 @@ export interface CatalogCase {
   id: number;
   title: string;
   filePath: string;
+  /** Its `describe` blocks, outermost first, joined by `\x1f` (`Auth\x1fLogin`); empty outside any. */
+  suitePath?: string | null;
   /** `passed`, `failed`, `flaky`, `skipped`, `didnotrun` or `never-run`, from the latest executions. */
   status?: string | null;
   totalRuns?: number;

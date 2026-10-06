@@ -229,7 +229,10 @@ describe('the breakpoints of a run', () => {
         { file: path.resolve('/work/other/a.spec.ts'), line: 1 },
         { file: path.join(root, 'tests', 'b.spec.ts'), line: -1 },
       ]),
-    ).toBe('tests/login.spec.ts:42,tests/pages/checkout.page.ts:9');
+    ).toBe('tests/login.spec.ts:42;tests/pages/checkout.page.ts:9');
+    expect(pauseAtValue(root, [{ file: path.join(root, 'tests', 'a,b.spec.ts'), line: 6 }])).toBe(
+      'tests/a,b.spec.ts:7',
+    );
     expect(pauseAtValue(root, [{ file: path.resolve('/elsewhere/a.ts'), line: 0 }])).toBeNull();
     expect(pauseAtValue(root, [])).toBeNull();
   });

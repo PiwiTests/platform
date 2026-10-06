@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import type { PiwiContext } from './context.js';
-import type { BranchFailures, RunDetails } from './piwi-client.js';
+import type { BranchFailures, CatalogCase, RunDetails } from './piwi-client.js';
 import type { LiveRun, LiveTestStatus, Notice, RunEnded } from './protocol.js';
 import {
   EventStream,
@@ -89,6 +89,20 @@ function endedStatus(data: Record<string, unknown>): LiveTestStatus | null {
     default:
       return null;
   }
+}
+
+/**
+ * The catalog case a run event names by its title in its spec: the one case of the spec with that title and, when the
+ * event and the catalog both give it, that suite path (`describe` blocks, outermost first). Null when none matches, or
+ * several do.
+ */
+export function catalogCaseOf(cases: readonly CatalogCase[], title: string, suitePath: unknown): number | null {
+  let matches = cases.filter((c) => c.title === title);
+  if (Array.isArray(suitePath) && suitePath.every((s) => typeof s === 'string')) {
+    const joined = suitePath.join('\x1f');
+    matches = matches.filter((c) => typeof c.suitePath !== 'string' || c.suitePath === joined);
+  }
+  return matches.length === 1 ? matches[0]!.id : null;
 }
 
 /** A test as a verdict names it: its spec's name, then its title. */
@@ -235,7 +249,7 @@ export class RunWatch {
     return !!context.client && !!this.streams.get(streamKey(context.client.connection))?.connected;
   }
 
-  /** Open again the streams the instance refused: the credentials changed. */
+  /** Open again the streams the instance refused: on each refresh, the credentials changed or the key is valid again. */
   retryRefused(): void {
     for (const stream of this.streams.values()) if (stream.refused) stream.retry();
   }
@@ -479,15 +493,16 @@ export class RunWatch {
 
   /**
    * A test of the live run began (`running`) or ended (its result), on one Playwright project: the test is named by
-   * its id, or by its title in its spec, found in the catalog. A suite's hooks name no test.
+   * its id, or by its title and suite path in its spec, found in the catalog (`catalogCaseOf`); a title the catalog
+   * cannot tell apart names no test. A suite's hooks name no test.
    */
   private async testEvent(context: PiwiContext, runId: number, event: RunEvent): Promise<void> {
     const status = event.type === 'test-begin' ? 'running' : endedStatus(event.data);
-    const { testCaseId, title, filePath, browser } = event.data;
+    const { testCaseId, title, filePath, suitePath, browser } = event.data;
     if (!status || filePath === 'hooks') return;
     let id = typeof testCaseId === 'number' ? testCaseId : null;
     if (id === null && typeof title === 'string' && typeof filePath === 'string') {
-      id = (await context.casesOf(filePath)).find((c) => c.title === title)?.id ?? null;
+      id = catalogCaseOf(await context.casesOf(filePath), title, suitePath);
     }
     if (id === null || context.live?.runId !== runId || this.followed.get(context)?.runId !== runId) return;
     const tests = this.attempts.get(context) ?? this.attempts.set(context, new Map()).get(context)!;

@@ -21,7 +21,7 @@ export interface BreakpointLike {
 const SCRIPT_FILE = /\.[cm]?[jt]sx?$/i;
 
 /** Whether `file` is inside `root`. */
-function isUnder(root: string, file: string): boolean {
+export function isUnder(root: string, file: string): boolean {
   const rel = path.relative(root, file);
   return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
 }

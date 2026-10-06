@@ -62,8 +62,9 @@ the service through the platform's LSP API with the project's Node.js interprete
   sends `piwi/commandEnded` with the exit code when the process ends; a rerun keeps the ref, by which the service
   recognizes it as the editor's own through the instance's event stream. A `piwi/notice` is a balloon
   (`PiwiCommands.notify`), and so is `piwi/runEnded` (`PiwiCommands.runEnded`, `Glue.runVerdict`), with **Open the
-  Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as `PiwiSettings.runNotifications`
-  allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in `.idea/piwi.xml`).
+  Failures**, **Open in Dashboard** and, when something fails, **Re-run Failing**, as
+  `PiwiLocalSettings.runNotifications` allows (**Settings → Tools → Piwi**: `always`, `failures`, `never`, in
+  `.idea/workspace.xml`, on this machine only).
 - Breakpoints: `PiwiCommands.runTests` (every test run: Code Vision, **Run this test**, **Run the Tests That Reach
   This File**, **Re-run the Failing Tests**) and **Run Selection…** pass the IDE's breakpoints to the service
   (`PiwiProjectService.breakpoints`: `XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints`, the
@@ -132,7 +133,8 @@ the service through the platform's LSP API with the project's Node.js interprete
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
-  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting and the baselines), on this machine only;
+  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting, the run notifications and the
+  baselines), on this machine only;
   choosing the app never touches the instance, its project or its key.
 
 ## Rules

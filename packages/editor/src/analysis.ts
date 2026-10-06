@@ -5,7 +5,6 @@
  * unsaved changes break. Pure: the language server turns these into
  * diagnostics, quick fixes, hovers and summary lines.
  */
-import * as path from 'node:path';
 import { extractDiffAnchors, type DiffAnchor, type DiffFile, type DiffHunk } from '@piwitests/core/diff-anchors';
 import {
   predictLocatorBreaks,
@@ -30,6 +29,7 @@ import {
 } from '@piwitests/core/locator-chain';
 import type { RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { CallSiteAlternatives, CodeIndex, FlakeLabEntry } from './piwi-client.js';
+import { relativeTo } from './workspace.js';
 
 /** A locator the index knows at one line of a file. */
 export interface LineLocator {
@@ -203,17 +203,17 @@ export function pickEditOnLine(
 
 /**
  * `PIWI_PAUSE_AT` for the breakpoints (0-based lines) of the files under a Playwright config's folder: each file
- * relative to that folder, with forward slashes, and its 1-based line. Null when none is under it.
+ * relative to that folder, with forward slashes, and its 1-based line, separated by semicolons
+ * (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`). Null when none is under it.
  */
 export function pauseAtValue(root: string, breakpoints: Array<{ file: string; line: number }>): string | null {
   const entries = new Set<string>();
   for (const b of breakpoints) {
     if (!Number.isInteger(b.line) || b.line < 0) continue;
-    const rel = path.relative(root, b.file);
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
-    entries.add(`${rel.split(path.sep).join('/')}:${b.line + 1}`);
+    const rel = relativeTo(root, b.file);
+    if (rel) entries.add(`${rel}:${b.line + 1}`);
   }
-  return entries.size ? [...entries].join(',') : null;
+  return entries.size ? [...entries].join(';') : null;
 }
 
 /** A Playwright command line that runs headed: `--headed` appended unless it carries `--headed`, `--ui` or `--debug`. */
