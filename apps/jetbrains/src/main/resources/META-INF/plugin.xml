@@ -6,8 +6,9 @@
     <description><![CDATA[
     Your Playwright suite's history in the IDE, from a <a href="https://piwitests.dev">Piwi</a> instance:
     <ul>
-      <li>the failures of the latest CI run on the checked-out branch, at their failing lines, with the
-          recommended locator heal as a quick fix, the trace and the screenshot one action away;</li>
+      <li>the failures of the latest CI run on the checked-out branch, as your local runs since leave them, at their
+          failing lines, with the recommended locator heal as a quick fix, the trace and the screenshot one action
+          away;</li>
       <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
           line and each application file;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>

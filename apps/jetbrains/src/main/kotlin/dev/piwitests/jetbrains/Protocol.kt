@@ -99,17 +99,30 @@ data class RunInfo(
     val url: String? = null,
 )
 
-/** The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run. */
+/**
+ * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
+ * `failures` counts the failed executions as the runs laid over it (a test re-run from the editor, a local run) leave
+ * them, `failingTests` the tests among them, `resolved` the tests those runs fixed and `overlays` those runs; the last
+ * three are null from an older service.
+ */
 data class RunStatus(
     val root: String? = null,
     val branch: String? = null,
     val run: RunInfo? = null,
     val failures: Int = 0,
     val checkedOut: String? = null,
+    val failingTests: Int? = null,
+    val resolved: Int? = null,
+    val overlays: Int? = null,
 )
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
+/**
+ * A failure of the latest run where it shows, or, with `state` `fixed-locally`, a failure a later run passed, at its
+ * test's line (`executionId` and `runId` are then the passing ones). `source` is `ci` or `local`, `state` `failing` or
+ * `fixed-locally`, `browserName` the Playwright project; the three are null from an older service.
+ */
 data class WorkspaceFailure(
     val uri: String? = null,
     val line: Int = 0,
@@ -119,6 +132,9 @@ data class WorkspaceFailure(
     val runId: Int = 0,
     val url: String? = null,
     val hasTrace: Boolean = false,
+    val source: String? = null,
+    val state: String? = null,
+    val browserName: String? = null,
 )
 
 data class FailuresResult(val items: List<WorkspaceFailure>? = null)

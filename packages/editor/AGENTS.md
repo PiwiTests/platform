@@ -20,7 +20,13 @@ clients stay thin and both editors give the same answers.
 - The latest run on the checked-out branch is read every minute (every 15 seconds while it runs); while that branch
   has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in `piwi/runStatus`).
   Its failures are published as `ci-failure` diagnostics in every file they point to, merged with the analysis of
-  open documents. On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
+  open documents. The instance lays over that run the runs of its branch finished since, whole or partial (a test
+  re-run from the editor, `piwi run`, the desktop app: `branch-failures?overlays=1`), per test and Playwright project,
+  the newest result winning: a failure may be listed from a later run (`source: 'overlay'`, labeled `local run #N`
+  when it did not run in CI), and a failure a later run passed moves to `resolved`, which publishes no diagnostic: its
+  test's line says `fixed locally in run #N` with `status: 'passed'`, `piwi/failures` lists it as `fixed-locally`, and
+  `piwi/runStatus` counts it in `resolved` beside `failingTests` and `overlays`, which the status bars show.
+  On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
   the frames and the message in `branch-failures`), above which the reason, **Screenshot** and **Trace** are ordinary

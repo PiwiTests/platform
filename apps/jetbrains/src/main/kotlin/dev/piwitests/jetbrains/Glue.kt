@@ -105,9 +105,12 @@ object Glue {
 
     data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
 
+    private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
+
     /**
-     * The status bar text: the latest run on the checked-out branch, or what keeps the service from reading it.
-     * A null status means the service has not started: it starts with the first file of the project opened.
+     * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
+     * fail, or what keeps the service from reading it. A null status means the service has not started: it starts
+     * with the first file of the project opened.
      */
     fun statusView(status: StatusResult?, runs: RunStatusResult?, desktopChosen: Boolean = false): StatusView {
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
@@ -120,23 +123,47 @@ object Glue {
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
         val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet$from", null, StatusAction.NONE)
+        // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+        val failing = run.failingTests ?: r.failedTests
+        val fixed = run.resolved ?: 0
+        val overlays = run.overlays ?: 0
+        val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
-            "${r.flakyTests} flaky, ${r.skippedTests} skipped$from"
+            "${r.flakyTests} flaky, ${r.skippedTests} skipped$local$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
         val open = StatusAction.OPEN
         return when {
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
-                val failing = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failing", tooltip, r.url, open)
+                val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
+                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, open)
             }
-            r.failedTests > 0 -> StatusView("Piwi: ${r.failedTests} failing$flaky", tooltip, r.url, open)
+            failing > 0 -> {
+                val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, open)
+            }
             r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, open)
+            fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, open)
             else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, open)
         }
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
+
+    /** Whether a `piwi/failures` item is a failure of the latest run that a later run passed. */
+    fun isFixedLocally(failure: WorkspaceFailure) = failure.state == "fixed-locally"
+
+    /**
+     * What a `piwi/failures` item says about its run, beside its title: `fixed locally in run #124` for a failure a
+     * later run passed (`fixed in run #124` when that run is a CI run), `local run #124` for a failure of a run that
+     * did not run in CI; null otherwise, and from an older service.
+     */
+    fun failureRunNote(failure: WorkspaceFailure): String? = when {
+        isFixedLocally(failure) ->
+            if (failure.source == "ci") "fixed in run #${failure.runId}" else "fixed locally in run #${failure.runId}"
+        failure.source == "local" -> "local run #${failure.runId}"
+        else -> null
+    }
 
     /** When the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {

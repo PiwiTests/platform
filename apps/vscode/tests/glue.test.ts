@@ -93,6 +93,29 @@ describe('statusBarView', () => {
     });
   });
 
+  test('counts the tests still failing after the local runs, and those they fixed', () => {
+    const local = (counts: { failingTests: number; resolved: number; overlays: number }): RunStatusResult => {
+      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115, flakyTests: 0 });
+      return { contexts: [{ ...runs.contexts[0]!, ...counts }] };
+    };
+    const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
+    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: true });
+    expect(view.tooltip).toBe(
+      'Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n2 local runs since · 1 test fixed locally\nhttp://piwi, from the workspace .env',
+    );
+    expect(statusBarView(connected, local({ failingTests: 0, resolved: 3, overlays: 1 }))).toMatchObject({
+      text: '$(pass) Piwi: 3 fixed locally',
+      error: false,
+    });
+    expect(statusBarView(connected, local({ failingTests: 1, resolved: 0, overlays: 1 }))).toMatchObject({
+      text: '$(error) Piwi: 1 failing',
+      tooltip: expect.stringContaining('\n1 local run since · 0 tests fixed locally\n'),
+    });
+    expect(statusBarView(connected, local({ failingTests: 3, resolved: 0, overlays: 0 })).tooltip).not.toContain(
+      'local run',
+    );
+  });
+
   test('a running run shows its progress', () => {
     expect(
       statusBarView(connected, run({ status: 'running', passedTests: 40, failedTests: 1, flakyTests: 0 })),

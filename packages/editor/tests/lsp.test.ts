@@ -104,6 +104,39 @@ const FAILING_SPEC = [
 
 const COMPONENT = '<template>\n  <button class="pay">\n    Pay now\n  </button>\n</template>\n';
 
+/** The latest complete run on main: a CI run. */
+const MAIN_RUN = {
+  id: 41,
+  status: 'failed',
+  branch: 'main',
+  startTime: '2026-09-27T10:00:00.000Z',
+  totalTests: 3,
+  passedTests: 1,
+  failedTests: 1,
+  flakyTests: 1,
+  skippedTests: 0,
+};
+
+/** Its failure: through `checkout.row()` in the spec, into the page object. */
+const ROW_FAILURE = {
+  executionId: 900,
+  testCaseId: 3,
+  clusterId: 77,
+  title: 'removes a row',
+  file: 'tests/rows.spec.ts',
+  line: 4,
+  status: 'failed',
+  headline: "locator('.cart-row').nth(2) was not found",
+  location: '/ci/work/tests/pages/checkout.page.ts:5:21',
+  message: "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
+  frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
+  traces: ['traces/900.zip'],
+  screenshot: 'shots/900.png',
+};
+
+/** What the instance answers with the runs laid over run #41, once a test sets it; with none laid over it otherwise. */
+let laidOver: unknown = null;
+
 let dir = '';
 let server: http.Server;
 let url = '';
@@ -204,43 +237,16 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/branch-failures?branch=feature%2Fnew-cart') {
-      return res.end(JSON.stringify({ run: null, failures: [] }));
-    }
-    if (u === '/api/projects/7/branch-failures?branch=main') {
-      return res.end(
-        JSON.stringify({
-          run: {
-            id: 41,
-            status: 'failed',
-            branch: 'main',
-            startTime: '2026-09-27T10:00:00.000Z',
-            totalTests: 3,
-            passedTests: 1,
-            failedTests: 1,
-            flakyTests: 1,
-            skippedTests: 0,
-          },
-          failures: [
-            {
-              executionId: 900,
-              testCaseId: 3,
-              clusterId: 77,
-              title: 'removes a row',
-              file: 'tests/rows.spec.ts',
-              line: 4,
-              status: 'failed',
-              headline: "locator('.cart-row').nth(2) was not found",
-              location: '/ci/work/tests/pages/checkout.page.ts:5:21',
-              message:
-                "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
-              frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
-              traces: ['traces/900.zip'],
-              screenshot: 'shots/900.png',
-            },
-          ],
-        }),
-      );
+    if (u.startsWith('/api/projects/7/branch-failures?')) {
+      const query = new URL(u, url).searchParams;
+      const laid = query.get('overlays') === '1';
+      if (query.get('branch') !== 'main') {
+        return res.end(
+          JSON.stringify(laid ? { run: null, overlays: [], failures: [], resolved: [] } : { run: null, failures: [] }),
+        );
+      }
+      const latest = { run: MAIN_RUN, failures: [ROW_FAILURE] };
+      return res.end(JSON.stringify(laid ? (laidOver ?? { ...latest, overlays: [], resolved: [] }) : latest));
     }
     if (u === '/api/failure-clusters/77/fix-plan') {
       return res.end(
@@ -669,6 +675,9 @@ describe('the Piwi language server', () => {
         checkedOut: 'main',
         run: expect.objectContaining({ id: 41, status: 'failed', failedTests: 1, url: `${url}/test-runs/41` }),
         failures: 1,
+        failingTests: 1,
+        resolved: 0,
+        overlays: 0,
       },
     ]);
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
@@ -686,6 +695,9 @@ describe('the Piwi language server', () => {
         runId: 41,
         url: `${url}/test-run-cases/900`,
         hasTrace: true,
+        source: 'ci',
+        state: 'failing',
+        browserName: null,
       },
     ]);
   });
@@ -966,6 +978,140 @@ describe('the Piwi language server', () => {
       command: 'npx playwright test tests/checkout.spec.ts:3',
       env: { PIWI_ORIGIN: 'editor' },
     });
+  });
+});
+
+describe('local runs over the latest CI run', () => {
+  test('a test re-run from the editor clears the failure it fixed, and one it broke shows as a local failure', async () => {
+    const overlay = {
+      id: 42,
+      status: 'failed',
+      origin: 'editor',
+      isFullRun: false,
+      startTime: '2026-09-27T10:30:00.000Z',
+      commit: 'a1b2c3d',
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 1,
+      flakyTests: 0,
+      skippedTests: 0,
+    };
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci', commit: 'a1b2c3d' },
+      overlays: [overlay],
+      failures: [
+        {
+          executionId: 950,
+          testCaseId: 1,
+          clusterId: null,
+          title: 'pays',
+          file: 'tests/checkout.spec.ts',
+          line: 3,
+          status: 'failed',
+          headline: "getByRole('button', { name: 'Pay now' }) was not visible",
+          location: '/home/dev/shop/tests/pages/checkout.page.ts:4:21',
+          message: "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Pay now' })",
+          frames: ['/home/dev/shop/tests/pages/checkout.page.ts:4:21'],
+          traces: [],
+          screenshot: null,
+          source: 'overlay',
+          runId: 42,
+          browserName: 'chromium',
+          duration: 1200,
+          isNew: true,
+          clusterTitle: null,
+          owner: null,
+        },
+      ],
+      resolved: [
+        {
+          testCaseId: 3,
+          title: 'removes a row',
+          file: 'tests/rows.spec.ts',
+          line: 4,
+          browserName: 'chromium',
+          runId: 42,
+          executionId: 951,
+          baselineExecutionId: 900,
+        },
+      ],
+    };
+    try {
+      const pushed = runStatuses.length;
+      await client.sendRequest('piwi/refresh');
+      const onPage = await waitFor(() => {
+        const all = diagnostics.get(uri('tests/pages/checkout.page.ts')) ?? [];
+        return all.some((d) => d.message.includes('local run #42')) ? all : undefined;
+      });
+      const failures = onPage.filter((d) => d.code === 'ci-failure');
+      expect(failures).toEqual([
+        expect.objectContaining({
+          message: "getByRole('button', { name: 'Pay now' }) was not visible (pays, local run #42)",
+          range: expect.objectContaining({ start: { line: 3, character: 2 } }),
+          codeDescription: { href: `${url}/test-run-cases/950` },
+        }),
+      ]);
+
+      const hover = (await client.sendRequest('textDocument/hover', {
+        textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+        position: { line: 3, character: 30 },
+      })) as { contents: { value: string } };
+      expect(hover.contents.value).toContain(`**Local failure** · [pays](${url}/test-run-cases/950) · local run #42`);
+
+      const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
+      const fixed = rows.lines.find((l) => l.status !== undefined)!;
+      expect(fixed).toMatchObject({ line: 3, status: 'passed' });
+      expect(fixed.title).toMatch(/^passed 6\/9 · fixed locally in run #42 \(failing in run #41\)/);
+      expect(fixed.failure).toBeUndefined();
+      expect(rows.lines.filter((l) => l.title.startsWith('✗'))).toEqual([]);
+
+      const listed = (await client.sendRequest('piwi/failures')) as FailuresResult;
+      expect(listed.items).toEqual([
+        expect.objectContaining({
+          uri: uri('tests/pages/checkout.page.ts'),
+          line: 3,
+          title: 'pays',
+          executionId: 950,
+          runId: 42,
+          source: 'local',
+          state: 'failing',
+          browserName: 'chromium',
+        }),
+        {
+          uri: uri('tests/rows.spec.ts'),
+          line: 3,
+          title: 'removes a row',
+          headline: null,
+          executionId: 951,
+          runId: 42,
+          url: `${url}/test-run-cases/951`,
+          hasTrace: false,
+          source: 'local',
+          state: 'fixed-locally',
+          browserName: 'chromium',
+        },
+      ]);
+
+      const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
+      expect(status.contexts[0]).toMatchObject({
+        run: { id: 41 },
+        failures: 1,
+        failingTests: 1,
+        resolved: 1,
+        overlays: 1,
+      });
+      expect(runStatuses.length).toBeGreaterThan(pushed);
+      expect(runStatuses[runStatuses.length - 1]).toEqual(status);
+    } finally {
+      laidOver = null;
+      await client.sendRequest('piwi/refresh');
+    }
+    const restored = await waitFor(() =>
+      diagnostics
+        .get(uri('tests/pages/checkout.page.ts'))
+        ?.find((d) => d.code === 'ci-failure' && d.message.includes('run #41')),
+    );
+    expect(restored.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, run #41)");
   });
 });
 

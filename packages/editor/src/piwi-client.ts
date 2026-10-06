@@ -54,19 +54,42 @@ export interface CallSiteAlternatives {
   lastSeenAt: string;
 }
 
-/** The latest run on a branch and its failed executions (`GET /api/projects/:id/branch-failures`). */
+/**
+ * The latest complete run on a branch, the later runs of the branch laid over it, its failed executions as they stand
+ * after them, and the failures they passed (`GET /api/projects/:id/branch-failures?overlays=1`). The fields an instance
+ * older than the overlays does not send are optional.
+ */
 export interface BranchFailures {
   run: {
     id: number;
     status: string;
     branch: string | null;
     startTime: string;
+    /** What launched it: `ci`, `ci-rerun`, `local`, `desktop`, `editor`… */
+    origin?: string;
+    /** The commit it ran at; null when the reporter recorded none. */
+    commit?: string | null;
     totalTests: number;
     passedTests: number;
     failedTests: number;
     flakyTests: number;
     skippedTests: number;
   } | null;
+  /** The finished runs of the branch started after `run`, whole or partial, newest first. */
+  overlays?: Array<{
+    id: number;
+    status: string;
+    /** What launched it: `ci`, `ci-rerun`, `local`, `desktop`, `editor`… */
+    origin: string;
+    isFullRun: boolean;
+    startTime: string;
+    commit: string | null;
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    flakyTests: number;
+    skippedTests: number;
+  }>;
   failures: Array<{
     executionId: number;
     testCaseId: number;
@@ -83,10 +106,39 @@ export interface BranchFailures {
     frames?: string[];
     traces: string[];
     screenshot: string | null;
+    /** `baseline` for an execution of `run`, `overlay` for one of `overlays`. */
+    source?: 'baseline' | 'overlay';
+    /** The run the execution belongs to. */
+    runId?: number;
+    /** The Playwright project; null when unknown. */
+    browserName?: string | null;
+    /** In milliseconds; null when not recorded. */
+    duration?: number | null;
+    /** A new regression in `run`, or, from an overlay, a test that did not fail on this project in `run`. */
+    isNew?: boolean;
+    clusterTitle?: string | null;
+    owner?: string | null;
+    /** What an overlay says about the test on another project: `passed on chromium in run #124`. */
+    note?: string;
+  }>;
+  /** The failures of `run` an overlay passed since, on the same Playwright project. */
+  resolved?: Array<{
+    testCaseId: number;
+    title: string;
+    /** The spec file and the line of the `test(…)` call, as the passing run reported them. */
+    file: string;
+    line: number | null;
+    browserName: string | null;
+    /** The overlay that passed it, and its passing execution. */
+    runId: number;
+    executionId: number;
+    /** The execution that failed in `run`. */
+    baselineExecutionId: number;
   }>;
 }
 
 export type BranchFailure = BranchFailures['failures'][number];
+export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
 
 /** A flaky test as the flaky list ranks it (`GET /api/projects/:id/flaky-tests`). */
 export interface FlakyTest {
@@ -268,10 +320,10 @@ export class PiwiClient {
     return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '' };
   }
 
+  /** The latest complete run on `branch` (any branch when null), with the later runs of its branch laid over it. */
   branchFailures(projectId: number, branch: string | null): Promise<BranchFailures> {
-    return this.get(
-      `/api/projects/${projectId}/branch-failures${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
-    );
+    const query = new URLSearchParams(branch ? { branch, overlays: '1' } : { overlays: '1' });
+    return this.get(`/api/projects/${projectId}/branch-failures?${query}`);
   }
 
   locatorHealing(executionId: number): Promise<LocatorHealingResult> {

@@ -30,8 +30,9 @@ the service through the platform's LSP API with the project's Node.js interprete
   background goes around that line, since two backgrounds on a line have no set order (`PiwiColorSettingsPage.kt`,
   defaults in `resources/colorSchemes/`). Code Vision skips those lines, and the daemon restarts when the run changes.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus`, the **Piwi** tool
-  window from `piwi/failures` (the LSP client highlights open files only) with the connection from `piwi/status`, and
-  the actions under **Tools → Piwi**. The service starts with the first supported file opened (2024.1 has no way to
+  window from `piwi/failures` (the LSP client highlights open files only; a failure of a local run names its run, and
+  the failures a later run passed follow, marked fixed: `Glue.failureRunNote`) with the connection from `piwi/status`,
+  and the actions under **Tools → Piwi**. The service starts with the first supported file opened (2024.1 has no way to
   start it without one): until then the status is null, and the status bar and tool window say so.
 - Once the project is open, `PiwiProjectService.findPlaywright` looks for Playwright configs on a pooled thread
   (`Glue.findPlaywright`, with the editor service's depth and skipped folders): in the project folder (in Rider, the

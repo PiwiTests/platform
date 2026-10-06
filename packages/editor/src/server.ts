@@ -76,7 +76,13 @@ import {
   readDesktopDiscovery,
   withServerUrl,
 } from './context.js';
-import { PiwiClient, type BranchFailure, type FixPlan, type FlakeLabEntry } from './piwi-client.js';
+import {
+  PiwiClient,
+  type BranchFailure,
+  type BranchResolved,
+  type FixPlan,
+  type FlakeLabEntry,
+} from './piwi-client.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
@@ -152,6 +158,7 @@ import {
   type RunCommandArgs,
   type TraceParams,
   type TraceResult,
+  type WorkspaceFailure,
 } from './protocol.js';
 import {
   findPlaywrightRoots,
@@ -169,6 +176,8 @@ const RUN_POLL_MS = 60_000;
 /** How often the desktop app's discovery file is checked. */
 const DESKTOP_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
+/** The origins of CI runs, as the instance stores them. */
+const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
 /** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
@@ -239,6 +248,36 @@ function toEditorTest(context: PiwiContext, t: LocatorIndexTest): EditorTest {
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Whether a run the context reads ran in CI: its latest complete run when the instance does not say (it is the CI run
+ * the editor shows), a run laid over it by its origin.
+ */
+function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
+  const answer = context.failures;
+  if (!answer?.run || runId === undefined || runId === answer.run.id) {
+    return !answer?.run?.origin || CI_ORIGINS.has(answer.run.origin);
+  }
+  const overlay = answer.overlays?.find((o) => o.id === runId);
+  return !!overlay && CI_ORIGINS.has(overlay.origin);
+}
+
+/** Whether a failure is listed from a run laid over the latest complete run that did not run in CI. */
+function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
+  return f.source === 'overlay' && !isCiRun(context, f.runId);
+}
+
+/** The run a failure is listed from: `run #120`, or `local run #124` for a later run that did not run in CI. */
+function runLabel(context: PiwiContext, f: BranchFailure): string {
+  const runId = f.runId ?? context.failures?.run?.id ?? '';
+  return isLocalFailure(context, f) ? `local run #${runId}` : `run #${runId}`;
+}
+
+/** What the lens of a test fixed since the latest complete run says: `fixed locally in run #124 (failing in run #120)`. */
+function fixedLabel(context: PiwiContext, r: BranchResolved): string {
+  const where = isCiRun(context, r.runId) ? 'fixed' : 'fixed locally';
+  return `${where} in run #${r.runId} (failing in run #${context.failures?.run?.id ?? ''})`;
 }
 
 /** A catalog status as a test line shows it. */
@@ -401,7 +440,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /** Where a failure shows: its failing call when that file is in the workspace, else its `test(…)` line. */
-  const failureSite = (context: PiwiContext, f: BranchFailure): { file: string; line: number } | null => {
+  const failureSite = (
+    context: PiwiContext,
+    f: Pick<BranchFailure, 'location' | 'file' | 'line'>,
+  ): { file: string; line: number } | null => {
     const roots = [context.root, context.repoRoot];
     const at = f.location ? splitLocation(f.location) : null;
     const located = at ? resolveReportedFile(roots, at.file) : null;
@@ -455,7 +497,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
-          message: `${f.headline ?? 'Failed'} (${f.title}, run #${context.failures!.run!.id}${
+          message: `${f.headline ?? 'Failed'} (${f.title}, ${runLabel(context, f)}${
             context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''
           })`,
           data: { root: context.root, executionId: f.executionId } satisfies FailureData,
@@ -474,6 +516,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       .filter((c) => c.client && c.project)
       .map((c) => {
         const run = c.failures?.run ?? null;
+        const failing = new Set((c.failures?.failures ?? []).map((f) => f.testCaseId));
+        const fixed = new Set((c.failures?.resolved ?? []).map((r) => r.testCaseId).filter((id) => !failing.has(id)));
         return {
           root: c.root,
           branch: c.runBranch,
@@ -492,6 +536,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               }
             : null,
           failures: c.failures?.failures.length ?? 0,
+          failingTests: failing.size,
+          resolved: fixed.size,
+          overlays: c.failures?.overlays?.length ?? 0,
         };
       }),
   });
@@ -1179,7 +1226,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         );
       parts.push(
         [
-          `**CI failure** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · run #${context.failures?.run?.id ?? ''}`,
+          `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${runLabel(context, failure)}`,
           message && message !== failure.headline
             ? `${failure.headline ?? ''}\n\n${fenced(message)}`
             : (failure.headline ?? ''),
@@ -1291,6 +1338,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const failingNow = new Map<number, BranchFailure>();
       for (const f of context.failures?.failures ?? [])
         if (!failingNow.has(f.testCaseId)) failingNow.set(f.testCaseId, f);
+      /** The tests that failed in the latest complete run and passed since, on every project they failed on. */
+      const fixedNow = new Map<number, BranchResolved>();
+      for (const r of context.failures?.resolved ?? [])
+        if (!failingNow.has(r.testCaseId) && !fixedNow.has(r.testCaseId)) fixedNow.set(r.testCaseId, r);
       /** The reason and the evidence of each failure, above its failing line: first on that line. */
       const reasons: SummaryLine[] = [];
       lines.forEach((text, i) => {
@@ -1299,7 +1350,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (!found) return;
         const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
-        const status = found.status && found.status !== 'passed' ? ` · ${found.status}` : '';
+        const fixed = failingNow.has(found.id) ? undefined : fixedNow.get(found.id);
+        const status = fixed
+          ? ` · ${fixedLabel(context, fixed)}`
+          : found.status && found.status !== 'passed'
+            ? ` · ${found.status}`
+            : '';
         const quarantined = context.quarantined.get(found.id);
         const quarantine = quarantined
           ? ` · quarantined ${Math.max(1, Math.round(quarantined.ageMs / 86_400_000))} d · ${
@@ -1338,7 +1394,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             command: 'piwi.openInDashboard',
             arguments: [context.client!.testUrl(found.id)],
           },
-          status: failed ? 'failed' : testLineStatus(found.status),
+          status: failed ? 'failed' : fixed ? 'passed' : testLineStatus(found.status),
           endLine,
           ...(failure ? { failure } : {}),
         });
@@ -1498,10 +1554,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   connection.onRequest(
     FAILURES_REQUEST,
     (): FailuresResult => ({
-      items: contexts.flatMap((context) =>
-        (context.failures?.failures ?? []).flatMap((f) => {
+      items: contexts.flatMap((context): WorkspaceFailure[] => {
+        const client = context.client;
+        if (!client) return [];
+        const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
           const site = failureSite(context, f);
-          if (!site || !context.client) return [];
+          if (!site) return [];
           return [
             {
               uri: pathToFileURL(site.file).href,
@@ -1509,13 +1567,37 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               title: f.title,
               headline: f.headline,
               executionId: f.executionId,
-              runId: context.failures!.run!.id,
-              url: context.client.executionUrl(f.executionId),
+              runId: f.runId ?? context.failures!.run!.id,
+              url: client.executionUrl(f.executionId),
               hasTrace: f.traces.length > 0,
+              source: isCiRun(context, f.runId) ? 'ci' : 'local',
+              state: 'failing',
+              browserName: f.browserName ?? null,
             },
           ];
-        }),
-      ),
+        });
+        // The failures a later run passed, at their `test(…)` line.
+        const fixed = (context.failures?.resolved ?? []).flatMap((r): WorkspaceFailure[] => {
+          const site = failureSite(context, { location: null, file: r.file, line: r.line });
+          if (!site) return [];
+          return [
+            {
+              uri: pathToFileURL(site.file).href,
+              line: site.line - 1,
+              title: r.title,
+              headline: null,
+              executionId: r.executionId,
+              runId: r.runId,
+              url: client.executionUrl(r.executionId),
+              hasTrace: false,
+              source: isCiRun(context, r.runId) ? 'ci' : 'local',
+              state: 'fixed-locally',
+              browserName: r.browserName,
+            },
+          ];
+        });
+        return [...failing, ...fixed];
+      }),
     }),
   );
 

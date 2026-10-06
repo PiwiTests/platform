@@ -14,7 +14,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
 - `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
   failing test and `piwi.failingLineBackground` on the line it failed at: `testDecorations` in `src/glue.ts`) and
-  `piwi/runStatus` in the status bar, implements the commands the service names (`piwi.openInDashboard`,
+  `piwi/runStatus` in the status bar (the tests still failing and those fixed locally since the latest run, from
+  `failingTests` and `resolved`), implements the commands the service names (`piwi.openInDashboard`,
   `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick fix or a flaky test's
   lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at

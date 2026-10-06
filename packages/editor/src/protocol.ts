@@ -234,7 +234,10 @@ export interface ScreenshotResult {
 
 export const SCREENSHOT_REQUEST = 'piwi/screenshot';
 
-/** The latest run on the checked-out branch of one workspace context. */
+/**
+ * The latest run on the checked-out branch of one workspace context: its latest complete run, and the later runs of
+ * that branch the service lays over it (a test re-run from an editor, a run on a developer's machine).
+ */
 export interface RunStatus {
   /** The Playwright config's directory. */
   root: string;
@@ -258,8 +261,14 @@ export interface RunStatus {
     /** The run's page in the dashboard. */
     url: string;
   } | null;
-  /** Failed executions the Problems panel lists for this run. */
+  /** Failed executions the Problems panel lists for this run, as the runs laid over it leave them. */
   failures: number;
+  /** The tests among those failures: a test failing on several Playwright projects counts once. */
+  failingTests?: number;
+  /** The tests that failed in `run` and passed since in a run laid over it, on every project they failed on. */
+  resolved?: number;
+  /** The runs of the branch since `run` that the service lays over it. */
+  overlays?: number;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
@@ -317,24 +326,37 @@ export interface RunSelectionParams {
 
 export const RUN_SELECTION_REQUEST = 'piwi/runSelection';
 
-/** A failure of the latest run, where it shows in the workspace. */
+/**
+ * A failure of the latest run, where it shows in the workspace, or a failure of that run that a later run passed
+ * (`state: 'fixed-locally'`), at its `test(…)` line.
+ */
 export interface WorkspaceFailure {
   /** The file the failure shows in: its failing call, else its `test(…)` line. */
   uri: string;
   /** 0-based. */
   line: number;
   title: string;
+  /** Null for a failure fixed since. */
   headline: string | null;
+  /** The execution that failed, or for a failure fixed since, the execution that passed. */
   executionId: number;
+  /** The run of `executionId`. */
   runId: number;
   /** The execution's page in the dashboard. */
   url: string;
   hasTrace: boolean;
+  /** `ci` when `runId` is a CI run, `local` when it ran on a developer's machine, in the desktop app or an editor. */
+  source?: 'ci' | 'local';
+  /** `failing`, or `fixed-locally` when a run laid over the latest complete run passed the test since. */
+  state?: 'failing' | 'fixed-locally';
+  /** The Playwright project; null when unknown. */
+  browserName?: string | null;
 }
 
 /**
  * `piwi/failures`: the failures of each context's latest run, for a client that lists them natively (the JetBrains
- * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics.
+ * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics; the
+ * failures a later run fixed (`fixed-locally`) follow them and publish none.
  */
 export interface FailuresResult {
   items: WorkspaceFailure[];

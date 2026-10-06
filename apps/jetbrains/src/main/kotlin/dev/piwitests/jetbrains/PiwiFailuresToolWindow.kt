@@ -29,10 +29,12 @@ import javax.swing.JPanel
 
 /**
  * The failures of the latest run on the checked-out branch, listed natively:
- * the LSP client of the JetBrains IDEs highlights open files only. A double
- * click opens the failing line, where the highlight carries the quick fixes.
- * Above them, the connection in one line, and Connect, Refresh, Open in
- * dashboard and the settings in the toolbar.
+ * the LSP client of the JetBrains IDEs highlights open files only. A failure
+ * of a local run laid over that run says so, and the failures a later run
+ * passed follow, marked fixed. A double click opens the failing line, where
+ * the highlight carries the quick fixes, or a fixed test's line. Above them,
+ * the connection in one line, and Connect, Refresh, Open in dashboard and the
+ * settings in the toolbar.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -48,9 +50,16 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 selected: Boolean,
                 hasFocus: Boolean,
             ) {
-                icon = AllIcons.General.Error
+                val fixed = Glue.isFixedLocally(value)
+                val note = Glue.failureRunNote(value)
+                icon = if (fixed) AllIcons.RunConfigurations.TestPassed else AllIcons.General.Error
                 append(value.title ?: "Failed")
-                append("  ${value.headline ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                if (fixed) {
+                    append("  ${note ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                } else {
+                    append("  ${value.headline ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    if (note != null) append("  $note", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                }
                 val file = value.uri?.substringAfterLast('/') ?: ""
                 append("  $file:${value.line + 1}", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
             }
@@ -72,7 +81,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
         val render: () -> Unit = {
             model.clear()
             service.failures.forEach { model.addElement(it) }
-            toolWindow.stripeTitle = if (service.failures.isEmpty()) "Piwi" else "Piwi (${service.failures.size})"
+            val failing = service.failures.count { !Glue.isFixedLocally(it) }
+            toolWindow.stripeTitle = if (failing == 0) "Piwi" else "Piwi ($failing)"
             connection.text = Glue.connectionSummary(service.status, service.local().desktop)
             val connected = service.status?.contexts.orEmpty().any { it.connected }
             list.emptyText.clear()

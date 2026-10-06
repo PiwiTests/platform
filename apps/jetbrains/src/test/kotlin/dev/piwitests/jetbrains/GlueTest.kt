@@ -65,6 +65,44 @@ class GlueTest {
     }
 
     @Test
+    fun `counts the tests still failing after the local runs, and those they fixed`() {
+        val failed = passed.copy(status = "failed", passedTests = 115, failedTests = 3, flakyTests = 0)
+        fun local(failing: Int, resolved: Int, overlays: Int) = RunStatusResult(
+            listOf(
+                RunStatus(
+                    root = "/w", branch = "feature/pay", run = failed,
+                    failingTests = failing, resolved = resolved, overlays = overlays,
+                ),
+            ),
+        )
+        val view = Glue.statusView(connected, local(2, 1, 2))
+        assertEquals("Piwi: 2 failing · 1 fixed locally", view.text)
+        assertEquals(
+            "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
+                "2 local runs since · 1 test fixed locally\nhttp://piwi, from the workspace .env",
+            view.tooltip,
+        )
+        assertEquals("Piwi: 3 fixed locally", Glue.statusView(connected, local(0, 3, 1)).text)
+        assertEquals("Piwi: 1 failing", Glue.statusView(connected, local(1, 0, 1)).text)
+        assertEquals(false, Glue.statusView(connected, local(3, 0, 0)).tooltip.contains("local run"))
+        // From a service without the counts, the run's own.
+        assertEquals("Piwi: 3 failing", Glue.statusView(connected, runs(failed)).text)
+    }
+
+    @Test
+    fun `a failure of a local run, and a failure fixed since, name their run`() {
+        val failing = WorkspaceFailure(title = "pays", runId = 124, source = "local", state = "failing")
+        assertEquals("local run #124", Glue.failureRunNote(failing))
+        assertEquals(null, Glue.failureRunNote(failing.copy(source = "ci")))
+        assertEquals(null, Glue.failureRunNote(WorkspaceFailure(title = "pays", runId = 41)))
+        val fixed = failing.copy(state = "fixed-locally", headline = null)
+        assertEquals("fixed locally in run #124", Glue.failureRunNote(fixed))
+        assertEquals("fixed in run #124", Glue.failureRunNote(fixed.copy(source = "ci")))
+        assertEquals(true, Glue.isFixedLocally(fixed))
+        assertEquals(false, Glue.isFixedLocally(failing))
+    }
+
+    @Test
     fun `the connection in one sentence, with where it came from`() {
         assertEquals("Connected to Acme on main at http://piwi, from the workspace .env.", Glue.connectionSummary(connected))
         assertEquals(

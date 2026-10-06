@@ -49,7 +49,10 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
   return desktopChosen ? '\nThe Piwi desktop app, chosen with Piwi: Connect, is not running.' : '';
 }
 
-/** The status bar item: the latest run on the checked-out branch, or what keeps the service from reading it. */
+/**
+ * The status bar item: the latest run on the checked-out branch, with what the runs laid over it fixed or still fail,
+ * or what keeps the service from reading it.
+ */
 export function statusBarView(
   status: StatusResult | null,
   runs: RunStatusResult | null,
@@ -86,22 +89,28 @@ export function statusBarView(
     };
   }
   const r = run.run;
-  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${from}`;
+  // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+  const failing = run.failingTests ?? r.failedTests;
+  const fixed = run.resolved ?? 0;
+  const local = run.overlays
+    ? `\n${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally`
+    : '';
+  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${local}${from}`;
   if (ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
-    const failing = r.failedTests ? ` · ${r.failedTests} failing` : '';
+    const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
     return {
-      text: `$(sync~spin) Piwi: ${done}/${r.totalTests}${failing}`,
+      text: `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
       tooltip,
       action: 'open',
       url: r.url,
       error: false,
     };
   }
-  if (r.failedTests > 0) {
-    const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  if (failing > 0) {
     return {
-      text: `$(error) Piwi: ${r.failedTests} failing${flaky}`,
+      text: `$(error) Piwi: ${failing} failing${fixed ? ` · ${fixed} fixed locally` : ''}${flaky}`,
       tooltip,
       action: 'open',
       url: r.url,
@@ -111,7 +120,9 @@ export function statusBarView(
   if (r.status !== 'passed' && r.status !== 'failed') {
     return { text: `$(warning) Piwi: ${r.status}`, tooltip, action: 'open', url: r.url, error: false };
   }
-  const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  if (fixed > 0) {
+    return { text: `$(pass) Piwi: ${fixed} fixed locally`, tooltip, action: 'open', url: r.url, error: false };
+  }
   return {
     text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}`,
     tooltip,
