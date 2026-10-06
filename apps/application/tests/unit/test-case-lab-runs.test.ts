@@ -109,6 +109,13 @@ describe('test case stats leave lab runs out', () => {
     },
   );
 
+  // These runs name no environment: a scope that names one leaves them all out.
+  test('the test-cases list sorted by file leaves out a run with no environment from an environment scope', async () => {
+    const scope = { environments: ['ci'], branches: [], allBranches: true, fullRunsOnly: false };
+    const { items } = await getProjectTestCases(db as never, 1, { sort: 'file', scope });
+    expect(items[0]).toMatchObject({ totalRuns: 0, passedRuns: 0, failedRuns: 0 });
+  });
+
   test('the stability trend buckets real executions only', async () => {
     const trend = await getTestCaseStabilityTrend(db as never, 1, { days: 2, granularity: 'day', now: NOW });
     expect(trend.buckets.reduce((sum, b) => sum + b.totalRuns, 0)).toBe(3);

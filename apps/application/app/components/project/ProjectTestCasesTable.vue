@@ -12,6 +12,7 @@ import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { splitSuitePath } from '#shared/utils/suites';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
 import { fileGroupRows, type TestPosition } from '~/utils/test-list-order';
+import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
 
 const props = defineProps<{
   projectId: string | number;
@@ -19,6 +20,8 @@ const props = defineProps<{
   projectName?: string | null;
   /** Mirror search/filter/sort/page state into the route query (shareable URLs, survives tab switches). */
   syncQuery?: boolean;
+  /** The project page's run scope: each test's numbers count its runs only. */
+  scope?: ProjectRunScope | null;
 }>();
 
 const emit = defineEmits<{ total: [total: number] }>();
@@ -136,7 +139,9 @@ watch(
     q.value = value.trim();
   }, 300),
 );
-watch([q, statuses, age, sort, dir, pageSize, grouped], () => {
+const scopeQuery = computed(() => (props.scope ? projectRunScopeQuery(props.scope) : {}));
+
+watch([q, statuses, age, sort, dir, pageSize, grouped, scopeQuery], () => {
   page.value = 1;
 });
 
@@ -148,6 +153,7 @@ const query = computed(() => ({
   maxAgeDays: age.value,
   sort: sort.value,
   dir: dir.value,
+  ...scopeQuery.value,
 }));
 
 const { data, status, error, refresh } = useFetch<TestCasesPage>(`/api/projects/${props.projectId}/test-cases`, {
@@ -203,23 +209,23 @@ function toggleDir() {
 // the whole catalog, fetched the first time the search box is focused.
 type FacetsResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/test-cases/facets.get').default>;
 const searchValues = ref<TestSearchValues | null>(null);
-let facetsAge: number | null = null;
+/** The age window and run scope the loaded values cover. */
+let facetsKey: string | null = null;
 async function loadFacets() {
-  if (facetsAge === age.value) return;
-  const forAge = age.value;
-  facetsAge = forAge;
+  const query = { maxAgeDays: age.value, ...scopeQuery.value };
+  const key = JSON.stringify(query);
+  if (facetsKey === key) return;
+  facetsKey = key;
   try {
-    const response = await $fetch<FacetsResponse>(`/api/projects/${props.projectId}/test-cases/facets`, {
-      query: { maxAgeDays: forAge },
-    });
-    if (facetsAge === forAge) searchValues.value = response.values as TestSearchValues;
+    const response = await $fetch<FacetsResponse>(`/api/projects/${props.projectId}/test-cases/facets`, { query });
+    if (facetsKey === key) searchValues.value = response.values as TestSearchValues;
   } catch {
     // Completion falls back to the qualifiers alone.
-    facetsAge = null;
+    facetsKey = null;
   }
 }
-watch(age, () => {
-  if (facetsAge !== null) loadFacets();
+watch([age, scopeQuery], () => {
+  if (facetsKey !== null) loadFacets();
 });
 
 /** What the applied search matched, marked in each row. */

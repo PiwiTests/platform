@@ -20,8 +20,8 @@ it folds to a one-line summary.
   the comparison and any note (a project without the chosen selection, a deleted marker).
 - **Runs**: the projects (intersected with the ones you can see), environments and branches (optional
   multi-select, see [Environment](/guide/concepts#environment)), the branch policy (*Default branch* or
-  *All branches*, below) and *Full runs only*, which excludes partial runs. All but the projects and
-  the policy are the **filter bar** Home and project pages use.
+  *All branches*, below) and *Full runs only*, which excludes partial runs. All but the projects are the
+  **Filters** block a project page opens with, so a drill-down lands on the same runs.
 - **Tests**: optional; a selection, test tags or browsers (below).
 
 Probe runs (the fault-injected replays `piwi probe` produces) are never counted, whatever the filters.
@@ -55,7 +55,7 @@ By default only runs on each project's **default branch** count, so a broken fea
 move the trends. A run whose branch is unknown (a trace import, a run outside git) counts only in a
 project that never reported a branch. The default branch is the project's setting, else
 the one its latest run reported, else `main`. *All branches* counts every run; branches picked in the
-filter bar override both.
+Filters block override both.
 
 ### Test filter
 

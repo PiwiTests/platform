@@ -43,9 +43,9 @@ Two filters change the answer, and both are worth setting deliberately:
 
 - **Runs window** — the last 20, 50 or 100 runs: recent behavior or a longer baseline. A test fixed last
   week still looks awful over the last 100.
-- **Environment** — select one environment and the analysis is scoped to its runs, so `staging` noise
-  doesn't inflate a test that's stable in `production`. Set it via the reporter's `environment` option
-  or `PIWI_ENVIRONMENT`.
+- **Environment** — pick an environment in the project's **Filters** block and the analysis reads only
+  its runs, so `staging` noise doesn't inflate a test that's stable in `production`. Set it via the
+  reporter's `environment` option or `PIWI_ENVIRONMENT`.
 
 ## 4. Quarantine the rest — with an exit
 

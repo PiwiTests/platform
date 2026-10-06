@@ -42,7 +42,10 @@ import {
 } from '#shared/test-search';
 import { splitSuitePath } from '#shared/utils/suites';
 import { notLabExecutionInProject, notLabRun } from './probes';
-import { eligibleRunSql, notLabExecutionInProjectJoin } from '../run-eligibility';
+import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-default-branch';
+import { projectRunScopeConditions, scopedExecutionInProject, scopedExecutionInProjectJoin } from './project-run-scope';
+import { parseProjectRunScope, type ProjectRunScope } from '../project-run-scope';
+import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -342,6 +345,8 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
 
   return {
     ...project,
+    // The branch a project run scope reads when no branch is picked.
+    effectiveDefaultBranch: await resolveStoredDefaultBranch(db, project),
     hasScmToken: !!project.scmToken,
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
@@ -614,6 +619,8 @@ export async function getProjectPerformance(
   from?: string,
   to?: string,
   fullRunsOnly: boolean = true,
+  /** The project page's run scope; replaces `fullRunsOnly`. */
+  scope?: ProjectRunScope | null,
 ) {
   // Verify project exists
   const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, projectId));
@@ -621,7 +628,9 @@ export async function getProjectPerformance(
 
   // Build conditions
   const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)];
-  if (fullRunsOnly) {
+  if (scope) {
+    conditions.push(...(await projectRunScopeConditions(db, projectId, scope)));
+  } else if (fullRunsOnly) {
     conditions.push(eq(testRuns.isFullRun, 1));
   }
   if (from) {
@@ -701,6 +710,8 @@ export interface TestCasesQuery {
   maxAgeDays: number;
   sort: TestCasesSort;
   dir: 'asc' | 'desc';
+  /** The project page's run scope: only its runs' executions count. */
+  scope?: ProjectRunScope | null;
 }
 
 /**
@@ -742,11 +753,15 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
     maxAgeDays: Math.max(0, num('maxAgeDays', 0)),
     sort: (TEST_CASE_SORTS as readonly string[]).includes(rawSort) ? (rawSort as TestCasesSort) : 'lastRun',
     dir: get('dir') === 'asc' ? 'asc' : 'desc',
+    scope: parseProjectRunScope(input) ?? undefined,
   };
 }
 
-/** Test cases of `projectId` with an execution (outside lab runs) in the last `maxAgeDays` days. */
-function executedWithin(db: DrizzleDB, projectId: number, maxAgeDays: number) {
+/**
+ * Test cases of `projectId` with an execution (outside lab runs, in the run
+ * scope's runs when `scopeConditions` is set) in the last `maxAgeDays` days.
+ */
+function executedWithin(db: DrizzleDB, projectId: number, maxAgeDays: number, scopeConditions: SQL[] | null = null) {
   const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
   return exists(
     db
@@ -756,10 +771,17 @@ function executedWithin(db: DrizzleDB, projectId: number, maxAgeDays: number) {
         and(
           eq(testRunsCases.testCaseId, testCases.id),
           gte(testRunsCases.createdAt, cutoff),
-          notLabExecutionInProject(projectId, testRunsCases.testRunId),
+          executionInProject(projectId, scopeConditions),
         ),
       ),
   );
+}
+
+/** The executions a project read counts: outside lab runs, and in the run scope's runs when it has one. */
+function executionInProject(projectId: number, scopeConditions: SQL[] | null): SQL {
+  return scopeConditions
+    ? scopedExecutionInProject(projectId, testRunsCases.testRunId, scopeConditions)
+    : notLabExecutionInProject(projectId, testRunsCases.testRunId);
 }
 
 /** The column of a test case's latest execution (outside lab runs), as a correlated subquery. */
@@ -811,9 +833,11 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     maxAgeDays = 0,
     sort = 'lastRun',
     dir = 'desc',
+    scope = null,
   } = options;
 
-  const realExecution = notLabExecutionInProject(projectId, testRunsCases.testRunId);
+  const scopeConditions = scope ? await projectRunScopeConditions(db, projectId, scope) : null;
+  const realExecution = executionInProject(projectId, scopeConditions);
 
   // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
   // (numeric) as strings, and a timestamp aggregate unparsed: each selected
@@ -871,7 +895,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
     conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
   }
-  if (maxAgeDays > 0) conditions.push(executedWithin(db, projectId, maxAgeDays));
+  if (maxAgeDays > 0) conditions.push(executedWithin(db, projectId, maxAgeDays, scopeConditions));
   if (statuses && statuses.length > 0) {
     conditions.push(inArray(category, statuses));
   }
@@ -975,7 +999,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       testRunsCases,
       and(
         eq(testCases.id, testRunsCases.testCaseId),
-        notLabExecutionInProjectJoin(projectId, testRunsCases.testRunId),
+        scopedExecutionInProjectJoin(projectId, testRunsCases.testRunId, scopeConditions ?? []),
         // PostgreSQL does not carry the page's ids across the join: named on the executions too,
         // they are read through the test case index instead of a scan of every execution.
         pageIds ? inArray(testRunsCases.testCaseId, pageIds) : undefined,
@@ -1004,11 +1028,14 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
 export async function getProjectTestCaseFacets(
   db: DrizzleDB,
   projectId: number,
-  options: { maxAgeDays?: number } = {},
+  options: { maxAgeDays?: number; scope?: ProjectRunScope | null } = {},
 ): Promise<{ values: TestSearchValues }> {
   const maxAgeDays = options.maxAgeDays ?? 0;
   const conditions = [eq(testCases.projectId, projectId)];
-  if (maxAgeDays > 0) conditions.push(executedWithin(db, projectId, maxAgeDays));
+  if (maxAgeDays > 0) {
+    const scopeConditions = options.scope ? await projectRunScopeConditions(db, projectId, options.scope) : null;
+    conditions.push(executedWithin(db, projectId, maxAgeDays, scopeConditions));
+  }
   const rows: any[] = await db
     .select({
       filePath: testCases.filePath,
@@ -1188,18 +1215,25 @@ export async function getProjectAiStepCoverage(db: DrizzleDB, projectId: number,
 
 // ─── getProjectSlowTests ─────────────────────────────────────────
 
-export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runsCount: number) {
+export async function getProjectSlowTests(
+  db: DrizzleDB,
+  projectId: number,
+  runsCount: number,
+  /** The project page's run scope: the recent runs are the scope's. */
+  scope?: ProjectRunScope | null,
+) {
   // Verify project exists
   const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, projectId));
   if (!projectResults[0]) throw new Error('Project not found');
 
   const effectiveLimit = Math.min(runsCount, 100);
+  const scopeConditions = scope ? await projectRunScopeConditions(db, projectId, scope) : [];
 
   // Get recent test run IDs for this project
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin), ...scopeConditions))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1315,16 +1349,19 @@ export async function getProjectTimeoutOpportunities(
   projectId: number,
   runsCount: number,
   thresholds?: TimeoutThresholds,
+  /** The project page's run scope: the recent runs are the scope's. */
+  scope?: ProjectRunScope | null,
 ): Promise<TimeoutOpportunity[]> {
   const projectResults: any[] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
   if (!projectResults[0]) throw new Error('Project not found');
 
   const effectiveLimit = Math.min(runsCount, 100);
+  const scopeConditions = scope ? await projectRunScopeConditions(db, projectId, scope) : [];
 
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(eq(testRuns.projectId, projectId))
+    .where(and(eq(testRuns.projectId, projectId), ...scopeConditions))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1407,7 +1444,41 @@ export async function getProjectTimeoutOpportunities(
 
 // ─── getProjectFailureClusters ───────────────────────────────────
 
-export async function getProjectFailureClusters(db: DrizzleDB, projectId: number, statusFilter?: string) {
+/** The columns of a failure cluster the project's cluster list reads. */
+const CLUSTER_LIST_COLUMNS = {
+  id: failureClusters.id,
+  fingerprint: failureClusters.fingerprint,
+  signature: failureClusters.signature,
+  title: failureClusters.title,
+  errorType: failureClusters.errorType,
+  selector: failureClusters.selector,
+  sampleError: failureClusters.sampleError,
+  status: failureClusters.status,
+  triageNote: failureClusters.triageNote,
+  firstSeenRunId: failureClusters.firstSeenRunId,
+  lastSeenRunId: failureClusters.lastSeenRunId,
+  occurrences: failureClusters.occurrences,
+  fixLandedRunId: failureClusters.fixLandedRunId,
+  fixLandedAt: failureClusters.fixLandedAt,
+  fixCommit: failureClusters.fixCommit,
+  timeToResolutionMs: failureClusters.timeToResolutionMs,
+  fixVerification: failureClusters.fixVerification,
+  assignee: failureClusters.assignee,
+  snoozedUntil: failureClusters.snoozedUntil,
+  snoozeMode: failureClusters.snoozeMode,
+};
+
+/**
+ * A project's failure clusters, newest seen first (at most 100). With a run
+ * scope the list holds the clusters seen in the scope's runs, and their
+ * occurrences, affected tests and last-seen run are counted over those runs.
+ */
+export async function getProjectFailureClusters(
+  db: DrizzleDB,
+  projectId: number,
+  statusFilter?: string,
+  scope?: ProjectRunScope | null,
+) {
   const projectResults: any[] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
 
   if (!projectResults[0]) throw new Error('Project not found');
@@ -1417,47 +1488,74 @@ export async function getProjectFailureClusters(db: DrizzleDB, projectId: number
     whereClauses.push(eq(failureClusters.status, statusFilter));
   }
 
-  const clusters: any[] = await db
-    .select({
-      id: failureClusters.id,
-      fingerprint: failureClusters.fingerprint,
-      signature: failureClusters.signature,
-      title: failureClusters.title,
-      errorType: failureClusters.errorType,
-      selector: failureClusters.selector,
-      sampleError: failureClusters.sampleError,
-      status: failureClusters.status,
-      triageNote: failureClusters.triageNote,
-      firstSeenRunId: failureClusters.firstSeenRunId,
-      lastSeenRunId: failureClusters.lastSeenRunId,
-      occurrences: failureClusters.occurrences,
-      fixLandedRunId: failureClusters.fixLandedRunId,
-      fixLandedAt: failureClusters.fixLandedAt,
-      fixCommit: failureClusters.fixCommit,
-      timeToResolutionMs: failureClusters.timeToResolutionMs,
-      fixVerification: failureClusters.fixVerification,
-      assignee: failureClusters.assignee,
-      snoozedUntil: failureClusters.snoozedUntil,
-      snoozeMode: failureClusters.snoozeMode,
-    })
-    .from(failureClusters)
-    .where(and(...whereClauses))
-    .orderBy(desc(failureClusters.lastSeenRunId))
-    .limit(100);
+  let clusters: any[];
+  let affectedById: Map<number, number>;
+  if (scope) {
+    const scopeConditions = await projectRunScopeConditions(db, projectId, scope);
+    const seen = db
+      .select({
+        clusterId: testRunsCases.failureClusterId,
+        occurrences: sql<number>`count(*)`.as('scoped_occurrences'),
+        affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`.as('scoped_affected_tests'),
+        lastSeenRunId: sql<number>`max(${testRunsCases.testRunId})`.as('scoped_last_seen_run_id'),
+      })
+      .from(testRunsCases)
+      .where(
+        and(
+          isNotNull(testRunsCases.failureClusterId),
+          scopedExecutionInProject(projectId, testRunsCases.testRunId, scopeConditions),
+        ),
+      )
+      .groupBy(testRunsCases.failureClusterId)
+      .as('seen');
+    const rows: any[] = await db
+      .select({
+        ...CLUSTER_LIST_COLUMNS,
+        scopedOccurrences: seen.occurrences,
+        scopedAffectedTests: seen.affectedTests,
+        scopedLastSeenRunId: seen.lastSeenRunId,
+      })
+      .from(failureClusters)
+      .innerJoin(seen, eq(seen.clusterId, failureClusters.id))
+      .where(and(...whereClauses))
+      .orderBy(desc(seen.lastSeenRunId))
+      .limit(100);
+    clusters = rows.map(({ scopedOccurrences, scopedAffectedTests, scopedLastSeenRunId, ...cluster }) => ({
+      ...cluster,
+      occurrences: Number(scopedOccurrences),
+      lastSeenRunId: Number(scopedLastSeenRunId),
+      affectedTests: Number(scopedAffectedTests),
+    }));
+    affectedById = new Map(clusters.map((c: any) => [c.id, c.affectedTests]));
+  } else {
+    clusters = await db
+      .select(CLUSTER_LIST_COLUMNS)
+      .from(failureClusters)
+      .where(and(...whereClauses))
+      .orderBy(desc(failureClusters.lastSeenRunId))
+      .limit(100);
+
+    if (clusters.length === 0) return [];
+
+    // Distinct affected test cases per cluster (occurrences counts retries too)
+    const counts: any[] = await db
+      .select({
+        clusterId: testRunsCases.failureClusterId,
+        affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`,
+      })
+      .from(testRunsCases)
+      .where(
+        inArray(
+          testRunsCases.failureClusterId,
+          clusters.map((c: any) => c.id),
+        ),
+      )
+      .groupBy(testRunsCases.failureClusterId);
+    affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
+  }
 
   if (clusters.length === 0) return [];
-
-  // Distinct affected test cases per cluster (occurrences counts retries too)
   const clusterIds: number[] = clusters.map((c: any) => c.id);
-  const counts: any[] = await db
-    .select({
-      clusterId: testRunsCases.failureClusterId,
-      affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`,
-    })
-    .from(testRunsCases)
-    .where(inArray(testRunsCases.failureClusterId, clusterIds))
-    .groupBy(testRunsCases.failureClusterId);
-  const affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
 
   // Resolve lastSeen run status and start time
   const lastSeenRunIds: number[] = [...new Set(clusters.map((c: any) => c.lastSeenRunId))] as number[];
@@ -1582,6 +1680,8 @@ export async function getProjectFlakyTestsWithVerified(
   environment?: string | null,
   filter?: FlakyTestsFilter,
   branch?: string | null,
+  /** The project page's run scope; replaces `environment`, `branch` and the default-branch reading. */
+  scope?: ProjectRunScope | null,
 ) {
   const projectResults: any[] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch })
@@ -1596,7 +1696,8 @@ export async function getProjectFlakyTestsWithVerified(
   // that branch. Otherwise, when the project's default branch is known, the
   // leaderboard reads default-branch runs (plus runs with no branch, e.g. local
   // or pre-migration) so a work-in-progress branch stops contaminating the
-  // project's health signal. Environment scopes independently. Only runs the
+  // project's health signal. Environment scopes independently. A project run
+  // scope replaces all three with the project page's filters. Only runs the
   // `flakiness` use reads count: lab runs inject faults and conditions,
   // bisect and reproduction runs replay an older commit, and an environment
   // incident fails every test at once.
@@ -1605,11 +1706,15 @@ export async function getProjectFlakyTestsWithVerified(
     inArray(testRuns.status, TERMINAL_STATUSES),
     eligibleRunSql('flakiness'),
   ];
-  if (environment) runsConditions.push(eq(testRuns.environment, environment));
-  if (branch) {
-    runsConditions.push(eq(testRuns.branch, branch));
-  } else if (project.defaultBranch) {
-    runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
+  if (scope) {
+    runsConditions.push(...(await projectRunScopeConditions(db, projectId, scope)));
+  } else {
+    if (environment) runsConditions.push(eq(testRuns.environment, environment));
+    if (branch) {
+      runsConditions.push(eq(testRuns.branch, branch));
+    } else if (project.defaultBranch) {
+      runsConditions.push(or(eq(testRuns.branch, project.defaultBranch), isNull(testRuns.branch))!);
+    }
   }
   const filteredRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })

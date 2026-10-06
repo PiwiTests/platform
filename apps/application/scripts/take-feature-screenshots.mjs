@@ -2449,12 +2449,12 @@ const SCENES = [
     outputWidth: 1152,
     split: true,
     async run({ page, shoot, settle }) {
-      // The seeded data has partial runs, which the default filter hides behind
-      // a full-width notice. Show them so the hero leads with the dashboard's
-      // own numbers; the choice rides in a cookie, so the split's reloads keep it.
-      const showThem = page.getByRole('button', { name: 'Show them' });
-      if (await showThem.count()) {
-        await showThem.first().click();
+      // The seeded data has partial runs, which the default filter hides. Include
+      // them so the hero leads with the dashboard's own numbers; the choice rides
+      // in a cookie, so the split's reloads keep it.
+      const includePartial = page.getByRole('button', { name: 'Include partial runs' });
+      if (await includePartial.count()) {
+        await includePartial.first().click();
         await settle();
       }
       await shoot();
@@ -2597,6 +2597,41 @@ const SCENES = [
       await settle();
       await shoot();
     },
+  },
+  {
+    name: 'project-header',
+    description:
+      'Project page header: name, description and tags, the Runs and Failures lines, then the Filters block with what it hides',
+    // Project 3 has runs on a feature branch and partial runs, so the note counts both.
+    route: '/projects/3',
+    viewport: { width: 1280, height: 720 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('hidden-runs').waitFor();
+      await page
+        .getByTestId('project-state')
+        .getByText(/open cluster|Nothing open/)
+        .waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'project-header-mobile',
+    description: 'The project header at phone width, the Filters block folded to its summary, then open',
+    route: '/projects/3',
+    viewport: { width: 390, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page
+        .getByTestId('project-state')
+        .getByText(/open cluster|Nothing open/)
+        .waitFor();
+      await settle();
+      await shoot('folded');
+      await page.getByTestId('project-filters-toggle').click();
+      await settle();
+      await shoot('open');
+    },
+    outputs: ['project-header-mobile-folded.png', 'project-header-mobile-open.png'],
   },
   {
     name: 'project-delete-progress',

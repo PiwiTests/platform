@@ -3,11 +3,12 @@ import type { ApiResponse, FlakyTest, VerifiedFixedFlakyTest } from '~~/types/ap
 import type { TopFlakeSuspect } from '#shared/handlers/flake-profile';
 import type { FlakeLabSummary } from '#shared/handlers/flake-lab';
 import { buildTestRowBadges } from '~/utils/test-row-badges';
+import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
 
 const props = defineProps<{
   projectId: string | number;
-  environment?: string | null;
-  branch?: string | null;
+  /** The project page's run scope: the analysis reads its runs. */
+  scope?: ProjectRunScope | null;
   /** Piwi project name, threaded so the IDE opener can default the JetBrains project. */
   projectName?: string | null;
 }>();
@@ -25,15 +26,15 @@ const rootCauseFilter = ref<string[]>([]);
 
 const { data: flaky, status } = await useFetch(
   () => {
-    const params = new URLSearchParams({ runs: String(runsWindow.value) });
-    if (props.environment) params.set('environment', props.environment);
-    if (props.branch) params.set('branch', props.branch);
+    const params = new URLSearchParams({
+      runs: String(runsWindow.value),
+      ...(props.scope ? projectRunScopeQuery(props.scope) : {}),
+    });
     return `/api/projects/${props.projectId}/flaky-tests?${params.toString()}`;
   },
   {
     lazy: true,
     server: false,
-    watch: [runsWindow, () => props.environment, () => props.branch],
     transform: (r: { items: FlakyTest[]; verifiedFixed?: VerifiedFixedFlakyTest[] }) => r,
   },
 );
@@ -194,7 +195,6 @@ function flakyBadges(test: FlakyTest) {
             Tests that fail intermittently — detected by retry passes and status alternations
             <HelpHint topic="project.flaky-tests" />
           </p>
-          <EnvironmentBadge v-if="environment" :name="environment" class="text-xs" />
           <div class="flex items-center gap-1.5">
             <UButton
               v-for="opt in ROOT_CAUSE_OPTIONS"

@@ -64,7 +64,7 @@ import {
   type LocatorIndexTestStatus,
   type LocatorIndexViewport,
 } from '#shared/locator-index';
-import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
+import { projectDefaultBranch } from './scm/stored-default-branch';
 import type { LocatorPageUse } from '@piwitests/core/wire';
 
 /**
@@ -133,14 +133,6 @@ const usageKey = (
 export function locatorBranchTag(runBranch: string | null | undefined, defaultBranch: string | null): string {
   const branch = runBranch?.trim() || '';
   return branch === '' || branch === defaultBranch ? '' : branch;
-}
-
-export async function projectDefaultBranch(db: DrizzleDB, projectId: number): Promise<string> {
-  const [project] = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
-    .from(projects)
-    .where(eq(projects.id, projectId));
-  return resolveStoredDefaultBranch(db, project ?? { id: projectId });
 }
 
 /** The index's facts about a run, from its row. */

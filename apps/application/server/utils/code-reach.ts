@@ -21,7 +21,8 @@ import type { LocatorIndexTest } from '@piwitests/core/locator-index';
 import { codeReach, graphEdges, testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { handlerNodeKey, testEndpointKey } from '#shared/graph';
-import { indexTests, locatorBranchTag, projectDefaultBranch, resolveBranchView } from './locator-usages';
+import { indexTests, locatorBranchTag, resolveBranchView } from './locator-usages';
+import { projectDefaultBranch } from './scm/stored-default-branch';
 
 /** Longest path accepted in a code reach list. */
 const MAX_PATH_LENGTH = 500;
