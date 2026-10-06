@@ -691,16 +691,18 @@ export async function resolveRunBranchTag(
  * — the project's stored default, then the most common branch among its runs,
  * then `'main'`. That documented fallback keeps canonical rows even when the SCM
  * default branch is unknown, so an unresolved default never empties the Test Map.
+ * A caller that resolves the stored default branch itself passes it as `storedDefault`.
  */
 export async function resolveRunBranchTagFromStored(
   db: DB,
   project: DefaultBranchProject,
   runMetadata: unknown,
   runBranch?: string | null,
+  storedDefault: () => Promise<string> = () => resolveStoredDefaultBranch(db, project),
 ): Promise<string | null> {
   const branch = (runBranch ?? resolveRunBranch(runMetadata))?.trim() || null;
   if (!branch) return null;
-  const defaultBranch = await resolveStoredDefaultBranch(db, project);
+  const defaultBranch = await storedDefault();
   return branch === defaultBranch ? null : branch;
 }
 

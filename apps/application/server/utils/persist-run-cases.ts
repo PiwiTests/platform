@@ -54,11 +54,12 @@ import {
 import { collectOwnOrigins, originsFromDocumentRequests } from '#shared/graph';
 import { isLabRun } from '#shared/handlers/probes';
 import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
-import { upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
+import { runFacts, upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import { sanitizeExecutionResources } from '#shared/resource-report';
+import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 import type { DbClient as DB } from '../database';
 
 /** Apply the canonical per-case status spelling to each attempt entry. */
@@ -607,16 +608,27 @@ export async function persistRunCases(
   // A lab run's (probe or flake experiment) failures are injected, not real: it never counts as a real
   // run, so it forms no clusters (exactly as imports are silent). The tests' stored state (locator
   // snapshots, the locator index, code reach, tags and locks) is written only by runs eligible for it.
-  const [probeCheck] = await db
-    .select({ metadata: testRuns.metadata })
+  const [run] = await db
+    .select({ metadata: testRuns.metadata, branch: testRuns.branch, startTime: testRuns.startTime })
     .from(testRuns)
     .where(eq(testRuns.id, testRunId));
-  const probeRun = isLabRun(probeCheck?.metadata);
-  const sharedState = isEligibleRun({ metadata: probeCheck?.metadata }, 'shared-state');
+  const probeRun = isLabRun(run?.metadata);
+  const sharedState = isEligibleRun({ metadata: run?.metadata }, 'shared-state');
   const writesTestState = isEligibleRun(
-    { metadata: probeCheck?.metadata, historicalImport: options.keepTestState },
+    { metadata: run?.metadata, historicalImport: options.keepTestState },
     'shared-state',
   );
+  // The run above, and the project here, are read once for every helper below,
+  // and the project's stored default branch is resolved at most once, on first
+  // use. A lab run reaches none of the helpers that read the project.
+  const [project] = probeRun
+    ? []
+    : await db
+        .select({ id: projects.id, defaultBranch: projects.defaultBranch, routeOrigins: projects.routeOrigins })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+  let storedDefault: Promise<string> | undefined;
+  const storedDefaultBranch = () => (storedDefault ??= resolveStoredDefaultBranch(db, project ?? { id: projectId }));
 
   // Keep at most one green ARIA sample per test per day: a passing snapshot is
   // dropped when the test already has a recent one, so many runs a day stay bounded.
@@ -672,12 +684,15 @@ export async function persistRunCases(
   // The index is derived data: a failure to update it degrades to a warning and
   // never fails the ingest.
   if (sharedState) {
-    await upsertLocatorUsages(db, projectId, perCaseUsages).catch((err) =>
-      console.warn('[locator-usages] failed to index the locators of this batch', err),
-    );
-    await upsertCodeReach(db, projectId, perCaseReach).catch((err) =>
-      console.warn('[code-reach] failed to store the code reach of this batch', err),
-    );
+    await upsertLocatorUsages(db, projectId, perCaseUsages, {
+      runs: new Map(run ? [[testRunId, runFacts(run)]] : []),
+      defaultBranch: storedDefaultBranch,
+      routeOrigins: projectRouteOrigins(project?.routeOrigins),
+    }).catch((err) => console.warn('[locator-usages] failed to index the locators of this batch', err));
+    await upsertCodeReach(db, projectId, perCaseReach, {
+      runs: new Map(run ? [[testRunId, { startedAt: new Date(run.startTime), branch: run.branch }]] : []),
+      defaultBranch: storedDefaultBranch,
+    }).catch((err) => console.warn('[code-reach] failed to store the code reach of this batch', err));
   }
   if (writesTestState) await syncTestCaseMetadata(db, caseMetaSnapshots);
   await recordIngestHealth(
@@ -704,20 +719,7 @@ export async function persistRunCases(
   // would mint false orphan-test gaps and turn injected faults into evidence.
   void (async () => {
     try {
-      const [run] = await db
-        .select({ branch: testRuns.branch, metadata: testRuns.metadata })
-        .from(testRuns)
-        .where(eq(testRuns.id, testRunId));
-      if (isLabRun(run?.metadata)) return;
-      const [project] = await db
-        .select({
-          id: projects.id,
-          defaultBranch: projects.defaultBranch,
-          routeOrigins: projects.routeOrigins,
-        })
-        .from(projects)
-        .where(eq(projects.id, projectId));
-
+      if (probeRun) return;
       let origins = collectOwnOrigins(runBaseUrls(run?.metadata), projectRouteOrigins(project?.routeOrigins));
       // Older reporters recorded no Playwright baseURL; fall back to the origins of
       // this batch's own document requests so route nodes still form from
@@ -726,7 +728,9 @@ export async function persistRunCases(
         origins = originsFromDocumentRequests(networkRequestBuilders.flatMap((b) => b.items));
       }
       // Resolved from stored project fields only — no SCM call on the ingest path.
-      const branch = project ? await resolveRunBranchTagFromStored(db, project, run?.metadata, run?.branch) : null;
+      const branch = project
+        ? await resolveRunBranchTagFromStored(db, project, run?.metadata, run?.branch, storedDefaultBranch)
+        : null;
 
       await ingestRunGraph(
         db,
