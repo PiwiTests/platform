@@ -28,7 +28,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   defaultCapture: true,
   checkBaseUrl: false,
   streaming: true,
-  streamingBatchSize: 5,
+  streamingBatchSize: 20,
   streamingBatchDelay: 2000,
   maxStreamBufferBytes: 100 * 1024 * 1024,
   submitTimeout: 15 * 60 * 1000,

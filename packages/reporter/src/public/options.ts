@@ -229,7 +229,11 @@ export interface PiwiDashboardOptions {
   // ── Streaming ──────────────────────────────────────────────────────────────
   /** Enable live streaming of results (falls back to batch if unsupported). Defaults to `true`. */
   streaming?: boolean;
-  /** Number of test results to batch before sending during streaming. Defaults to `5`. */
+  /**
+   * Number of queued events that triggers a send during streaming: test starts
+   * and results, and live steps while someone has the run open on the
+   * dashboard. Defaults to `20`.
+   */
   streamingBatchSize?: number;
   /** Max delay (ms) before flushing pending events during streaming. Defaults to `2000`. */
   streamingBatchDelay?: number;

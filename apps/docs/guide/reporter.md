@@ -145,6 +145,7 @@ To send all results at the end of the run:
 
 ### Tuning batch parameters
 
+The reporter sends what it has queued once 20 events wait or 2 seconds after the first one, whichever comes first.
 Control how frequently results are sent during streaming:
 
 ```typescript
