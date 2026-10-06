@@ -61,6 +61,8 @@ The parts below build on code that is there today. File paths are the ones to op
 | D7 | The failures view is a native tree in both editors, grouped by file by default, by cluster or owner on a toggle. | A tree reads at a glance, follows the editor's theme and keyboard, and both editors have one (`TreeView`, `Tree`). A webview table would not. |
 | D8 | New protocol fields are optional and new requests are additive; the service reads the project's reporter version to explain a feature the reporter cannot do yet. | A published client talks to an older service and the other way round; `PIWI_PAUSE_AT` is ignored by a reporter that predates it, which must not be silent. |
 | D9 | The baseline choice is explicit, kept on the machine (VS Code `workspaceState`, JetBrains `PiwiLocalSettings`), and defaults to today's ladder. | A developer comparing with `main` or with their own runs is making a local choice, like choosing the desktop app. |
+| D10 | One status bar item: it shows the live run while one executes and returns to the baseline when it ends; both are in the tooltip. | Fewer things in the bar. |
+| D11 | A developer's run feeds no notification and no pull-request feedback unless it is complete: an `editor` run never, a `local` or `desktop` run only when it ran the whole suite. | A one-test re-run is the developer's business; the editor reports its verdict itself. A full local run on a pull-request branch is still a signal. |
 
 ## Part 1 — The editor knows when a run ends
 
@@ -155,14 +157,15 @@ gives a resolved test `status: 'passed'` with its title `passed locally in run #
 verify`, and `piwi/failures` lists resolved items with `state: 'fixed-locally'` for the view. `RunStatus` gains
 `resolved: number` and `overlays: number`; the status bar says `Piwi: 2 failing · 1 fixed locally`.
 
-**2d. What an editor run must not do.** `finalizeRun`'s side effects (`server/utils/run-finalize-side-effects.ts`)
+**2d. What a developer's run must not do.** `finalizeRun`'s side effects (`server/utils/run-finalize-side-effects.ts`)
 run `emitRunNotifications` and `postRunPrFeedbackInBackground` for every run the `notifications` use accepts, and that
 use excludes lab runs and incidents only; neither `scm/pr-feedback.ts` nor `notifications/run-notifications.ts` reads
 `isFullRun` or the origin. So a developer verifying one test from the editor, on a branch with an open pull request,
 posts a pull-request comment and sends the team's notifications for a one-test run. Once Part 1 and this part make
-the editor's runs frequent, that is noise at best. PR 1 adds `editor` to the origins the `notifications` use excludes
-(`RUN_USES.notifications.excludes`), with its unit test and a line in `reference/test-metadata.md`; whether `local` and
-`desktop` runs should follow is [open question 1](#open-questions).
+the editor's runs frequent, that is noise at best. PR 1 changes the `notifications` use: an `editor` run never feeds
+it (the editor gives its own verdict, Part 7), and a `local` or `desktop` run feeds it only when complete (a full
+local run on a pull-request branch is a legitimate signal; a one-test re-run is not), as a `completeOnlyFor` list on
+the rule beside `excludes`, with its unit tests and a line in `reference/test-metadata.md`.
 
 **2c. Choosing the baseline.** A new notification `piwi/setBaseline { root, choice }` with `choice` one of
 `{ kind: 'ladder' }` (today's: the checked-out branch, else the default branch, else any), `{ kind: 'branch', branch }`,
@@ -474,17 +477,10 @@ By hand, on the sample project with a running instance:
 
 ## Open questions
 
-1. **Should `local` and `desktop` runs feed notifications and pull-request feedback?** Part 2d keeps `editor` runs out
-   of them. A `piwi run` from a terminal, or a run from the desktop app, is the same developer verifying the same
-   thing, and posts the same comment today. Recommendation: exclude a **partial** run of any local origin from
-   `notifications` (a full local run on a pull-request branch is a legitimate signal), as a `completeOnlyFor` list on
-   the use, in a follow-up once PR 1 has shown the shape.
-2. **Overlays across a detached head.** A developer checking out a commit has no branch; `refreshRun` reads the default
+1. **Overlays across a detached head.** A developer checking out a commit has no branch; `refreshRun` reads the default
    branch's run. Recommendation: overlays stay on the baseline's branch; a run from a detached head records no branch
    and is not an overlay. Revisit if it comes up.
-3. **One status bar item or two while the own run executes?** Recommendation: one item that shows the live run and
-   returns to the baseline when it ends, with both in the tooltip. Fewer things in the bar.
-4. **Should the view also list the baseline's passing tests?** Recommendation: no; the Playwright extension's Test
+2. **Should the view also list the baseline's passing tests?** Recommendation: no; the Playwright extension's Test
    Explorer lists the suite. The view is the failures and what happened to them. A Test Explorer integration (a
    `TestController` whose runs are Piwi's runs, with `TestMessage` locations) is a possible later route for VS Code, not
    this plan.
