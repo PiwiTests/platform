@@ -620,12 +620,22 @@ jobs:
     with:
       build-artifact: build-output
 
+  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request.
+  perf:
+    name: Performance
+    needs: [changes, build]
+    if: needs.changes.outputs.app == 'true' && github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable-perf.yml
+    permissions:
+      contents: read
+      pull-requests: write
+
   # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
   # each one passed or was skipped because the change does not touch its area.
   ci-result:
     name: CI result
     if: ${{ !cancelled() }}
-    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, docs, extension, vscode, jetbrains, desktop]
+    needs: [versions, changes, build, checks, e2e, package-smoke, demo, aspnet, docs, extension, vscode, jetbrains, desktop, perf]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 

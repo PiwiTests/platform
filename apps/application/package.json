@@ -41,6 +41,7 @@
     "app:check:demo": "node scripts/check-demo-routes.mjs",
     "app:check:demo:runtime": "node scripts/check-demo-runtime.mjs",
     "app:measure": "node scripts/measure-detail-pages.mjs",
+    "app:perf": "node scripts/perf/run.mjs",
     "app:screens": "node scripts/take-feature-screenshots.mjs",
     "app:screens:docs": "node scripts/take-feature-screenshots.mjs --tag docs",
     "app:screens:check": "node scripts/take-feature-screenshots.mjs --check",

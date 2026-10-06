@@ -709,6 +709,26 @@ Dockerfile copies both in) and from the registries the docs site renders — nev
 so they cannot say anything the docs do not. How this instance is configured (storage, retention, capability
 states) is deployment shape, shown to administrators only, like the Setup page.
 
+## Performance
+
+A change to what a page loads or renders is measured with the performance suite (`scripts/perf/`, `npm run app:perf`):
+it runs two production builds against a large dataset (1,500 runs, about 475,000 executions) and compares the server
+render, the full load in Chromium, the API calls and the SQL each request runs, for the projects list, every project
+tab and the test-run page. CI runs it on every pull request against the base commit and posts the comparison as a
+comment. Locally:
+
+```bash
+npm run app:build                                     # the build to measure, in .output
+node scripts/perf/run.mjs --target base=<a build of main>/.output --target head=.output --scale medium
+node scripts/perf/run.mjs --database postgres --pg-url postgresql://postgres:postgres@localhost:5432/postgres …
+```
+
+PostgreSQL must load `pg_stat_statements` (`scripts/perf/lib/pg.mjs` has the `docker run` line); with it every
+request's statements are counted on any build. The suite also runs each build with OpenTelemetry on
+(`server/plugins/opentelemetry.ts`, `server/utils/otel.ts`) to list the SQL of each request and of the requests the
+server makes to itself while rendering a page; set `OTEL_EXPORTER_OTLP_ENDPOINT` to see the same traces in a
+collector of your own (`apps/docs/operate/tracing.md`).
+
 ## Running the app locally to verify a change
 
 The step-by-step recipe, the seeded routes worth opening and the pitfalls live in the `run-app` skill

@@ -13,7 +13,7 @@ app/          Vue 4 SPA/SSR front end — pages, components, composables, utils,
 server/       Nitro back end — api/, routes/, utils/, database/, middleware/, tasks/
 shared/       Types, constants, pure helpers shared by app + server + demo (`#shared/...`)
 app/demo/     In-browser mirror of the server for the demo SPA
-scripts/      Seed generation, demo media capture, DB query helper
+scripts/      Seed generation, demo media capture, DB query helper, the performance suite (`scripts/perf/`)
 tests/        Playwright specs (`*.spec.ts`) + Vitest unit tests (`tests/unit/*.test.ts`)
 types/        Front-end API response types (`api.ts`)
 ```
