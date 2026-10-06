@@ -272,9 +272,26 @@ export function formatAbsolute(date: DateInput, prefs: FormatPrefs): string {
   if (timeZone) options.timeZone = timeZone;
 
   try {
-    return new Intl.DateTimeFormat(toIntlLocale(prefs.locale), options).format(d);
+    return dateTimeFormat(toIntlLocale(prefs.locale), options).format(d);
   } catch {
     const { timeZone: _dropped, ...safe } = options;
-    return new Intl.DateTimeFormat(BUILTIN_LOCALE, safe).format(d);
+    return dateTimeFormat(BUILTIN_LOCALE, safe).format(d);
   }
+}
+
+/**
+ * The formatters `formatAbsolute` has built, by locale and options: building
+ * one costs far more than formatting a date with it, and a page formats every
+ * date of a list with the same few.
+ */
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+
+function dateTimeFormat(locale: string | undefined, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify([locale ?? null, options]);
+  let format = dateTimeFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, options);
+    dateTimeFormats.set(key, format);
+  }
+  return format;
 }
