@@ -145,6 +145,11 @@ const availableBranches = computed(() => {
 
 function matchesFilters(run: TestRunSummary): boolean {
   if (filters.value.fullRunsOnly && run.isFullRun === false) return false;
+  return matchesScope(run);
+}
+
+/** Every filter but "Full runs only": environment, branch and the analytics drill-down. */
+function matchesScope(run: TestRunSummary): boolean {
   if (
     filters.value.environments.length > 0 &&
     !(run.environment && filters.value.environments.includes(run.environment))
@@ -178,6 +183,18 @@ const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestR
 );
 const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
 const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
+
+// Partial runs the other filters keep but "Full runs only" hides — the filter is
+// on by default, so without a notice a project's partial runs look missing.
+const hiddenPartialRunsCount = computed(() => {
+  if (!filters.value.fullRunsOnly) return 0;
+  const runs = keptOnly.value ? (keptRunsData.value?.items ?? []) : (project.value?.testRuns ?? []);
+  return runs.filter((r) => r.isFullRun === false && matchesScope(r)).length;
+});
+
+function showPartialRuns(): void {
+  filters.value = { ...filters.value, fullRunsOnly: false };
+}
 
 const keepRunId = ref<number | null>(null);
 const isKeepOpen = ref(false);
@@ -848,6 +865,23 @@ const moreMenuItems = computed(() => {
               Show every run
             </button>
           </p>
+          <UAlert
+            v-if="hiddenPartialRunsCount > 0"
+            icon="i-lucide-info"
+            color="primary"
+            variant="subtle"
+            class="mb-4"
+            data-testid="hidden-partial-runs"
+            :title="
+              hiddenPartialRunsCount === 1
+                ? '1 partial run is hidden'
+                : `${hiddenPartialRunsCount} partial runs are hidden`
+            "
+            description="The “Full runs only” filter hides runs that only cover part of the suite (e.g. a single spec or --grep)."
+            :actions="[
+              { label: 'Show them', color: 'primary', variant: 'solid', size: 'xs', onClick: showPartialRuns },
+            ]"
+          />
           <ChartCard
             v-if="filteredRuns.length > 0"
             title="Run trend"
