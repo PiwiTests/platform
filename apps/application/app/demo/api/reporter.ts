@@ -876,6 +876,13 @@ export async function persistRunCases(
   return result;
 }
 
+/**
+ * The `watched` flag of the events and heartbeat answers. The demo cannot see
+ * who listens on its BroadcastChannel, so it always answers that someone does,
+ * which keeps a reporter's step events flowing.
+ */
+const DEMO_RUN_WATCHED = true;
+
 /** POST /api/test-runs/:id/events */
 export async function apiPostRunEvents(
   id: number,
@@ -923,7 +930,7 @@ export async function apiPostRunEvents(
   }
 
   if (completeEvents.length === 0) {
-    return { success: true, processed: beginEvents.length + stepRunEvents.length };
+    return { success: true, processed: beginEvents.length + stepRunEvents.length, watched: DEMO_RUN_WATCHED };
   }
 
   const parsedEvents = completeEvents.map((tc) => {
@@ -1012,7 +1019,7 @@ export async function apiPostRunEvents(
     },
   });
 
-  return { success: true, processed: insertedRunCases.length + beginEvents.length };
+  return { success: true, processed: insertedRunCases.length + beginEvents.length, watched: DEMO_RUN_WATCHED };
 }
 
 /** POST /api/test-runs/:id/heartbeat */
@@ -1029,7 +1036,7 @@ export async function apiHeartbeatTestRun(id: number, body: { streamToken?: stri
 
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
 
-  return { success: true };
+  return { success: true, watched: DEMO_RUN_WATCHED };
 }
 
 /** POST /api/test-runs/:id/finish (demo mode has no pending uploads) */
