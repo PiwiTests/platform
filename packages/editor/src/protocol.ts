@@ -52,8 +52,8 @@ export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknow
  */
 export interface TestFailure {
   /**
-   * 0-based line of this file the failure went through: the innermost frame of the error's stack within
-   * the test, else within this file, else the `test(…)` line.
+   * 0-based line of this file the failure went through, followed through the edits since the run: the innermost
+   * frame of the error's stack within the test, else within this file, else the `test(…)` line.
    */
   line: number;
   /** One line on why it failed. */
@@ -63,6 +63,11 @@ export interface TestFailure {
   executionId: number;
   /** The execution's page in the dashboard. */
   url: string;
+  /**
+   * `edited` once the line the run failed at changed since (the test stays `failed` until a run covers it),
+   * `failing` otherwise. Absent from an older service.
+   */
+  state?: 'failing' | 'edited';
 }
 
 /** `piwi/fileSummary`: what to show above a file and above its test and locator lines. */
@@ -405,7 +410,7 @@ export const RUN_SELECTION_REQUEST = 'piwi/runSelection';
 export interface WorkspaceFailure {
   /** The file the failure shows in: its failing call, else its `test(…)` line. */
   uri: string;
-  /** 0-based. */
+  /** 0-based, followed through the edits since the run. */
   line: number;
   title: string;
   /** Null for a failure fixed since. */
@@ -422,22 +427,32 @@ export interface WorkspaceFailure {
    * machine, in the desktop app or an editor.
    */
   source?: 'ci' | 'local' | 'own';
-  /** `failing`, or `fixed-locally` when a run laid over the latest complete run passed the test since. */
-  state?: 'failing' | 'fixed-locally';
+  /**
+   * `failing`; `edited` once the line the run failed at changed since; `fixed-locally` when a run laid over the
+   * latest complete run passed the test since.
+   */
+  state?: 'failing' | 'edited' | 'fixed-locally';
   /** The Playwright project; null when unknown. */
   browserName?: string | null;
 }
 
 /**
  * `piwi/failures`: the failures of each context's latest run, for a client that lists them natively (the JetBrains
- * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics; the
- * failures a later run fixed (`fixed-locally`) follow them and publish none.
+ * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics, an
+ * `edited` one as an information; a failure whose test's `test(…)` call left its spec is in neither. The failures a
+ * later run fixed (`fixed-locally`) follow them and publish none.
  */
 export interface FailuresResult {
   items: WorkspaceFailure[];
 }
 
 export const FAILURES_REQUEST = 'piwi/failures';
+
+/**
+ * `piwi/failuresChanged` (notification, server to client): what `piwi/failures` answers changed, such as a failure's
+ * line or state after an edit, or the failures of a run read again; carries `FailuresResult`.
+ */
+export const FAILURES_NOTIFICATION = 'piwi/failuresChanged';
 
 /**
  * `piwi/renderSteps`: a flow recorded in Piwi Picker (a steps document, as `piwi codegen` reads it) rendered as the

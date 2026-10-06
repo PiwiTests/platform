@@ -5,7 +5,7 @@
  * unsaved changes break. Pure: the language server turns these into
  * diagnostics, quick fixes, hovers and summary lines.
  */
-import { extractDiffAnchors, type DiffAnchor, type DiffFile } from '@piwitests/core/diff-anchors';
+import { extractDiffAnchors, type DiffAnchor, type DiffFile, type DiffHunk } from '@piwitests/core/diff-anchors';
 import {
   predictLocatorBreaks,
   reachOfIndex,
@@ -587,6 +587,48 @@ export function callEndLine(lines: string[], line: number, column: number, maxLi
     }
   }
   return null;
+}
+
+/**
+ * Where a line of a failure stands in its file as edited since the run: `same` and `moved` hold its text (on its own
+ * line or on another), `edited` changed it, `gone` took its test out of the file.
+ */
+export type LineState = 'same' | 'moved' | 'edited' | 'gone';
+
+/**
+ * Where a line (1-based) of `before` is in `after`, through the hunks of `diffLines(path, before, after)`. A line
+ * outside every hunk shifts by the net size of the hunks above it: `same` when its number holds, `moved` when it
+ * changes. A line a hunk removed is `moved` to the line of that hunk's added block that holds its text (whitespace
+ * trimmed), the nearest to where it stood when several do; with none, it is `edited`, on the hunk's first added line,
+ * or on the line before the hunk when the hunk only removes. The hunks never make a line `gone`: whether its test is
+ * still in the file is read from the file's text.
+ */
+export function placeLine(line: number, hunks: DiffHunk[]): { line: number; state: LineState } {
+  let shift = 0;
+  for (const hunk of hunks) {
+    if (!hunk.removed.length) {
+      // Lines inserted after `oldStart`.
+      if (line <= hunk.oldStart) break;
+      shift += hunk.added.length;
+      continue;
+    }
+    const first = hunk.removed[0]!.line;
+    const last = hunk.removed[hunk.removed.length - 1]!.line;
+    if (line < first) break;
+    if (line > last) {
+      shift += hunk.added.length - hunk.removed.length;
+      continue;
+    }
+    const text = hunk.removed[line - first]?.text.trim() ?? '';
+    const kept = text ? hunk.added.filter((a) => a.text.trim() === text) : [];
+    if (kept.length) {
+      const near = hunk.newStart + (line - first);
+      const nearest = kept.reduce((best, a) => (Math.abs(a.line - near) < Math.abs(best.line - near) ? a : best));
+      return { line: nearest.line, state: 'moved' };
+    }
+    return { line: hunk.added[0]?.line ?? Math.max(1, hunk.newStart), state: 'edited' };
+  }
+  return { line: line + shift, state: shift ? 'moved' : 'same' };
 }
 
 /** The Flake Lab states whose next step verifies a fix. */

@@ -18,6 +18,7 @@ import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { buildSession, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { startServer } from '../src/server';
+import { committedTextAt } from '../src/workspace';
 import type {
   FailuresResult,
   FileSummary,
@@ -138,6 +139,9 @@ const ROW_FAILURE = {
 /** What the instance answers with the runs laid over run #41, once a test sets it; with none laid over it otherwise. */
 let laidOver: unknown = null;
 
+/** The fixture repository's one commit, which run #41 ran at: the files the failures are followed from. */
+let fixtureCommit = '';
+
 /**
  * The API key of the service the tests of runs as they happen start: the stub streams the instance's events to that
  * key only, and is an instance without the route for every other.
@@ -181,6 +185,8 @@ let url = '';
 let client: MessageConnection;
 let stop: () => void;
 const runStatuses: RunStatusResult[] = [];
+/** The `piwi/failuresChanged` notifications of the first service, in order. */
+const failuresChanges: FailuresResult[] = [];
 const diagnostics = new Map<
   string,
   Array<{ message: string; code?: string; severity?: number; range: unknown; data?: unknown; source?: string }>
@@ -317,7 +323,7 @@ beforeAll(async () => {
           JSON.stringify(laid ? { run: null, overlays: [], failures: [], resolved: [] } : { run: null, failures: [] }),
         );
       }
-      const latest = { run: MAIN_RUN, failures: [ROW_FAILURE] };
+      const latest = { run: { ...MAIN_RUN, commit: fixtureCommit }, failures: [ROW_FAILURE] };
       const over = runsKey ? runsLaidOver : laidOver;
       return res.end(JSON.stringify(laid ? (over ?? { ...latest, overlays: [], resolved: [] }) : latest));
     }
@@ -527,6 +533,7 @@ beforeAll(async () => {
   write('app/pages/checkout.vue', '<template><div /></template>\n');
   git('add', '.');
   git('commit', '-q', '-m', 'init');
+  fixtureCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf-8' }).trim();
 
   const toServer = new PassThrough();
   const toClient = new PassThrough();
@@ -540,6 +547,9 @@ beforeAll(async () => {
   });
   client.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
     runStatuses.push(p);
+  });
+  client.onNotification('piwi/failuresChanged', (p: FailuresResult) => {
+    failuresChanges.push(p);
   });
   client.listen();
   const init = await client.sendRequest('initialize', {
@@ -574,6 +584,14 @@ function open(file: string, text: string, version = 1) {
   diagnostics.delete(uri(file));
   return client.sendNotification('textDocument/didOpen', {
     textDocument: { uri: uri(file), languageId: file.endsWith('.vue') ? 'vue' : 'typescript', version, text },
+  });
+}
+
+/** An edit of an open document, sent as its whole new text. */
+function change(file: string, text: string, version: number) {
+  return client.sendNotification('textDocument/didChange', {
+    textDocument: { uri: uri(file), version },
+    contentChanges: [{ text }],
   });
 }
 
@@ -682,12 +700,18 @@ describe('the Piwi language server', () => {
     }>;
     expect(actions.map((a) => a.title)).toEqual([
       "Heal: use getByRole('row', { name: /Mug/ })",
+      'Run this test',
       'Open the trace',
       'Apply the fix plan (1 file), then run its verification',
       'Copy context for agent',
       'Open the failure in the dashboard',
     ]);
-    const apply = actions[2] as unknown as {
+    expect(actions[1]!.command).toEqual({
+      title: 'Run this test',
+      command: 'piwi.runTests',
+      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), testIds: [3] }],
+    });
+    const apply = actions[3] as unknown as {
       edit: { changes: Record<string, Array<{ newText: string }>> };
       command: { command: string; arguments: unknown[] };
     };
@@ -701,7 +725,7 @@ describe('the Piwi language server', () => {
         { cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3', env: { PIWI_ORIGIN: 'editor' } },
       ],
     });
-    const context = (actions[3]!.command!.arguments[0] as string).split('\n');
+    const context = (actions[4]!.command!.arguments[0] as string).split('\n');
     expect(context.slice(0, 3)).toEqual([
       '# Failing test: removes a row',
       '',
@@ -712,13 +736,13 @@ describe('the Piwi language server', () => {
     expect(actions[0]!.edit!.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
       "  row = () => this.page.getByRole('row', { name: /Mug/ });",
     );
-    expect(actions[1]!.command).toEqual({
+    expect(actions[2]!.command).toEqual({
       title: 'Open the trace',
       command: 'piwi.openTrace',
       arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
     });
     // A client that previews annotated edits gets the plan as a confirmed change; this one does not.
-    expect(JSON.stringify(actions[2])).not.toContain('annotationId');
+    expect(JSON.stringify(actions[3])).not.toContain('annotationId');
 
     const hover = (await client.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
@@ -995,6 +1019,7 @@ describe('the Piwi language server', () => {
             "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
           executionId: 900,
           url: `${url}/test-run-cases/900`,
+          state: 'failing',
         },
       }),
       {
@@ -1194,6 +1219,204 @@ describe('local runs over the latest CI run', () => {
         ?.find((d) => d.code === 'ci-failure' && d.message.includes('run #41')),
     );
     expect(restored.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, run #41)");
+  });
+});
+
+describe('failures follow the edits', () => {
+  const page = 'tests/pages/checkout.page.ts';
+  const rows = 'tests/rows.spec.ts';
+  /** The failure published on the page object that matches. */
+  const onPage = (match: (d: { message: string; severity?: number; range: unknown; data?: unknown }) => boolean) =>
+    diagnostics.get(uri(page))?.find((d) => d.code === 'ci-failure' && match(d));
+  const lineOf = (d: { range: unknown }) => (d.range as { start: { line: number } }).start.line;
+  let version = 100;
+
+  afterAll(async () => {
+    laidOver = null;
+    await change(page, PAGE_OBJECT, ++version);
+    await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri(rows) } });
+    await client.sendRequest('piwi/refreshRun');
+  });
+
+  test('an edit above the failing line moves its error, its reason and its item, and says so', async () => {
+    const seen = failuresChanges.length;
+    await change(page, `// The cart.\n${PAGE_OBJECT}`, ++version);
+    const moved = await waitFor(() => onPage((d) => lineOf(d) === 5));
+    expect(moved).toMatchObject({
+      severity: 1,
+      message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+      range: { start: { line: 5, character: 2 } },
+    });
+    const pushed = await waitFor(() => failuresChanges.slice(seen).find((f) => f.items[0]?.line === 5));
+    expect(pushed.items).toEqual([
+      expect.objectContaining({ uri: uri(page), line: 5, executionId: 900, state: 'failing' }),
+    ]);
+    expect(((await client.sendRequest('piwi/failures')) as FailuresResult).items).toEqual(pushed.items);
+
+    // In the spec, the reason stays above the line that calls the page object.
+    await open(rows, `// Rows.\n\n${FAILING_SPEC}`);
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
+    expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
+      [5, 'passed 6/9'],
+      [8, "✗ locator('.cart-row').nth(2) was not found"],
+      [8, 'Screenshot'],
+      [8, 'Trace'],
+    ]);
+    expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { line: 8, state: 'failing' } });
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri(rows) },
+      position: { line: 8, character: 10 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(
+      `Called from [checkout.page.ts:6](${uri(page)}#L6) ← [rows.spec.ts:9](${uri(rows)}#L9)`,
+    );
+  });
+
+  test('rewriting the failing line turns its error into an information, with Run this test first', async () => {
+    const seen = failuresChanges.length;
+    const rewritten = PAGE_OBJECT.replace("this.page.locator('.cart-row').nth(2)", "this.page.getByRole('row').nth(2)");
+    await change(page, rewritten, ++version);
+    const edited = await waitFor(() => onPage((d) => d.severity === 3));
+    expect(edited).toMatchObject({
+      message: "Edited since run #41: locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+      range: { start: { line: 4, character: 2 } },
+      data: { root: dir, executionId: 900, edited: true },
+    });
+    const actions = (await client.sendRequest('textDocument/codeAction', {
+      textDocument: { uri: uri(page) },
+      range: edited.range,
+      context: { diagnostics: [edited] },
+    })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
+    expect(actions[0]).toMatchObject({
+      title: 'Run this test',
+      command: { command: 'piwi.runTests', arguments: [{ uri: uri(page), testIds: [3] }] },
+    });
+    // The healing replaces a line the buffer does not hold.
+    expect(actions.map((a) => a.title).filter((t) => t.startsWith('Heal'))).toEqual([]);
+    const pushed = await waitFor(() => failuresChanges.slice(seen).find((f) => f.items[0]?.state === 'edited'));
+    expect(pushed.items[0]).toMatchObject({ uri: uri(page), line: 4, executionId: 900 });
+
+    // The test still failed: its lens says so, and that the line it failed at changed since.
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
+    expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { state: 'edited' } });
+    expect(spec.lines.map((l) => l.title)).toContain(
+      "✎ edited since run #41 · locator('.cart-row').nth(2) was not found",
+    );
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri(page) },
+      position: { line: 4, character: 30 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(
+      `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
+    );
+  });
+
+  test('deleting the test takes its failure away, and putting it back brings it back', async () => {
+    const withoutTest = FAILING_SPEC.split('\n').slice(0, 3).join('\n');
+    await change(rows, withoutTest, ++version);
+    await waitFor(() => (diagnostics.get(uri(page)) && !onPage(() => true) ? true : undefined));
+    expect(((await client.sendRequest('piwi/failures')) as FailuresResult).items).toEqual([]);
+    expect(failuresChanges[failuresChanges.length - 1]!.items).toEqual([]);
+
+    await change(rows, FAILING_SPEC, ++version);
+    expect(await waitFor(() => onPage(() => true))).toMatchObject({ severity: 3 });
+  });
+
+  test('a run without a commit is followed from its file as saved when its failure was first placed', async () => {
+    await change(page, PAGE_OBJECT, ++version);
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci' },
+      overlays: [],
+      failures: [{ ...ROW_FAILURE, executionId: 901 }],
+      resolved: [],
+    };
+    await client.sendRequest('piwi/refreshRun');
+    const placed = await waitFor(() => onPage((d) => d.message.includes('run #41')));
+    expect(lineOf(placed)).toBe(4);
+    await change(page, `// The cart.\n${PAGE_OBJECT}`, ++version);
+    const moved = await waitFor(() => onPage((d) => lineOf(d) === 5));
+    expect(moved).toMatchObject({ severity: 1, codeDescription: { href: `${url}/test-run-cases/901` } });
+  });
+
+  test('a CI run is followed from its commit: lines saved above its failure since move it', async () => {
+    const saved = PAGE_OBJECT.replace('export class', '// The cart.\n// Its rows.\nexport class');
+    const file = path.join(dir, page);
+    fs.writeFileSync(file, saved);
+    await change(page, saved, ++version);
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit },
+      overlays: [],
+      failures: [{ ...ROW_FAILURE, executionId: 903 }],
+      resolved: [],
+    };
+    try {
+      await client.sendRequest('piwi/refreshRun');
+      const placed = await waitFor(() => onPage((d) => (d.data as { executionId: number }).executionId === 903));
+      expect(placed).toMatchObject({
+        severity: 1,
+        message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+        range: { start: { line: 6, character: 2 } },
+      });
+    } finally {
+      fs.writeFileSync(file, PAGE_OBJECT);
+    }
+  });
+
+  test('a file is read at a commit by its object name only', async () => {
+    expect(await committedTextAt(dir, fixtureCommit, page)).toBe(PAGE_OBJECT);
+    expect(await committedTextAt(dir, fixtureCommit.slice(0, 7), page)).toBe(PAGE_OBJECT);
+    expect(await committedTextAt(dir, 'a1b2c3d', page)).toBeNull();
+    const written = path.join(dir, 'from-git');
+    expect(await committedTextAt(dir, `--output=${written}`, page)).toBeNull();
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith('from-git'))).toEqual([]);
+  });
+
+  test('a run on this machine is followed from its files as saved, not from its commit', async () => {
+    // Two lines above the row's locator, saved but not committed, ran with the run, which failed there.
+    const saved = PAGE_OBJECT.replace('export class', '// The cart.\n// Its rows.\nexport class');
+    const file = path.join(dir, page);
+    fs.writeFileSync(file, saved);
+    await change(page, saved, ++version);
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit },
+      overlays: [
+        {
+          id: 42,
+          status: 'failed',
+          origin: 'editor',
+          isFullRun: false,
+          startTime: '2026-09-27T10:30:00.000Z',
+          commit: fixtureCommit,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          flakyTests: 0,
+          skippedTests: 0,
+        },
+      ],
+      failures: [
+        {
+          ...ROW_FAILURE,
+          executionId: 952,
+          location: '/home/dev/shop/tests/pages/checkout.page.ts:7:21',
+          frames: ['/home/dev/shop/tests/pages/checkout.page.ts:7:21', '/home/dev/shop/tests/rows.spec.ts:7:18'],
+          source: 'overlay',
+          runId: 42,
+        },
+      ],
+      resolved: [],
+    };
+    try {
+      await client.sendRequest('piwi/refreshRun');
+      const local = await waitFor(() => onPage((d) => d.message.includes('local run #42')));
+      expect(local).toMatchObject({
+        severity: 1,
+        message: "locator('.cart-row').nth(2) was not found (removes a row, local run #42)",
+        range: { start: { line: 6, character: 2 } },
+      });
+    } finally {
+      fs.writeFileSync(file, PAGE_OBJECT);
+    }
   });
 });
 

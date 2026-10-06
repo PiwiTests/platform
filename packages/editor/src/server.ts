@@ -9,9 +9,11 @@
  *   project's locators find elements by, with the rewrite of every call site
  *   as a quick fix, as `piwi preflight` computes it for the unsaved buffer;
  * - the failures of the latest run on the checked-out branch, as errors at
- *   their failing lines in every file (the Problems panel), with the healing's
- *   edit as a quick fix and the trace, the screenshot and the execution page
- *   one action away, read again as soon as a run ends (`run-watch.ts`);
+ *   their failing lines in every file (the Problems panel), followed through
+ *   the edits since the run (an information once the failing line changed),
+ *   with the healing's edit as a quick fix and the test's run, the trace, the
+ *   screenshot and the execution page one action away, read again as soon as
+ *   a run ends (`run-watch.ts`);
  * - custom requests (`protocol.ts`) for the summary lines each editor draws
  *   natively above a file, a test and a locator line, the run status, a trace
  *   to open, and the MCP server to register.
@@ -38,6 +40,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
+import type { DiffHunk } from '@piwitests/core/diff-anchors';
 import { diffLines } from '@piwitests/core/line-diff';
 import { canonicalLocator } from '@piwitests/core/locator-chain';
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
@@ -59,6 +62,7 @@ import {
   locatorsInFile,
   pageSummary,
   parsePatch,
+  placeLine,
   reachFrom,
   replaceLocatorOnLine,
   rewriteEdits,
@@ -68,6 +72,7 @@ import {
   timeoutEdit,
   timeoutMessage,
   type LineLocator,
+  type LineState,
 } from './analysis.js';
 import {
   PiwiContext,
@@ -107,6 +112,7 @@ import {
 import {
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
+  FAILURES_NOTIFICATION,
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
@@ -253,10 +259,38 @@ function uriToPath(uri: string): string | null {
   }
 }
 
-/** What a `ci-failure` diagnostic carries, for its quick fixes and hover. */
+/**
+ * What a `ci-failure` diagnostic carries, for its quick fixes and hover: `edited` once its line changed since the run.
+ */
 interface FailureData {
   root: string;
   executionId: number;
+  edited?: boolean;
+}
+
+/** A failure, or a failure a later run passed, as the service places it on the files. */
+type Placeable = Pick<BranchFailure, 'executionId' | 'runId' | 'title' | 'file' | 'line'> &
+  Partial<Pick<BranchFailure, 'location' | 'frames'>>;
+
+/** Where a failure shows, followed through the edits since its run. */
+interface Placement {
+  /** The file it shows in, and its line there (1-based). */
+  file: string;
+  line: number;
+  /** How the edits left that line; `gone` once the test's `test(…)` call left its spec. */
+  state: LineState;
+  /** The workspace files of its stack, innermost first, each at its line as the file stands. */
+  frames: Array<{ file: string; line: number }>;
+}
+
+/** The titles of the `test(…)` calls of a file's text. */
+function testTitles(text: string): Set<string> {
+  const titles = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const m = TEST_CALL.exec(line);
+    if (m) titles.add(m[2]!);
+  }
+  return titles;
 }
 
 function toEditorTest(context: PiwiContext, t: LocatorIndexTest): EditorTest {
@@ -283,6 +317,17 @@ function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
 /** Whether a failure is listed from a run laid over the latest complete run that did not run in CI. */
 function isLocalFailure(context: PiwiContext, f: BranchFailure): boolean {
   return f.source === 'overlay' && !isCiRun(context, f.runId);
+}
+
+/**
+ * The commit whose files a run's failures are followed from: the commit of a run that ran in CI, whose checkout it is;
+ * null for a run on a developer's machine, which ran their files as saved, and for a run that recorded none.
+ */
+function ciCommit(context: PiwiContext, runId: number | undefined): string | null {
+  const answer = context.failures;
+  if (!answer?.run || !isCiRun(context, runId)) return null;
+  if (runId === undefined || runId === answer.run.id) return answer.run.commit ?? null;
+  return answer.overlays?.find((o) => o.id === runId)?.commit ?? null;
 }
 
 /** Whether the editor started the run: a command of `piwi/runArgs` or `piwi/runSelection`. */
@@ -449,8 +494,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       diagnostics: [...(analysisDiagnostics.get(uri) ?? []), ...(failureDiagnostics.get(uri) ?? [])],
     });
 
+  /** The open document of a file, whichever form of its URI the client sent (`file:///c%3A/…` on Windows). */
+  const openDocument = (file: string): TextDocument | undefined =>
+    documents.get(pathToFileURL(file).href) ??
+    documents.all().find((d) => {
+      const open = uriToPath(d.uri);
+      return !!open && samePath(open, file);
+    });
+
   const readText = (file: string): string | null => {
-    const open = documents.get(pathToFileURL(file).href);
+    const open = openDocument(file);
     if (open) return open.getText();
     try {
       return fs.readFileSync(file, 'utf-8');
@@ -483,7 +536,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** Where a failure shows: its failing call when that file is in the workspace, else its `test(…)` line. */
   const failureSite = (
     context: PiwiContext,
-    f: Pick<BranchFailure, 'location' | 'file' | 'line'>,
+    f: Pick<Placeable, 'location' | 'file' | 'line'>,
   ): { file: string; line: number } | null => {
     const roots = [context.root, context.repoRoot];
     const at = f.location ? splitLocation(f.location) : null;
@@ -493,55 +546,266 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return spec ? { file: spec, line: f.line ?? 1 } : null;
   };
 
-  /** A failure's stack frames that are workspace files, innermost first; kept until the run is read again. */
-  const resolvedFrames = new WeakMap<BranchFailure, Array<{ file: string; line: number }>>();
-  const localFrames = (context: PiwiContext, f: BranchFailure): Array<{ file: string; line: number }> => {
-    const known = resolvedFrames.get(f);
-    if (known) return known;
+  /**
+   * Where the run reported a failure in the workspace: its site, its stack's frames that are workspace files, innermost
+   * first, and its test's spec. Kept until the run is read again, or the file of its site is deleted.
+   */
+  const reportedAt = new WeakMap<
+    Placeable,
+    {
+      site: { file: string; line: number } | null;
+      frames: Array<{ file: string; line: number }>;
+      spec: string | null;
+    }
+  >();
+  const reportedOf = (context: PiwiContext, f: Placeable) => {
+    const known = reportedAt.get(f);
+    // Resolved again once the file of its site is deleted.
+    if (known && (!known.site || fs.existsSync(known.site.file) || openDocument(known.site.file))) return known;
     const roots = [context.root, context.repoRoot];
     const frames = (f.frames?.length ? f.frames : f.location ? [f.location] : []).flatMap((location) => {
       const at = splitLocation(location);
       const file = at ? resolveReportedFile(roots, at.file) : null;
       return file && at ? [{ file, line: at.line }] : [];
     });
-    resolvedFrames.set(f, frames);
-    return frames;
+    const reported = { site: failureSite(context, f), frames, spec: resolveReportedFile(roots, f.file) };
+    reportedAt.set(f, reported);
+    return reported;
+  };
+
+  /** A file's text as saved; null when it cannot be read. */
+  const readSaved = (file: string): string | null => {
+    try {
+      return fs.readFileSync(file, 'utf-8');
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * The latest diffs of each file a failure goes through against the texts its failures are followed from, reused while
+   * neither text changes: an edit diffs its own file again, not the others.
+   */
+  const diffs = new Map<string, Array<{ before: string; after: string; hunks: DiffHunk[] }>>();
+
+  /**
+   * One pass placing failures on the files as they stand (an open file's buffer, else the disk): each file is read
+   * once, diffed against each text a failure is followed from when either changed, and scanned once for its tests.
+   * `known` is a file's text the pass reads as given.
+   */
+  const placer = (known?: { file: string; text: string }) => {
+    const texts = new Map<string, string | null>(known ? [[known.file, known.text]] : []);
+    const read = (file: string): string | null => {
+      if (!texts.has(file)) texts.set(file, readText(file));
+      return texts.get(file) ?? null;
+    };
+    const lines = new Map<string, string[]>();
+    /** A line (1-based) of a file as it stands; null when the file has no such line. */
+    const lineAt = (file: string, line: number): string | null => {
+      if (!lines.has(file)) lines.set(file, read(file)?.split(/\r?\n/) ?? []);
+      return lines.get(file)![line - 1] ?? null;
+    };
+    const saved = new Map<string, string | null>();
+    /** The files this pass placed a line of. */
+    const diffed = new Set<string>();
+    const titles = new Map<string, Set<string>>();
+    const titlesIn = (text: string): Set<string> => {
+      if (!titles.has(text)) titles.set(text, testTitles(text));
+      return titles.get(text)!;
+    };
+    const placed = new Map<Placeable, Placement | null>();
+
+    /**
+     * The text a file had for the run a failure is listed from: at the run's commit when it ran in CI and the
+     * repository holds that commit, else as saved when the service first placed the failure. The commit's file is read
+     * once; until it is, the saved text stands in, and the failures are placed again once it is read.
+     */
+    const anchorOf = (context: PiwiContext, f: Placeable, file: string): string | null => {
+      const commit = ciCommit(context, f.runId);
+      const repoRelative = commit ? relativeTo(context.repoRoot, file) : null;
+      if (commit && repoRelative) {
+        const atCommit = context.textAtCommit(commit, repoRelative);
+        if (typeof atCommit.text === 'string') return atCommit.text;
+        if (atCommit.text === undefined) placeAgainOnRead(atCommit.read);
+      }
+      let anchors = context.failureAnchors.get(f.executionId);
+      if (!anchors) context.failureAnchors.set(f.executionId, (anchors = new Map()));
+      if (!anchors.has(file)) {
+        if (!saved.has(file)) saved.set(file, readSaved(file));
+        const text = saved.get(file) ?? null;
+        if (text === null) return null;
+        anchors.set(file, text);
+      }
+      return anchors.get(file)!;
+    };
+
+    /** Where a line (1-based) of a file, as the run reported it, is in the file as it stands. */
+    const placeIn = (
+      context: PiwiContext,
+      f: Placeable,
+      file: string,
+      line: number,
+    ): { line: number; state: LineState } => {
+      const before = anchorOf(context, f, file);
+      const after = read(file);
+      if (before === null || after === null) return { line, state: 'same' };
+      diffed.add(file);
+      const done = diffs.get(file) ?? [];
+      let hunks = done.find((d) => d.before === before && d.after === after)?.hunks;
+      if (!hunks) {
+        hunks = before === after ? [] : diffLines(file, before, after).hunks;
+        diffs.set(file, [...done.filter((d) => d.before !== before), { before, after, hunks }]);
+      }
+      return placeLine(line, hunks);
+    };
+
+    /**
+     * Whether a failure's test left its spec: its `test(…)` call is in the spec the run saw, not in the spec as it
+     * stands.
+     */
+    const testLeft = (context: PiwiContext, f: Placeable): boolean => {
+      const { spec } = reportedOf(context, f);
+      const before = spec ? anchorOf(context, f, spec) : null;
+      const current = spec ? read(spec) : null;
+      return before !== null && current !== null && titlesIn(before).has(f.title) && !titlesIn(current).has(f.title);
+    };
+
+    /** Where a failure shows; null when none of its files is in the workspace. */
+    const place = (context: PiwiContext, f: Placeable): Placement | null => {
+      if (placed.has(f)) return placed.get(f)!;
+      const { site, frames } = reportedOf(context, f);
+      let result: Placement | null = null;
+      if (site) {
+        const here = placeIn(context, f, site.file, site.line);
+        result = {
+          file: site.file,
+          line: Math.max(1, here.line),
+          state: testLeft(context, f) ? 'gone' : here.state,
+          frames: frames.map((frame) => ({
+            file: frame.file,
+            line: Math.max(1, placeIn(context, f, frame.file, frame.line).line),
+          })),
+        };
+      }
+      placed.set(f, result);
+      return result;
+    };
+
+    return { place, lineAt, diffed };
+  };
+  type Placer = ReturnType<typeof placer>;
+
+  /** The commit reads whose end places the failures again. */
+  const awaitedReads = new WeakSet<Promise<string | null>>();
+  const placeAgainOnRead = (read: Promise<string | null>) => {
+    if (awaitedReads.has(read)) return;
+    awaitedReads.add(read);
+    void read.then(() => placeAgainSoon());
+  };
+  let placeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Place the failures again on the next turn: once for the edits and the reads that ask meanwhile. */
+  const placeAgainSoon = () => {
+    if (stopped || placeTimer) return;
+    placeTimer = setTimeout(() => {
+      placeTimer = null;
+      publishFailures();
+    }, 0);
   };
 
   /**
    * The 0-based line of `file` a failure went through: its innermost frame within `from`–`to` (the test),
    * else within the file, else `from`.
    */
-  const failureLine = (context: PiwiContext, f: BranchFailure, file: string, from: number, to: number): number => {
-    const here = localFrames(context, f)
-      .filter((frame) => samePath(frame.file, file))
-      .map((frame) => frame.line - 1);
+  const failureLine = (frames: Placement['frames'], file: string, from: number, to: number): number => {
+    const here = frames.filter((frame) => samePath(frame.file, file)).map((frame) => frame.line - 1);
     return here.find((line) => line >= from && line <= to) ?? here[0] ?? from;
   };
 
-  /** Rebuild the failure diagnostics of every context, and publish the files whose set changed. */
+  /** Each context's failures where they show, then the failures a later run passed, at their `test(…)` line. */
+  const failuresResult = (pass: Placer): FailuresResult => ({
+    items: contexts.flatMap((context): WorkspaceFailure[] => {
+      const client = context.client;
+      if (!client) return [];
+      const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
+        const at = pass.place(context, f);
+        if (!at || at.state === 'gone') return [];
+        return [
+          {
+            uri: pathToFileURL(at.file).href,
+            line: at.line - 1,
+            title: f.title,
+            headline: f.headline,
+            executionId: f.executionId,
+            runId: f.runId ?? context.failures!.run!.id,
+            url: client.executionUrl(f.executionId),
+            hasTrace: f.traces.length > 0,
+            source: failureSource(context, f.runId ?? context.failures?.run?.id),
+            state: at.state === 'edited' ? 'edited' : 'failing',
+            browserName: f.browserName ?? null,
+          },
+        ];
+      });
+      const fixed = (context.failures?.resolved ?? []).flatMap((r): WorkspaceFailure[] => {
+        const at = pass.place(context, r);
+        if (!at || at.state === 'gone') return [];
+        return [
+          {
+            uri: pathToFileURL(at.file).href,
+            line: at.line - 1,
+            title: r.title,
+            headline: null,
+            executionId: r.executionId,
+            runId: r.runId,
+            url: client.executionUrl(r.executionId),
+            hasTrace: false,
+            source: failureSource(context, r.runId),
+            state: 'fixed-locally',
+            browserName: r.browserName,
+          },
+        ];
+      });
+      return [...failing, ...fixed];
+    }),
+  });
+  /** The failures last sent in `piwi/failuresChanged`. */
+  let failuresSent = JSON.stringify({ items: [] } satisfies FailuresResult);
+
+  /**
+   * Place every context's failures on the files as they stand, publish the files whose failure diagnostics changed,
+   * and send `piwi/failuresChanged` when the failures' list did. A failure whose test left its spec publishes nothing;
+   * one whose line changed since its run is an information.
+   */
   const publishFailures = () => {
+    const pass = placer();
     const next = new Map<string, Diagnostic[]>();
     for (const context of contexts) {
       for (const f of context.failures?.failures ?? []) {
-        const site = failureSite(context, f);
-        if (!site) continue;
-        const text = lineOf(site.file, site.line) ?? '';
+        const at = pass.place(context, f);
+        if (!at || at.state === 'gone') continue;
+        const text = pass.lineAt(at.file, at.line) ?? '';
         const start = text.length - text.trimStart().length;
-        const uri = pathToFileURL(site.file).href;
+        const uri = pathToFileURL(at.file).href;
+        const edited = at.state === 'edited';
+        const run = runLabel(context, f);
+        const where = `${f.title}, ${run}${
+          context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''
+        }`;
+        const headline = f.headline ?? 'Failed';
         (next.get(uri) ?? next.set(uri, []).get(uri)!).push({
           range: {
-            start: { line: site.line - 1, character: start },
-            end: { line: site.line - 1, character: Math.max(start, text.trimEnd().length) },
+            start: { line: at.line - 1, character: start },
+            end: { line: at.line - 1, character: Math.max(start, text.trimEnd().length) },
           },
-          severity: DiagnosticSeverity.Error,
+          severity: edited ? DiagnosticSeverity.Information : DiagnosticSeverity.Error,
           source: 'Piwi',
           code: 'ci-failure',
           codeDescription: context.client ? { href: context.client.executionUrl(f.executionId) } : undefined,
-          message: `${f.headline ?? 'Failed'} (${f.title}, ${runLabel(context, f)}${
-            context.runBranch !== context.checkedOutBranch ? ` on ${context.runBranch ?? 'another branch'}` : ''
-          })`,
-          data: { root: context.root, executionId: f.executionId } satisfies FailureData,
+          message: edited ? `Edited since ${run}: ${headline} (${where})` : `${headline} (${where})`,
+          data: {
+            root: context.root,
+            executionId: f.executionId,
+            ...(edited ? { edited: true } : {}),
+          } satisfies FailureData,
         });
       }
     }
@@ -549,6 +813,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     failureDiagnostics = next;
     for (const uri of new Set([...previous.keys(), ...next.keys()])) {
       if (JSON.stringify(previous.get(uri) ?? []) !== JSON.stringify(next.get(uri) ?? [])) publish(uri);
+    }
+    const failures = failuresResult(pass);
+    for (const file of diffs.keys()) if (!pass.diffed.has(file)) diffs.delete(file);
+    const serialized = JSON.stringify(failures);
+    if (serialized !== failuresSent) {
+      failuresSent = serialized;
+      void connection.sendNotification(FAILURES_NOTIFICATION, failures);
     }
   };
 
@@ -906,6 +1177,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       document.uri,
       setTimeout(() => {
         timers.delete(document.uri);
+        // The failures follow the edit: placed again on the edited buffer.
+        placeAgainSoon();
         void validate(document).catch((e) => connection.console.error(`Piwi: ${(e as Error).message}`));
       }, delay),
     );
@@ -991,6 +1264,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     appAnalyses.delete(e.document.uri);
     analysisDiagnostics.delete(e.document.uri);
     publish(e.document.uri);
+    // Its failures, on the file as saved.
+    placeAgainSoon();
   });
 
   connection.onCodeAction(async (params): Promise<CodeAction[]> => {
@@ -1092,16 +1367,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           edit: { changes },
         });
       } else if (diagnostic.code === 'ci-failure') {
-        const found = failureOf(diagnostic.data as FailureData);
+        const data = diagnostic.data as FailureData;
+        const found = failureOf(data);
         if (!found) continue;
         const { context: owner, failure } = found;
+        const fixes: CodeAction[] = [];
         const healing = await owner.healing(failure.executionId);
         const edit = healing?.edit;
         const line = diagnostic.range.start.line;
         const current = lines[line] ?? '';
-        if (edit && edit.line === line + 1 && current.trim() === edit.oldLine.trim() && edit.newLine.trim()) {
+        // The healing's edit names the line the run reported, wherever the edits since moved it.
+        const reported = reportedOf(owner, failure).site?.line ?? line + 1;
+        if (edit && edit.line === reported && current.trim() === edit.oldLine.trim() && edit.newLine.trim()) {
           const indent = current.slice(0, current.length - current.trimStart().length);
-          actions.push({
+          fixes.push({
             title: `Heal: use ${healing!.recommendation?.recommended?.locator ?? edit.newLine.trim()}`,
             kind: CodeActionKind.QuickFix,
             diagnostics: [diagnostic],
@@ -1118,6 +1397,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             },
           });
         }
+        // First on a failure whose line changed since the run, after the heal otherwise.
+        fixes.splice(data.edited ? 0 : fixes.length, 0, {
+          title: 'Run this test',
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [diagnostic],
+          command: {
+            title: 'Run this test',
+            command: 'piwi.runTests',
+            arguments: [{ uri: params.textDocument.uri, testIds: [failure.testCaseId] } satisfies RunTestsArgs],
+          },
+        });
+        actions.push(...fixes);
         if (failure.traces.length) {
           actions.push({
             title: 'Open the trace',
@@ -1289,10 +1580,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     // A line of the failing call chain (the test's own line calling a page object) shows the failure too.
     const context = file ? contextFor(file) : null;
+    const pass = placer();
     for (const failure of context?.failures?.failures ?? []) {
-      const through = localFrames(context!, failure).some(
-        (frame) => frame.line - 1 === params.position.line && samePath(frame.file, file!),
-      );
+      const at = pass.place(context!, failure);
+      const through =
+        at?.state !== 'gone' &&
+        !!at?.frames.some((frame) => frame.line - 1 === params.position.line && samePath(frame.file, file!));
       if (through && !found.has(failure.executionId)) found.set(failure.executionId, { context: context!, failure });
     }
     const analysis = await hoverOfAnalysis(params);
@@ -1302,14 +1595,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const shot = failure.screenshot ? await context.evidence(failure.screenshot) : null;
       const issues = await context.issuesOf(failure);
       const message = failure.message?.trim();
-      const chain = localFrames(context, failure)
+      const at = pass.place(context, failure);
+      const chain = (at?.frames ?? [])
         .slice(0, 5)
         .map(
           (frame) => `[${path.basename(frame.file)}:${frame.line}](${pathToFileURL(frame.file).href}#L${frame.line})`,
         );
+      const run = runLabel(context, failure);
       parts.push(
         [
-          `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${runLabel(context, failure)}`,
+          `**${isLocalFailure(context, failure) ? 'Local failure' : 'CI failure'}** · [${failure.title.replace(/[[\]]/g, '')}](${context.client?.executionUrl(failure.executionId) ?? ''}) · ${run}${at?.state === 'edited' ? ` · edited since ${run}` : ''}`,
           message && message !== failure.headline
             ? `${failure.headline ?? ''}\n\n${fenced(message)}`
             : (failure.headline ?? ''),
@@ -1400,6 +1695,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const document = documents.get(params.uri);
     const text = document ? document.getText() : fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
     const lines = text.split(/\r?\n/);
+    const pass = placer({ file, text });
     const run = (testIds: number[]) => ({
       title: 'Run them',
       command: 'piwi.runTests' as const,
@@ -1462,12 +1758,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const open = text.indexOf('(', m!.index);
         const endLine = (open >= 0 ? callEndLine(lines, i, open) : null) ?? i;
         const failed = failingNow.get(found.id);
+        const at = failed ? pass.place(context, failed) : null;
         const failure: TestFailure | undefined = failed && {
-          line: failureLine(context, failed, file, i, endLine),
+          line: failureLine(at?.frames ?? [], file, i, endLine),
           headline: failed.headline,
           message: failed.message ?? null,
           executionId: failed.executionId,
           url: context.client!.executionUrl(failed.executionId),
+          state: at?.state === 'edited' ? 'edited' : 'failing',
         };
         out.push({
           line: i,
@@ -1484,9 +1782,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         out.push(...flakeLabLines(context, found.id, i, env, desktopJobs.available(context)));
         if (!failed || !failure) return;
         const evidence = { uri: params.uri, executionId: failed.executionId } satisfies TraceParams;
+        const why = clip(failed.headline ?? 'Failed', 120);
         reasons.push({
           line: failure.line,
-          title: `✗ ${clip(failed.headline ?? 'Failed', 120)}`,
+          title: failure.state === 'edited' ? `✎ edited since ${runLabel(context, failed)} · ${why}` : `✗ ${why}`,
           command: {
             title: 'Open the failure in the dashboard',
             command: 'piwi.openInDashboard',
@@ -1639,55 +1938,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return { cwd: context.root, command: selection.command, args: [], env: editorRunEnv(ref), ref };
   });
 
-  connection.onRequest(
-    FAILURES_REQUEST,
-    (): FailuresResult => ({
-      items: contexts.flatMap((context): WorkspaceFailure[] => {
-        const client = context.client;
-        if (!client) return [];
-        const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
-          const site = failureSite(context, f);
-          if (!site) return [];
-          return [
-            {
-              uri: pathToFileURL(site.file).href,
-              line: site.line - 1,
-              title: f.title,
-              headline: f.headline,
-              executionId: f.executionId,
-              runId: f.runId ?? context.failures!.run!.id,
-              url: client.executionUrl(f.executionId),
-              hasTrace: f.traces.length > 0,
-              source: failureSource(context, f.runId ?? context.failures?.run?.id),
-              state: 'failing',
-              browserName: f.browserName ?? null,
-            },
-          ];
-        });
-        // The failures a later run passed, at their `test(…)` line.
-        const fixed = (context.failures?.resolved ?? []).flatMap((r): WorkspaceFailure[] => {
-          const site = failureSite(context, { location: null, file: r.file, line: r.line });
-          if (!site) return [];
-          return [
-            {
-              uri: pathToFileURL(site.file).href,
-              line: site.line - 1,
-              title: r.title,
-              headline: null,
-              executionId: r.executionId,
-              runId: r.runId,
-              url: client.executionUrl(r.executionId),
-              hasTrace: false,
-              source: failureSource(context, r.runId),
-              state: 'fixed-locally',
-              browserName: r.browserName,
-            },
-          ];
-        });
-        return [...failing, ...fixed];
-      }),
-    }),
-  );
+  connection.onRequest(FAILURES_REQUEST, (): FailuresResult => failuresResult(placer()));
 
   connection.onRequest(TRACE_REQUEST, async (params: TraceParams): Promise<TraceResult | null> => {
     const file = uriToPath(params.uri);
@@ -1875,6 +2126,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (refreshTimer) clearInterval(refreshTimer);
     fs.unwatchFile(desktopFile, onDesktopFile);
     if (runTimer) clearTimeout(runTimer);
+    if (placeTimer) clearTimeout(placeTimer);
     for (const t of timers.values()) clearTimeout(t);
   };
 }

@@ -30,12 +30,14 @@ The failures of the latest complete [CI run](/reference/test-metadata#run-origin
 default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. Your local runs
 since are laid over it, and the editor reads it again as soon as a run ends: [Runs from the editor](./editor-runs)
-covers running tests, the status bar, and what a run changes.
+covers running tests, the status bar, and what a run changes. Each failure follows your edits until a run covers its
+test again: [Failures follow your edits](./editor-runs#failures-follow-your-edits).
 
 On a failure, the quick fixes are:
 
 - **Heal: use …** — when [locator healing](/features/locator-healing) has a recommendation for the failing locator,
   the same edit an [auto-heal pull request](/features/auto-heal) would make, applied in place.
+- **Run this test** — runs the failing test from the editor; first once you rewrote the line it failed at.
 - **Open the trace** — opens it with `npx playwright show-trace`.
 - **Reproduce in the desktop app**, **Find the breaking commit in the desktop app**, and **Run Flake Lab on its
   untested suspects in the desktop app** for a test with an untested [flake suspect](./flake-lab) — on a team

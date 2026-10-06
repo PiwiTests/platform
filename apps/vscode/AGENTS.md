@@ -13,7 +13,8 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
 
 - `src/extension.ts` starts the service with `vscode-languageclient`, draws `piwi/fileSummary` as CodeLens (a test's
   line as a gutter icon from `media/`, its details in a hover, the `piwi.failingTestBackground` color over a
-  failing test and `piwi.failingLineBackground` on the line it failed at: `testDecorations` in `src/glue.ts`) and
+  failing test and `piwi.failingLineBackground` on the line it failed at, still drawn once that line changed since
+  the run, which the hover says: `testDecorations` in `src/glue.ts`; `piwi/failuresChanged` draws them again) and
   `piwi/runStatus` in the status bar (the tests still failing and those fixed locally since the latest run, from
   `failingTests` and `resolved`, and the run in progress, `live`; a notification that moves only the run in progress
   leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands the service names

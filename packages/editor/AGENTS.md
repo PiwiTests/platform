@@ -14,9 +14,10 @@ clients stay thin and both editors give the same answers.
   `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, the `piwi/setCredentials`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
-  `piwi/runStatusChanged`, `piwi/statusChanged`, `piwi/notice`, `piwi/desktopJobChanged` and `piwi/recordingChanged`
-  notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code Vision), `piwi/runStatus` in
-  its status bar, and `piwi/failures` in a list where its LSP client highlights open files only (the JetBrains IDEs).
+  `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/statusChanged`, `piwi/notice`, `piwi/desktopJobChanged` and
+  `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
+  Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open files
+  only (the JetBrains IDEs).
 - The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
   branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
   `piwi/runStatus`).
@@ -28,6 +29,19 @@ clients stay thin and both editors give the same answers.
   `resolved`, which publishes no diagnostic: its test's line says `fixed locally in run #N` with `status: 'passed'`,
   `piwi/failures` lists it as `fixed-locally`, and `piwi/runStatus` counts it in `resolved` beside `failingTests` and
   `overlays`, which the status bars show.
+  A failure follows the edits since its run (`placeLine` in `src/analysis.ts`, through the hunks of `diffLines`): its
+  diagnostic, `TestFailure.line` and the reason, **Screenshot** and **Trace** lines above it, the hover's call chain and
+  its `piwi/failures` item are its lines as the run reported them, placed on the files as they stand, saved or not.
+  The files as the run saw them are those of its commit for a run that ran in CI (`committedTextAt` in
+  `src/workspace.ts`, `git show <commit>:<path>`, read once per commit and path and kept while the latest run stays the
+  same: `PiwiContext.textAtCommit`); for a run on a developer's machine, which ran their files as saved, a run without
+  a commit, a commit the repository lacks, and until the commit's file is read, they are the files as saved when the
+  service first placed the failure (`PiwiContext.failureAnchors`, by execution). A failure whose line changed since its
+  run is an information, `Edited since run #120: …`, with `data.edited` and **Run this test** (`piwi.runTests`) first among
+  its quick fixes (every failure has it), `state: 'edited'` in `TestFailure` and `piwi/failures`, and `✎ edited since
+  run #120 · …` above the line; a failure whose test's `test(…)` call left its spec (it was in the spec the run saw, and
+  is not in the spec as it stands) publishes nothing. The failures are placed again on the timer that analyzes an edited document,
+  and when a commit's file arrives; `piwi/failuresChanged` carries `piwi/failures` whenever a line or a state changed.
   On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
@@ -120,7 +134,9 @@ needs the extension's sources, and a change to the recorder there changes what t
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials` (the failures also when a run ends, on the poll and
   on `piwi/refreshRun`), and requests answer from them. What belongs to one
   file (a spec's cases, a file's stored alternatives) or one failure (its healing, fix plan, linked issues, evidence) is
-  fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it.
+  fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it. A
+  failure's files at its run's commit are read once too, and its diagnostics wait for nothing: the files as saved stand
+  in until they are read.
 - **The connection order is fixed** (`resolveContextConnection`): the desktop app while it runs when the editor
   chose it (`desktop` in `piwi/setCredentials`, kept on the user's machine: the app is theirs, so their choice comes
   first); then the named instance (`namedInstance`): the environment, the workspace `.env`, the editor's own settings

@@ -28,13 +28,29 @@ import {
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
 import type { ConnectionSource, EditorCredentials, LiveRun } from './protocol.js';
-import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
+import {
+  committedText,
+  committedTextAt,
+  currentBranch,
+  headCommit,
+  repositoryRoot,
+  translationValues,
+} from './workspace.js';
 
 /** Selections resolved at each refresh, at most. */
 const MAX_SELECTIONS = 20;
 
 /** How long per-file answers (catalog, alternatives) are reused. */
 const FILE_CACHE_MS = 5 * 60_000;
+
+/** How many files a context keeps as the commits of its runs hold them: the latest read. */
+const MAX_COMMIT_TEXTS = 100;
+
+/** A file as a commit holds it: its text once read (null when the repository has none), and the read. */
+interface CommitText {
+  text: string | null | undefined;
+  read: Promise<string | null>;
+}
 
 function readJson(file: string): unknown {
   try {
@@ -246,6 +262,12 @@ export class PiwiContext {
   live: LiveRun | null = null;
   /** The runs the editor started on this instance (`piwi/runArgs`, `piwi/runSelection`), for the service's life. */
   readonly ownRuns = new Set<number>();
+  /**
+   * The text of each file a failure goes through as saved when the service first placed the failure, by execution and
+   * file: where its lines are followed from when its run's commit does not give the file (a run on a developer's
+   * machine, a commit the repository lacks). Kept while the latest run stays the same and the failure is listed.
+   */
+  readonly failureAnchors = new Map<number, Map<string, string>>();
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
   private words: { at: number; value: { tags: string[]; features: string[] } } | null = null;
   private readonly issues = new Map<number, Promise<EntityLink[]>>();
@@ -256,6 +278,7 @@ export class PiwiContext {
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
+  private readonly commitTexts = new Map<string, CommitText>();
   private translations: { head: string | null; old?: Map<string, string>; new?: Map<string, string> } = { head: null };
   private head: string | null = null;
 
@@ -383,6 +406,8 @@ export class PiwiContext {
     this.runReadAt = null;
     this.live = null;
     this.ownRuns.clear();
+    this.failureAnchors.clear();
+    this.commitTexts.clear();
     this.runBranch = null;
     this.checkedOutBranch = null;
     this.functions = null;
@@ -428,7 +453,11 @@ export class PiwiContext {
         this.issues.clear();
         this.fixPlans.clear();
         this.fixPlanTexts.clear();
+        this.failureAnchors.clear();
+        this.commitTexts.clear();
       }
+      const listed = new Set([...next.failures, ...(next.resolved ?? [])].map((f) => f.executionId));
+      for (const id of this.failureAnchors.keys()) if (!listed.has(id)) this.failureAnchors.delete(id);
       this.runBranch = branch;
       this.checkedOutBranch = checkedOut;
       this.failures = next;
@@ -554,6 +583,28 @@ export class PiwiContext {
     const items = await this.client.locatorAlternatives(this.project.id, relativeFile).catch(() => []);
     this.alternatives.set(relativeFile, { at: Date.now(), items });
     return items;
+  }
+
+  /**
+   * A file (repository-relative) as `commit` holds it: null when the local repository lacks the commit or the path,
+   * undefined until read. The first call starts the read, which `read` settles with; the text is kept while the latest
+   * run stays the same, for the {@link MAX_COMMIT_TEXTS} files read last.
+   */
+  textAtCommit(commit: string, repoRelative: string): CommitText {
+    const key = `${commit}\n${repoRelative}`;
+    const known = this.commitTexts.get(key);
+    if (known) return known;
+    const read = committedTextAt(this.repoRoot, commit, repoRelative);
+    const entry: CommitText = { text: undefined, read };
+    void read.then((text) => {
+      entry.text = text;
+    });
+    this.commitTexts.set(key, entry);
+    for (const oldest of this.commitTexts.keys()) {
+      if (this.commitTexts.size <= MAX_COMMIT_TEXTS) break;
+      this.commitTexts.delete(oldest);
+    }
+    return entry;
   }
 
   /** A file as `HEAD` holds it (repository-relative), cached until `HEAD` moves. */

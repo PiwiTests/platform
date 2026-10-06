@@ -28,13 +28,17 @@ data class SummaryLine(
     val failure: TestFailure? = null,
 )
 
-/** The line of the test a failure went through (0-based), and why it failed. */
+/**
+ * The line of the test a failure went through (0-based), followed through the edits since the run, and why it failed.
+ * `state` is `edited` once the line the run failed at changed since, `failing` otherwise; null from an older service.
+ */
 data class TestFailure(
     val line: Int = 0,
     val headline: String? = null,
     val message: String? = null,
     val executionId: Int = 0,
     val url: String? = null,
+    val state: String? = null,
 )
 
 data class FileSummary(val file: SummaryLine? = null, val lines: List<SummaryLine>? = null)
@@ -155,10 +159,11 @@ data class RunStatus(
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
 /**
- * A failure of the latest run where it shows, or, with `state` `fixed-locally`, a failure a later run passed, at its
- * test's line (`executionId` and `runId` are then the passing ones). `source` is `ci`, `own` (a run the editor started)
- * or `local`, `state` `failing` or `fixed-locally`, `browserName` the Playwright project; the three are null from an
- * older service.
+ * A failure of the latest run where it shows, its line followed through the edits since the run, or, with `state`
+ * `fixed-locally`, a failure a later run passed, at its test's line (`executionId` and `runId` are then the passing
+ * ones). `source` is `ci`, `own` (a run the editor started) or `local`, `state` `failing`, `edited` (the line the run
+ * failed at changed since) or `fixed-locally`, `browserName` the Playwright project; the three are null from an
+ * older service. `piwi/failuresChanged` carries the list again when a line or a state changes.
  */
 data class WorkspaceFailure(
     val uri: String? = null,

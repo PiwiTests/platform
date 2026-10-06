@@ -20,6 +20,7 @@ import {
   COMMAND_STARTED_NOTIFICATION,
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
+  FAILURES_NOTIFICATION,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   SHARE_DESKTOP_JOB_REQUEST,
@@ -596,6 +597,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
+    // A failure moved with an edit, or its line changed since the run: the lenses and the decorations again.
+    lc.onNotification(FAILURES_NOTIFICATION, () => lensesChanged.fire()),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
       const text = `Piwi: ${notice.message}`;
       void (notice.severity === 'warning'

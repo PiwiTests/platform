@@ -19,8 +19,8 @@ import javax.swing.Icon
 /**
  * Each test's latest result on the test itself (`piwi/fileSummary`): an icon in the gutter, its
  * details as the tooltip and a click opening it in the dashboard, a background over a failing
- * test, and a stronger one on the line it failed at, with why as the tooltip. The summary is
- * fetched outside the read action.
+ * test, and a stronger one on the line it failed at, with why as the tooltip, and whether that
+ * line changed since the run. The summary is fetched outside the read action.
  */
 class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<SummaryLine>>() {
     class Target(val project: Project, val uri: String)
@@ -72,7 +72,7 @@ class PiwiTestAnnotator : ExternalAnnotator<PiwiTestAnnotator.Target, List<Summa
                 holder.newSilentAnnotation(HighlightSeverity.INFORMATION)
                     .range(failedAt)
                     .textAttributes(FAILING_LINE)
-                    .tooltip(Glue.failureTooltip(failure.headline, failure.message))
+                    .tooltip(Glue.failureTooltip(failure.headline, failure.message, failure.state == "edited"))
                     .create()
             }
         }

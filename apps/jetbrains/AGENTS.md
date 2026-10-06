@@ -32,11 +32,12 @@ the service through the platform's LSP API with the project's Node.js interprete
   files show it changes (`Glue.runsInFiles`), not when only the run in progress moves.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus` (with the run in
   progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only; a
-  failure of a local run names its run, `your run #N` for the editor's own, and the failures a later run passed
-  follow, marked fixed: `Glue.failureRunNote`; the list is filled again only when the failures changed) with the
-  connection from `piwi/status`, and the actions under **Tools → Piwi**. The service starts with the first supported
-  file opened (2024.1 has no way to start it without one): until then the status is null, and the status bar and tool
-  window say so.
+  failure of a local run names its run, `your run #N` for the editor's own, a failure whose line changed since its
+  run says `edited since run #N` with the information icon, and the failures a later run passed follow, marked fixed:
+  `Glue.failureRunNote`; the list is filled again only when the failures changed, and from `piwi/failuresChanged` as
+  the edits move them) with the connection from `piwi/status`, and the actions under **Tools → Piwi**. The service
+  starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
+  null, and the status bar and tool window say so.
 - The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
   (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), and Connect while not
   connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and

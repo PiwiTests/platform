@@ -291,6 +291,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
         }
     }
 
+    /**
+     * The failures `piwi/failuresChanged` carries, such as a line an edit moved: the list alone, the status and the
+     * runs as they are, then the listeners.
+     */
+    fun failuresChanged(result: FailuresResult) {
+        failures = result.items.orEmpty()
+        ApplicationManager.getApplication().invokeLater({ listeners.forEach { it() } }, project.disposed)
+    }
+
     /** Read the status, the latest run and its failures again, then tell the listeners. */
     fun refreshStatus() {
         ApplicationManager.getApplication().executeOnPooledThread {

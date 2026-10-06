@@ -193,7 +193,7 @@ export interface TestDecoration {
   line: number;
   /** The last line of a failing test's background; null for any other result. */
   failingUntil: number | null;
-  /** The line a failing test failed at, when the latest run says; null otherwise. */
+  /** The line a failing test failed at, when the latest run says, edited since or not; null otherwise. */
   failingLine: number | null;
   hover: string;
   dashboardUrl: string | null;
@@ -209,7 +209,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
             line: l.line,
             failingUntil: l.status === 'failed' ? Math.max(l.line, l.endLine ?? l.line) : null,
             failingLine: l.failure?.line ?? null,
-            hover: testResultHover(l.status, l.title),
+            hover: testResultHover(l.status, l.title, l.failure?.state === 'edited'),
             dashboardUrl:
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
                 ? (l.command.arguments[0] as string)
@@ -220,8 +220,11 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
   );
 }
 
-/** A test's hover: its latest result, then its history as the service sums it up. */
-export function testResultHover(status: TestLineStatus, title: string): string {
+/**
+ * A test's hover: its latest result, whether the line it failed at changed since the run (`edited`), then its
+ * history as the service sums it up.
+ */
+export function testResultHover(status: TestLineStatus, title: string, edited = false): string {
   const result = {
     failed: 'failing',
     flaky: 'flaky',
@@ -229,7 +232,7 @@ export function testResultHover(status: TestLineStatus, title: string): string {
     skipped: 'skipped',
     unknown: 'no recent result',
   }[status];
-  return [`**Piwi**: ${result}`, title].filter(Boolean).join(' · ');
+  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', title].filter(Boolean).join(' · ');
 }
 
 /** Where the service found the instance: the settings come last. */

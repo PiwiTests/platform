@@ -389,6 +389,31 @@ describe('the tests of a file', () => {
     ]);
   });
 
+  test('a failing test whose failing line changed since the run keeps its tint, and its hover says so', () => {
+    const failure = {
+      line: 5,
+      headline: 'not found',
+      message: null,
+      executionId: 90,
+      url: 'http://piwi/test-run-cases/90',
+    };
+    const [edited] = testDecorations([
+      { line: 3, title: 'passed 1/4 · failed', status: 'failed', endLine: 6, failure: { ...failure, state: 'edited' } },
+    ]);
+    expect(edited).toMatchObject({ status: 'failed', failingUntil: 6, failingLine: 5 });
+    expect(edited!.hover).toBe('**Piwi**: failing · edited since the run · passed 1/4 · failed');
+    const [failing] = testDecorations([
+      {
+        line: 3,
+        title: 'passed 1/4 · failed',
+        status: 'failed',
+        endLine: 6,
+        failure: { ...failure, state: 'failing' },
+      },
+    ]);
+    expect(failing!.hover).toBe('**Piwi**: failing · passed 1/4 · failed');
+  });
+
   test('the status bar says when the checked-out branch has no run yet', () => {
     const onMain: RunStatusResult = {
       contexts: [{ ...run({}).contexts[0]!, branch: 'main', checkedOut: 'feature/cart' }],

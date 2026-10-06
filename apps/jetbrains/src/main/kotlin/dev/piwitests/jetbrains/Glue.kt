@@ -209,21 +209,31 @@ object Glue {
     /** Whether a `piwi/failures` item is a failure of the latest run that a later run passed. */
     fun isFixedLocally(failure: WorkspaceFailure) = failure.state == "fixed-locally"
 
+    /** Whether a `piwi/failures` item is a failure whose line changed since its run. */
+    fun isEdited(failure: WorkspaceFailure) = failure.state == "edited"
+
     /**
      * What a `piwi/failures` item says about its run, beside its title: `fixed locally in run #124` for a failure a
      * later run passed (`fixed in run #124` when that run is a CI run, `fixed locally in your run #124` when the editor
-     * started it), `your run #124` for a failure of a run the editor started, `local run #124` for a failure of another
-     * run that did not run in CI; null otherwise, and from an older service.
+     * started it), `edited since run #120` for a failure whose line changed since its run (`edited since your run
+     * #124`, `edited since local run #124`), `your run #124` for a failure of a run the editor started, `local run
+     * #124` for a failure of another run that did not run in CI; null otherwise, and from an older service.
      */
-    fun failureRunNote(failure: WorkspaceFailure): String? = when {
-        isFixedLocally(failure) -> when (failure.source) {
-            "ci" -> "fixed in run #${failure.runId}"
-            "own" -> "fixed locally in your run #${failure.runId}"
-            else -> "fixed locally in run #${failure.runId}"
+    fun failureRunNote(failure: WorkspaceFailure): String? {
+        val run = when (failure.source) {
+            "own" -> "your run #${failure.runId}"
+            "local" -> "local run #${failure.runId}"
+            else -> null
         }
-        failure.source == "own" -> "your run #${failure.runId}"
-        failure.source == "local" -> "local run #${failure.runId}"
-        else -> null
+        return when {
+            isFixedLocally(failure) -> when (failure.source) {
+                "ci" -> "fixed in run #${failure.runId}"
+                "own" -> "fixed locally in your run #${failure.runId}"
+                else -> "fixed locally in run #${failure.runId}"
+            }
+            isEdited(failure) -> "edited since ${run ?: "run #${failure.runId}"}"
+            else -> run
+        }
     }
 
     /**
@@ -252,12 +262,16 @@ object Glue {
         return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
     }
 
-    /** The tooltip of a test's failing line: why it failed, and the error without its stack. */
-    fun failureTooltip(headline: String?, message: String?): String {
+    /**
+     * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the
+     * line changed since the run.
+     */
+    fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
         val escape = { text: String -> text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
         val why = headline?.ifBlank { null } ?: "Failed"
         val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escape(it)}</pre>" } ?: ""
-        return "<html><b>Piwi: failed here</b><br>${escape(why)}$details</html>"
+        val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
+        return "<html><b>$title</b><br>${escape(why)}$details</html>"
     }
 
     /** Where the service found the instance, in the words of the settings page. */

@@ -43,6 +43,25 @@ config?` VS Code learns that a command ended through shell integration (VS Code 
 a terminal of its own; without it, the runs of a folder share one terminal, the run is still found and followed, and a
 run that never arrived goes unmentioned.
 
+## Failures follow your edits
+
+A run reports the line a test failed at in the files it ran. The editor reads those files as the run saw them and
+follows each failing line through your changes, saved or not:
+
+- Add or remove lines above a failing line, and its error moves with it: in the Problems panel, in the lines above the
+  test, in the Piwi tool window of a JetBrains IDE.
+- Rewrite the failing line, and the error turns into an information marker, *Edited since run #120: …*: the run said
+  nothing about the new line. **Run this test** comes first among its quick fixes, and the reason above the line reads
+  *✎ edited since run #120*. The test keeps its failing mark until a run says otherwise.
+- Delete the test, and its failure leaves the editor.
+
+The next run that covers the test says what is true: a failure there is an error again, at the line it failed at, and
+a pass takes the failure away.
+
+For a CI run, the files as the run saw them are those of the run's commit, read with `git show` once per commit and
+file. For a run on your machine, which ran your files as saved, a run that recorded no commit, or a commit your clone
+does not have, they are the files as saved when the editor first showed the failure.
+
 ## The status bar
 
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your

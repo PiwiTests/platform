@@ -137,6 +137,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiProjectService>().refreshStatus()
     }
 
+    /** A failure moved with an edit, or its line changed since the run: the tool window's list. */
+    @JsonNotification("piwi/failuresChanged")
+    fun failuresChanged(failures: FailuresResult) {
+        project.service<PiwiProjectService>().failuresChanged(failures)
+    }
+
     @JsonNotification("piwi/desktopJobChanged")
     fun desktopJobChanged(update: DesktopJobUpdate) {
         PiwiCommands.desktopJobChanged(project, update)

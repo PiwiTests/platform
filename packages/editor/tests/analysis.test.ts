@@ -1,6 +1,95 @@
 import { describe, expect, test } from 'vitest';
-import { callEndLine, flakeLabLens } from '../src/analysis';
+import { diffLines } from '@piwitests/core/line-diff';
+import { callEndLine, flakeLabLens, placeLine } from '../src/analysis';
 import type { FlakeLabEntry } from '../src/piwi-client';
+
+describe('placeLine', () => {
+  /** A spec as the run saw it: the failing call on line 3. */
+  const before = [
+    "test('pays', async ({ page }) => {",
+    "  await page.goto('/cart');",
+    '  await row().click();',
+    '});',
+    '',
+  ];
+  const place = (line: number, after: string[]) =>
+    placeLine(line, diffLines('a.spec.ts', before.join('\n'), after.join('\n')).hunks);
+
+  test('a line before every hunk, or with no hunk at all, stays where it is', () => {
+    expect(placeLine(3, [])).toEqual({ line: 3, state: 'same' });
+    expect(place(3, [...before.slice(0, 3), '});', '', "test('more', () => {});"])).toEqual({ line: 3, state: 'same' });
+  });
+
+  test('a line below a hunk shifts by its net size', () => {
+    expect(place(3, ['// a note', '', ...before])).toEqual({ line: 5, state: 'moved' });
+    // Past the last hunk, through every hunk above: two lines added, one removed.
+    expect(place(4, ['x', 'y', before[0]!, before[2]!, before[3]!, ''])).toEqual({ line: 5, state: 'moved' });
+    // A hunk that replaces a line with one line leaves the lines below on their own number.
+    expect(place(3, [before[0]!, "  await page.goto('/basket');", ...before.slice(2)])).toEqual({
+      line: 3,
+      state: 'same',
+    });
+  });
+
+  test('a line of a replaced block is found among the added lines, whatever its indent', () => {
+    const after = [
+      before[0]!,
+      "  await page.goto('/basket');",
+      '  const r = row();',
+      '    await row().click();',
+      '});',
+    ];
+    expect(place(3, after)).toEqual({ line: 4, state: 'moved' });
+  });
+
+  test('of several added lines holding its text, the nearest to where it stood', () => {
+    const steps = [
+      before[0]!,
+      '  await first().click();',
+      '  await second().click();',
+      '  await row().click();',
+      '});',
+    ];
+    const wrapped = [
+      before[0]!,
+      '    await row().click();',
+      '    await a();',
+      '    await b();',
+      '    await row().click();',
+      '});',
+    ];
+    expect(placeLine(4, diffLines('a.spec.ts', steps.join('\n'), wrapped.join('\n')).hunks)).toEqual({
+      line: 5,
+      state: 'moved',
+    });
+  });
+
+  test('a line rewritten is edited, on the first line of what replaced it', () => {
+    expect(
+      place(3, [
+        before[0]!,
+        before[1]!,
+        '  await rows().first().click();',
+        '  await expect(rows()).toHaveCount(2);',
+        '});',
+      ]),
+    ).toEqual({
+      line: 3,
+      state: 'edited',
+    });
+    // Below an insertion, the hunk's first added line has moved too.
+    expect(place(3, ['// a note', before[0]!, before[1]!, '  await rows().first().click();', '});'])).toEqual({
+      line: 4,
+      state: 'edited',
+    });
+  });
+
+  test('a line removed is edited, on the line before the removal', () => {
+    expect(place(3, [before[0]!, before[1]!, '});', ''])).toEqual({ line: 2, state: 'edited' });
+    // A removal at the top of the file: its first line.
+    expect(place(1, before.slice(1))).toEqual({ line: 1, state: 'edited' });
+  });
+});
 
 describe('callEndLine', () => {
   const lines = (text: string) => text.split('\n');

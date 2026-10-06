@@ -144,6 +144,17 @@ class GlueTest {
     }
 
     @Test
+    fun `a failure whose line changed since its run names that run`() {
+        val edited = WorkspaceFailure(title = "removes a row", runId = 41, source = "ci", state = "edited")
+        assertEquals("edited since run #41", Glue.failureRunNote(edited))
+        assertEquals("edited since your run #124", Glue.failureRunNote(edited.copy(runId = 124, source = "own")))
+        assertEquals("edited since local run #124", Glue.failureRunNote(edited.copy(runId = 124, source = "local")))
+        assertEquals(true, Glue.isEdited(edited))
+        assertEquals(false, Glue.isEdited(edited.copy(state = "failing")))
+        assertEquals(false, Glue.isFixedLocally(edited))
+    }
+
+    @Test
     fun `a run in progress, the editor's own or one on the branch, in the text and beside the latest run`() {
         val failed = passed.copy(status = "failed", passedTests = 115, failedTests = 3, flakyTests = 0)
         val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 1, own = true)
@@ -411,6 +422,10 @@ class GlueTest {
         )
         assertEquals("<html><b>Piwi: failed here</b><br>Failed</html>", Glue.failureTooltip(null, " "))
         assertEquals("<html><b>Piwi: failed here</b><br>boom</html>", Glue.failureTooltip("boom", "boom"))
+        assertEquals(
+            "<html><b>Piwi: failed here, edited since the run</b><br>boom</html>",
+            Glue.failureTooltip("boom", null, edited = true),
+        )
     }
 
     @Test

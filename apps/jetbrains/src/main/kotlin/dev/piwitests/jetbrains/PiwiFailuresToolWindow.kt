@@ -30,11 +30,14 @@ import javax.swing.JPanel
 /**
  * The failures of the latest run on the checked-out branch, listed natively:
  * the LSP client of the JetBrains IDEs highlights open files only. A failure
- * of a local run laid over that run says so, and the failures a later run
- * passed follow, marked fixed. A double click opens the failing line, where
- * the highlight carries the quick fixes, or a fixed test's line. Above them,
- * the connection in one line, and Connect, Refresh, Open in dashboard, Open the
- * latest run in the dashboard and the settings in the toolbar.
+ * of a local run laid over that run says so, a failure whose line changed
+ * since its run is marked edited, and the failures a later run passed follow,
+ * marked fixed. Each is at its line as the edits since the run left it, and
+ * the list follows the edits (`piwi/failuresChanged`). A double click opens
+ * the failing line, where the highlight carries the quick fixes, or a fixed
+ * test's line. Above them, the connection in one line, and Connect, Refresh,
+ * Open in dashboard, Open the latest run in the dashboard and the settings in
+ * the toolbar.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -52,7 +55,11 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             ) {
                 val fixed = Glue.isFixedLocally(value)
                 val note = Glue.failureRunNote(value)
-                icon = if (fixed) AllIcons.RunConfigurations.TestPassed else AllIcons.General.Error
+                icon = when {
+                    fixed -> AllIcons.RunConfigurations.TestPassed
+                    Glue.isEdited(value) -> AllIcons.General.Information
+                    else -> AllIcons.General.Error
+                }
                 append(value.title ?: "Failed")
                 if (fixed) {
                     append("  ${note ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
