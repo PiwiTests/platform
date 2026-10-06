@@ -231,9 +231,11 @@ recapture to change it.
 
 Any new **block-level** shared component with a header MUST accept an optional `help?: HelpTopicKey` prop (typed from
 `app/utils/help-content.ts`) and render `<HelpHint v-if="help" :topic="help" />`. Add copy by adding one entry to the
-`HELP_TOPICS` registry — never hardcode hint strings at call sites. Document only non-obvious blocks (skip counters,
-search boxes, basic CRUD forms, theme switcher). When adding a hint, **remove the always-on prose it replaces** so the
-page gets quieter. If a `PIWI_*` env var can override the setting, set `envVars: [...]` (typed `PiwiEnvVarName[]`) so
+`HELP_TOPICS` registry — never hardcode hint strings at call sites. Hint text is Markdown (`app/utils/help-markdown.ts`):
+put identifiers and commands in `code`, and when a hint can't stay to 1–2 sentences, give it a lead sentence and a
+`- **Label** — …` list instead of a wall of prose (it then opens wider and scrolls). Document only non-obvious blocks
+(skip counters, search boxes, basic CRUD forms, theme switcher). When adding a hint, **remove the always-on prose it
+replaces** so the page gets quieter. If a `PIWI_*` env var can override the setting, set `envVars: [...]` (typed `PiwiEnvVarName[]`) so
 the popover surfaces it for system admins.
 
 Use `i-lucide-circle-help` for help and reserve `i-lucide-info` for informational/empty-state callouts. A topic's
