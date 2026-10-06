@@ -392,12 +392,23 @@ export const HELP_TOPICS = {
   },
   'project.status': {
     title: 'Project status',
-    text: 'Where the project stands within the page’s filters. Runs: the latest run, its age, and the pass rate of the last 20 runs. Failures: the open failure clusters, the flaky tests and the quarantined ones. Each figure links to what it counts.',
+    text: [
+      'Where the project stands within the page’s filters; each figure links to what it counts.',
+      '',
+      '- **Runs** — the latest run, its age, and the pass rate of the last 20 runs.',
+      '- **Failures** — the open failure clusters, the flaky tests and the quarantined ones.',
+    ].join('\n'),
     doc: 'features/ui-overview#project-detail',
   },
   'project.filters': {
     title: 'Filters',
-    text: 'Environment, branch and full runs only scope the whole page: the status above, the runs, the test catalog, the failures, the Flake Lab and the performance trends. With no branch picked, the page reads the default branch and the runs that report no branch; pick All branches to read every branch. The quarantine list and the Gaps tab are the project’s, whatever the filters. The choice is remembered per project.',
+    text: [
+      'Environment, branch and **Full runs only** scope the whole page; the choice is remembered per project.',
+      '',
+      '- **Scoped** — the status above, the runs, the test catalog, the failures, the Flake Lab and the performance trends.',
+      '- **Not scoped** — the quarantine list and the Gaps tab, which belong to the project whatever the filters.',
+      '- **Branch** — with none picked, the default branch and the runs that report no branch; **All branches** reads every branch.',
+    ].join('\n'),
     doc: 'features/ui-overview#project-detail',
   },
   'project.test-cases': {
