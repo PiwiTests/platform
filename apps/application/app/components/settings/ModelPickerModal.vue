@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ModelInfo } from '~~/types/api';
+import { foldText } from '#shared/utils/fold-text';
 
 function fmtTokens(n?: number): string {
   if (!n) return '';
@@ -27,9 +28,9 @@ watch(open, (val) => {
   }
 });
 const filtered = computed(() => {
-  const q = search.value.toLowerCase();
+  const q = foldText(search.value.trim());
   return q
-    ? props.models.filter((m) => m.id.toLowerCase().includes(q) || (m.label?.toLowerCase() ?? '').includes(q))
+    ? props.models.filter((m) => foldText(m.id).includes(q) || foldText(m.label ?? '').includes(q))
     : props.models;
 });
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { OpenApiSpec } from '~/utils/openapi';
+import { foldText } from '#shared/utils/fold-text';
 
 const props = defineProps<{
   spec: OpenApiSpec;
@@ -24,14 +25,14 @@ const groups = computed(() => groupOperationsByTag(props.spec));
 const operationCount = computed(() => groups.value.reduce((sum, group) => sum + group.operations.length, 0));
 
 const filteredGroups = computed(() => {
-  const needle = query.value.trim().toLowerCase();
+  const needle = foldText(query.value.trim());
   if (!needle) return groups.value;
   return groups.value
     .map((group) => ({
       tag: group.tag,
       operations: group.operations.filter((op) => {
         const haystack = `${op.method} ${op.path} ${op.operation.summary ?? ''} ${op.operation.description ?? ''} ${op.tag}`;
-        return haystack.toLowerCase().includes(needle);
+        return foldText(haystack).includes(needle);
       }),
     }))
     .filter((group) => group.operations.length > 0);

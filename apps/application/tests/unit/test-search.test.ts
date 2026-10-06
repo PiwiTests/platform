@@ -157,6 +157,25 @@ describe('compileTestSearch', () => {
   test('an empty query matches everything', () => {
     expect(titles('')).toEqual(['login via header', 'cart shows items', 'homepage loads']);
   });
+
+  test('accents never matter, in the query or in the test', () => {
+    const cafe: TestSearchSubject = {
+      title: 'Café crème commande',
+      suitePath: ['Préférences'],
+      filePath: 'tests/café.spec.ts',
+      tags: ['Été'],
+      owner: 'José',
+    };
+    const matches = (query: string) => compileTestSearch(parseTestSearch(query))(cafe);
+    expect(matches('cafe creme')).toBe(true);
+    expect(matches('CAFÉ')).toBe(true);
+    expect(matches('describe:preferences')).toBe(true);
+    expect(matches('file:cafe*spec')).toBe(true);
+    expect(matches('tag:ete owner:JOSE')).toBe(true);
+    expect(matches('title:commandé')).toBe(true);
+    expect(matches('-cafe')).toBe(false);
+    expect(titles('lógín vía')).toEqual(['login via header']);
+  });
 });
 
 describe('highlighting', () => {
@@ -185,6 +204,17 @@ describe('highlighting', () => {
       [0, 3],
       [4, 7],
     ]);
+  });
+
+  test('ranges ignore accents and cover a whole accented letter', () => {
+    expect(highlightRanges('Café crème', ['cafe', 'CREME'])).toEqual([
+      [0, 4],
+      [5, 10],
+    ]);
+    expect(highlightRanges('resume', ['résumé'])).toEqual([[0, 6]]);
+    // The accent of a decomposed `é` is marked with its letter.
+    expect(highlightRanges('cafe\u0301 noir', ['cafe'])).toEqual([[0, 5]]);
+    expect(highlightRanges('Łódź office', ['lodz*off'])).toEqual([[0, 8]]);
   });
 
   test('a value full of stars stays fast on a long text', () => {
@@ -254,6 +284,19 @@ describe('completion', () => {
     ]);
     const prefixed = completeTestSearch({ query: 'browser:f', caret: 9, fields: RUN_SEARCH_FIELDS, values });
     expect(prefixed.suggestions.map((s) => (s.kind === 'value' ? s.value : s.key))).toEqual(['firefox']);
+  });
+
+  test('a typed value finds suggestions whatever their accents', () => {
+    const accented = collectTestSearchValues([{ title: 't', suitePath: ['Préférences', 'Été'] }]);
+    const completion = completeTestSearch({
+      query: 'describe:PREF',
+      caret: 13,
+      fields: RUN_SEARCH_FIELDS,
+      values: accented,
+    });
+    expect(completion.suggestions.map((s) => (s.kind === 'value' ? s.value : s.key))).toEqual(['Préférences']);
+    const bare = completeTestSearch({ query: 'été', caret: 3, fields: RUN_SEARCH_FIELDS, values: accented });
+    expect(bare.suggestions.map((s) => (s.kind === 'value' ? s.value : s.key))).toEqual(['Été']);
   });
 
   test('a bare word offers the qualifiers it starts, then values of any field', () => {

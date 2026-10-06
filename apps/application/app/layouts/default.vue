@@ -32,6 +32,8 @@ type SearchResult = {
   }[];
 };
 const searchResults = ref<SearchResult | null>(null);
+/** The palette's own items (pages, project tabs) match as `/api/search` does: ignoring case and accents. */
+const searchFuse = { fuseOptions: { ignoreDiacritics: true } };
 
 const debouncedSearch = useDebounceFn(async (q: string) => {
   if (q.trim().length < 2) {
@@ -514,7 +516,12 @@ onMounted(async () => {
       </template>
     </UDashboardSidebar>
 
-    <UDashboardSearch v-model:search-term="searchTerm" :groups="groups" :preserve-group-order="!!searchResults" />
+    <UDashboardSearch
+      v-model:search-term="searchTerm"
+      :groups="groups"
+      :fuse="searchFuse"
+      :preserve-group-order="!!searchResults"
+    />
 
     <!-- The real main landmark the skip link targets. Fills the group's content
          area so the page panel keeps its full width/height. -->
