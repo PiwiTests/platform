@@ -321,6 +321,9 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   `dedupe: 'defer'` and `getCachedData: reuseWithinRender` (`app/utils/shared-fetch.ts`). Without them each caller
   fetches again during the server render: the default `dedupe: 'cancel'` restarts a pending request, and nothing is
   reused from the render once it resolved.
+- **What the first screen does not need loads in the browser** (`server: false`, `lazy: true`): a counter, a menu's
+  contents, a card further down. What it shows, or what would make it jump (capability states hiding a tab), stays in
+  the server render.
 - **A `useFetch({ server: false })` loading state reads `status`, not `pending`**: the server renders it `idle`, and
   the client starts the fetch before it hydrates, so gate the spinner on
   `status.value === 'idle' || status.value === 'pending'` (see `pages/projects/[id]/locators.vue`) — gating on

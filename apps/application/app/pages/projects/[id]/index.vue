@@ -582,10 +582,15 @@ const slowTestsLoading = ref(false);
 const performanceInitialLoading = computed(() => performanceLoading.value && performanceData.value === null);
 
 // Whether the project ships committed AI-step artifacts; the coverage card only
-// appears when it does.
-const { data: hasAiSteps } = await useFetch(`/api/projects/${projectId}/ai-steps?days=90`, {
+// appears when it does, so the check waits for the Performance tab.
+const {
+  data: hasAiSteps,
+  status: aiStepsStatus,
+  execute: checkAiSteps,
+} = useFetch(`/api/projects/${projectId}/ai-steps?days=90`, {
   lazy: true,
   server: false,
+  immediate: false,
   default: () => false,
   transform: (r: { artifacts?: unknown[] }) => (r.artifacts?.length ?? 0) > 0,
 });
@@ -597,6 +602,7 @@ watch(
     performanceLoading.value = true;
     if (!slowTests.value) slowTestsLoading.value = true;
     if (import.meta.server) return;
+    if (aiStepsStatus.value === 'idle') void checkAiSteps();
     const params = new URLSearchParams({ runs: String(runsWindow) });
     if (!filters.value.fullRunsOnly) params.set('fullRunsOnly', 'false');
     const perfRes = await $fetch<{ items: PerformanceTrendPoint[] }>(
