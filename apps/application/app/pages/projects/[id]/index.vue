@@ -187,7 +187,7 @@ const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filt
 // The table shows one page of runs at a time, so the page's HTML and its
 // hydration stay the same size however many runs are loaded; the chart above it
 // draws them all.
-const RUNS_PAGE_SIZE = 50;
+const RUNS_PAGE_SIZE = 25;
 const runsPage = ref(1);
 const pagedRuns = computed(() =>
   tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
