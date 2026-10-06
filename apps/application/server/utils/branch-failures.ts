@@ -190,6 +190,26 @@ export function parseBranchFailuresQuery(
   return { ok: true, branch: branch || null, options };
 }
 
+/**
+ * `GET /api/projects/:id/branch-failures` from its query, answered the same way by the server and the demo: a query
+ * it refuses and a chosen run the project does not hold are thrown as `toHttpError` builds the HTTP error.
+ */
+export async function branchFailuresOrError(
+  db: DrizzleDB,
+  projectId: number,
+  rawQuery: Record<string, unknown>,
+  toHttpError: (statusCode: 400 | 404, message: string) => Error,
+): Promise<BranchFailures> {
+  const query = parseBranchFailuresQuery(rawQuery);
+  if (!query.ok) throw toHttpError(400, query.message);
+  try {
+    return await getBranchFailures(db, projectId, query.branch, query.options);
+  } catch (error) {
+    if (error instanceof BranchFailuresRunError) throw toHttpError(error.statusCode, error.message);
+    throw error;
+  }
+}
+
 /** An error as an editor quotes it: without ANSI codes and stack frames, at most {@link MESSAGE_MAX_LINES} lines. */
 export function errorMessage(error: string | null): string | null {
   if (!error) return null;

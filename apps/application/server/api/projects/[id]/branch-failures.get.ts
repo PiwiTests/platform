@@ -1,5 +1,5 @@
 import { getDatabase } from '../../../database';
-import { BranchFailuresRunError, getBranchFailures, parseBranchFailuresQuery } from '../../../utils/branch-failures';
+import { branchFailuresOrError } from '../../../utils/branch-failures';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
@@ -41,13 +41,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
   await requireProjectAccess(event, id);
-  const query = parseBranchFailuresQuery(getQuery(event));
-  if (!query.ok) throw apiError({ statusCode: 400, message: query.message });
-  try {
-    return await getBranchFailures(await getDatabase(), id, query.branch, query.options);
-  } catch (error) {
-    if (error instanceof BranchFailuresRunError)
-      throw apiError({ statusCode: error.statusCode, message: error.message });
-    throw error;
-  }
+  return branchFailuresOrError(await getDatabase(), id, getQuery(event), (statusCode, message) =>
+    apiError({ statusCode, message }),
+  );
 });

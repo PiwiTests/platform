@@ -70,7 +70,7 @@ import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
-import { BranchFailuresRunError, getBranchFailures, parseBranchFailuresQuery } from '~~/server/utils/branch-failures';
+import { branchFailuresOrError } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import {
   backfillLocatorUsages,
@@ -2073,14 +2073,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/branch-failures$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const query = parseBranchFailuresQuery(Object.fromEntries(q ?? []));
-      if (!query.ok) throw demoHttpError(400, query.message);
-      try {
-        return await getBranchFailures(await getDemoDb(), +m[1]!, query.branch, query.options);
-      } catch (error) {
-        if (error instanceof BranchFailuresRunError) throw demoHttpError(error.statusCode, error.message);
-        throw error;
-      }
+      return branchFailuresOrError(await getDemoDb(), +m[1]!, Object.fromEntries(q ?? []), demoHttpError);
     },
   },
   {

@@ -85,8 +85,8 @@ export interface RunUseRule {
   excludesIncidents: boolean;
   /** Read only complete runs: the whole suite, finished. */
   completeOnly: boolean;
-  /** The origins whose runs this use reads only when complete. */
-  completeOnlyFor: readonly RunOriginKind[];
+  /** The origins whose runs this use reads only when complete; none when absent. */
+  completeOnlyFor?: readonly RunOriginKind[];
   /** Leave out a historical import: a report imported after newer runs were stored. */
   excludesHistoricalImports: boolean;
 }
@@ -108,7 +108,6 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /** Run baselines: a run compared with a whole earlier run. */
@@ -116,21 +115,18 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: true,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   'fix-verification': {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   flakiness: {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /** Pass rates, last statuses, recent failures and durations behind selections and their suggestions. */
@@ -138,7 +134,6 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /** What the editor shows as the branch's CI failures. */
@@ -146,7 +141,6 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: true,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /** The runs the editor overlays on the branch's latest complete run. */
@@ -154,7 +148,6 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /** Change coverage and every "not reached in the last N runs" analysis. */
@@ -162,7 +155,6 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: false,
     completeOnly: true,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /** Locator snapshots, the locator index, test metadata and green samples. */
@@ -170,21 +162,18 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: false,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: true,
   },
   'auto-heal': {
     excludes: LAB_AND_INVESTIGATION,
     excludesIncidents: true,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   'bug-lifecycle': {
     excludes: ['bug', ...LAB_AND_INVESTIGATION],
     excludesIncidents: false,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
   /**
@@ -205,7 +194,6 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludes: LAB_RUN_ORIGINS,
     excludesIncidents: false,
     completeOnly: false,
-    completeOnlyFor: [],
     excludesHistoricalImports: false,
   },
 };
@@ -293,7 +281,7 @@ export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
   if ((rule.excludes as readonly string[]).includes(origin)) return false;
   if (rule.excludesIncidents && isIncidentRun(run.metadata)) return false;
   if (rule.completeOnly && !isCompleteRun(run)) return false;
-  if ((rule.completeOnlyFor as readonly string[]).includes(origin) && !isCompleteRun(run)) return false;
+  if (((rule.completeOnlyFor ?? []) as readonly string[]).includes(origin) && !isCompleteRun(run)) return false;
   if (rule.excludesHistoricalImports && run.historicalImport) return false;
   return true;
 }
@@ -390,8 +378,9 @@ export function eligibleRunSql(use: RunUse, columns: EligibleRunColumns = TEST_R
   const parts = [sql`NOT ${runOriginIn(columns.origin, rule.excludes)}`];
   if (rule.excludesIncidents) parts.push(sql`NOT ${incidentRunSql(columns.metadata)}`);
   if (rule.completeOnly) parts.push(completeRunSql(columns));
-  if (rule.completeOnlyFor.length) {
-    parts.push(sql`NOT (${runOriginIn(columns.origin, rule.completeOnlyFor)} AND NOT ${completeRunSql(columns)})`);
+  const completeOnlyFor = rule.completeOnlyFor ?? [];
+  if (completeOnlyFor.length) {
+    parts.push(sql`NOT (${runOriginIn(columns.origin, completeOnlyFor)} AND NOT ${completeRunSql(columns)})`);
   }
   return sql`(${sql.join(parts, sql` AND `)})`;
 }

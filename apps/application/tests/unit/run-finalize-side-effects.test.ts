@@ -159,6 +159,19 @@ describe('runFinalizeSideEffects', () => {
     expect(emitRunNotifications).not.toHaveBeenCalled();
   });
 
+  test('an editor run flagged as an incident sends no incident event when the caller’s metadata lacks the origin', async () => {
+    const incident = { rule: 'host-unreachable', reason: '1 of 1 tests failed', host: 'localhost' };
+    recordRunHealth.mockResolvedValueOnce({
+      metadata: { piwiOrigin: { kind: 'editor' }, incident },
+      incident,
+      flagged: true,
+    });
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { scm: {} }, isFullRun: 1, status: 'failed' });
+    expect(syncAutoMarkersForRun).toHaveBeenCalledTimes(1);
+    expect(emitIncidentNotification).not.toHaveBeenCalled();
+    expect(emitRunNotifications).not.toHaveBeenCalled();
+  });
+
   test.each(['local', 'desktop'])('the whole suite run from %s gets everything', async (kind) => {
     runFinalizeSideEffects(db, 42, {
       projectId: 1,

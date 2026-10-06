@@ -8,13 +8,21 @@ import { analyzeFinishedRunInBackground, postRunPrFeedbackInBackground } from '.
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { classifyRunFlakyTests } from '#shared/handlers/flaky-classify';
-import { isEligibleRun, isIncidentRun } from '#shared/run-eligibility';
+import { INCIDENT_RUN_METADATA_KEY, isEligibleRun, isIncidentRun } from '#shared/run-eligibility';
 import { recordRunHealth } from '#shared/handlers/run-health';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
 import { matchCiRerunRun } from './ci-rerun';
 import { inferRunOutcomes } from './outcome-inference';
+
+/** A run's metadata without its incident flag, for the rules that read the run apart from the flag. */
+function withoutIncidentFlag(metadata: unknown): unknown {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return metadata;
+  const rest: Record<string, unknown> = { ...(metadata as Record<string, unknown>) };
+  delete rest[INCIDENT_RUN_METADATA_KEY];
+  return rest;
+}
 
 /**
  * The finalize side effects for a finished run: the environment-incident
@@ -40,10 +48,12 @@ import { inferRunOutcomes } from './outcome-inference';
  *
  * Every other run gets its analysis, each step under its own use, and its
  * outcomes once its change coverage is stored. Only the outbound effects
- * follow the `notifications` use, which reads `run`'s origin, final `status`
- * and `isFullRun`: never for a run from an editor, and for a run from a
- * developer's machine or the desktop app only when it ran the whole suite. A
- * run the use leaves out sends no incident event either.
+ * follow the `notifications` use, which reads the run's origin from its
+ * metadata as the incident check read it, its final `status` and `isFullRun`:
+ * never for a run from an editor, and for a run from a developer's machine or
+ * the desktop app only when it ran the whole suite. A run the use leaves out
+ * sends no incident event either: the use reads a flagged run as if it carried
+ * no flag.
  *
  * The returned promise settles once the run's rollup cell is recomputed, so a
  * caller that awaits it answers only when the analytics already count the run
@@ -93,7 +103,10 @@ export async function runFinalizeSideEffects(
     .catch((e) => console.error('[bug-reports] applyBugReportLifecycle failed', e));
   if (incident) {
     // The incident event takes the place of the verdicts of a run that sends them.
-    if (health?.flagged && isEligibleRun(run, 'notifications')) {
+    if (
+      health?.flagged &&
+      isEligibleRun({ ...current, metadata: withoutIncidentFlag(current.metadata) }, 'notifications')
+    ) {
       emitIncidentNotification(db, id).catch((e) =>
         console.error('[notifications] emitIncidentNotification failed', e),
       );
