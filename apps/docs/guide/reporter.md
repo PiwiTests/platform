@@ -121,15 +121,11 @@ same `projectName`. `runLabel` is the manual override when your CI isn't detecte
 
 ## Live streaming
 
-By default, the reporter streams results to the dashboard as tests complete: the run appears when the suite starts,
-each test's trace and attachments upload as soon as it finishes (`liveFileUploads`), and the run page shows the step
-each running test is on. When a test's final attempt fails, the reporter prints its headline and a link right away;
+By default, the reporter streams results as tests complete: the run appears when the suite starts, each test's trace and
+attachments upload when it finishes (`liveFileUploads`), and while the run is open on the dashboard, its page shows the
+step each running test is on. When a test's final attempt fails, the reporter prints its headline and a link right away;
 at the end it prints `View run: <url>` (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci)).
 A server that does not support streaming gets the batch upload instead.
-
-The steps stream only while someone has the run, or one of its tests, open on the dashboard: the dashboard tells the
-reporter in its answers, and the steps show within a few seconds of opening the page. Every result carries its test's
-steps either way, so a run nobody watches keeps all of them.
 
 ### Disabling streaming
 
@@ -145,7 +141,6 @@ To send all results at the end of the run:
 
 ### Tuning batch parameters
 
-The reporter sends what it has queued once 20 events wait or 2 seconds after the first one, whichever comes first.
 Control how frequently results are sent during streaming:
 
 ```typescript
