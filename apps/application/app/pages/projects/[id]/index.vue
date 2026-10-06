@@ -179,6 +179,20 @@ const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestR
 const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
 const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
 
+// The table shows one page of runs at a time, so the page's HTML and its
+// hydration stay the same size however many runs are loaded; the chart above it
+// draws them all.
+const RUNS_PAGE_SIZE = 50;
+const runsPage = ref(1);
+const pagedRuns = computed(() =>
+  tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
+);
+// A narrower filter (or a deleted run) can leave the page past the last one.
+watch(tableRuns, (rows) => {
+  const last = Math.max(1, Math.ceil(rows.length / RUNS_PAGE_SIZE));
+  if (runsPage.value > last) runsPage.value = last;
+});
+
 const keepRunId = ref<number | null>(null);
 const isKeepOpen = ref(false);
 const { release: releaseKeep, canRelease } = useRunKeep();
@@ -406,8 +420,9 @@ function goToTab(tab: TabValue, segment?: FailureSegment) {
 // === RUNS TAB: selection → compare or delete ===
 const selectedRunIds = ref<number[]>([]);
 const isRunSelected = (runId: number) => selectedRunIds.value.includes(runId);
+// The header checkbox selects (or clears) the runs of the page on screen.
 const allRunsSelected = computed(
-  () => tableRuns.value.length > 0 && tableRuns.value.every((r) => selectedRunIds.value.includes(r.id)),
+  () => pagedRuns.value.length > 0 && pagedRuns.value.every((r) => selectedRunIds.value.includes(r.id)),
 );
 const someRunsSelected = computed(() => selectedRunIds.value.length > 0 && !allRunsSelected.value);
 
@@ -418,7 +433,10 @@ function toggleRunSelection(runId: number) {
 }
 
 function toggleAllRuns() {
-  selectedRunIds.value = allRunsSelected.value ? [] : tableRuns.value.map((r) => r.id);
+  const page = new Set(pagedRuns.value.map((r) => r.id));
+  selectedRunIds.value = allRunsSelected.value
+    ? selectedRunIds.value.filter((id) => !page.has(id))
+    : [...new Set([...selectedRunIds.value, ...page])];
 }
 
 // A filter that hides a selected run drops it from the selection, so a bulk
@@ -930,7 +948,7 @@ const moreMenuItems = computed(() => {
             <div class="hidden md:block">
               <UTable
                 v-if="tableRuns.length > 0"
-                :data="tableRuns"
+                :data="pagedRuns"
                 :columns="runsColumns"
                 :ui="{
                   base: 'w-full border-separate border-spacing-0',
@@ -1074,7 +1092,7 @@ const moreMenuItems = computed(() => {
 
             <!-- Below md: one card per run -->
             <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in tableRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
+              <div v-for="run in pagedRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
                 <div class="flex items-start gap-2">
                   <input
                     type="checkbox"
@@ -1121,6 +1139,16 @@ const moreMenuItems = computed(() => {
                   </UDropdownMenu>
                 </div>
               </div>
+            </div>
+
+            <div v-if="tableRuns.length > RUNS_PAGE_SIZE" class="flex justify-center mt-3">
+              <UPagination
+                v-model:page="runsPage"
+                :total="tableRuns.length"
+                :items-per-page="RUNS_PAGE_SIZE"
+                size="sm"
+                data-testid="runs-pagination"
+              />
             </div>
 
             <div
