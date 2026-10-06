@@ -9,12 +9,18 @@ CI baseline, its failures follow the edits, its breakpoints pause the browser wi
 bar and the failures view are rebuilt around that loop.
 
 **Status.** Proposed 2026-10-06. Being built on `claude/adoring-curie-oiaifu`, every step in one pull request, in the
-order of [Delivery](#delivery): step 1 (Parts 2a, 2b and 2d) is built. Where the build differs from this text, the
-[docs](../apps/docs/features/editors.md) and the code are right: a failure listed from a later run reads
-`local run #124` (`your run` waits for step 2), a test fixed since reads `fixed locally in run #124 (failing in run
-#120)`, and in the finalize path only the outbound effects of a run (notifications, the pull-request comment and
-status, auto-heal, AI diagnosis, the incident and interrupted events) follow D11; fix verification, change coverage,
-the scenario gaps and the hand-back outcomes run for every run as before, each under its own use.
+order of [Delivery](#delivery): steps 1 (Parts 2a, 2b and 2d) and 2 (Parts 1 and 5) are built. Where the build
+differs from this text, the [docs](../apps/docs/features/editor-runs.md) and the code are right: a test fixed since
+reads `fixed locally in run #124 (failing in run #120)`; in the finalize path only the outbound effects of a run
+(notifications, the pull-request comment and status, auto-heal, AI diagnosis, the incident and interrupted events)
+follow D11, while fix verification, change coverage, the scenario gaps and the hand-back outcomes run for every run as
+before, each under its own use; the notice of a run that never reached the instance is its own notification
+(`piwi/notice`) rather than a field of `piwi/runStatusChanged`; a rerun of a command (the Run tool window's Rerun, a
+VS Code terminal shared by the runs of a folder when the shell has no integration) is recognized by its ref through
+the event stream, with no second poll, and `piwi/commandStarted` tells the service when a command ran in a terminal
+whose environment carries another ref; the poll backs off to five minutes while the stream is connected; and the
+editors page was split, the runs, the local runs and the status bar moving to
+[Runs from the editor](../apps/docs/features/editor-runs.md).
 
 **Summary.** Six observations from using the extensions, and what each becomes:
 
