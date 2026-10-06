@@ -66,6 +66,10 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   matched to the index's constant by PostgreSQL's cached generic plans or by SQLite's planner, and the query falls
   back to reading every row. The capability probes (`shared/handlers/setup-status.ts`) and the `fixme` count
   (`fixmeSkipPredicate`) rely on this.
+- **`test_runs.origin` is `runOrigin(metadata)`**: every insert or update that writes a run's `metadata` writes
+  `origin: runOrigin(<the same value>)` beside it, as `branch` follows `resolveRunBranch`, and a query reads a run's
+  origin from the column — `notLabRun(testRuns.origin)`, `runOriginIn(testRuns.origin, …)`, `eligibleRunSql` — never
+  from the metadata text. `tests/unit/run-origin-column.test.ts` fails on a write that leaves it out.
 - Dates are stored as Unix timestamps in SQLite.
 - **Large per-case text payloads MUST go through `case_payloads`** (content-addressed, deduped per project):
   `upsertCasePayloads` on write, `inlineCasePayloads` / `resolveCasePayloadContents` on read (`server/utils/case-payloads.ts`).

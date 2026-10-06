@@ -10,6 +10,7 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { addQuarantine, listQuarantine, releaseQuarantine, getQuarantinedCaseIds, RELEASE_AFTER_CONSECUTIVE_PASSES } =
   await import('../../shared/handlers/quarantine');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 let runSeq = 0;
@@ -30,6 +31,7 @@ async function seedExecution(testCaseId: number, status: string, metadata: objec
     status: status === 'passed' ? 'passed' : 'failed',
     startTime: new Date(Date.now() - (1000 - runId) * 60_000),
     metadata,
+    origin: runOrigin(metadata),
   });
   await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status });
   return runId;

@@ -127,7 +127,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       })
       .from(testRunsCases)
       .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(and(eq(testRunsCases.testCaseId, id), notLabRun(testRuns.metadata)))
+      .where(and(eq(testRunsCases.testCaseId, id), notLabRun(testRuns.origin)))
       .orderBy(desc(testRuns.startTime))
       .limit(20),
     db
@@ -205,7 +205,7 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.metadata)))
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(50);
 }

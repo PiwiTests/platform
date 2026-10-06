@@ -8,7 +8,9 @@
  * behaves today, so each use below names the origins it leaves out, whether it
  * reads complete runs only, and whether an environment incident counts.
  * `isEligibleRun` decides for a run in hand, `eligibleRunSql` and
- * `eligibleExecutionSql` decide the same in a query.
+ * `eligibleExecutionSql` decide the same in a query, from the origin stored in
+ * `test_runs.origin`: every write of a run's metadata also writes `runOrigin`
+ * of that metadata to the column.
  *
  * Runs stored before the origin existed read as `probe` or `flake-lab` from
  * their lab stamp, `import` from their import record, `ci` when the reporter
@@ -258,12 +260,15 @@ export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
 
 // ── The same rule in SQL ─────────────────────────────────────────────────────
 //
-// Metadata is JSON text on SQLite and `jsonb` on PostgreSQL, and the demo's
-// database is SQLite in the browser, so keys are matched in the serialized
-// text, in both spellings: SQLite keeps the text as written (`"k":v`), and
-// `jsonb` puts a space after each colon and comma and sorts an object's keys
-// shortest first (`{"ref": "…", "kind": "…"}`). The server writes the origin
-// as `{ kind, ref? }`, kind first, and its ref holds no quote.
+// A run's origin is stored in `test_runs.origin`: every write of a run's
+// metadata writes `runOrigin` of that metadata beside it, so the SQL form reads
+// one column. The incident flag and an origin's ref are read from the metadata
+// itself. Metadata is JSON text on SQLite and `jsonb` on PostgreSQL, and the
+// demo's database is SQLite in the browser, so those keys are matched in the
+// serialized text, in both spellings: SQLite keeps the text as written
+// (`"k":v`), and `jsonb` puts a space after each colon and comma and sorts an
+// object's keys shortest first (`{"ref": "…", "kind": "…"}`). The server writes
+// the origin as `{ kind, ref? }`, kind first, and its ref holds no quote.
 
 function text(metadata: SQLWrapper): SQL {
   return sql`COALESCE(CAST(${metadata} AS TEXT), '')`;
@@ -281,59 +286,33 @@ function hasKey(value: SQL, key: string, opening: string): SQL {
   return sql`(${likeAny(value, [`%"${key}":${opening}%`, `%"${key}": ${opening}%`])})`;
 }
 
-function originKindIs(value: SQL, kind: RunOriginKind): SQL {
-  const key = RUN_ORIGIN_METADATA_KEY;
-  return sql`(${likeAny(value, [
-    `%"${key}":{"kind":"${kind}"}%`,
-    `%"${key}":{"kind":"${kind}","ref":%`,
-    `%"${key}": {"kind": "${kind}"}%`,
-    `%"${key}": {"ref": "%", "kind": "${kind}"}%`,
-  ])})`;
+/** A run's stored origin and its metadata, for the predicates that read both. */
+export interface RunOriginColumns {
+  origin: SQLWrapper;
+  metadata: SQLWrapper;
 }
 
 /**
- * SQL predicate: the run's origin is exactly `kind` with `ref`, in either
- * spelling. A ref holds no quote and no LIKE wildcard (`parseRunOriginRef`).
+ * SQL predicate: the run's origin is exactly `kind` with `ref`. The stored
+ * origin narrows the runs first; the ref is matched in the metadata text, in
+ * either spelling. A ref holds no quote and no LIKE wildcard
+ * (`parseRunOriginRef`).
  */
-export function runOriginIs(metadata: SQLWrapper, kind: RunOriginKind, ref: string): SQL {
+export function runOriginIs(columns: RunOriginColumns, kind: RunOriginKind, ref: string): SQL {
   const key = RUN_ORIGIN_METADATA_KEY;
-  return sql`(${likeAny(text(metadata), [
+  return sql`(${columns.origin} = ${kind} AND (${likeAny(text(columns.metadata), [
     `%"${key}":{"kind":"${kind}","ref":"${ref}"}%`,
     `%"${key}": {"ref": "${ref}", "kind": "${kind}"}%`,
-  ])})`;
+  ])}))`;
 }
 
-/**
- * SQL predicate: the run's origin (`runOrigin`) is one of `kinds`. `metadata`
- * is the run's metadata column.
- */
-export function runOriginIn(metadata: SQLWrapper, kinds: readonly RunOriginKind[]): SQL {
+/** SQL predicate: the run's stored origin (`runOrigin`) is one of `kinds`. */
+export function runOriginIn(origin: SQLWrapper, kinds: readonly RunOriginKind[]): SQL {
   if (kinds.length === 0) return sql`1 = 0`;
-  const value = text(metadata);
-  const probe = hasKey(value, PROBE_RUN_METADATA_KEY, 'true');
-  const flake = hasKey(value, FLAKE_LAB_RUN_METADATA_KEY, '{');
-  const stamped = sql`(${probe} OR ${flake})`;
-  const hasOrigin = hasKey(value, RUN_ORIGIN_METADATA_KEY, '{');
-  const importKey = hasKey(value, 'import', '{');
-  const ciKey = hasKey(value, 'ci', '{');
-
-  const each = kinds.map((kind) => {
-    const legacy =
-      kind === 'import'
-        ? importKey
-        : kind === 'ci'
-          ? sql`(NOT ${importKey} AND ${ciKey})`
-          : kind === 'local'
-            ? sql`(NOT ${importKey} AND NOT ${ciKey})`
-            : null;
-    const unstamped = legacy
-      ? sql`(NOT ${stamped} AND (${originKindIs(value, kind)} OR (NOT ${hasOrigin} AND ${legacy})))`
-      : sql`(NOT ${stamped} AND ${originKindIs(value, kind)})`;
-    if (kind === 'probe') return sql`(${probe} OR ${unstamped})`;
-    if (kind === 'flake-lab') return sql`((NOT ${probe} AND ${flake}) OR ${unstamped})`;
-    return unstamped;
-  });
-  return sql`(${sql.join(each, sql` OR `)})`;
+  return sql`${origin} IN (${sql.join(
+    kinds.map((kind) => sql`${kind}`),
+    sql`, `,
+  )})`;
 }
 
 /** SQL predicate: the run is flagged as an environment incident (`isIncidentRun`). */
@@ -343,12 +322,14 @@ export function incidentRunSql(metadata: SQLWrapper): SQL {
 
 /** The run columns `eligibleRunSql` reads; `test_runs`' own by default. */
 export interface EligibleRunColumns {
+  origin: SQLWrapper;
   metadata: SQLWrapper;
   isFullRun: SQLWrapper;
   status: SQLWrapper;
 }
 
 const TEST_RUN_COLUMNS: EligibleRunColumns = {
+  origin: testRuns.origin,
   metadata: testRuns.metadata,
   isFullRun: testRuns.isFullRun,
   status: testRuns.status,
@@ -357,7 +338,7 @@ const TEST_RUN_COLUMNS: EligibleRunColumns = {
 /** SQL predicate keeping only runs that may feed `use`: the SQL form of `isEligibleRun`. */
 export function eligibleRunSql(use: RunUse, columns: EligibleRunColumns = TEST_RUN_COLUMNS): SQL {
   const rule = RUN_USES[use];
-  const parts = [sql`NOT ${runOriginIn(columns.metadata, rule.excludes)}`];
+  const parts = [sql`NOT ${runOriginIn(columns.origin, rule.excludes)}`];
   if (rule.excludesIncidents) parts.push(sql`NOT ${incidentRunSql(columns.metadata)}`);
   if (rule.completeOnly) {
     const unfinished = sql.join(
@@ -378,22 +359,21 @@ export function eligibleExecutionSql(use: RunUse, testRunId: SQLWrapper): SQL {
   return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${eligibleRunSql(use)})`;
 }
 
-/** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. */
-export function notLabRun(metadata: SQLWrapper): SQL {
-  return sql`NOT ${runOriginIn(metadata, LAB_RUN_ORIGINS)}`;
+/** SQL predicate keeping only runs that are not lab runs: the SQL form of `!isLabRun(metadata)`. `origin` is the run's stored origin. */
+export function notLabRun(origin: SQLWrapper): SQL {
+  return sql`NOT ${runOriginIn(origin, LAB_RUN_ORIGINS)}`;
 }
 
 /** `notLabRun` on an execution's run id, for queries over `test_runs_cases` that do not join `test_runs`. */
 export function notLabExecution(testRunId: SQLWrapper): SQL {
-  return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${notLabRun(testRuns.metadata)})`;
+  return sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.id} = ${testRunId} AND ${notLabRun(testRuns.origin)})`;
 }
 
 /**
  * `notLabExecution` for a query over one project's executions: the project's
  * runs that are not lab runs are listed once for the query, and each execution
- * is matched against that list, so the metadata of a run is read once rather
- * than once per execution.
+ * is matched against that list.
  */
 export function notLabExecutionInProject(projectId: number, testRunId: SQLWrapper): SQL {
-  return sql`${testRunId} IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${testRuns.projectId} = ${projectId} AND ${notLabRun(testRuns.metadata)})`;
+  return sql`${testRunId} IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${testRuns.projectId} = ${projectId} AND ${notLabRun(testRuns.origin)})`;
 }

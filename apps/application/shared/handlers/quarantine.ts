@@ -137,7 +137,7 @@ async function computeStreaks(
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(sinceQuarantine, notLabRun(testRuns.metadata)))
+    .where(and(sinceQuarantine, notLabRun(testRuns.origin)))
     .as('ranked');
 
   const rows = await db

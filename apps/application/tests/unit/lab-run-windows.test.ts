@@ -10,6 +10,7 @@ import * as schema from '../../server/database/schema.sqlite';
 delete process.env.PIWI_DATABASE_URL;
 const { getTestCaseHistory } = await import('../../shared/handlers/test-cases');
 const { getProjectFlakyTests } = await import('../../shared/handlers/projects');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 /** Ids of the runs that are not lab runs. */
@@ -27,7 +28,7 @@ async function seedRun(
 ) {
   const [run] = await db
     .insert(schema.testRuns)
-    .values({ projectId: 1, status, startTime: at(minutesAgo), metadata })
+    .values({ projectId: 1, status, startTime: at(minutesAgo), metadata, origin: runOrigin(metadata) })
     .returning({ id: schema.testRuns.id });
   for (const [retries, attempt] of attempts.entries()) {
     await db.insert(schema.testRunsCases).values({

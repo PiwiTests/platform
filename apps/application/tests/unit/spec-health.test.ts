@@ -9,6 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // so clear it before the handler modules load.
 delete process.env.PIWI_DATABASE_URL;
 const { getProjectSpecHealth } = await import('../../shared/handlers/projects');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -59,6 +60,7 @@ describe('getProjectSpecHealth', () => {
   test('counts the real runs behind a hundred newer lab runs', async () => {
     const real = await addRun();
     await addExecution(real, 0, 'passed');
+    const probeMetadata = { piwiProbe: true };
     for (let i = 0; i < 100; i++) {
       const [lab] = await db
         .insert(schema.testRuns)
@@ -66,7 +68,8 @@ describe('getProjectSpecHealth', () => {
           projectId: 1,
           status: 'failed',
           startTime: new Date(Date.now() + i + 1),
-          metadata: { piwiProbe: true },
+          metadata: probeMetadata,
+          origin: runOrigin(probeMetadata),
         })
         .returning({ id: schema.testRuns.id });
       await addExecution(lab!.id, 0, 'failed');

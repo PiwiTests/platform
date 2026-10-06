@@ -10,6 +10,7 @@ import { ADMIN_ACCESS } from '#shared/permissions';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 const mcpCtx = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
 const mcpTool = (name: string) => {
@@ -459,9 +460,15 @@ describe('computeScenarioGaps', () => {
   test('a probe run’s injected 500 does not close a success-only gap', async () => {
     await seedRun(1); // a real run
     // A probe run stamped silent — its injected fault must never enter the window.
-    await db
-      .insert(schema.testRuns)
-      .values({ id: 2, projectId: 1, status: 'failed', startTime: new Date(++clock), metadata: { piwiProbe: true } });
+    const probeMetadata = { piwiProbe: true };
+    await db.insert(schema.testRuns).values({
+      id: 2,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(++clock),
+      metadata: probeMetadata,
+      origin: runOrigin(probeMetadata),
+    });
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
 
     const [realExec] = await db
@@ -531,10 +538,16 @@ describe('computeScenarioGaps', () => {
       });
     }
     // Twice as many probe runs since then as the window holds.
+    const probeMetadata = { piwiProbe: true };
     for (let id = 2; id <= 1 + 2 * gaps.HISTORY_WINDOW_RUNS; id++) {
-      await db
-        .insert(schema.testRuns)
-        .values({ id, projectId: 1, status: 'failed', startTime: new Date(++clock), metadata: { piwiProbe: true } });
+      await db.insert(schema.testRuns).values({
+        id,
+        projectId: 1,
+        status: 'failed',
+        startTime: new Date(++clock),
+        metadata: probeMetadata,
+        origin: runOrigin(probeMetadata),
+      });
     }
 
     await gaps.computeScenarioGaps(db, 1);

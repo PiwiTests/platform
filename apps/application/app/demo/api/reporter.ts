@@ -38,6 +38,7 @@ import { sanitizeLocatorPages } from '~~/server/utils/locator-pages';
 import { sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from '~~/server/utils/code-reach';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
@@ -153,7 +154,10 @@ async function persistDemoShardToken(
   tokens.push(token);
   meta.shardTokens = tokens;
 
-  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
+  await db
+    .update(testRuns)
+    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .where(eq(testRuns.id, runId));
 }
 
 /** Remove a shard token from a run's stored metadata (mirrors server shard-tokens.ts). */
@@ -171,7 +175,10 @@ async function removeStoredDemoShardToken(db: DemoDb, runId: number, token: stri
     delete meta.shardTokens;
   }
 
-  await db.update(testRuns).set({ metadata: meta, updatedAt: new Date() }).where(eq(testRuns.id, runId));
+  await db
+    .update(testRuns)
+    .set({ metadata: meta, origin: runOrigin(meta), updatedAt: new Date() })
+    .where(eq(testRuns.id, runId));
 }
 
 async function cancelInstanceRuns(
@@ -253,6 +260,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
     const setupToken = randomToken();
+    const metadata = { shardTokens: [setupToken] } as Record<string, unknown>;
     const testRunResult = await db
       .insert(testRuns)
       .values({
@@ -267,7 +275,8 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { shardTokens: [setupToken] } as Record<string, unknown>,
+        metadata,
+        origin: runOrigin(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -306,6 +315,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: null,
+      origin: runOrigin(null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,
@@ -383,6 +393,10 @@ export async function apiBeginTestRun(
 
     await cancelInstanceRuns(db, testRun.projectId, testRun.instanceId, id, isSharded);
 
+    const metadata = carryIngestHealth(
+      sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
+      testRun.metadata,
+    );
     await db
       .update(testRuns)
       .set({
@@ -390,10 +404,8 @@ export async function apiBeginTestRun(
         streamToken,
         totalTests: body.totalTests || 0,
         branch: resolveRunBranch(body.metadata || testRun.metadata),
-        metadata: carryIngestHealth(
-          sanitizeMetadata(body.metadata || (testRun.metadata as Record<string, unknown> | null)),
-          testRun.metadata,
-        ),
+        metadata,
+        origin: runOrigin(metadata),
         playwrightVersion: body.playwrightVersion || (testRun.playwrightVersion as string | null),
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
@@ -1066,6 +1078,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
         metadata: { ...currentMeta, shardDurations: allDurations },
+        origin: runOrigin(currentMeta),
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
@@ -1133,6 +1146,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
           avgTestDuration,
           p90TestDuration,
           metadata: finalMeta,
+          origin: runOrigin(finalMeta),
           updatedAt: new Date(),
         })
         .where(eq(testRuns.id, id));
@@ -1199,6 +1213,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     ? sumFailedAndTimedOut(body.failedTests, body.timedOutTests)
     : testRun.failedTests;
 
+  const reportedMetadata = body.metadata ? carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata) : null;
+
   await db
     .update(testRuns)
     .set({
@@ -1214,7 +1230,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {
-        metadata: carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        metadata: reportedMetadata,
+        origin: runOrigin(reportedMetadata),
         branch: resolveRunBranch(body.metadata),
       }),
       ...(body.label !== undefined && { label: body.label }),

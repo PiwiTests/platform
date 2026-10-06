@@ -166,7 +166,7 @@ const RAW_RUN_FIELDS = {
 
 /** The runs a rollup counts: finished, never a lab run (probe or flake experiment). */
 function countedRunConditions(): SQL[] {
-  return [inArray(testRuns.status, TERMINAL_RUN_STATUSES), notLabRun(testRuns.metadata)];
+  return [inArray(testRuns.status, TERMINAL_RUN_STATUSES), notLabRun(testRuns.origin)];
 }
 
 interface ExecutionStats {

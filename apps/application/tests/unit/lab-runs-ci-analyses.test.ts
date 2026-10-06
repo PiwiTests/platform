@@ -25,6 +25,7 @@ vi.mock('../../server/storage', () => ({
 }));
 
 const { FLAKE_LAB_RUN_METADATA_KEY } = await import('#shared/handlers/probes');
+const { runOrigin } = await import('#shared/run-eligibility');
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
@@ -86,6 +87,7 @@ async function addRun(
   db: Db,
   run: { id: number; startTime: Date; status: string; metadata?: Record<string, unknown> },
 ): Promise<void> {
+  const metadata = run.metadata ?? { scm: { branch: 'main' } };
   await db.insert(schema.testRuns).values({
     id: run.id,
     projectId: PROJECT_ID,
@@ -93,7 +95,8 @@ async function addRun(
     branch: 'main',
     startTime: run.startTime,
     totalTests: 2,
-    metadata: run.metadata ?? { scm: { branch: 'main' } },
+    metadata,
+    origin: runOrigin(metadata),
   });
 }
 
@@ -410,16 +413,18 @@ describe('green ARIA samples next to lab runs', () => {
     db = await freshDb();
     await db.insert(schema.testCases).values({ id: 1, projectId: PROJECT_ID, filePath: 'tests/a.spec.ts', title: 'a' });
     // A CI sample two days old, and a lab arm's sample from an hour ago.
-    await db.insert(schema.testRuns).values([
-      { id: 1, projectId: PROJECT_ID, status: 'passed', startTime: new Date(now - 2 * GREEN_SAMPLE_MAX_AGE_MS) },
-      {
-        id: 2,
-        projectId: PROJECT_ID,
-        status: 'passed',
-        startTime: new Date(now - 3_600_000),
-        metadata: flakeArmMetadata(0),
-      },
-    ]);
+    await db.insert(schema.testRuns).values(
+      [
+        { id: 1, projectId: PROJECT_ID, status: 'passed', startTime: new Date(now - 2 * GREEN_SAMPLE_MAX_AGE_MS) },
+        {
+          id: 2,
+          projectId: PROJECT_ID,
+          status: 'passed',
+          startTime: new Date(now - 3_600_000),
+          metadata: flakeArmMetadata(0),
+        },
+      ].map((row) => ({ ...row, origin: runOrigin(row.metadata) })),
+    );
     await db.insert(schema.testRunsCases).values([
       {
         testRunId: 1,
@@ -473,9 +478,10 @@ describe("the editor's CI failures next to local runs", () => {
     // Run 1 has no origin and no CI record: it reads as a local run, the newest of which stands in.
     expect((await getBranchFailures(db as never, PROJECT_ID, 'main')).run?.id).toBe(2);
 
+    const ciMetadata = { piwiOrigin: { kind: 'ci' }, scm: { branch: 'main' } };
     await db
       .update(schema.testRuns)
-      .set({ metadata: { piwiOrigin: { kind: 'ci' }, scm: { branch: 'main' } } })
+      .set({ metadata: ciMetadata, origin: runOrigin(ciMetadata) })
       .where(eq(schema.testRuns.id, 1));
     const result = await getBranchFailures(db as never, PROJECT_ID, 'main');
     expect(result.run?.id).toBe(1);

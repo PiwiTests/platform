@@ -10,6 +10,7 @@ import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 
 defineRouteMeta({
   openAPI: {
@@ -102,6 +103,7 @@ export default eventHandler(async (event) => {
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
     const setupToken = randomBytes(32).toString('hex');
+    const metadata = { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>;
 
     const testRunResult = await db
       .insert(testRuns)
@@ -118,7 +120,8 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>,
+        metadata,
+        origin: runOrigin(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -173,6 +176,7 @@ export default eventHandler(async (event) => {
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: null,
+      origin: runOrigin(null),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

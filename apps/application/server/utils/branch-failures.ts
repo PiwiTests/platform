@@ -122,7 +122,7 @@ export async function getBranchFailures(
           eq(testRuns.projectId, projectId),
           branch ? eq(testRuns.branch, branch) : undefined,
           eligibleRunSql('branch-failures'),
-          ciOnly ? runOriginIn(testRuns.metadata, CI_RUN_ORIGINS) : undefined,
+          ciOnly ? runOriginIn(testRuns.origin, CI_RUN_ORIGINS) : undefined,
         ),
       )
       .orderBy(desc(testRuns.startTime), desc(testRuns.id))

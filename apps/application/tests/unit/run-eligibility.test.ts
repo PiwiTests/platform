@@ -180,7 +180,9 @@ describe('the SQL form of the rule', () => {
     for (const metadata of samples) {
       for (const shape of shapes) {
         id += 1;
-        await db.insert(schema.testRuns).values({ id, projectId: 1, startTime: new Date(), ...shape });
+        await db
+          .insert(schema.testRuns)
+          .values({ id, projectId: 1, startTime: new Date(), origin: runOrigin(metadata), ...shape });
         if (metadata !== null) {
           await db.run(sql`UPDATE test_runs SET metadata = ${spelling(metadata)} WHERE id = ${id}`);
         }
@@ -211,7 +213,7 @@ describe('the SQL form of the rule', () => {
         const rows = await db
           .select({ id: schema.testRuns.id })
           .from(schema.testRuns)
-          .where(runOriginIn(schema.testRuns.metadata, [kind]));
+          .where(runOriginIn(schema.testRuns.origin, [kind]));
         const expected = runs.filter((r) => runOrigin(r.metadata) === kind).map((r) => r.id);
         expect(
           rows.map((r) => r.id).sort((a, b) => a - b),
@@ -221,7 +223,7 @@ describe('the SQL form of the rule', () => {
       const notLab = await db
         .select({ id: schema.testRuns.id })
         .from(schema.testRuns)
-        .where(notLabRun(schema.testRuns.metadata));
+        .where(notLabRun(schema.testRuns.origin));
       expect(notLab.map((r) => r.id).sort((a, b) => a - b)).toEqual(
         runs.filter((r) => !isLabRun(r.metadata)).map((r) => r.id),
       );

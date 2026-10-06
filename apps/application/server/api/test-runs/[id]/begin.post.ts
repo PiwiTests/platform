@@ -6,6 +6,7 @@ import { cancelInstanceRuns } from '../../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../../utils/sanitize';
 import { carryIngestHealth } from '#shared/ingest-health';
 import { resolveRunBranch } from '../../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../../utils/run-events';
 import { knownShardTokens, matchesShardToken, shardTokenDigest, withShardTokens } from '../../../utils/shard-tokens';
 import { timingSafeEqualStr } from '../../../utils/timing-safe';
@@ -125,6 +126,7 @@ export default eventHandler(async (event) => {
         streamToken,
         totalTests: body.totalTests || 0,
         metadata: shardTokens ? withShardTokens(metadata, shardTokens) : metadata,
+        origin: runOrigin(metadata),
         branch: resolveRunBranch(body.metadata) ?? testRun.branch,
         playwrightVersion: body.playwrightVersion || testRun.playwrightVersion,
         reporterVersion: body.reporterVersion || testRun.reporterVersion,
@@ -146,6 +148,7 @@ export default eventHandler(async (event) => {
       .update(testRuns)
       .set({
         metadata: withShardTokens(testRun.metadata, shardTokens),
+        origin: runOrigin(testRun.metadata),
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         updatedAt: new Date(),
       })

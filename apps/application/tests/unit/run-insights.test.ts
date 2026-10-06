@@ -9,6 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // so clear it before the handler module (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
 const { computeRunInsights } = await import('../../shared/handlers/run-insights');
+const { runOrigin } = await import('../../shared/run-eligibility');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -75,41 +76,43 @@ describe('computeRunInsights', () => {
 
   test('without a passing run, failedFallback compares with the last failed one', async () => {
     await db.insert(schema.projects).values({ id: 2, name: 'never-green', defaultBranch: 'main' });
-    await db.insert(schema.testRuns).values([
-      {
-        id: 20,
-        projectId: 2,
-        status: 'failed',
-        isFullRun: 1,
-        branch: 'main',
-        startTime: new Date(Date.now() - 4 * HOUR_MS),
-      },
-      {
-        id: 21,
-        projectId: 2,
-        status: 'interrupted',
-        isFullRun: 1,
-        branch: 'main',
-        startTime: new Date(Date.now() - 3 * HOUR_MS),
-      },
-      {
-        id: 22,
-        projectId: 2,
-        status: 'failed',
-        isFullRun: 1,
-        branch: 'main',
-        startTime: new Date(Date.now() - 2 * HOUR_MS),
-        metadata: { piwiProbe: true },
-      },
-      {
-        id: 23,
-        projectId: 2,
-        status: 'failed',
-        isFullRun: 1,
-        branch: 'main',
-        startTime: new Date(Date.now() - HOUR_MS),
-      },
-    ]);
+    await db.insert(schema.testRuns).values(
+      [
+        {
+          id: 20,
+          projectId: 2,
+          status: 'failed',
+          isFullRun: 1,
+          branch: 'main',
+          startTime: new Date(Date.now() - 4 * HOUR_MS),
+        },
+        {
+          id: 21,
+          projectId: 2,
+          status: 'interrupted',
+          isFullRun: 1,
+          branch: 'main',
+          startTime: new Date(Date.now() - 3 * HOUR_MS),
+        },
+        {
+          id: 22,
+          projectId: 2,
+          status: 'failed',
+          isFullRun: 1,
+          branch: 'main',
+          startTime: new Date(Date.now() - 2 * HOUR_MS),
+          metadata: { piwiProbe: true },
+        },
+        {
+          id: 23,
+          projectId: 2,
+          status: 'failed',
+          isFullRun: 1,
+          branch: 'main',
+          startTime: new Date(Date.now() - HOUR_MS),
+        },
+      ].map((row) => ({ ...row, origin: runOrigin(row.metadata) })),
+    );
     await attempts(20, [
       { testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 0 },
       { testCaseId: 2, browserName: 'chromium', status: 'failed', retries: 0 },
