@@ -13,7 +13,7 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, the `piwi/setCredentials` and `piwi/commandEnded` notifications, and the
+  `piwi/pageCandidates`, the `piwi/setCredentials`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
   `piwi/runStatusChanged`, `piwi/statusChanged`, `piwi/notice`, `piwi/desktopJobChanged` and `piwi/recordingChanged`
   notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code Vision), `piwi/runStatus` in
   its status bar, and `piwi/failures` in a list where its LSP client highlights open files only (the JetBrains IDEs).
@@ -56,7 +56,8 @@ clients stay thin and both editors give the same answers.
   the run once more and, when no run carries the ref 5 s later, sends `piwi/notice`; the instance is not asked for the
   ref again. A later run carrying it, a rerun of the command (the Run tool window's Rerun, a VS Code terminal reused
   without shell integration), is the editor's own once the instance's stream announces it, whatever was found before;
-  the service keeps the refs of the 50 latest commands.
+  the service keeps the refs of the 50 latest commands. A command sent to a terminal whose environment holds another
+  ref (`piwi/commandStarted` with `terminalRef`) is not looked for by its own: its run carries the terminal's ref.
 - `src/analysis.ts` is the pure half: locators per line, stability findings, replacements, breaks of an unsaved
   change and their call-site edits. Keep new logic here, or in `@piwitests/core` when the CLI or the dashboard needs it
   too; never re-implement a core function.

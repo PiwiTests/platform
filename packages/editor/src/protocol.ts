@@ -321,6 +321,18 @@ export const RUN_STATUS_REQUEST = 'piwi/runStatus';
 export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
 
 /**
+ * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
+ * `ref` to a terminal. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
+ * carries instead: the service does not look for `ref`, and recognizes the run by `terminalRef`.
+ */
+export interface CommandStartedParams {
+  ref: string;
+  terminalRef?: string;
+}
+
+export const COMMAND_STARTED_NOTIFICATION = 'piwi/commandStarted';
+
+/**
  * `piwi/commandEnded` (notification, client to server): the command of a `RunCommand` with a `ref` ended, with its exit
  * code when the client knows it. The service reads the run once more, and says in `piwi/notice` when no run carries
  * the ref.

@@ -106,6 +106,7 @@ import {
 } from './protocol.js';
 import {
   COMMAND_ENDED_NOTIFICATION,
+  COMMAND_STARTED_NOTIFICATION,
   FAILURES_REQUEST,
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
@@ -131,6 +132,7 @@ import {
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
   type CommandEndedParams,
+  type CommandStartedParams,
   type DesktopResult,
   type EditorCredentials,
   type EditorTest,
@@ -1819,6 +1821,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     );
     runChanged();
     return runStatus();
+  });
+
+  connection.onNotification(COMMAND_STARTED_NOTIFICATION, (params: CommandStartedParams) => {
+    if (typeof params?.ref === 'string') runWatch.commandStarted(params.ref, params.terminalRef);
   });
 
   connection.onNotification(COMMAND_ENDED_NOTIFICATION, (params: CommandEndedParams) => {

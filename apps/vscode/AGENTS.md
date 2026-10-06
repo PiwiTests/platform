@@ -33,9 +33,11 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   (`window.onDidStartTerminalShellExecution` and `onDidEndTerminalShellExecution`, VS Code 1.93 and later, read at
   runtime like the MCP API), a test run opens a terminal of its own, which replaces the previous run's terminal of that
   folder once its command ended, and the end of its command sends `piwi/commandEnded` with the exit code. Without it,
-  the test runs of a folder share one terminal, whose environment keeps the first run's ref, by which the service
-  recognizes the later runs as the editor's own through the instance's event stream, and nothing is sent. A
-  `piwi/notice` is shown once, as a warning or an information message.
+  and in a shell without integration (the folder's run terminal has no `shellIntegration`), the test runs of a folder
+  share one terminal, whose environment keeps the first run's ref, by which the service recognizes the later runs as
+  the editor's own through the instance's event stream, and no end is sent. Every test run's command sends
+  `piwi/commandStarted`, with the terminal's ref as `terminalRef` when it is not the command's own. A `piwi/notice` is
+  shown once, as a warning or an information message.
 - `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in
   global state, with the token from `SecretStorage` (`piwi.sendToken`); **Piwi: Pair with Piwi Picker** starts it and
   copies the pairing address. A recorded flow is rendered by the service (`piwi/renderSteps`) before it is inserted.

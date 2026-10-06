@@ -1217,7 +1217,7 @@ describe('runs as they happen', () => {
       debounceMs: 10,
       // Not within a test: what the service reads again, it reads on an event.
       runPollMs: 60 * 60_000,
-      ownRunPollMs: 50,
+      ownRunPollMs: 200,
       commandEndWaitMs: 300,
     });
     runsClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
@@ -1401,6 +1401,26 @@ describe('runs as they happen', () => {
     await waitFor(() => (runsReads > reads ? true : undefined));
     await rerun(47, '2026-09-27T12:50:00.000Z');
     expect(notices.length).toBe(noticed);
+  });
+
+  test('a command sent to a terminal of another ref is not looked for, and its run is its own by that ref', async () => {
+    // A terminal opened for a first command, then reused for a second one: its runs carry the first ref.
+    const first = await runTests();
+    await runsClient.sendNotification('piwi/commandStarted', { ref: first.ref });
+    const second = await runTests();
+    await runsClient.sendNotification('piwi/commandStarted', { ref: second.ref, terminalRef: first.ref });
+    const startTime = '2026-09-27T13:00:00.000Z';
+    runDetails.set(48, editorRun(48, first.ref, 'running', startTime));
+    const seen = statuses.length;
+    pushInstanceEvent({ type: 'run-started', runId: 48, projectId: 7 });
+    const live = await waitFor(
+      () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === 48)?.contexts[0]?.live ?? undefined,
+    );
+    expect(live).toMatchObject({ runId: 48, status: 'running', own: true });
+    const { message } = await endRun(48, startTime);
+    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)");
+    // The instance was never asked for the ref the second command was built with.
+    expect(refLookups.get(second.ref!)).toBeUndefined();
   });
 
   test('a command whose run never reached the instance is said once it ends, and is looked for no more', async () => {

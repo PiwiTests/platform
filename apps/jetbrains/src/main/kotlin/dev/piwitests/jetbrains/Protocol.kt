@@ -65,6 +65,12 @@ data class RunCommand(
     val ref: String? = null,
 )
 
+/**
+ * `piwi/commandStarted`: the command of a `RunCommand` built with `ref` was sent to a terminal; `terminalRef` is the ref
+ * of that terminal's environment when it is another one, which the run carries instead.
+ */
+data class CommandStartedParams(val ref: String, val terminalRef: String? = null)
+
 /** `piwi/commandEnded`: the command of a `RunCommand` with `ref` ended, with its exit code. */
 data class CommandEndedParams(val ref: String, val exitCode: Int? = null)
 
@@ -402,6 +408,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)
+
+    @JsonNotification("piwi/commandStarted")
+    fun commandStarted(params: CommandStartedParams)
 
     @JsonNotification("piwi/commandEnded")
     fun commandEnded(params: CommandEndedParams)

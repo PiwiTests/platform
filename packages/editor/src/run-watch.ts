@@ -197,6 +197,28 @@ export class RunWatch {
   }
 
   /**
+   * The command built with `ref` was sent to a terminal. When the terminal's environment holds another ref,
+   * `terminalRef`, the command's run carries that one: the command's own watch is dropped, so the instance is not asked
+   * for `ref`, and the run is the editor's own when the stream announces it with `terminalRef`, whose watch counts as
+   * one of the latest.
+   */
+  commandStarted(ref: string, terminalRef?: string | null): void {
+    if (!terminalRef || terminalRef === ref) return;
+    const w = this.watches.get(ref);
+    if (w) {
+      if (w.timer) clearTimeout(w.timer);
+      w.timer = null;
+      w.until = 0;
+      this.watches.delete(ref);
+    }
+    const terminal = this.watches.get(terminalRef);
+    if (terminal) {
+      this.watches.delete(terminalRef);
+      this.watches.set(terminalRef, terminal);
+    }
+  }
+
+  /**
    * A command built with `ref` ended: its context reads its latest run and its live run once more, and, when no run of
    * the command was found, the instance is asked for one for a few seconds more; without one, a notice says so. The
    * instance is not asked again: the run found joins the command's known runs, and a rerun of the command, with the

@@ -17,12 +17,14 @@ import {
 } from 'vscode-languageclient/node';
 import {
   COMMAND_ENDED_NOTIFICATION,
+  COMMAND_STARTED_NOTIFICATION,
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   SHARE_DESKTOP_JOB_REQUEST,
   type CommandEndedParams,
+  type CommandStartedParams,
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
@@ -305,28 +307,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   // The terminal of each directory and environment commands run in, reused while it is open. A test run carries the
-  // ref of its own run in its environment. With shell integration, it opens a terminal of its own, which replaces the
-  // previous run's in that directory once that run's command ended. Without it, the test runs of a directory share one
-  // terminal, whose environment keeps the first run's ref: the service recognizes the later runs as the editor's own by
-  // it, through the instance's event stream.
+  // ref of its own run in its environment. Where shell integration reports the commands of the directory's run
+  // terminal, a test run opens a terminal of its own, which replaces the previous run's once that run's command ended.
+  // Without shell integration, or in a shell that never activates it, the test runs of a directory share one terminal,
+  // whose environment keeps the first run's ref: the service is told so (`piwi/commandStarted`), and recognizes the
+  // later runs as the editor's own by that ref, through the instance's event stream.
   const terminals = new Map<string, vscode.Terminal>();
   const runTerminals = new Map<string, vscode.Terminal>();
+  /** The ref of each run terminal's environment: the ref of the first command sent to it. */
+  const terminalRefs = new Map<vscode.Terminal, string>();
   /** The command of a test run sent to a terminal, until shell integration sees it end: `piwi/commandEnded` names it. */
   const running = new Map<vscode.Terminal, { ref: string; command: string }>();
   /** The terminals whose last command ended. */
   const idle = new WeakSet<vscode.Terminal>();
   const shell = vscode.window as unknown as ShellIntegrationApi;
   const shellIntegration = !!shell.onDidStartTerminalShellExecution && !!shell.onDidEndTerminalShellExecution;
+  /** Whether a terminal's shell activated shell integration (VS Code 1.93 and later, read at runtime). */
+  const integrated = (t: vscode.Terminal) =>
+    (t as unknown as { shellIntegration?: unknown }).shellIntegration !== undefined;
   const runInTerminal = (cwd: string, command: string, env?: Record<string, string>, ref?: string) => {
     let terminal: vscode.Terminal | undefined;
     if (ref) {
+      // By the next run, the previous run's terminal has activated shell integration, or never will.
       const previous = runTerminals.get(cwd);
-      if (!shellIntegration && previous && !previous.exitStatus) {
+      if (previous && !previous.exitStatus && (!shellIntegration || !integrated(previous))) {
         terminal = previous;
       } else {
         if (previous && idle.has(previous)) previous.dispose();
         terminal = vscode.window.createTerminal({ name: 'Piwi', cwd, env });
         runTerminals.set(cwd, terminal);
+        terminalRefs.set(terminal, ref);
         if (shellIntegration) running.set(terminal, { ref, command });
       }
     } else {
@@ -339,6 +349,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
     terminal.show();
     terminal.sendText(command);
+    if (ref) {
+      const terminalRef = terminalRefs.get(terminal);
+      void lc.sendNotification(COMMAND_STARTED_NOTIFICATION, {
+        ref,
+        ...(terminalRef && terminalRef !== ref ? { terminalRef } : {}),
+      } satisfies CommandStartedParams);
+    }
   };
   if (shell.onDidStartTerminalShellExecution && shell.onDidEndTerminalShellExecution) {
     context.subscriptions.push(
@@ -360,6 +377,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.window.onDidCloseTerminal((t) => {
       for (const [key, terminal] of terminals) if (terminal === t) terminals.delete(key);
       for (const [cwd, terminal] of runTerminals) if (terminal === t) runTerminals.delete(cwd);
+      terminalRefs.delete(t);
       running.delete(t);
     }),
   );
