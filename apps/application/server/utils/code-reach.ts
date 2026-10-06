@@ -53,19 +53,35 @@ export interface CodeReachCase {
  * of older runs. An execution older than the rows already stored (an imported
  * old report) changes nothing.
  */
-export async function upsertCodeReach(db: DrizzleDB, projectId: number, cases: CodeReachCase[]): Promise<void> {
+/** What a caller that has already read it hands {@link upsertCodeReach}, which reads the rest itself. */
+export interface CodeReachLookups {
+  /** The start and branch of every run the cases belong to. */
+  runs?: Map<number, { startedAt: Date; branch: string | null }>;
+  /** The project's stored default branch, resolved by the caller at most once. */
+  defaultBranch?: () => Promise<string>;
+}
+
+export async function upsertCodeReach(
+  db: DrizzleDB,
+  projectId: number,
+  cases: CodeReachCase[],
+  known: CodeReachLookups = {},
+): Promise<void> {
   if (cases.length === 0) return;
-  const runIds = [...new Set(cases.map((c) => c.runId))];
-  const runs = new Map<number, { startedAt: Date; branch: string | null }>();
-  for (let i = 0; i < runIds.length; i += INSERT_CHUNK) {
-    const rows = await db
-      .select({ id: testRuns.id, startTime: testRuns.startTime, branch: testRuns.branch })
-      .from(testRuns)
-      .where(inArray(testRuns.id, runIds.slice(i, i + INSERT_CHUNK)));
-    for (const r of rows) runs.set(r.id, { startedAt: new Date(r.startTime), branch: r.branch });
+  let runs = known.runs;
+  if (!runs) {
+    runs = new Map();
+    const runIds = [...new Set(cases.map((c) => c.runId))];
+    for (let i = 0; i < runIds.length; i += INSERT_CHUNK) {
+      const rows = await db
+        .select({ id: testRuns.id, startTime: testRuns.startTime, branch: testRuns.branch })
+        .from(testRuns)
+        .where(inArray(testRuns.id, runIds.slice(i, i + INSERT_CHUNK)));
+      for (const r of rows) runs.set(r.id, { startedAt: new Date(r.startTime), branch: r.branch });
+    }
   }
   const branched = [...runs.values()].some((r) => r.branch);
-  const defaultBranch = branched ? await projectDefaultBranch(db, projectId) : null;
+  const defaultBranch = branched ? await (known.defaultBranch?.() ?? projectDefaultBranch(db, projectId)) : null;
 
   // Per (test case, branch) in this batch: the latest run, and the files of all its executions.
   const latest = new Map<
