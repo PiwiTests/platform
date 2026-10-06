@@ -883,7 +883,7 @@ async function countConcurrentRuns(
         eq(testRuns.projectId, projectId),
         inArray(testRuns.environment, environments),
         gte(testRuns.startTime, from),
-        notLabRun(testRuns.metadata),
+        notLabRun(testRuns.origin),
       ),
     )
     .orderBy(desc(testRuns.startTime))

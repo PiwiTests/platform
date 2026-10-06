@@ -7,6 +7,7 @@ import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../utils/persist-run-cases';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
@@ -215,6 +216,7 @@ export default eventHandler(async (event) => {
   // Non-sharded or first shard of a sharded batch run: create a new run
   await cancelInstanceRuns(db, project.id, instanceId, undefined, isSharded);
 
+  const metadata = sanitizeMetadata(body.metadata || null);
   const testRunResult = await db
     .insert(testRuns)
     .values({
@@ -230,7 +232,8 @@ export default eventHandler(async (event) => {
       environment: body.environment || null,
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
-      metadata: sanitizeMetadata(body.metadata || null),
+      metadata,
+      origin: runOrigin(metadata),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

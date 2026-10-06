@@ -17,6 +17,7 @@ import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { settleFinalizingRun } from '../../utils/finalizing-runs';
@@ -337,6 +338,7 @@ export default eventHandler(async (event) => {
     await applyReporterKeep(db, existingTestRunId, testRunData.keep);
   } else {
     // Create a new test run (standard batch upload)
+    const metadata = sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null);
     const testRunResult = await db
       .insert(testRuns)
       .values({
@@ -355,7 +357,8 @@ export default eventHandler(async (event) => {
         environment: (testRunData.environment as string | null | undefined) || null,
         branch: resolveRunBranch(testRunData.metadata),
         label: (testRunData.label as string | null | undefined) || null,
-        metadata: sanitizeMetadata((testRunData.metadata || null) as Record<string, unknown> | null),
+        metadata,
+        origin: runOrigin(metadata),
         instanceId: (testRunData.instanceId as string | null | undefined) || null,
         playwrightVersion: (testRunData.playwrightVersion as string | null | undefined) || null,
         reporterVersion: (testRunData.reporterVersion as string | null | undefined) || null,

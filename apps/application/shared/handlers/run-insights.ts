@@ -186,7 +186,7 @@ export async function computeRunInsights(
         eq(testRuns.projectId, run.projectId),
         lt(testRuns.startTime, run.startTime),
         inArray(testRuns.status, TERMINAL_STATUSES),
-        notLabRun(testRuns.metadata),
+        notLabRun(testRuns.origin),
       ),
     )
     .orderBy(desc(testRuns.startTime))

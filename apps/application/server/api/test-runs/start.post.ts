@@ -6,6 +6,7 @@ import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
+import { runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { persistShardToken, shardTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
@@ -112,6 +113,10 @@ export default eventHandler(async (event) => {
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
     const streamToken = randomBytes(32).toString('hex');
+    const metadata = {
+      ...(sanitizeMetadata(body.metadata ?? {}) ?? {}),
+      shardTokens: [shardTokenDigest(streamToken)],
+    } as Record<string, unknown>;
 
     const testRunResult = await db
       .insert(testRuns)
@@ -128,10 +133,8 @@ export default eventHandler(async (event) => {
         environment: body.environment || null,
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
-        metadata: {
-          ...(sanitizeMetadata(body.metadata ?? {}) ?? {}),
-          shardTokens: [shardTokenDigest(streamToken)],
-        } as Record<string, unknown>,
+        metadata,
+        origin: runOrigin(metadata),
         instanceId,
         playwrightVersion: body.playwrightVersion || null,
         reporterVersion: body.reporterVersion || null,
@@ -169,6 +172,7 @@ export default eventHandler(async (event) => {
   await cancelInstanceRuns(db, project.id, instanceId);
 
   const streamToken = randomBytes(32).toString('hex');
+  const metadata = sanitizeMetadata(body.metadata || null);
 
   const testRunResult = await db
     .insert(testRuns)
@@ -185,7 +189,8 @@ export default eventHandler(async (event) => {
       environment: body.environment || null,
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
-      metadata: sanitizeMetadata(body.metadata || null),
+      metadata,
+      origin: runOrigin(metadata),
       instanceId,
       playwrightVersion: body.playwrightVersion || null,
       reporterVersion: body.reporterVersion || null,

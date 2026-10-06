@@ -1015,6 +1015,8 @@ for (const proj of DEMO_PROJECTS) {
       branch: commit.branch && commit.branch !== 'HEAD' ? commit.branch : null,
       label: proj.id === 1 && i === 0 ? 'v2.4.0 release' : null,
       metadata,
+      // `runOrigin(metadata)`: the metadata carries a CI record.
+      origin: 'ci',
       stream_token: null,
       instance_id: null,
       // Newest runs are on a newer Playwright than older ones so the

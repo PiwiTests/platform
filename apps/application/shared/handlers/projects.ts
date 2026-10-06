@@ -620,7 +620,7 @@ export async function getProjectPerformance(
   if (!projectResults[0]) throw new Error('Project not found');
 
   // Build conditions
-  const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)];
+  const conditions = [eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)];
   if (fullRunsOnly) {
     conditions.push(eq(testRuns.isFullRun, 1));
   }
@@ -1043,7 +1043,7 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.metadata)))
+    .where(and(eq(testRuns.projectId, projectId), gte(testRuns.startTime, since), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(100);
   if (recentRuns.length === 0) return { specs: [] };
@@ -1190,7 +1190,7 @@ export async function getProjectSlowTests(db: DrizzleDB, projectId: number, runs
   const recentRuns: any[] = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
     .limit(effectiveLimit);
 
@@ -1909,7 +1909,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
       totalFullRuns: count(),
     })
     .from(testRuns)
-    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata)))
+    .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.origin)))
     .groupBy(testRuns.projectId);
 
   const totalFullRunsByProjectId = new Map<number, number>();
@@ -1938,7 +1938,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
           ),
         })
         .from(testRuns)
-        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.metadata))),
+        .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.isFullRun, 1), notLabRun(testRuns.origin))),
     );
 
     recentFullRuns = await db

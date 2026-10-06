@@ -370,7 +370,7 @@ async function loadPlanHistory(db: DrizzleDB, testCaseId: number, now: Date) {
         gte(testRunsCases.createdAt, since),
         inArray(testRunsCases.status, ['passed', ...FAILED_STATUS_KEYS]),
         inArray(testRuns.status, TERMINAL_STATUSES),
-        notLabRun(testRuns.metadata),
+        notLabRun(testRuns.origin),
       ),
     )
     .orderBy(desc(testRunsCases.createdAt))

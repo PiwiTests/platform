@@ -156,7 +156,7 @@ export async function getVerifiedFixes(db: DrizzleDB, testCaseIds: number[]): Pr
       and(
         inArray(testRunsCases.testCaseId, [...marks.keys()]),
         gt(testRuns.startTime, earliest),
-        notLabRun(testRuns.metadata),
+        notLabRun(testRuns.origin),
       ),
     )
     .orderBy(asc(testRuns.startTime));

@@ -21,6 +21,7 @@ import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
+import { runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
 import { sumFailedAndTimedOut } from '../utils/test-counts';
@@ -278,6 +279,16 @@ export async function importBlobReportRun(
     if (staged.length) stagedTraces.set(index, staged);
   }
 
+  const metadata = {
+    ...(parsed.scm ? { scm: parsed.scm } : {}),
+    [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
+    import: {
+      source,
+      importedAt: new Date().toISOString(),
+      blobVersion: parsed.blobVersion,
+      ...(parsed.shard ? { shard: parsed.shard } : {}),
+    },
+  };
   const inserted = await db
     .insert(testRuns)
     .values({
@@ -296,16 +307,8 @@ export async function importBlobReportRun(
       label: input.label ?? null,
       playwrightVersion: parsed.playwrightVersion,
       importHash,
-      metadata: {
-        ...(parsed.scm ? { scm: parsed.scm } : {}),
-        [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
-        import: {
-          source,
-          importedAt: new Date().toISOString(),
-          blobVersion: parsed.blobVersion,
-          ...(parsed.shard ? { shard: parsed.shard } : {}),
-        },
-      } as never,
+      metadata: metadata as never,
+      origin: runOrigin(metadata),
     })
     .returning();
 
@@ -462,6 +465,10 @@ export async function importTraceRun(
   )[0];
 
   if (!run) {
+    const metadata = {
+      [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
+      import: { source, importedAt: new Date().toISOString(), kind: 'trace' },
+    };
     try {
       run = (
         await db
@@ -475,10 +482,8 @@ export async function importTraceRun(
             label: input.label ?? null,
             playwrightVersion: parsed.playwrightVersion,
             importHash: runKey,
-            metadata: {
-              [RUN_ORIGIN_METADATA_KEY]: { kind: 'import' },
-              import: { source, importedAt: new Date().toISOString(), kind: 'trace' },
-            } as never,
+            metadata: metadata as never,
+            origin: runOrigin(metadata),
           })
           .returning()
       )[0];

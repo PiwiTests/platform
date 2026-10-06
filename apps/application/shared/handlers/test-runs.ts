@@ -56,7 +56,12 @@ export async function getProjectLatestRun(
     const rows = await db
       .select({ id: testRuns.id, status: testRuns.status, metadata: testRuns.metadata })
       .from(testRuns)
-      .where(and(eq(testRuns.projectId, projectId), runOriginIs(testRuns.metadata, origin.kind, ref)))
+      .where(
+        and(
+          eq(testRuns.projectId, projectId),
+          runOriginIs({ origin: testRuns.origin, metadata: testRuns.metadata }, origin.kind, ref),
+        ),
+      )
       .orderBy(desc(testRuns.startTime), desc(testRuns.id))
       .limit(20);
     const found = rows.find((r) => runOrigin(r.metadata) === origin.kind && runOriginRef(r.metadata) === ref);
@@ -356,7 +361,7 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
       .select(RECENT_FIELDS)
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
-      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.metadata), inScope))
+      .where(and(notInArray(testRuns.status, [...ACTIVE_STATUSES]), notLabRun(testRuns.origin), inScope))
       .orderBy(desc(testRuns.startTime))
       .limit(30),
   ]);

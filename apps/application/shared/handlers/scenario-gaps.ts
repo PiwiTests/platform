@@ -1140,7 +1140,7 @@ async function loadRecentRunIds(db: DrizzleDB, projectId: number, limit: number)
   const rows = await db
     .select({ id: testRuns.id })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.metadata)))
+    .where(and(eq(testRuns.projectId, projectId), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.id))
     .limit(limit);
   return rows.map((r) => r.id);

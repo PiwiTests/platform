@@ -170,24 +170,25 @@ describe('isFlakeLabRun and isLabRun', () => {
 });
 
 describe('notLabRun (SQLite)', () => {
-  test('keeps real runs and drops probe and flake-lab runs, compact or spaced JSON', async () => {
+  test('keeps real runs and drops probe and flake-lab runs by their stored origin', async () => {
     const { createClient } = await import('@libsql/client');
     const { drizzle } = await import('drizzle-orm/libsql');
     const { sql } = await import('drizzle-orm');
+    const { runOrigin } = await import('../../shared/run-eligibility');
     const db = drizzle(createClient({ url: ':memory:' }));
-    await db.run(sql`CREATE TABLE runs (id INTEGER, metadata TEXT)`);
-    const rows: Array<[number, string | null]> = [
+    await db.run(sql`CREATE TABLE runs (id INTEGER, origin TEXT NOT NULL)`);
+    const rows: Array<[number, unknown]> = [
       [1, null],
-      [2, JSON.stringify({ scm: { branch: 'main' } })],
-      [3, JSON.stringify({ piwiProbe: true })],
-      [4, JSON.stringify({ piwiFlakeLab: { experimentId: 'e', armId: 'a' } })],
-      [5, '{"piwiFlakeLab": {"armId": "a", "experimentId": "e"}}'],
-      [6, '{"piwiProbe": true}'],
+      [2, { scm: { branch: 'main' } }],
+      [3, { piwiProbe: true }],
+      [4, { piwiFlakeLab: { experimentId: 'e', armId: 'a' } }],
+      [5, { piwiOrigin: { kind: 'flake-lab', ref: 'e' } }],
+      [6, { piwiOrigin: { kind: 'bisect', ref: '12' } }],
     ];
-    for (const [id, metadata] of rows) await db.run(sql`INSERT INTO runs VALUES (${id}, ${metadata})`);
+    for (const [id, metadata] of rows) await db.run(sql`INSERT INTO runs VALUES (${id}, ${runOrigin(metadata)})`);
     const kept = await db.all<{ id: number }>(
-      sql`SELECT id FROM runs WHERE ${notLabRun(sql.raw('metadata'))} ORDER BY id`,
+      sql`SELECT id FROM runs WHERE ${notLabRun(sql.raw('origin'))} ORDER BY id`,
     );
-    expect(kept.map((r) => r.id)).toEqual([1, 2]);
+    expect(kept.map((r) => r.id)).toEqual([1, 2, 6]);
   });
 });

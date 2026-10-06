@@ -50,7 +50,7 @@ function eligibleRuns(q: Pick<BaselineQuery, 'projectId' | 'before' | 'fullRunOn
   const conditions: SQL[] = [
     eq(testRuns.projectId, q.projectId),
     lt(testRuns.startTime, q.before),
-    notLabRun(testRuns.metadata),
+    notLabRun(testRuns.origin),
   ];
   if (q.fullRunOnly) conditions.push(eq(testRuns.isFullRun, 1));
   return conditions;

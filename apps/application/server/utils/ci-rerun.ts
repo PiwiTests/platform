@@ -294,14 +294,13 @@ export async function matchCiRerunRun(db: DbClient, runId: number): Promise<numb
   if (!match) return null;
 
   const { clusterId, ...dispatch } = match;
+  const metadata = {
+    ...((run.metadata as Record<string, unknown> | null) ?? {}),
+    [RUN_ORIGIN_METADATA_KEY]: { kind: 'ci-rerun', ref: dispatch.id },
+  };
   await db
     .update(testRuns)
-    .set({
-      metadata: {
-        ...((run.metadata as Record<string, unknown> | null) ?? {}),
-        [RUN_ORIGIN_METADATA_KEY]: { kind: 'ci-rerun', ref: dispatch.id },
-      },
-    })
+    .set({ metadata, origin: runOrigin(metadata) })
     .where(eq(testRuns.id, runId));
   await db
     .update(failureClusters)
