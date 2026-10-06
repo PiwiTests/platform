@@ -9,9 +9,11 @@ CI baseline, its failures follow the edits, its breakpoints pause the browser wi
 bar and the failures view are rebuilt around that loop.
 
 **Status.** Proposed 2026-10-06. Being built on `claude/adoring-curie-oiaifu`, every step in one pull request, in the
-order of [Delivery](#delivery): steps 1 (Parts 2a, 2b and 2d), 2 (Parts 1 and 5), 3 (Part 3) and 4 (Part 6, items
-7.1 to 7.3) are built. Where the build differs from this text, the [docs](../apps/docs/features/editor-runs.md) and
-the code are right: the live gutter finds a test that begins by its title within its file, since the run stream's
+order of [Delivery](#delivery): steps 1 (Parts 2a, 2b and 2d), 2 (Parts 1 and 5), 3 (Part 3), 4 (Part 6, items 7.1
+to 7.3) and 5 (Part 4, item 7.4) are built. Where the build differs from this text, the
+[docs](../apps/docs/features/editor-runs.md) and the code are right: the breakpoints have their own page,
+[Breakpoints in the browser](../apps/docs/features/editor-breakpoints.md); `piwi/applyPick` takes the file as the run
+reported it and answers the file's URI with the edit; the live gutter finds a test that begins by its title within its file, since the run stream's
 `test-begin` carries no test case id; the verdict's counts come from the run's details; only a CI
 run's failures are anchored at its commit (a developer's run ran the working tree, so its failures are followed from
 the files as saved when first placed, as are a run's without a commit); a failure is dropped only when its test was
