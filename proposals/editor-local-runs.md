@@ -9,8 +9,11 @@ CI baseline, its failures follow the edits, its breakpoints pause the browser wi
 bar and the failures view are rebuilt around that loop.
 
 **Status.** Proposed 2026-10-06. Being built on `claude/adoring-curie-oiaifu`, every step in one pull request, in the
-order of [Delivery](#delivery): steps 1 (Parts 2a, 2b and 2d) and 2 (Parts 1 and 5) are built. Where the build
-differs from this text, the [docs](../apps/docs/features/editor-runs.md) and the code are right: a test fixed since
+order of [Delivery](#delivery): steps 1 (Parts 2a, 2b and 2d), 2 (Parts 1 and 5) and 3 (Part 3) are built. Where the
+build differs from this text, the [docs](../apps/docs/features/editor-runs.md) and the code are right: only a CI
+run's failures are anchored at its commit (a developer's run ran the working tree, so its failures are followed from
+the files as saved when first placed, as are a run's without a commit); a failure is dropped only when its test was
+in the spec the run saw and left it, so a test with a computed title keeps its marker; a test fixed since
 reads `fixed locally in run #124 (failing in run #120)`; in the finalize path only the outbound effects of a run
 (notifications, the pull-request comment and status, auto-heal, AI diagnosis, the incident and interrupted events)
 follow D11, while fix verification, change coverage, the scenario gaps and the hand-back outcomes run for every run as
