@@ -1,6 +1,6 @@
 ---
 title: Runs from the editor
-description: "Run Playwright tests from VS Code or a JetBrains IDE and follow the run in the status bar: the editor reads its results within a second of its end, lays them over the latest CI run's failures, and says when a run never reached the instance."
+description: "Run Playwright tests from VS Code or a JetBrains IDE and follow the run in the status bar: the editor reads its results within a second of its end, lays them over the latest CI run's failures in a tree, and says when a run never reached the instance."
 lang: en-US
 ---
 
@@ -61,6 +61,36 @@ a pass takes the failure away.
 For a CI run, the files as the run saw them are those of the run's commit, read with `git show` once per commit and
 file. For a run on your machine, which ran your files as saved, a run that recorded no commit, or a commit your clone
 does not have, they are the files as saved when the editor first showed the failure.
+
+## The failures view
+
+The latest run's failures as a tree: the **Failures** view of the **Piwi** panel in VS Code, the Piwi tool window in a
+JetBrains IDE. Its first node is the run, `Run #120 · CI · feature/x · 3 failing · 1 fixed locally`, with its age, or
+the progress of the run you started (`running 4/9`). Under it:
+
+- **Your runs since** lists the runs laid over it, such as `#124 · your run · 2 min ago · 1 passed, 0 failed`; a click
+  opens one in the dashboard.
+- The failures, grouped by spec (the default), by [failure cluster](/features/failure-clusters), by owner, or flat:
+  **Group by…** in the view's title bar, the toggles of the tool window's toolbar. The choice is kept for the
+  workspace, and each group counts its failures.
+- A failure shows its title, where it failed (`tests/login.spec.ts:42 · chromium · new`), and an icon for failing,
+  edited since the run, or fixed locally, with the headline and its run (`your run #124`, `edited since run #120`).
+
+Click a failure (double-click or Enter in a JetBrains IDE) to open its line. **Run this test**, **Open the trace** and
+**Open in dashboard** sit on its row in VS Code; the context menu adds **Open the screenshot**, **Copy context for
+agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the
+desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
+
+The title bar, or the toolbar, holds Refresh, **Re-run the failing tests**, **Open the run in the dashboard** and the
+grouping. In VS Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge
+counts the failing tests, as the tool window's title does. The tree is read again when a run ends or an edit moves a
+failure, and keeps what you expanded. The Problems panel keeps its errors.
+
+## Re-run the failing tests
+
+**Piwi: Re-run the failing tests** (**Tools → Piwi → Re-run the Failing Tests**) runs every test still failing, or
+edited since its run, in one command; when none fails, it says so. **Run this test** also sits above the reason line of
+a failing test, beside **Screenshot** and **Trace**.
 
 ## The status bar
 

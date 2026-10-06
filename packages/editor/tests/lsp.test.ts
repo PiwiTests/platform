@@ -20,6 +20,7 @@ import { toStepsDocument } from '@piwitests/core/steps';
 import { startServer } from '../src/server';
 import { committedTextAt } from '../src/workspace';
 import type {
+  AgentContextResult,
   FailuresResult,
   FileSummary,
   McpServersResult,
@@ -785,23 +786,61 @@ describe('the Piwi language server', () => {
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
   });
 
-  test('lists the failures where they show, for clients that list them natively', async () => {
+  test('lists the failures where they show, with their run, for clients that list them natively', async () => {
     const failures = (await client.sendRequest('piwi/failures')) as FailuresResult;
-    expect(failures.items).toEqual([
-      {
-        uri: uri('tests/pages/checkout.page.ts'),
-        line: 4,
-        title: 'removes a row',
-        headline: "locator('.cart-row').nth(2) was not found",
-        executionId: 900,
-        runId: 41,
-        url: `${url}/test-run-cases/900`,
-        hasTrace: true,
-        source: 'ci',
-        state: 'failing',
-        browserName: null,
+    expect(failures).toEqual({
+      items: [
+        {
+          uri: uri('tests/pages/checkout.page.ts'),
+          line: 4,
+          title: 'removes a row',
+          headline: "locator('.cart-row').nth(2) was not found",
+          executionId: 900,
+          runId: 41,
+          url: `${url}/test-run-cases/900`,
+          hasTrace: true,
+          source: 'ci',
+          state: 'failing',
+          browserName: null,
+          file: 'tests/rows.spec.ts',
+          status: 'failed',
+          testCaseId: 3,
+          clusterId: 77,
+          clusterTitle: null,
+          owner: null,
+          isNew: false,
+          duration: null,
+          hasScreenshot: true,
+        },
+      ],
+      run: {
+        id: 41,
+        branch: 'main',
+        status: 'failed',
+        startTime: '2026-09-27T10:00:00.000Z',
+        totalTests: 3,
+        passedTests: 1,
+        failedTests: 1,
+        flakyTests: 1,
+        skippedTests: 0,
+        url: `${url}/test-runs/41`,
+        own: false,
       },
-    ]);
+      overlays: [],
+      updatedAt: expect.any(String),
+    });
+  });
+
+  test('gives a failure’s context for an agent', async () => {
+    const answer = (await client.sendRequest('piwi/agentContext', {
+      uri: uri('tests/rows.spec.ts'),
+      executionId: 900,
+    })) as AgentContextResult;
+    expect(answer.text).toMatch(/^# Failing test: removes a row\n\nlocator\('\.cart-row'\)\.nth\(2\) was not found/);
+    expect(answer.text).toContain("Replace the failing locator with `getByRole('row', { name: /Mug/ })`");
+    expect(
+      await client.sendRequest('piwi/agentContext', { uri: uri('tests/rows.spec.ts'), executionId: 1 }),
+    ).toBeNull();
   });
 
   test('renders a flow recorded in Piwi Picker as the body of a test', async () => {
@@ -1033,6 +1072,15 @@ describe('the Piwi language server', () => {
       },
       {
         line: 6,
+        title: 'Run this test',
+        command: {
+          title: 'Run this test',
+          command: 'piwi.runTests',
+          arguments: [{ uri: uri('tests/rows.spec.ts'), testIds: [3] }],
+        },
+      },
+      {
+        line: 6,
         title: 'Screenshot',
         command: { title: 'Open the failure screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
       },
@@ -1196,6 +1244,29 @@ describe('local runs over the latest CI run', () => {
           source: 'local',
           state: 'fixed-locally',
           browserName: 'chromium',
+          file: 'tests/rows.spec.ts',
+          testCaseId: 3,
+          clusterId: null,
+          clusterTitle: null,
+          owner: null,
+          isNew: false,
+          duration: null,
+          hasScreenshot: false,
+        },
+      ]);
+      expect(listed.items[0]).toMatchObject({ file: 'tests/checkout.spec.ts', isNew: true, duration: 1200 });
+      expect(listed.run).toMatchObject({ id: 41, origin: 'ci', own: false });
+      expect(listed.overlays).toEqual([
+        {
+          id: 42,
+          origin: 'editor',
+          startTime: '2026-09-27T10:30:00.000Z',
+          status: 'failed',
+          totalTests: 2,
+          passedTests: 1,
+          failedTests: 1,
+          url: `${url}/test-runs/42`,
+          own: false,
         },
       ]);
 
@@ -1259,6 +1330,7 @@ describe('failures follow the edits', () => {
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
       [5, 'passed 6/9'],
       [8, "✗ locator('.cart-row').nth(2) was not found"],
+      [8, 'Run this test'],
       [8, 'Screenshot'],
       [8, 'Trace'],
     ]);

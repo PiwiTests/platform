@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type {
   DesktopJobUpdate,
   DesktopResult,
+  FailuresResult,
   LiveRun,
   RunStatusResult,
   StatusResult,
@@ -11,6 +12,9 @@ import {
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
+  failingCount,
+  failureRunNote,
+  failureTree,
   followBlock,
   importInsertion,
   recordInto,
@@ -22,11 +26,13 @@ import {
   recordingView,
   refreshingText,
   relativeTime,
+  rerunFailingArgs,
   runsInFiles,
   sourceLabel,
   statusBarView,
   testDecorations,
   writeBlock,
+  type FailureNode,
   type RecordedBlock,
   type TextChange,
   type TextSpan,
@@ -772,5 +778,195 @@ describe('a new test file', () => {
     expect(newTestFileName('/w/playwright.config.mjs')).toBe('recorded.spec.js');
     expect(newTestFileName('/w/playwright.config.ts')).toBe('recorded.spec.ts');
     expect(newTestFileName(null)).toBe('recorded.spec.ts');
+  });
+});
+
+describe('the failures view', () => {
+  const now = Date.parse('2026-09-27T10:04:00.000Z');
+  const base = { url: 'http://piwi/test-run-cases/1', hasTrace: false, headline: 'Failed', isNew: false } as const;
+  const result: FailuresResult = {
+    items: [
+      {
+        ...base,
+        uri: 'file:///w/tests/login.spec.ts',
+        line: 41,
+        title: 'logs in',
+        headline: "getByRole('button') was not visible",
+        executionId: 1,
+        runId: 120,
+        hasTrace: true,
+        source: 'ci',
+        state: 'failing',
+        browserName: 'chromium',
+        file: 'tests/login.spec.ts',
+        testCaseId: 7,
+        clusterId: 3,
+        clusterTitle: 'Login button hidden',
+        owner: '@team-auth',
+        isNew: true,
+        hasScreenshot: true,
+      },
+      {
+        ...base,
+        uri: 'file:///w/tests/login.spec.ts',
+        line: 41,
+        title: 'logs in',
+        executionId: 2,
+        runId: 120,
+        source: 'ci',
+        state: 'failing',
+        browserName: 'firefox',
+        file: 'tests/login.spec.ts',
+        testCaseId: 7,
+        clusterId: 3,
+        clusterTitle: 'Login button hidden',
+        owner: '@team-auth',
+      },
+      {
+        ...base,
+        uri: 'file:///w/tests/pages/checkout.page.ts',
+        line: 4,
+        title: 'pays',
+        executionId: 3,
+        runId: 124,
+        source: 'own',
+        state: 'edited',
+        browserName: 'chromium',
+        file: 'tests/checkout.spec.ts',
+        testCaseId: 8,
+        clusterId: null,
+        owner: null,
+      },
+      {
+        ...base,
+        uri: 'file:///w/tests/checkout.spec.ts',
+        line: 9,
+        title: 'removes a row',
+        headline: null,
+        executionId: 4,
+        runId: 124,
+        source: 'own',
+        state: 'fixed-locally',
+        browserName: 'chromium',
+        file: 'tests/checkout.spec.ts',
+        testCaseId: 9,
+      },
+    ],
+    run: {
+      id: 120,
+      branch: 'feature/x',
+      status: 'failed',
+      startTime: '2026-09-27T10:00:00.000Z',
+      totalTests: 9,
+      passedTests: 6,
+      failedTests: 3,
+      flakyTests: 0,
+      skippedTests: 0,
+      url: 'http://piwi/test-runs/120',
+      origin: 'ci',
+      own: false,
+    },
+    overlays: [
+      {
+        id: 124,
+        origin: 'editor',
+        startTime: '2026-09-27T10:02:00.000Z',
+        status: 'failed',
+        totalTests: 2,
+        passedTests: 1,
+        failedTests: 1,
+        url: 'http://piwi/test-runs/124',
+        own: true,
+      },
+    ],
+  };
+  const labels = (nodes: FailureNode[]): unknown =>
+    nodes.map((n) => (n.children.length ? [`${n.label} (${n.description})`, labels(n.children)] : n.label));
+
+  test('show the run, the runs since, and the failures by file, failing first', () => {
+    const [root] = failureTree(result, 'file', { now });
+    expect(root).toMatchObject({
+      kind: 'run',
+      label: 'Run #120 · CI · feature/x · 2 failing · 1 fixed locally',
+      description: '4 min ago',
+      state: 'expanded',
+      url: 'http://piwi/test-runs/120',
+    });
+    expect(labels(root!.children)).toEqual([
+      ['Your runs since (1 run)', ['#124 · your run · 2 min ago · 1 passed, 1 failed']],
+      ['tests/checkout.spec.ts (1 failing · 1 fixed locally)', ['pays', 'removes a row']],
+      ['tests/login.spec.ts (1 failing)', ['logs in', 'logs in']],
+    ]);
+    expect(root!.children[0]).toMatchObject({ state: 'collapsed' });
+    expect(root!.children[0]!.children[0]).toMatchObject({ kind: 'overlay', url: 'http://piwi/test-runs/124' });
+  });
+
+  test('a failure says where, on which project, and whether it is new, with its run in the tooltip', () => {
+    const [root] = failureTree(result, 'flat', { now });
+    const [first, second, edited, fixed] = root!.children.slice(1);
+    expect(first).toMatchObject({
+      kind: 'failure',
+      label: 'logs in',
+      description: 'tests/login.spec.ts:42 · chromium · new',
+      icon: 'error',
+      url: 'http://piwi/test-run-cases/1',
+    });
+    expect(first!.tooltip).toBe(
+      "**logs in**\n\ngetByRole('button') was not visible\n\nrun #120\n\nCluster: Login button hidden\n\nOwner: @team-auth",
+    );
+    expect(second!.description).toBe('tests/login.spec.ts:42 · firefox');
+    // It shows in the page object its stack goes through.
+    expect(edited).toMatchObject({ icon: 'edit', description: 'checkout.page.ts:5 · chromium' });
+    expect(edited!.tooltip).toContain('edited since your run #124');
+    expect(fixed).toMatchObject({ icon: 'check' });
+    expect(fixed!.tooltip).toContain('fixed locally in your run #124');
+  });
+
+  test('groups by cluster or owner, the failures without one last', () => {
+    const [byCluster] = failureTree(result, 'cluster', { now });
+    expect(byCluster!.children.slice(1).map((g) => [g.label, g.description])).toEqual([
+      ['Login button hidden', '1 failing'],
+      ['Ungrouped', '1 failing · 1 fixed locally'],
+    ]);
+    const [byOwner] = failureTree(result, 'owner', { now });
+    expect(byOwner!.children.slice(1).map((g) => g.label)).toEqual(['@team-auth', 'Unowned']);
+  });
+
+  test('while the editor’s own run is live, the run counts it', () => {
+    const live: LiveRun = {
+      runId: 125,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T10:03:00.000Z',
+      own: true,
+    };
+    expect(failureTree(result, 'file', { now, live })[0]!.description).toBe('running 4/9');
+    expect(failureTree(result, 'file', { now, live: { ...live, own: false } })[0]!.description).toBe('4 min ago');
+  });
+
+  test('without a failure, nothing; from an older service, the groups alone', () => {
+    expect(failureTree({ items: [], run: result.run }, 'file', { now })).toEqual([]);
+    expect(failureTree(null, 'file')).toEqual([]);
+    const older = failureTree({ items: [{ ...result.items[0]!, file: undefined, testCaseId: undefined }] }, 'file');
+    expect(older.map((n) => n.label)).toEqual(['login.spec.ts']);
+  });
+
+  test('counts the failing tests, and re-runs them from the file of the first', () => {
+    expect(failingCount(result)).toBe(2);
+    expect(rerunFailingArgs(result)).toEqual({ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] });
+    expect(rerunFailingArgs({ items: [result.items[3]!] })).toBeNull();
+    expect(rerunFailingArgs(null)).toBeNull();
+  });
+
+  test('a failure names its run', () => {
+    const f = result.items[0]!;
+    expect(failureRunNote(f)).toBe('run #120');
+    expect(failureRunNote({ ...f, source: 'local', runId: 124 })).toBe('local run #124');
+    expect(failureRunNote({ ...f, source: 'ci', state: 'fixed-locally', runId: 125 })).toBe('fixed in run #125');
+    expect(failureRunNote({ ...f, source: 'local', state: 'fixed-locally', runId: 124 })).toBe(
+      'fixed locally in run #124',
+    );
   });
 });

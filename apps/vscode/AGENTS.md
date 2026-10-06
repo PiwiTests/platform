@@ -23,6 +23,16 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
+- `src/failures-view.ts` is the **Failures** view of the **Piwi** panel (`viewsContainers.panel`): a `TreeView` over
+  `piwi/failures`, read again 200 ms after a `piwi/runStatusChanged` or a `piwi/failuresChanged`, whose nodes are
+  `failureTree` in `src/glue.ts`: the run (its age, or the editor's own run in progress), **Your runs since**, then the
+  failures by file, cluster, owner or flat (`piwi.groupFailuresBy`, kept in `workspaceState` as
+  `piwi.failuresGrouping`). A failure's `contextValue` (`piwi.failure.<state>` and `trace`, `screenshot`, `agent`,
+  `desktop`) decides its inline actions and context menu in `package.json`; **Copy context for agent** asks
+  `piwi/agentContext`. The badge counts the failing tests; **Follow the active editor** (`piwi.toggleFollowEditor`,
+  `piwi.stopFollowingEditor`, kept as `piwi.followEditor`) reveals the active file's first failure; the welcome
+  content follows the `piwi.failuresView` context key. **Re-run the failing tests** (`piwi.rerunFailing`) runs
+  `rerunFailingArgs`. The view's `getChildren` is in the API `activate` returns (`failureChildren`).
 - The status bar item (`statusBarView` in `src/glue.ts`): a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
   item's icon spinning meanwhile: `refreshingText`), and **Piwi: Connect** while not connected. Its tooltip is a
   trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,
@@ -52,7 +62,7 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   recording in the status bar and its warnings as diagnostics, which stay after Stop until the block is edited. The
   block is followed through the edits around it; typing inside it pauses the recording (Resume writes it again, Keep my
   edits stops). Closing the file or the window stops its recording.
-- `src/glue.ts` is the pure half (the status bar item, the MCP configuration to paste, re-indenting an inserted block,
+- `src/glue.ts` is the pure half (the status bar item, the failures view's tree, the MCP configuration to paste, re-indenting an inserted block,
   the recorded block's text, writes and imports, and following it through a change: `writeBlock`, `followBlock`),
   tested without an editor.
 
@@ -90,4 +100,5 @@ npm run vscode:package            # dist/piwi.vsix
 
 The integration suite (`tests/integration/`) starts a stub instance, writes a fixture repository, and drives VS Code
 through its public commands (`vscode.executeCodeActionProvider`, `vscode.executeCodeLensProvider`, …), and through the
-API `activate` returns (`pageCandidates`, the service's answer for a position).
+API `activate` returns (`pageCandidates`, the service's answer for a position, and `failureChildren`, the failures
+view's nodes).

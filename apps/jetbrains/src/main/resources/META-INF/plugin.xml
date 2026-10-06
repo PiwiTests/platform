@@ -9,6 +9,8 @@
       <li>the failures of the latest CI run on the checked-out branch, as your local runs since leave them, at their
           failing lines, with the recommended locator heal as a quick fix, the trace and the screenshot one action
           away;</li>
+      <li>the Piwi tool window: the latest run's failures as a tree, grouped by file, cluster or owner, with the runs
+          you made since, and each test re-run, its trace and screenshot one right-click away;</li>
       <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
           line and each application file;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
@@ -71,6 +73,9 @@
             </action>
             <action id="Piwi.RunSelection" class="dev.piwitests.jetbrains.RunSelectionAction" text="Run Selection…"
                     description="Run one of the project's saved selections"/>
+            <action id="Piwi.RerunFailing" class="dev.piwitests.jetbrains.RerunFailingAction"
+                    text="Re-run the Failing Tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
+                    description="Run every test that still fails, or whose failing line changed since its run"/>
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
                     icon="AllIcons.General.Web"
                     text="Open in Dashboard" description="Open this file's test, or the latest run"/>

@@ -162,8 +162,11 @@ data class RunStatusResult(val contexts: List<RunStatus>? = null)
  * A failure of the latest run where it shows, its line followed through the edits since the run, or, with `state`
  * `fixed-locally`, a failure a later run passed, at its test's line (`executionId` and `runId` are then the passing
  * ones). `source` is `ci`, `own` (a run the editor started) or `local`, `state` `failing`, `edited` (the line the run
- * failed at changed since) or `fixed-locally`, `browserName` the Playwright project; the three are null from an
- * older service. `piwi/failuresChanged` carries the list again when a line or a state changes.
+ * failed at changed since) or `fixed-locally`, `browserName` the Playwright project. `file` is the test's spec relative
+ * to the Playwright config's folder, `status` `failed` or `timedOut`, `clusterId` and `clusterTitle` its failure
+ * cluster, `owner` the test's owner, `isNew` whether it did not fail on this project in the latest complete run,
+ * `duration` in milliseconds. The fields after `hasTrace` are null from an older service. `piwi/failuresChanged`
+ * carries the list again when a line or a state changes.
  */
 data class WorkspaceFailure(
     val uri: String? = null,
@@ -177,9 +180,62 @@ data class WorkspaceFailure(
     val source: String? = null,
     val state: String? = null,
     val browserName: String? = null,
+    val file: String? = null,
+    val status: String? = null,
+    val testCaseId: Int? = null,
+    val clusterId: Int? = null,
+    val clusterTitle: String? = null,
+    val owner: String? = null,
+    val isNew: Boolean? = null,
+    val duration: Long? = null,
+    val hasScreenshot: Boolean? = null,
 )
 
-data class FailuresResult(val items: List<WorkspaceFailure>? = null)
+/**
+ * The latest complete run a context reads: `origin` is what launched it (`ci`, `local`, `editor`…, null from an older
+ * instance), `own` whether the editor started it, `startTime` ISO 8601, `url` its page in the dashboard.
+ */
+data class FailuresRun(
+    val id: Int = 0,
+    val branch: String? = null,
+    val status: String? = null,
+    val startTime: String? = null,
+    val totalTests: Int = 0,
+    val passedTests: Int = 0,
+    val failedTests: Int = 0,
+    val flakyTests: Int = 0,
+    val skippedTests: Int = 0,
+    val url: String? = null,
+    val origin: String? = null,
+    val own: Boolean? = null,
+)
+
+/** A run laid over the latest complete run, such as a test re-run from an editor; `own` when the editor started it. */
+data class FailuresOverlay(
+    val id: Int = 0,
+    val origin: String? = null,
+    val startTime: String? = null,
+    val status: String? = null,
+    val totalTests: Int = 0,
+    val passedTests: Int = 0,
+    val failedTests: Int = 0,
+    val url: String? = null,
+    val own: Boolean? = null,
+)
+
+/**
+ * `piwi/failures`: the failures, the latest complete run of the first context that has one (`run`), the runs laid over
+ * it, newest first, and when they were read (ISO 8601); the last three null from an older service.
+ */
+data class FailuresResult(
+    val items: List<WorkspaceFailure>? = null,
+    val run: FailuresRun? = null,
+    val overlays: List<FailuresOverlay>? = null,
+    val updatedAt: String? = null,
+)
+
+/** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
+data class AgentContextResult(val text: String? = null)
 
 data class McpServerDefinition(val label: String? = null, val url: String? = null, val headers: Map<String, String>? = null)
 
@@ -371,6 +427,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/screenshot")
     fun screenshot(params: TraceParams): CompletableFuture<ScreenshotResult?>
+
+    @JsonRequest("piwi/agentContext")
+    fun agentContext(params: TraceParams): CompletableFuture<AgentContextResult?>
 
     @JsonRequest("piwi/mcp")
     fun mcp(): CompletableFuture<McpServersResult?>

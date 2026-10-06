@@ -667,4 +667,122 @@ class GlueTest {
         assertEquals(null, Glue.specFileName("..\\checkout"))
         assertEquals(null, Glue.specFileName(".."))
     }
+
+    private val treeNow = java.time.Instant.parse("2026-09-27T10:04:00Z").toEpochMilli()
+
+    private val treeFailures = FailuresResult(
+        items = listOf(
+            WorkspaceFailure(
+                uri = "file:///w/tests/login.spec.ts", line = 41, title = "logs in", headline = "not visible", executionId = 1,
+                runId = 120, url = "http://piwi/test-run-cases/1", hasTrace = true, source = "ci", state = "failing",
+                browserName = "chromium", file = "tests/login.spec.ts", testCaseId = 7, clusterId = 3,
+                clusterTitle = "Login button hidden", owner = "@team-auth", isNew = true, hasScreenshot = true,
+            ),
+            WorkspaceFailure(
+                uri = "file:///w/tests/login.spec.ts", line = 41, title = "logs in", executionId = 2, runId = 120,
+                source = "ci", state = "failing", browserName = "firefox", file = "tests/login.spec.ts", testCaseId = 7,
+                clusterId = 3, clusterTitle = "Login button hidden", owner = "@team-auth",
+            ),
+            WorkspaceFailure(
+                uri = "file:///w/tests/pages/checkout.page.ts", line = 4, title = "pays", executionId = 3, runId = 124,
+                source = "own", state = "edited", browserName = "chromium", file = "tests/checkout.spec.ts", testCaseId = 8,
+            ),
+            WorkspaceFailure(
+                uri = "file:///w/tests/checkout.spec.ts", line = 9, title = "removes a row", executionId = 4, runId = 124,
+                source = "own", state = "fixed-locally", browserName = "chromium", file = "tests/checkout.spec.ts",
+                testCaseId = 9,
+            ),
+        ),
+        run = FailuresRun(
+            id = 120, branch = "feature/x", status = "failed", startTime = "2026-09-27T10:00:00Z", totalTests = 9,
+            passedTests = 6, failedTests = 3, url = "http://piwi/test-runs/120", origin = "ci", own = false,
+        ),
+        overlays = listOf(
+            FailuresOverlay(
+                id = 124, origin = "editor", startTime = "2026-09-27T10:02:00Z", status = "failed", totalTests = 2,
+                passedTests = 1, failedTests = 1, url = "http://piwi/test-runs/124", own = true,
+            ),
+        ),
+    )
+
+    private fun labels(nodes: List<Glue.FailureNode>): List<Any> =
+        nodes.map { if (it.children.isEmpty()) it.label else listOf("${it.label} (${it.description})", labels(it.children)) }
+
+    @Test
+    fun `the failures tree shows the run, the runs since and the failures by file, failing first`() {
+        val root = Glue.failureTree(treeFailures, "file", treeNow).single()
+        assertEquals("Run #120 · CI · feature/x · 2 failing · 1 fixed locally", root.label)
+        assertEquals("4 min ago", root.description)
+        assertEquals("http://piwi/test-runs/120", root.url)
+        assertEquals(
+            listOf(
+                listOf("Your runs since (1 run)", listOf("#124 · your run · 2 min ago · 1 passed, 1 failed")),
+                listOf("tests/checkout.spec.ts (1 failing · 1 fixed locally)", listOf("pays", "removes a row")),
+                listOf("tests/login.spec.ts (1 failing)", listOf("logs in", "logs in")),
+            ),
+            labels(root.children),
+        )
+        assertEquals(false, root.children[0].expanded)
+        assertEquals("http://piwi/test-runs/124", root.children[0].children[0].url)
+    }
+
+    @Test
+    fun `a failure says where, on which project, and whether it is new`() {
+        val leaves = Glue.failureTree(treeFailures, "flat", treeNow).single().children.drop(1)
+        assertEquals(
+            listOf(
+                "tests/login.spec.ts:42 · chromium · new" to "error",
+                "tests/login.spec.ts:42 · firefox" to "error",
+                "checkout.page.ts:5 · chromium" to "edited",
+                "tests/checkout.spec.ts:10 · chromium" to "fixed",
+            ),
+            leaves.map { it.description to it.icon },
+        )
+        assertEquals("edited since your run #124", Glue.failureRunNote(leaves[2].failure!!))
+    }
+
+    @Test
+    fun `the failures group by cluster or owner, those without one last`() {
+        val byCluster = Glue.failureTree(treeFailures, "cluster", treeNow).single().children.drop(1)
+        assertEquals(
+            listOf("Login button hidden" to "1 failing", "Ungrouped" to "1 failing · 1 fixed locally"),
+            byCluster.map { it.label to it.description },
+        )
+        val byOwner = Glue.failureTree(treeFailures, "owner", treeNow).single().children.drop(1)
+        assertEquals(listOf("@team-auth", "Unowned"), byOwner.map { it.label })
+    }
+
+    @Test
+    fun `while the editor's own run is live, the run counts it`() {
+        val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
+        assertEquals("running 4/9", Glue.failureTree(treeFailures, "file", treeNow, live).single().description)
+        assertEquals("4 min ago", Glue.failureTree(treeFailures, "file", treeNow, live.copy(own = false)).single().description)
+    }
+
+    @Test
+    fun `without a failure the tree is empty, and from an older service it holds the groups alone`() {
+        assertEquals(emptyList<Glue.FailureNode>(), Glue.failureTree(FailuresResult(emptyList(), treeFailures.run), "file"))
+        assertEquals(emptyList<Glue.FailureNode>(), Glue.failureTree(null, "file"))
+        val older = Glue.failureTree(FailuresResult(listOf(treeFailures.items!![0].copy(file = null))), "file")
+        assertEquals(listOf("login.spec.ts"), older.map { it.label })
+    }
+
+    @Test
+    fun `the header names the run, the failing tests are counted and re-run from the file of the first`() {
+        assertEquals("Run #120 · CI · feature/x · 2 failing · 1 fixed locally · 4 min ago", Glue.runHeader(treeFailures, treeNow))
+        assertEquals(null, Glue.runHeader(FailuresResult(emptyList())))
+        assertEquals(2, Glue.failingCount(treeFailures))
+        assertEquals(RunTestsArgs("file:///w/tests/login.spec.ts", listOf(7, 8)), Glue.rerunFailingArgs(treeFailures))
+        assertEquals(null, Glue.rerunFailingArgs(FailuresResult(listOf(treeFailures.items!![3]))))
+    }
+
+    @Test
+    fun `a failure's context is the deepest Playwright config folder that holds it`() {
+        val status = StatusResult(
+            listOf(ContextStatus(root = "/w", connected = true), ContextStatus(root = "/w/e2e", connected = true)),
+        )
+        assertEquals("/w/e2e", Glue.contextRootOf(status, "file:///w/e2e/tests/a.spec.ts"))
+        assertEquals("/w", Glue.contextRootOf(status, "file:///w/tests/a.spec.ts"))
+        assertEquals("/w", Glue.contextRootOf(status, "file:///elsewhere/a.spec.ts"))
+    }
 }

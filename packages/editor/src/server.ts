@@ -110,6 +110,7 @@ import {
   type ShareDesktopJobResult,
 } from './protocol.js';
 import {
+  AGENT_CONTEXT_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
   FAILURES_NOTIFICATION,
@@ -137,6 +138,8 @@ import {
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
   TESTS_FOR_FILE_REQUEST,
+  type AgentContextParams,
+  type AgentContextResult,
   type CommandEndedParams,
   type CommandStartedParams,
   type DesktopResult,
@@ -721,9 +724,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return here.find((line) => line >= from && line <= to) ?? here[0] ?? from;
   };
 
-  /** Each context's failures where they show, then the failures a later run passed, at their `test(…)` line. */
-  const failuresResult = (pass: Placer): FailuresResult => ({
-    items: contexts.flatMap((context): WorkspaceFailure[] => {
+  /** A failure's spec relative to the Playwright config's folder, with forward slashes, as the run reported it otherwise. */
+  const specOf = (context: PiwiContext, f: Placeable): string => {
+    const spec = reportedOf(context, f).spec;
+    return (spec ? relativeTo(context.root, spec) : null) ?? f.file.replace(/\\/g, '/');
+  };
+
+  /**
+   * Each context's failures where they show, then the failures a later run passed, at their `test(…)` line; the latest
+   * complete run of the first context that has one, and the runs laid over it.
+   */
+  const failuresResult = (pass: Placer): FailuresResult => {
+    const items = contexts.flatMap((context): WorkspaceFailure[] => {
       const client = context.client;
       if (!client) return [];
       const failing = (context.failures?.failures ?? []).flatMap((f): WorkspaceFailure[] => {
@@ -742,12 +754,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             source: failureSource(context, f.runId ?? context.failures?.run?.id),
             state: at.state === 'edited' ? 'edited' : 'failing',
             browserName: f.browserName ?? null,
+            file: specOf(context, f),
+            status: f.status === 'timedOut' ? 'timedOut' : 'failed',
+            testCaseId: f.testCaseId,
+            clusterId: f.clusterId ?? null,
+            clusterTitle: f.clusterTitle ?? null,
+            owner: f.owner ?? null,
+            isNew: f.isNew ?? false,
+            duration: f.duration ?? null,
+            hasScreenshot: !!f.screenshot,
           },
         ];
       });
       const fixed = (context.failures?.resolved ?? []).flatMap((r): WorkspaceFailure[] => {
         const at = pass.place(context, r);
         if (!at || at.state === 'gone') return [];
+        const failed = context.failures?.failures.find((f) => f.testCaseId === r.testCaseId);
         return [
           {
             uri: pathToFileURL(at.file).href,
@@ -761,12 +783,53 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             source: failureSource(context, r.runId),
             state: 'fixed-locally',
             browserName: r.browserName,
+            file: specOf(context, r),
+            testCaseId: r.testCaseId,
+            clusterId: null,
+            clusterTitle: null,
+            owner: failed?.owner ?? null,
+            isNew: false,
+            duration: null,
+            hasScreenshot: false,
           },
         ];
       });
       return [...failing, ...fixed];
-    }),
-  });
+    });
+    const shown = contexts.find((c) => c.client && c.failures?.run);
+    const run = shown?.failures?.run;
+    if (!shown || !run) return { items };
+    const client = shown.client!;
+    return {
+      items,
+      run: {
+        id: run.id,
+        branch: run.branch,
+        status: run.status,
+        startTime: run.startTime,
+        totalTests: run.totalTests,
+        passedTests: run.passedTests,
+        failedTests: run.failedTests,
+        flakyTests: run.flakyTests,
+        skippedTests: run.skippedTests,
+        url: client.runUrl(run.id),
+        ...(run.origin ? { origin: run.origin } : {}),
+        own: isOwnRun(shown, run.id),
+      },
+      overlays: (shown.failures?.overlays ?? []).map((o) => ({
+        id: o.id,
+        origin: o.origin,
+        startTime: o.startTime,
+        status: o.status,
+        totalTests: o.totalTests,
+        passedTests: o.passedTests,
+        failedTests: o.failedTests,
+        url: client.runUrl(o.id),
+        own: isOwnRun(shown, o.id),
+      })),
+      ...(shown.runReadAt !== null ? { updatedAt: new Date(shown.runReadAt).toISOString() } : {}),
+    };
+  };
   /** The failures last sent in `piwi/failuresChanged`. */
   let failuresSent = JSON.stringify({ items: [] } satisfies FailuresResult);
 
@@ -816,7 +879,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     }
     const failures = failuresResult(pass);
     for (const file of diffs.keys()) if (!pass.diffed.has(file)) diffs.delete(file);
-    const serialized = JSON.stringify(failures);
+    // A read that changed nothing but its time is not a change.
+    const serialized = JSON.stringify({ ...failures, updatedAt: undefined });
     if (serialized !== failuresSent) {
       failuresSent = serialized;
       void connection.sendNotification(FAILURES_NOTIFICATION, failures);
@@ -1792,6 +1856,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             arguments: [failure.url],
           },
         });
+        reasons.push({
+          line: failure.line,
+          title: 'Run this test',
+          command: {
+            title: 'Run this test',
+            command: 'piwi.runTests',
+            arguments: [{ uri: params.uri, testIds: [found.id] } satisfies RunTestsArgs],
+          },
+        });
         if (failed.screenshot) {
           reasons.push({
             line: failure.line,
@@ -1939,6 +2012,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   connection.onRequest(FAILURES_REQUEST, (): FailuresResult => failuresResult(placer()));
+
+  connection.onRequest(
+    AGENT_CONTEXT_REQUEST,
+    async (params: AgentContextParams): Promise<AgentContextResult | null> => {
+      const file = uriToPath(params.uri);
+      const candidates = [file ? contextFor(file) : null, ...contexts].filter((c): c is PiwiContext => !!c);
+      for (const context of candidates) {
+        const failure = context.failures?.failures.find((f) => f.executionId === params.executionId);
+        if (failure) return { text: await agentContext(context, failure) };
+      }
+      return null;
+    },
+  );
 
   connection.onRequest(TRACE_REQUEST, async (params: TraceParams): Promise<TraceResult | null> => {
     const file = uriToPath(params.uri);

@@ -11,13 +11,17 @@ clients stay thin and both editors give the same answers.
 
 - `src/server.ts` wires the protocol: diagnostics, quick fixes and hover, plus the custom requests of
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
-  `piwi/failures`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
+  `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
   `piwi/pageCandidates`, the `piwi/setCredentials`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/statusChanged`, `piwi/notice`, `piwi/desktopJobChanged` and
   `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
-  Vision), `piwi/runStatus` in its status bar, and `piwi/failures` in a list where its LSP client highlights open files
-  only (the JetBrains IDEs).
+  Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
+  LSP client highlights open files only): each item carries its spec relative to the config, its test, cluster,
+  owner, project, duration and whether it is new, and the answer the latest complete run of the first context that has
+  one (`run`), the runs laid over it (`overlays`) and when they were read (`updatedAt`, which alone changing sends no
+  `piwi/failuresChanged`). `piwi/agentContext` answers the block **Copy context for agent** copies, for a failure the
+  view names.
 - The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
   branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
   `piwi/runStatus`).
@@ -45,8 +49,8 @@ clients stay thin and both editors give the same answers.
   On a spec, `piwi/fileSummary` gives each test's line its latest result (`status`) and the line its
   call ends on (`endLine`, `callEndLine`), which the clients draw in the gutter and as a background over a failing test.
   A failing test's line also carries `failure`: the line of the test its error's stack goes through (the instance sends
-  the frames and the message in `branch-failures`), above which the reason, **Screenshot** and **Trace** are ordinary
-  summary lines; the hover on any line of that stack shows the message and the call chain.
+  the frames and the message in `branch-failures`), above which the reason, **Run this test** (`piwi.runTests` with the
+  test's id), **Screenshot** and **Trace** are ordinary summary lines; the hover on any line of that stack shows the message and the call chain.
   A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`): its
   flaky rate and top suspect, then `piwi flake` commands run through `piwi.runCommand`, with `--server-url` only when
   the command, run from the config's folder, would find another instance (`withServerUrl`), and, while the desktop app

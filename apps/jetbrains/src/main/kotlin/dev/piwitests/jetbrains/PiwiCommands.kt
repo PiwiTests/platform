@@ -97,6 +97,28 @@ object PiwiCommands {
         }
     }
 
+    /** Run every test still failing or edited since its run, as `piwi/failures` lists them. */
+    fun rerunFailing(project: Project) {
+        background(project, "Piwi: resolving the failing tests") {
+            val failures = project.service<PiwiProjectService>().server()?.failures()?.orNull()
+            val args = Glue.rerunFailingArgs(failures)
+            if (args == null) notify(project, "No failing test to re-run.") else runTests(project, args)
+        }
+    }
+
+    /** Copy one block about a failure for a coding agent: the failure, its healing and its cluster's fix plan. */
+    fun copyAgentContext(project: Project, params: TraceParams) {
+        background(project, "Piwi: gathering the failure's context") {
+            val text = project.service<PiwiProjectService>().server()?.agentContext(params)?.orNull()?.text
+            if (text == null) {
+                notify(project, "This failure is no longer in the latest run.", NotificationType.WARNING)
+            } else {
+                CopyPasteManager.getInstance().setContents(StringSelection(text))
+                notify(project, "Copied. Paste it to your agent.")
+            }
+        }
+    }
+
     fun runTests(project: Project, args: RunTestsArgs) {
         background(project, "Piwi: resolving the tests") {
             val command = project.service<PiwiProjectService>().server()?.runArgs(args)?.orNull()

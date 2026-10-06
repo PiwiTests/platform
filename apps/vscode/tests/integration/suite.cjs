@@ -186,6 +186,32 @@ const tests = {
     assert.equal(inClass.default, 'this.page');
   },
 
+  async 'the failures view lists the latest run’s failure under the run and its spec'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const roots = await waitFor(async () => {
+      const found = await api.failureChildren();
+      return found.length ? found : null;
+    }, 'the failures view');
+    assert.equal(roots.length, 1);
+    assert.equal(roots[0].label, 'Run #41 · CI · main · 1 failing');
+    const groups = await api.failureChildren(roots[0]);
+    assert.deepEqual(
+      groups.map((g) => [g.label, g.description]),
+      [['tests/checkout.spec.ts', '1 failing']],
+    );
+    const [leaf] = await api.failureChildren(groups[0]);
+    assert.equal(leaf.label, 'removes a row');
+    assert.equal(leaf.description, 'checkout.page.ts:5');
+    assert.equal(leaf.icon, 'error');
+    assert.equal(leaf.failure.testCaseId, 3);
+    assert.equal(leaf.failure.uri, pageObject.toString());
+  },
+
+  async 'Re-run the failing tests runs them'() {
+    await vscode.commands.executeCommand('piwi.rerunFailing');
+    await vscode.commands.executeCommand('piwi.runTest', { uri: pageObject.toString(), testIds: [3] });
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
@@ -199,6 +225,11 @@ const tests = {
       'piwi.openRun',
       'piwi.openTrace',
       'piwi.runTests',
+      'piwi.runTest',
+      'piwi.rerunFailing',
+      'piwi.groupFailuresBy',
+      'piwi.toggleFollowEditor',
+      'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',
       'piwi.runCommand',

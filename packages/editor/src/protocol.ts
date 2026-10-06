@@ -434,6 +434,57 @@ export interface WorkspaceFailure {
   state?: 'failing' | 'edited' | 'fixed-locally';
   /** The Playwright project; null when unknown. */
   browserName?: string | null;
+  /** The test's spec, relative to the Playwright config's folder, with forward slashes. */
+  file?: string;
+  /** How the execution failed: `failed` or `timedOut`. Absent for a failure fixed since. */
+  status?: 'failed' | 'timedOut';
+  testCaseId?: number;
+  /** The failure cluster the execution belongs to, and its title; null when it has none. */
+  clusterId?: number | null;
+  clusterTitle?: string | null;
+  /** The test's owner (`piwi:owner`, CODEOWNERS); null when it has none. */
+  owner?: string | null;
+  /** A new regression in the latest complete run, or a test that did not fail on this project there. */
+  isNew?: boolean;
+  /** In milliseconds; null when not recorded. */
+  duration?: number | null;
+  hasScreenshot?: boolean;
+}
+
+/** The latest complete run a context reads, as `piwi/failures` names it. */
+export interface FailuresRun {
+  id: number;
+  branch: string | null;
+  status: string;
+  /** ISO 8601. */
+  startTime: string;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  flakyTests: number;
+  skippedTests: number;
+  /** The run's page in the dashboard. */
+  url: string;
+  /** What launched it: `ci`, `ci-rerun`, `local`, `desktop`, `editor`…; absent from an older instance. */
+  origin?: string;
+  /** Whether the editor started it. */
+  own?: boolean;
+}
+
+/** A run laid over the latest complete run: a test re-run from an editor, a run on a developer's machine. */
+export interface FailuresOverlay {
+  id: number;
+  origin: string;
+  /** ISO 8601. */
+  startTime: string;
+  status: string;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  /** The run's page in the dashboard. */
+  url: string;
+  /** Whether the editor started it. */
+  own: boolean;
 }
 
 /**
@@ -444,6 +495,12 @@ export interface WorkspaceFailure {
  */
 export interface FailuresResult {
   items: WorkspaceFailure[];
+  /** The latest complete run of the first context that has one; absent from an older service. */
+  run?: FailuresRun | null;
+  /** The runs of its branch laid over it, newest first. */
+  overlays?: FailuresOverlay[];
+  /** When it was last read (ISO 8601). */
+  updatedAt?: string;
 }
 
 export const FAILURES_REQUEST = 'piwi/failures';
@@ -453,6 +510,19 @@ export const FAILURES_REQUEST = 'piwi/failures';
  * line or state after an edit, or the failures of a run read again; carries `FailuresResult`.
  */
 export const FAILURES_NOTIFICATION = 'piwi/failuresChanged';
+
+/** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
+export interface AgentContextParams {
+  /** Any file of the workspace the failure belongs to, to pick the Playwright config. */
+  uri: string;
+  executionId: number;
+}
+
+export interface AgentContextResult {
+  text: string;
+}
+
+export const AGENT_CONTEXT_REQUEST = 'piwi/agentContext';
 
 /**
  * `piwi/renderSteps`: a flow recorded in Piwi Picker (a steps document, as `piwi codegen` reads it) rendered as the

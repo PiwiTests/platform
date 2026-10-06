@@ -52,8 +52,9 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
 /**
  * What this machine keeps for the project, in `.idea/workspace.xml`, never in a file the
  * team shares: the desktop app chosen with Connect, its project, and whether it was offered;
- * and a recording's choices: the Playwright project, the start page, and the last page
- * expression typed that was not among those offered.
+ * a recording's choices: the Playwright project, the start page, and the last page
+ * expression typed that was not among those offered; and how the failures tool window groups
+ * the failures (`file`, `cluster`, `owner` or `flat`).
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -65,6 +66,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordProject: String = "",
         var recordStartUrl: String = "",
         var recordPage: String = "",
+        var failuresGrouping: String = "file",
     )
 
     private var state = State()
@@ -90,6 +92,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
         private set
 
     @Volatile var failures: List<WorkspaceFailure> = emptyList()
+        private set
+
+    /** The last `piwi/failures` answer: the failures, with the run they belong to and the runs laid over it. */
+    @Volatile var failuresResult: FailuresResult? = null
         private set
 
     /** Whether a click on the status bar item is reading the latest run again. */
@@ -296,6 +302,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * runs as they are, then the listeners.
      */
     fun failuresChanged(result: FailuresResult) {
+        failuresResult = result
         failures = result.items.orEmpty()
         ApplicationManager.getApplication().invokeLater({ listeners.forEach { it() } }, project.disposed)
     }
@@ -307,7 +314,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
             val before = runs
             status = server?.status()?.orNull()
             runs = server?.runStatus()?.orNull()
-            failures = server?.failures()?.orNull()?.items.orEmpty()
+            val read = server?.failures()?.orNull()
+            failuresResult = read
+            failures = read?.items.orEmpty()
             ApplicationManager.getApplication().invokeLater({
                 listeners.forEach { it() }
                 // Another run: the gutter, the backgrounds and Code Vision of the open files show it. A run in progress

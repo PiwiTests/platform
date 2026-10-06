@@ -139,6 +139,15 @@ class OpenLatestRunAction : AnAction() {
     }
 }
 
+/** Piwi: Re-run the Failing Tests — every test still failing, or edited since its run, in the Run tool window. */
+class RerunFailingAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        PiwiCommands.rerunFailing(e.project ?: return)
+    }
+}
+
 /** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

@@ -30,7 +30,7 @@ The failures of the latest complete [CI run](/reference/test-metadata#run-origin
 default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. Your local runs
 since are laid over it, and the editor reads it again as soon as a run ends: [Runs from the editor](./editor-runs)
-covers running tests, the status bar, and what a run changes. Each failure follows your edits until a run covers its
+covers running tests, the failures view, the status bar, and what a run changes. Each failure follows your edits until a run covers its
 test again: [Failures follow your edits](./editor-runs#failures-follow-your-edits).
 
 On a failure, the quick fixes are:
@@ -125,9 +125,8 @@ interpreter (**Settings → Languages & Frameworks → Node.js**) once it finds 
 the project's (in Rider, the solution's) or of its Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP
 client shows warnings, quick fixes and hover in open files; the rest is native:
 
-- **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
-  failures, then those your local runs fixed, since the IDE highlights open files only. Double-click
-  one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link.
+- **The Piwi tool window** names the connection and holds the latest run's failures as a tree, since the IDE
+  highlights open files only: [the failures view](./editor-runs#the-failures-view).
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
 - **The status bar** shows the latest run, or the run in progress, and reads it again on a click
   ([the status bar](./editor-runs#the-status-bar)); the actions are under **Tools → Piwi**, and **Run the tests that

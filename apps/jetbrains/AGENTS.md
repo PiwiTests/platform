@@ -31,11 +31,19 @@ the service through the platform's LSP API with the project's Node.js interprete
   defaults in `resources/colorSchemes/`). Code Vision skips those lines, and the daemon restarts when the run as the
   files show it changes (`Glue.runsInFiles`), not when only the run in progress moves.
 - The rest is native: Code Vision from `piwi/fileSummary`, the status bar from `piwi/runStatus` (with the run in
-  progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only; a
-  failure of a local run names its run, `your run #N` for the editor's own, a failure whose line changed since its
-  run says `edited since run #N` with the information icon, and the failures a later run passed follow, marked fixed:
-  `Glue.failureRunNote`; the list is filled again only when the failures changed, and from `piwi/failuresChanged` as
-  the edits move them) with the connection from `piwi/status`, and the actions under **Tools → Piwi**. The service
+  progress, `live`), the **Piwi** tool window from `piwi/failures` (the LSP client highlights open files only) with
+  the connection from `piwi/status` and the run (`Glue.runHeader`), and the actions under **Tools → Piwi**.
+- The tool window (`PiwiFailuresToolWindow.kt`) is a `Tree` on a `DefaultTreeModel` of `Glue.failureTree`, the nodes
+  VS Code's view has: the run, **Your runs since**, then the failures grouped by file, cluster, owner or flat (the
+  toolbar's `ToggleAction`s, kept in `PiwiLocalSettings.failuresGrouping`). A `ColoredTreeCellRenderer` draws a
+  failure's title, headline, run (`Glue.failureRunNote`: `your run #N`, `edited since run #N` with the information
+  icon, fixed with the passed icon) and place; `TreeSpeedSearch` finds a title. The tree is built again only when
+  its nodes changed, from `piwi/failuresChanged` as the edits move them too, keeping the expanded and selected nodes
+  by key. Double-click or Enter opens a failure's line, or a run's page; the right-click menu
+  (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
+  an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
+  `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
+  `Glue.rerunFailingArgs`. The service
   starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
   null, and the status bar and tool window say so.
 - The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
@@ -106,7 +114,8 @@ the service through the platform's LSP API with the project's Node.js interprete
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
-  (`PiwiLocalSettings`), on this machine only; choosing the app never touches the instance, its project or its key.
+  (`PiwiLocalSettings`, with the failures' grouping), on this machine only; choosing the app never touches the
+  instance, its project or its key.
 
 ## Rules
 

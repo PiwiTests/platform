@@ -236,6 +236,202 @@ object Glue {
         }
     }
 
+    /** How the failures tool window groups the failures under the run: `file`, `cluster`, `owner` or `flat`. */
+    val FAILURE_GROUPINGS = listOf("file", "cluster", "owner", "flat")
+
+    /**
+     * A node of the failures tree. `kind` is `run`, `runs` (the runs laid over it), `overlay`, `group` or `failure`;
+     * `key` stays the same across refreshes, so the tree keeps a node's expansion and selection by it; `icon` is
+     * `error`, `edited` or `fixed` for a failure, `folder` for a group, `run` and `history` for the runs; `expanded`
+     * is whether a node with children opens expanded; `url` is the page a run opens, a failure's execution page.
+     */
+    data class FailureNode(
+        val key: String,
+        val kind: String,
+        val label: String,
+        val description: String,
+        val icon: String,
+        val expanded: Boolean,
+        val url: String?,
+        val failure: WorkspaceFailure? = null,
+        val children: List<FailureNode> = emptyList(),
+    )
+
+    private val STATE_ORDER = mapOf("failing" to 0, "edited" to 1, "fixed-locally" to 2)
+
+    /** What launched a run, in a few words: `CI`, `your run`, `local`, `desktop app`, `editor`. */
+    private fun originLabel(origin: String?, own: Boolean?): String = when {
+        own == true -> "your run"
+        origin == null || origin == "ci" || origin == "ci-rerun" -> "CI"
+        origin == "desktop" -> "desktop app"
+        else -> origin
+    }
+
+    /** The test a failure stands for: its id, else its title in its file. */
+    private fun testKey(f: WorkspaceFailure): String = f.testCaseId?.toString() ?: "${f.file ?: f.uri}\n${f.title}"
+
+    /** `3 failing · 1 fixed locally`, counting tests: a test failing on several projects counts once. */
+    private fun failureCounts(items: List<WorkspaceFailure>): String {
+        val failing = items.filterNot { isFixedLocally(it) }.map { testKey(it) }.toSet().size
+        val fixed = items.filter { isFixedLocally(it) }.map { testKey(it) }.toSet().size
+        return listOfNotNull(
+            if (failing > 0 || fixed == 0) "$failing failing" else null,
+            if (fixed > 0) "$fixed fixed locally" else null,
+        ).joinToString(" · ")
+    }
+
+    /** How many tests still fail, edited since their run or not: the tool window's title counts them. */
+    fun failingCount(result: FailuresResult?): Int =
+        result?.items.orEmpty().filterNot { isFixedLocally(it) }.map { testKey(it) }.toSet().size
+
+    private fun fileName(uri: String?): String =
+        java.net.URLDecoder.decode((uri ?: "").substringAfterLast('/').replace("+", "%2B"), Charsets.UTF_8)
+
+    /** Where a failure shows, at its line: the spec's path when it shows in the spec, else the file's name. */
+    fun failurePlace(f: WorkspaceFailure): String {
+        val decoded = java.net.URLDecoder.decode((f.uri ?: "").replace("+", "%2B"), Charsets.UTF_8)
+        val shown = f.file?.takeIf { decoded.endsWith("/$it") } ?: fileName(f.uri)
+        return "$shown:${f.line + 1}"
+    }
+
+    private fun failureLeaf(f: WorkspaceFailure): FailureNode = FailureNode(
+        key = "failure:${f.executionId}",
+        kind = "failure",
+        label = f.title ?: "Failed",
+        description = listOfNotNull(
+            failurePlace(f),
+            f.browserName,
+            if (f.isNew == true && !isFixedLocally(f)) "new" else null,
+        ).joinToString(" · "),
+        icon = when {
+            isFixedLocally(f) -> "fixed"
+            isEdited(f) -> "edited"
+            else -> "error"
+        },
+        expanded = false,
+        url = f.url,
+        failure = f,
+    )
+
+    private fun sortFailures(items: List<WorkspaceFailure>): List<WorkspaceFailure> = items.sortedWith(
+        compareBy<WorkspaceFailure>({ STATE_ORDER[it.state ?: "failing"] ?: 0 }, { it.file ?: it.uri ?: "" }, { it.line }, { it.title ?: "" }),
+    )
+
+    /** The group a failure goes in: its key, which ends with `:` for the failures without a value, and its label. */
+    private fun groupOf(f: WorkspaceFailure, grouping: String): Pair<String, String> = when (grouping) {
+        "cluster" -> f.clusterId?.let { "cluster:$it" to (f.clusterTitle?.ifBlank { null } ?: "Cluster #$it") }
+            ?: ("cluster:" to "Ungrouped")
+        "owner" -> f.owner?.ifBlank { null }?.let { "owner:$it" to it } ?: ("owner:" to "Unowned")
+        else -> (f.file ?: fileName(f.uri)).let { "file:$it" to it }
+    }
+
+    private fun grouped(items: List<WorkspaceFailure>, grouping: String): List<FailureNode> {
+        if (grouping == "flat") return sortFailures(items).map { failureLeaf(it) }
+        return items.groupBy { groupOf(it, grouping) }.entries
+            .sortedWith(compareBy({ it.key.first.endsWith(":") }, { it.key.second }))
+            .map { (group, members) ->
+                FailureNode(
+                    key = "group:${group.first}",
+                    kind = "group",
+                    label = group.second,
+                    description = failureCounts(members),
+                    icon = "folder",
+                    expanded = true,
+                    url = null,
+                    children = sortFailures(members).map { failureLeaf(it) },
+                )
+            }
+    }
+
+    /**
+     * The failures tree, as VS Code's view draws it: the latest complete run (`Run #120 · CI · feature/x · 3 failing ·
+     * 1 fixed locally`, its age, or the editor's own run in progress, as its description), the runs laid over it under
+     * `Your runs since`, and its failures grouped by `file`, `cluster` or `owner`, or `flat`, failing first, then
+     * edited, then fixed locally. Without a run (an older service), the groups alone; without a failure, nothing.
+     */
+    fun failureTree(result: FailuresResult?, grouping: String, now: Long = System.currentTimeMillis(), live: LiveRun? = null): List<FailureNode> {
+        val items = result?.items.orEmpty()
+        if (items.isEmpty()) return emptyList()
+        val groups = grouped(items, grouping)
+        val run = result?.run ?: return groups
+        val overlays = result.overlays.orEmpty()
+        val runs = if (overlays.isEmpty()) emptyList() else listOf(
+            FailureNode(
+                key = "runs",
+                kind = "runs",
+                label = "Your runs since",
+                description = plural(overlays.size, "run"),
+                icon = "history",
+                expanded = false,
+                url = null,
+                children = overlays.map { o ->
+                    FailureNode(
+                        key = "overlay:${o.id}",
+                        kind = "overlay",
+                        label = listOfNotNull(
+                            "#${o.id}",
+                            if (o.own == true) "your run" else null,
+                            o.startTime?.let { relativeTime(it, now) },
+                            "${o.passedTests} passed, ${o.failedTests} failed",
+                        ).joinToString(" · "),
+                        description = "",
+                        icon = if (o.failedTests > 0) "error" else "fixed",
+                        expanded = false,
+                        url = o.url,
+                    )
+                },
+            ),
+        )
+        val running = live?.takeIf { it.own }
+        return listOf(
+            FailureNode(
+                key = "run",
+                kind = "run",
+                label = listOfNotNull("Run #${run.id}", originLabel(run.origin, run.own), run.branch, failureCounts(items))
+                    .joinToString(" · "),
+                description = running?.let { "running ${it.done}/${it.total}" } ?: run.startTime?.let { relativeTime(it, now) } ?: "",
+                icon = "run",
+                expanded = true,
+                url = run.url,
+                children = runs + groups,
+            ),
+        )
+    }
+
+    /** The tool window's line on the run: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min ago`. */
+    fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? {
+        val run = result?.run ?: return null
+        return listOfNotNull(
+            "Run #${run.id}",
+            originLabel(run.origin, run.own),
+            run.branch,
+            failureCounts(result.items.orEmpty()),
+            run.startTime?.let { relativeTime(it, now) },
+        ).joinToString(" · ")
+    }
+
+    /**
+     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, from the file of the
+     * first; null when none fails.
+     */
+    fun rerunFailingArgs(result: FailuresResult?): RunTestsArgs? {
+        val failing = result?.items.orEmpty().filterNot { isFixedLocally(it) }
+        val ids = failing.mapNotNull { it.testCaseId }.distinct()
+        val uri = failing.firstOrNull()?.uri ?: return null
+        return if (ids.isEmpty()) null else RunTestsArgs(uri, ids)
+    }
+
+    /**
+     * The Playwright config folder a file (a `file:` URI) belongs to among the status's contexts: the deepest that holds
+     * it, else the connected one.
+     */
+    fun contextRootOf(status: StatusResult?, uri: String?): String? {
+        val contexts = status?.contexts.orEmpty()
+        val path = uri?.let { runCatching { java.nio.file.Path.of(java.net.URI(it)) }.getOrNull() }
+        val holding = contexts.mapNotNull { c -> c.root?.takeIf { root -> path != null && path.startsWith(java.nio.file.Path.of(root)) } }
+        return holding.maxByOrNull { it.length } ?: contexts.firstOrNull { it.connected }?.root
+    }
+
     /**
      * The runs as the files show them: without the run in progress, the stream and the time of the last read, which
      * move while the latest run and its failures stay. The files are drawn again when it changes.

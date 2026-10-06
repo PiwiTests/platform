@@ -3,9 +3,9 @@
  * service (bundled beside this file) computes the diagnostics, quick fixes,
  * hover and summary lines; this file starts it, draws the summary lines as
  * CodeLens and the latest run in the status bar, runs the commands those
- * lines name, keeps the API key in the secret store, hands Piwi's MCP
- * server to the editor's agent, inserts what Piwi Picker sends, and records
- * tests (`recording.ts`).
+ * lines name, lists the failures in the Piwi view (`failures-view.ts`), keeps
+ * the API key in the secret store, hands Piwi's MCP server to the editor's
+ * agent, inserts what Piwi Picker sends, and records tests (`recording.ts`).
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -16,6 +16,7 @@ import {
   type ServerOptions,
 } from 'vscode-languageclient/node';
 import {
+  AGENT_CONTEXT_REQUEST,
   COMMAND_ENDED_NOTIFICATION,
   COMMAND_STARTED_NOTIFICATION,
   DESKTOP_JOB_NOTIFICATION,
@@ -24,6 +25,8 @@ import {
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   SHARE_DESKTOP_JOB_REQUEST,
+  type AgentContextParams,
+  type AgentContextResult,
   type CommandEndedParams,
   type CommandStartedParams,
   type DesktopJobParams,
@@ -94,11 +97,14 @@ import {
   indentBlock,
   mcpConfiguration,
   refreshingText,
+  rerunFailingArgs,
   runsInFiles,
   sourceLabel,
   STATUS_TOOLTIP_COMMANDS,
   statusBarView,
+  type FailureNode,
 } from './glue';
+import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
@@ -146,10 +152,17 @@ let client: LanguageClient | null = null;
 let sendListener: SendListener | null = null;
 let recording: Recording | null = null;
 
-/** The extension's API, which its integration suite reads: answers of the editor service. */
+/** The extension's API, which its integration suite reads: answers of the editor service, and the failures view. */
 export interface PiwiApi {
   /** `piwi/pageCandidates`: the page expressions the steps written at a position could run on. */
   pageCandidates(params: PageCandidatesParams): Promise<PageCandidatesResult>;
+  /** The failures view's nodes under `node`, or its roots, once the failures are read again. */
+  failureChildren(node?: FailureNode): Promise<FailureNode[]>;
+}
+
+/** A failures view node, or what a command names it by. */
+function failureOf(target: unknown): FailureNode['failure'] | null {
+  return (target as FailureNode | undefined)?.failure ?? null;
 }
 
 /**
@@ -292,6 +305,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     if (full) status = await lc.sendRequest<StatusResult>(STATUS_REQUEST).catch(() => null);
     runs = next ?? (await lc.sendRequest<RunStatusResult>(RUN_STATUS_REQUEST).catch(() => null));
     render();
+    failuresView.refresh();
     const shown = runsInFiles(runs);
     if (full || shown !== runsShown) lensesChanged.fire();
     runsShown = shown;
@@ -306,6 +320,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (servers?.servers.length) void offerMcp(context, servers);
     }
   };
+
+  const failuresView = new FailuresView(
+    context,
+    lc,
+    () => status,
+    () => runs,
+  );
+  context.subscriptions.push(failuresView);
 
   // The terminal of each directory and environment commands run in, reused while it is open. A test run carries the
   // ref of its own run in its environment. Where shell integration reports the commands of the directory's run
@@ -394,6 +416,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   const activeUri = () => vscode.window.activeTextEditor?.document.uri.toString() ?? null;
 
+  /** The execution a trace or a screenshot command names: its arguments, or a failure of the failures view. */
+  const evidenceParams = (target: TraceParams | FailureNode): TraceParams => {
+    const failure = failureOf(target);
+    return failure ? { uri: failure.uri, executionId: failure.executionId } : (target as TraceParams);
+  };
+
+  /** Pass a failure of the failures view to the desktop app. */
+  const desktopJobOf = async (target: FailureNode, kind: 'reproduce' | 'bisect') => {
+    const failure = failureOf(target);
+    const inside = (root: string) => !!failure && failure.uri.startsWith(`${vscode.Uri.file(root).toString()}/`);
+    const root =
+      status?.contexts.filter((c) => inside(c.root)).sort((a, b) => b.root.length - a.root.length)[0] ??
+      status?.contexts.find((c) => c.connected);
+    if (!failure || !root) return;
+    await vscode.commands.executeCommand('piwi.desktopJob', {
+      root: root.root,
+      executionId: failure.executionId,
+      kind,
+    } satisfies DesktopJobParams);
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand('piwi.connect', async () => {
       if (await connect(context, lc)) await updateStatus();
@@ -418,6 +461,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await updateStatus(answer ?? undefined);
     }),
     vscode.commands.registerCommand('piwi.runTests', (args: RunTestsArgs) => runTests(args)),
+    // From the failures view, a failure; from elsewhere, the tests to run.
+    vscode.commands.registerCommand('piwi.runTest', async (target: FailureNode | RunTestsArgs) => {
+      const failure = failureOf(target);
+      if (failure?.testCaseId !== undefined) await runTests({ uri: failure.uri, testIds: [failure.testCaseId] });
+      else if ((target as RunTestsArgs)?.testIds) await runTests(target as RunTestsArgs);
+    }),
+    vscode.commands.registerCommand('piwi.rerunFailing', async () => {
+      const args = rerunFailingArgs(await failuresView.read());
+      if (!args) {
+        void vscode.window.showInformationMessage('Piwi: no failing test to re-run.');
+        return;
+      }
+      await runTests(args);
+    }),
+    vscode.commands.registerCommand('piwi.groupFailuresBy', () => failuresView.pickGrouping()),
+    vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
+    vscode.commands.registerCommand('piwi.stopFollowingEditor', () => failuresView.toggleFollow()),
+    vscode.commands.registerCommand('piwi.copyAgentContext', async (target: FailureNode) => {
+      const failure = failureOf(target);
+      if (!failure) return;
+      const answer = await lc
+        .sendRequest<AgentContextResult | null>(AGENT_CONTEXT_REQUEST, {
+          uri: failure.uri,
+          executionId: failure.executionId,
+        } satisfies AgentContextParams)
+        .catch(() => null);
+      if (!answer) {
+        void vscode.window.showWarningMessage('Piwi: this failure is no longer in the latest run.');
+        return;
+      }
+      await vscode.commands.executeCommand('piwi.copyText', answer.text);
+    }),
+    vscode.commands.registerCommand('piwi.reproduceInDesktop', (target: FailureNode) =>
+      desktopJobOf(target, 'reproduce'),
+    ),
+    vscode.commands.registerCommand('piwi.bisectInDesktop', (target: FailureNode) => desktopJobOf(target, 'bisect')),
     vscode.commands.registerCommand('piwi.runTestsForFile', async (target?: vscode.Uri) => {
       const uri = target?.toString() ?? activeUri();
       if (!uri) return;
@@ -428,7 +507,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
       await runTests({ uri, testIds: found.tests.map((t) => t.id) });
     }),
-    vscode.commands.registerCommand('piwi.openInDashboard', async (url?: string) => {
+    vscode.commands.registerCommand('piwi.openInDashboard', async (target?: string | FailureNode) => {
+      const url = typeof target === 'string' ? target : target?.url;
       if (typeof url === 'string' && url) {
         await vscode.env.openExternal(vscode.Uri.parse(url));
         return;
@@ -480,7 +560,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.openRun', async () => {
       if (statusUrl) await vscode.env.openExternal(vscode.Uri.parse(statusUrl));
     }),
-    vscode.commands.registerCommand('piwi.openTrace', async (params: TraceParams) => {
+    vscode.commands.registerCommand('piwi.openTrace', async (target: TraceParams | FailureNode) => {
+      const params = evidenceParams(target);
       const trace = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Piwi: downloading the trace…' },
         () => lc.sendRequest<TraceResult | null>(TRACE_REQUEST, params),
@@ -491,7 +572,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       }
       runInTerminal(trace.cwd, trace.command);
     }),
-    vscode.commands.registerCommand('piwi.openScreenshot', async (params: ScreenshotParams) => {
+    vscode.commands.registerCommand('piwi.openScreenshot', async (target: ScreenshotParams | FailureNode) => {
+      const params = evidenceParams(target);
       const shot = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Piwi: downloading the screenshot…' },
         () => lc.sendRequest<ScreenshotResult | null>(SCREENSHOT_REQUEST, params),
@@ -598,7 +680,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
     lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
     // A failure moved with an edit, or its line changed since the run: the lenses and the decorations again.
-    lc.onNotification(FAILURES_NOTIFICATION, () => lensesChanged.fire()),
+    lc.onNotification(FAILURES_NOTIFICATION, () => {
+      lensesChanged.fire();
+      failuresView.refresh();
+    }),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
       const text = `Piwi: ${notice.message}`;
       void (notice.severity === 'warning'
@@ -615,6 +700,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push({ dispose: () => clearInterval(tick) });
   return {
     pageCandidates: (params) => lc.sendRequest<PageCandidatesResult>(PAGE_CANDIDATES_REQUEST, params),
+    failureChildren: async (node) => {
+      if (!node) await failuresView.read();
+      return failuresView.getChildren(node);
+    },
   };
 }
 
