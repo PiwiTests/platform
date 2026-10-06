@@ -33,8 +33,8 @@ import javax.swing.JPanel
  * of a local run laid over that run says so, and the failures a later run
  * passed follow, marked fixed. A double click opens the failing line, where
  * the highlight carries the quick fixes, or a fixed test's line. Above them,
- * the connection in one line, and Connect, Refresh, Open in dashboard and the
- * settings in the toolbar.
+ * the connection in one line, and Connect, Refresh, Open in dashboard, Open the
+ * latest run in the dashboard and the settings in the toolbar.
  */
 class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     override fun shouldBeAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
@@ -108,6 +108,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 actions.getAction("Piwi.Connect"),
                 actions.getAction("Piwi.Refresh"),
                 actions.getAction("Piwi.OpenInDashboard"),
+                actions.getAction("Piwi.OpenLatestRun"),
                 Separator.getInstance(),
                 actions.getAction("Piwi.OpenSettings"),
             ),

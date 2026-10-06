@@ -47,9 +47,14 @@ run that never arrived goes unmentioned.
 
 The latest complete run on the branch: how many tests passed, failed and were flaky, or what still fails and what your
 local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or another run of the branch,
-is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends;
-the tooltip shows both. Click it to open the run. When the extension is not connected, the item says why and runs
-**Piwi: Connect**.
+is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends.
+
+Click it to read the latest run and its failures again, without the indexes **Piwi: Refresh** fetches; **Piwi:
+Refresh the latest run** does the same. The tooltip holds the run's counts, your local runs since, the run in
+progress, and when the run was read (`Updated 12 s ago · live` while the event stream is connected, `· read every
+minute` without it). In VS Code it ends with **Open run #120**, **Open in dashboard** and **Connect**; in a JetBrains
+IDE, **Tools → Piwi → Open the Latest Run in the Dashboard**, also in the Piwi tool window's toolbar, opens the run.
+When the extension is not connected, the item says why, and a click runs **Piwi: Connect**.
 
 ## Related
 

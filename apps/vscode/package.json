@@ -54,6 +54,11 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.refreshRun",
+        "title": "Refresh the latest run",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
         "category": "Piwi"

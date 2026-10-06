@@ -41,16 +41,55 @@ class GlueTest {
     }
 
     @Test
-    fun `a passing run, with its flaky tests`() {
+    fun `a passing run, with its flaky tests, which a click reads again`() {
         assertEquals(
             Glue.StatusView(
                 "Piwi: 118 passed · 2 flaky",
                 "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env",
                 "http://piwi/test-runs/41",
-                Glue.StatusAction.OPEN,
+                Glue.StatusAction.REFRESH,
             ),
             Glue.statusView(connected, runs(passed)),
         )
+        assertEquals(Glue.StatusAction.REFRESH, Glue.statusView(connected, runs(null)).action)
+    }
+
+    @Test
+    fun `the tooltip says when the run was read, and whether the next one is pushed or polled`() {
+        val now = java.time.Instant.parse("2026-09-27T12:00:12Z").toEpochMilli()
+        fun read(stream: String?) = RunStatusResult(
+            listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, updatedAt = "2026-09-27T12:00:00.000Z", stream = stream)),
+        )
+        assertEquals(
+            listOf(
+                "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped",
+                "Updated 12 s ago · live",
+                "http://piwi, from the workspace .env",
+            ),
+            Glue.statusView(connected, read("live"), now = now).tooltip.lines(),
+        )
+        assertEquals(
+            true,
+            Glue.statusView(connected, read("polling"), now = now).tooltip.contains("\nUpdated 12 s ago · read every minute\n"),
+        )
+        // From a service that does not say when.
+        assertEquals(false, Glue.statusView(connected, runs(passed), now = now).tooltip.contains("Updated"))
+    }
+
+    @Test
+    fun `the time since a read, in seconds, minutes, hours, then days`() {
+        val at = "2026-09-27T12:00:00Z"
+        val base = java.time.Instant.parse(at).toEpochMilli()
+        fun ago(ms: Long) = Glue.relativeTime(at, base + ms)
+        assertEquals("just now", ago(400))
+        assertEquals("just now", ago(-5_000))
+        assertEquals("12 s ago", ago(12_000))
+        assertEquals("59 s ago", ago(59_999))
+        assertEquals("1 min ago", ago(60_000))
+        assertEquals("4 min ago", ago(270_000))
+        assertEquals("2 h ago", ago(7_200_000))
+        assertEquals("3 d ago", ago(3 * 86_400_000L + 5))
+        assertEquals("just now", Glue.relativeTime("not a time", 0))
     }
 
     @Test

@@ -17,10 +17,17 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   `piwi/runStatus` in the status bar (the tests still failing and those fixed locally since the latest run, from
   `failingTests` and `resolved`, and the run in progress, `live`; a notification that moves only the run in progress
   leaves the CodeLens and the gutter as they are: `runsInFiles`), implements the commands the service names
-  (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick fix or a flaky test's
-  lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the API key in `SecretStorage`, and provides Piwi's MCP server through
+  (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.desktopJob`, from a quick
+  fix or a flaky test's lens, which shows `piwi/desktopJobChanged` as notifications with the share button), keeps the
+  API key in `SecretStorage`, and provides Piwi's MCP server through
   `vscode.lm.registerMcpServerDefinitionProvider` where the editor has it (read at runtime: `engines.vscode` stays at
   the oldest version `vscode-languageclient` supports, for Cursor and VSCodium).
+- The status bar item (`statusBarView` in `src/glue.ts`): a click runs `piwi.refreshRun` (`piwi/refreshRun`, the
+  item's icon spinning meanwhile: `refreshingText`), and **Piwi: Connect** while not connected. Its tooltip is a
+  trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,
+  the run in progress, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every 30 s),
+  then links to `piwi.openRun`, `piwi.openInDashboard` and `piwi.connect`; **Piwi: Open the latest run**
+  (`piwi.openRun`) is in the palette too.
 - Commands run in a terminal (`runInTerminal`), reused per folder and environment. A test run carries its own ref
   (`RunCommand.ref`, also in its environment). Where shell integration reports commands
   (`window.onDidStartTerminalShellExecution` and `onDidEndTerminalShellExecution`, VS Code 1.93 and later, read at

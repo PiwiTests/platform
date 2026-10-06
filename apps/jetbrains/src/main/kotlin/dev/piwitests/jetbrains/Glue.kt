@@ -100,8 +100,8 @@ object Glue {
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
-    /** What a click on the status bar item does. */
-    enum class StatusAction { OPEN, CONNECT, SETTINGS, NONE }
+    /** What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`). */
+    enum class StatusAction { REFRESH, CONNECT, SETTINGS, NONE }
 
     data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
 
@@ -119,13 +119,48 @@ object Glue {
         return "\n${if (live.own) "Your run" else "Run"} #${live.runId} is running: ${live.done}/${live.total}$failing"
     }
 
+    /** The status bar text while a click reads the latest run again. */
+    const val REFRESHING = "Piwi: refreshing…"
+
+    /**
+     * How long before `now` (ms since the epoch) an ISO 8601 time is: `12 s ago`, `4 min ago`, `2 h ago`, `3 d ago`,
+     * or `just now`.
+     */
+    fun relativeTime(iso: String, now: Long): String {
+        val at = runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrNull() ?: return "just now"
+        val seconds = (now - at) / 1000
+        return when {
+            seconds < 1 -> "just now"
+            seconds < 60 -> "$seconds s ago"
+            seconds < 3_600 -> "${seconds / 60} min ago"
+            seconds < 86_400 -> "${seconds / 3_600} h ago"
+            else -> "${seconds / 86_400} d ago"
+        }
+    }
+
+    /** The tooltip's line on when the latest run was read, and how the next one comes: `Updated 12 s ago · live`. */
+    private fun updatedLine(run: RunStatus?, now: Long): String {
+        val at = run?.updatedAt ?: return ""
+        val how = when (run.stream) {
+            "live" -> " · live"
+            "polling" -> " · read every minute"
+            else -> ""
+        }
+        return "\nUpdated ${relativeTime(at, now)}$how"
+    }
+
     /**
      * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
      * fail, or what keeps the service from reading it. While a run is in progress, the editor's own or one on the
-     * branch, the text counts it, and the tooltip has both. A null status means the service has not started: it starts
-     * with the first file of the project opened.
+     * branch, the text counts it, and the tooltip has both, with when the latest run was read. A click reads it again.
+     * A null status means the service has not started: it starts with the first file of the project opened.
      */
-    fun statusView(status: StatusResult?, runs: RunStatusResult?, desktopChosen: Boolean = false): StatusView {
+    fun statusView(
+        status: StatusResult?,
+        runs: RunStatusResult?,
+        desktopChosen: Boolean = false,
+        now: Long = System.currentTimeMillis(),
+    ): StatusView {
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
@@ -136,12 +171,12 @@ object Glue {
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
         val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
         val live = run?.live
-        val progress = live?.let { liveLine(it) } ?: ""
+        val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
         val r = run?.run ?: return StatusView(
             live?.let { liveText(it) } ?: "Piwi: no run",
             "No run of $where yet$progress$from",
             null,
-            StatusAction.NONE,
+            StatusAction.REFRESH,
         )
         // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
         val failing = run.failingTests ?: r.failedTests
@@ -151,21 +186,21 @@ object Glue {
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
             "${r.flakyTests} flaky, ${r.skippedTests} skipped$local$progress$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
-        val open = StatusAction.OPEN
+        val refresh = StatusAction.REFRESH
         return when {
-            live != null -> StatusView(liveText(live), tooltip, r.url, open)
+            live != null -> StatusView(liveText(live), tooltip, r.url, refresh)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, open)
+                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh)
             }
             failing > 0 -> {
                 val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, open)
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh)
             }
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, open)
-            fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, open)
-            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, open)
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh)
+            fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh)
+            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh)
         }
     }
 

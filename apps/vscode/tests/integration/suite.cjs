@@ -193,6 +193,7 @@ const tests = {
       'piwi.disconnect',
       'piwi.openSettings',
       'piwi.refresh',
+      'piwi.refreshRun',
       'piwi.runTestsForFile',
       'piwi.openInDashboard',
       'piwi.openRun',
@@ -212,6 +213,7 @@ const tests = {
       assert.ok(commands.includes(id), id);
     }
     await vscode.commands.executeCommand('piwi.refresh');
+    await vscode.commands.executeCommand('piwi.refreshRun');
   },
 };
 

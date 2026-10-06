@@ -12,7 +12,8 @@
       <li>each test's latest result in the gutter, a failing test's body tinted, and the tests behind each locator
           line and each application file;</li>
       <li>brittle locators, and the locators an unsaved change breaks, with quick fixes;</li>
-      <li>the latest run in the status bar, and Piwi's MCP server for your AI assistant;</li>
+      <li>the latest run in the status bar, with the run you started as it runs, read again on a click, and Piwi's MCP
+          server for your AI assistant;</li>
       <li>tests recorded in a browser your project's own Playwright opens, written at the caret as you click and type,
           with calls to your page objects and helpers when connected, and removed in one undo;</li>
       <li>locators and recorded flows sent from the Piwi Picker browser extension, inserted at the caret;</li>
@@ -73,6 +74,9 @@
             <action id="Piwi.OpenInDashboard" class="dev.piwitests.jetbrains.OpenInDashboardAction"
                     icon="AllIcons.General.Web"
                     text="Open in Dashboard" description="Open this file's test, or the latest run"/>
+            <action id="Piwi.OpenLatestRun" class="dev.piwitests.jetbrains.OpenLatestRunAction"
+                    icon="AllIcons.General.Web"
+                    text="Open the Latest Run in the Dashboard" description="Open the run the status bar shows"/>
             <action id="Piwi.PairPicker" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
                     description="Copy the address Piwi Picker sends locators and recorded steps to"/>
             <action id="Piwi.CopyMcpConfiguration" class="dev.piwitests.jetbrains.CopyMcpConfigurationAction"

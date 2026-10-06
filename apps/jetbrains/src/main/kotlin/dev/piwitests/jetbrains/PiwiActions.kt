@@ -124,6 +124,21 @@ class OpenInDashboardAction : AnAction() {
     }
 }
 
+/** Piwi: Open the Latest Run in the Dashboard — the run the status bar shows. */
+class OpenLatestRunAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = service != null && Glue.statusView(service.status, service.runs).url != null
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>() ?: return
+        Glue.statusView(service.status, service.runs).url?.let { BrowserUtil.browse(it) }
+    }
+}
+
 /** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

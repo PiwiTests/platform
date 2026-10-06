@@ -107,6 +107,7 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 |---|---|
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
+| Piwi: Refresh the latest run | Read the latest run and its failures again, as a click on the status bar does |
 | Piwi: Run the tests that reach this file | Run them in a terminal, with the arguments `piwi run` would use |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Run selection… | Run one of the project's saved [selections](/features/test-selection) |
@@ -126,8 +127,9 @@ client shows warnings, quick fixes and hover in open files; the rest is native:
   failures, then those your local runs fixed, since the IDE highlights open files only. Double-click
   one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link.
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
-- **The status bar** shows the latest run, or the [run in progress](./editor-runs#the-status-bar); the actions are under
-  **Tools → Piwi**, and **Run the tests that reach this file** is also in the editor's context menu.
+- **The status bar** shows the latest run, or the run in progress, and reads it again on a click
+  ([the status bar](./editor-runs#the-status-bar)); the actions are under **Tools → Piwi**, and **Run the tests that
+  reach this file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
   Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
   environment.

@@ -18,7 +18,7 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
   do there at the cursor, as you do it: steps inside a test, or a new test between tests. **Piwi: Record a new test
   file** records a whole spec. It needs no instance.
 - **The status bar.** The latest run on the branch, with what your local runs fixed since (`2 failing · 1 fixed
-  locally`), and the run you started from the editor, live while it runs.
+  locally`), and the run you started from the editor, live while it runs; a click reads it again.
 - **Piwi's MCP server for the agent**, with the connection the extension already has.
 
 ## Connect

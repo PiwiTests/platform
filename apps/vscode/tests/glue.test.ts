@@ -20,6 +20,8 @@ import {
   recordedBlockText,
   recordingSummary,
   recordingView,
+  refreshingText,
+  relativeTime,
   runsInFiles,
   sourceLabel,
   statusBarView,
@@ -70,6 +72,10 @@ const run = (over: Partial<NonNullable<RunStatusResult['contexts'][number]['run'
 });
 
 describe('statusBarView', () => {
+  const FROM = 'http://piwi, from the workspace .env';
+  const LINKS =
+    '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Connect](command:piwi.connect)';
+
   test('without a Playwright config, says so', () => {
     expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
   });
@@ -79,23 +85,50 @@ describe('statusBarView', () => {
       { contexts: [{ ...connected.contexts[0]!, connected: false, problem: 'No project chosen.' }] },
       null,
     );
-    expect(view).toMatchObject({ text: '$(plug) Piwi: connect', tooltip: 'No project chosen.', action: 'connect' });
+    expect(view).toMatchObject({
+      text: '$(plug) Piwi: connect',
+      tooltip: 'No project chosen.\n\n[Connect](command:piwi.connect)',
+      action: 'connect',
+    });
   });
 
-  test('a passing run, with its flaky tests', () => {
+  test('a passing run, with its flaky tests; a click reads it again', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',
-      tooltip:
-        'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env',
-      action: 'open',
+      tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${LINKS}`,
+      action: 'refresh',
       url: 'http://piwi/test-runs/41',
       error: false,
     });
   });
 
+  test('the tooltip says when the run was read, and whether the next one is pushed or polled', () => {
+    const now = Date.parse('2026-09-27T12:00:12.000Z');
+    const read = (stream?: 'live' | 'polling'): RunStatusResult => ({
+      contexts: [{ ...run({}).contexts[0]!, updatedAt: '2026-09-27T12:00:00.000Z', stream }],
+    });
+    expect(statusBarView(connected, read('live'), false, now).tooltip.split('\n\n')).toEqual([
+      'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped',
+      'Updated 12 s ago · live',
+      FROM,
+      LINKS,
+    ]);
+    expect(statusBarView(connected, read('polling'), false, now).tooltip).toContain(
+      '\n\nUpdated 12 s ago · read every minute\n\n',
+    );
+    // From a service that does not say when.
+    expect(statusBarView(connected, run({}), false, now).tooltip).not.toContain('Updated');
+  });
+
+  test('the tooltip shows the names it holds as they are written', () => {
+    const named: StatusResult = { contexts: [{ ...connected.contexts[0]!, projectName: 'Shop_*Web*' }] };
+    expect(statusBarView(named, run({})).tooltip).toMatch(/^Run #41 of Shop\\_\\\*Web\\\* on feature\/pay: /);
+  });
+
   test('a failing run is an error', () => {
     expect(statusBarView(connected, run({ status: 'failed', failedTests: 3, passedTests: 115 }))).toMatchObject({
       text: '$(error) Piwi: 3 failing · 2 flaky',
+      action: 'refresh',
       error: true,
     });
   });
@@ -108,7 +141,7 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
     expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: true });
     expect(view.tooltip).toBe(
-      'Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n2 local runs since · 1 test fixed locally\nhttp://piwi, from the workspace .env',
+      `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally\n\n${FROM}\n\n${LINKS}`,
     );
     expect(statusBarView(connected, local({ failingTests: 0, resolved: 3, overlays: 1 }))).toMatchObject({
       text: '$(pass) Piwi: 3 fixed locally',
@@ -116,7 +149,7 @@ describe('statusBarView', () => {
     });
     expect(statusBarView(connected, local({ failingTests: 1, resolved: 0, overlays: 1 }))).toMatchObject({
       text: '$(error) Piwi: 1 failing',
-      tooltip: expect.stringContaining('\n1 local run since · 0 tests fixed locally\n'),
+      tooltip: expect.stringContaining('\n\n1 local run since · 0 tests fixed locally\n\n'),
     });
     expect(statusBarView(connected, local({ failingTests: 3, resolved: 0, overlays: 0 })).tooltip).not.toContain(
       'local run',
@@ -139,13 +172,13 @@ describe('statusBarView', () => {
     };
     expect(statusBarView(connected, live({}))).toMatchObject({
       text: '$(sync~spin) Piwi: 4/9 · 1 failing · your run',
-      tooltip:
-        'Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\nYour run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env',
+      tooltip: `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\nYour run #124 is running: 4/9 · 1 failing\n\n${FROM}\n\n${LINKS}`,
+      action: 'refresh',
       error: false,
     });
     expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
       text: '$(sync~spin) Piwi: 4/9',
-      tooltip: expect.stringContaining('\nRun #124 is running: 4/9\n'),
+      tooltip: expect.stringContaining('\n\nRun #124 is running: 4/9\n\n'),
     });
     // Once it ended, the latest run again.
     expect(statusBarView(connected, live(null)).text).toBe('$(error) Piwi: 3 failing');
@@ -155,7 +188,8 @@ describe('statusBarView', () => {
     };
     expect(statusBarView(connected, first)).toMatchObject({
       text: '$(sync~spin) Piwi: 0/9 · your run',
-      tooltip: 'No run of Acme on wip yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env',
+      tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Connect](command:piwi.connect)`,
+      action: 'refresh',
     });
   });
 
@@ -178,7 +212,7 @@ describe('statusBarView', () => {
   test('a running run shows its progress', () => {
     expect(
       statusBarView(connected, run({ status: 'running', passedTests: 40, failedTests: 1, flakyTests: 0 })),
-    ).toMatchObject({ text: '$(sync~spin) Piwi: 41/120 · 1 failing', action: 'open' });
+    ).toMatchObject({ text: '$(sync~spin) Piwi: 41/120 · 1 failing', action: 'refresh' });
   });
 
   test('an interrupted run names its status', () => {
@@ -189,8 +223,30 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, { contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0 }] });
     expect(view).toMatchObject({
       text: '$(beaker) Piwi: no run',
-      tooltip: 'No run of Acme on wip yet\nhttp://piwi, from the workspace .env',
+      tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Connect](command:piwi.connect)`,
+      action: 'refresh',
     });
+  });
+
+  test('while a click reads the run again, the item’s icon spins', () => {
+    expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(sync~spin) Piwi: 2 failing');
+    expect(refreshingText('Piwi')).toBe('$(sync~spin) Piwi');
+  });
+});
+
+describe('relativeTime', () => {
+  test('in seconds, minutes, hours, then days', () => {
+    const at = '2026-09-27T12:00:00.000Z';
+    const ago = (ms: number) => relativeTime(at, Date.parse(at) + ms);
+    expect(ago(400)).toBe('just now');
+    expect(ago(-5_000)).toBe('just now');
+    expect(ago(12_000)).toBe('12 s ago');
+    expect(ago(59_999)).toBe('59 s ago');
+    expect(ago(60_000)).toBe('1 min ago');
+    expect(ago(4 * 60_000 + 30_000)).toBe('4 min ago');
+    expect(ago(2 * 3_600_000)).toBe('2 h ago');
+    expect(ago(3 * 86_400_000 + 5)).toBe('3 d ago');
+    expect(relativeTime('not a time', 0)).toBe('just now');
   });
 });
 

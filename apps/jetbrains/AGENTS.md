@@ -37,6 +37,11 @@ the service through the platform's LSP API with the project's Node.js interprete
   connection from `piwi/status`, and the actions under **Tools → Piwi**. The service starts with the first supported
   file opened (2024.1 has no way to start it without one): until then the status is null, and the status bar and tool
   window say so.
+- The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
+  (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), and Connect while not
+  connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and
+  when the run was read (`Glue.relativeTime`). **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
+  **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
 - `PiwiCommands.run` runs a command in the Run tool window, whose **Rerun** (`RunContentExecutor.withRerun`) stops it
   if it runs and starts it again with the same environment. For a test run (`RunCommand.ref`), a `ProcessListener`
   sends `piwi/commandEnded` with the exit code when the process ends; a rerun keeps the ref, by which the service

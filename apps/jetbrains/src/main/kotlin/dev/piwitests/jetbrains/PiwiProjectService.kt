@@ -92,6 +92,10 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var failures: List<WorkspaceFailure> = emptyList()
         private set
 
+    /** Whether a click on the status bar item is reading the latest run again. */
+    @Volatile var refreshing = false
+        private set
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /** The project's Playwright configs; null until the first search ends. */
@@ -269,6 +273,23 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun server(): PiwiLanguageServer? =
         LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)
             .firstOrNull()?.piwiServer()
+
+    /**
+     * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
+     * status, on a pooled thread: the status bar item's click. `refreshing` is set meanwhile.
+     */
+    fun refreshRun() {
+        if (refreshing) return
+        refreshing = true
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                server()?.refreshRun()?.orNull()
+            } finally {
+                refreshing = false
+            }
+            refreshStatus()
+        }
+    }
 
     /** Read the status, the latest run and its failures again, then tell the listeners. */
     fun refreshStatus() {

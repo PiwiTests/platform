@@ -36,6 +36,7 @@ import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
   REFRESH_REQUEST,
+  REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
   RUN_ARGS_REQUEST,
   RUN_STATUS_NOTIFICATION,
@@ -89,13 +90,17 @@ import {
   importInsertion,
   indentBlock,
   mcpConfiguration,
+  refreshingText,
   runsInFiles,
   sourceLabel,
+  STATUS_TOOLTIP_COMMANDS,
   statusBarView,
 } from './glue';
 import { registerRecording, type Recording } from './recording';
 import { startSendListener, type SendListener, type SendResult } from './send-listener';
 
+/** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
+const STATUS_TICK_MS = 30_000;
 /** The one key slot shared by every instance; `forgetSharedKey` deletes it once. */
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
@@ -256,17 +261,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   let lastServers = '';
   context.subscriptions.push(lensesChanged, mcpChanged, statusItem);
 
-  /** The service's last answers the status bar item renders. */
+  /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
   let runs: RunStatusResult | null = null;
   let runsShown = '';
+  let refreshing = false;
   const render = () => {
     const view = statusBarView(status, runs, !!context.workspaceState.get<boolean>(DESKTOP_CHOSEN));
-    statusItem.text = view.text;
-    statusItem.tooltip = view.tooltip;
+    statusItem.text = refreshing ? refreshingText(view.text) : view.text;
+    const tooltip = new vscode.MarkdownString(view.tooltip);
+    tooltip.isTrusted = { enabledCommands: STATUS_TOOLTIP_COMMANDS };
+    statusItem.tooltip = tooltip;
     statusUrl = view.url;
     statusItem.command =
-      view.action === 'open' ? 'piwi.openRun' : view.action === 'connect' ? 'piwi.connect' : undefined;
+      view.action === 'refresh' ? 'piwi.refreshRun' : view.action === 'connect' ? 'piwi.connect' : undefined;
     statusItem.backgroundColor = view.error ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
     statusItem.show();
   };
@@ -380,6 +388,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.refresh', async () => {
       await lc.sendRequest(REFRESH_REQUEST);
       await updateStatus();
+    }),
+    // The status bar item's click: the latest run and its failures alone, not the indexes Refresh reads.
+    vscode.commands.registerCommand('piwi.refreshRun', async () => {
+      if (refreshing) return;
+      refreshing = true;
+      render();
+      const answer = await lc.sendRequest<RunStatusResult>(REFRESH_RUN_REQUEST).catch(() => null);
+      refreshing = false;
+      await updateStatus(answer ?? undefined);
     }),
     vscode.commands.registerCommand('piwi.runTests', (args: RunTestsArgs) => runTests(args)),
     vscode.commands.registerCommand('piwi.runTestsForFile', async (target?: vscode.Uri) => {
@@ -573,6 +590,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   context.subscriptions.push(recording);
   await lc.start();
   await updateStatus();
+  const tick = setInterval(render, STATUS_TICK_MS);
+  context.subscriptions.push({ dispose: () => clearInterval(tick) });
   return {
     pageCandidates: (params) => lc.sendRequest<PageCandidatesResult>(PAGE_CANDIDATES_REQUEST, params),
   };

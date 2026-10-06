@@ -13,6 +13,7 @@ import type {
   McpServerDefinition,
   RecordingPlacement,
   RecordingUpdate,
+  RunStatus,
   RunStatusResult,
   StatusResult,
   SummaryLine,
@@ -25,9 +26,11 @@ export const DOCUMENT_PATTERN =
 
 export interface StatusBarView {
   text: string;
+  /** Markdown: what the item shows and when it was read, then links to the run, the dashboard and Connect. */
   tooltip: string;
-  /** `open` opens `url` in the browser; `connect` runs Piwi: Connect. */
-  action: 'open' | 'connect' | 'none';
+  /** `refresh` reads the latest run again (`piwi.refreshRun`); `connect` runs Piwi: Connect. */
+  action: 'refresh' | 'connect' | 'none';
+  /** The latest run's page, which `piwi.openRun` opens. */
   url: string | null;
   /** Whether the item uses the editor's error background. */
   error: boolean;
@@ -35,19 +38,43 @@ export interface StatusBarView {
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
+/** The commands the status bar item's tooltip links to. */
+export const STATUS_TOOLTIP_COMMANDS = ['piwi.openRun', 'piwi.openInDashboard', 'piwi.connect'];
+
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** A text shown as written in Markdown. */
+function md(text: string): string {
+  return text.replace(/[\\`*_[\]<>|]/g, '\\$&');
+}
+
+/** Markdown lines, each a paragraph of its own, without the empty ones. */
+function lines(...parts: Array<string | null | undefined>): string {
+  return parts.filter(Boolean).join('\n\n');
+}
+
+/** How long before `now` an ISO 8601 time is: `12 s ago`, `4 min ago`, `2 h ago`, `3 d ago`, or `just now`. */
+export function relativeTime(iso: string, now: number): string {
+  const seconds = Math.floor((now - Date.parse(iso)) / 1000);
+  if (!(seconds >= 1)) return 'just now';
+  if (seconds < 60) return `${seconds} s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
+}
+
 /**
  * A line on the desktop app when it is not in use: it runs and Connect can
- * switch to it, or it was chosen and does not run. Empty otherwise.
+ * switch to it, or it was chosen and does not run. Null otherwise.
  */
-function desktopHint(status: StatusResult | null, desktopChosen: boolean): string {
+function desktopHint(status: StatusResult | null, desktopChosen: boolean): string | null {
   const inUse = status?.contexts.some((c) => c.source === 'desktop');
-  if (!status || inUse) return '';
-  if (status.desktopUrl) return '\nThe Piwi desktop app runs on this machine: Piwi: Connect to use it.';
-  return desktopChosen ? '\nThe Piwi desktop app, chosen with Piwi: Connect, is not running.' : '';
+  if (!status || inUse) return null;
+  if (status.desktopUrl) return 'The Piwi desktop app runs on this machine: Piwi: Connect to use it.';
+  return desktopChosen ? 'The Piwi desktop app, chosen with Piwi: Connect, is not running.' : null;
 }
 
 /** A run in progress in the status bar: `$(sync~spin) Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
@@ -59,29 +86,44 @@ function liveText(live: LiveRun): string {
 /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
 function liveLine(live: LiveRun): string {
   const failing = live.failed ? ` · ${live.failed} failing` : '';
-  return `\n${live.own ? 'Your run' : 'Run'} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+  return `${live.own ? 'Your run' : 'Run'} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+}
+
+/** When the latest run was read, and how the service learns of the next: `Updated 12 s ago · live`. */
+function updatedLine(run: RunStatus | undefined, now: number): string | null {
+  if (!run?.updatedAt) return null;
+  const how = run.stream === 'live' ? ' · live' : run.stream === 'polling' ? ' · read every minute' : '';
+  return `Updated ${relativeTime(run.updatedAt, now)}${how}`;
+}
+
+/** The item's text while the latest run is read again: its icon spins. */
+export function refreshingText(text: string): string {
+  return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
 }
 
 /**
  * The status bar item: the latest run on the checked-out branch, with what the runs laid over it fixed or still fail,
  * or what keeps the service from reading it. While a run is in progress, the editor's own or one on the branch, the
- * item counts it, and the tooltip has both.
+ * item counts it, and the tooltip has both. A click reads the latest run again; the tooltip says when it was read and
+ * links to the run, the dashboard and Connect.
  */
 export function statusBarView(
   status: StatusResult | null,
   runs: RunStatusResult | null,
   desktopChosen = false,
+  now = Date.now(),
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   if (!contexts.length) {
     return { text: '$(beaker) Piwi', tooltip: 'No Playwright config found', action: 'none', url: null, error: false };
   }
   const hint = desktopHint(status, desktopChosen);
+  const connect = '[Connect](command:piwi.connect)';
   const connected = contexts.find((c) => c.connected);
   if (!connected) {
     return {
       text: '$(plug) Piwi: connect',
-      tooltip: (contexts[0]!.problem ?? 'Not connected') + hint,
+      tooltip: lines(md(contexts[0]!.problem ?? 'Not connected'), hint, connect),
       action: 'connect',
       url: null,
       error: false,
@@ -91,15 +133,17 @@ export function statusBarView(
   // The checked-out branch has no run yet: another branch's is shown.
   const fallback =
     run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
-  const where = `${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`;
-  const from = (connected.serverUrl ? `\n${connected.serverUrl}, from ${sourceLabel(connected.source)}` : '') + hint;
+  const where = md(`${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`);
+  const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
   const live = run?.live ?? null;
-  const progress = live ? liveLine(live) : '';
+  const progress = live ? liveLine(live) : null;
+  const updated = updatedLine(run, now);
+  const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
   if (!run?.run) {
     return {
       text: live ? liveText(live) : '$(beaker) Piwi: no run',
-      tooltip: `No run of ${where} yet${progress}${from}`,
-      action: 'none',
+      tooltip: lines(`No run of ${where} yet`, progress, updated, from, hint, `${dashboard} · ${connect}`),
+      action: 'refresh',
       url: null,
       error: false,
     };
@@ -108,44 +152,29 @@ export function statusBarView(
   // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
   const failing = run.failingTests ?? r.failedTests;
   const fixed = run.resolved ?? 0;
-  const local = run.overlays
-    ? `\n${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally`
-    : '';
-  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${local}${progress}${from}`;
+  const tooltip = lines(
+    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
+    progress,
+    updated,
+    from,
+    hint,
+    `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${connect}`,
+  );
+  const view = { tooltip, action: 'refresh' as const, url: r.url, error: false };
   if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
-    return {
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}`,
-      tooltip,
-      action: 'open',
-      url: r.url,
-      error: false,
-    };
+    return { ...view, text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}` };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
   if (failing > 0) {
-    return {
-      text: `$(error) Piwi: ${failing} failing${fixed ? ` · ${fixed} fixed locally` : ''}${flaky}`,
-      tooltip,
-      action: 'open',
-      url: r.url,
-      error: true,
-    };
+    const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
+    return { ...view, text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`, error: true };
   }
-  if (r.status !== 'passed' && r.status !== 'failed') {
-    return { text: `$(warning) Piwi: ${r.status}`, tooltip, action: 'open', url: r.url, error: false };
-  }
-  if (fixed > 0) {
-    return { text: `$(pass) Piwi: ${fixed} fixed locally`, tooltip, action: 'open', url: r.url, error: false };
-  }
-  return {
-    text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}`,
-    tooltip,
-    action: 'open',
-    url: r.url,
-    error: false,
-  };
+  if (r.status !== 'passed' && r.status !== 'failed') return { ...view, text: `$(warning) Piwi: ${r.status}` };
+  if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };
+  return { ...view, text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}` };
 }
 
 /**
