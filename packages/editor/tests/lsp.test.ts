@@ -164,6 +164,10 @@ const refLookups = new Map<string, number>();
 let runsLaidOver: unknown = null;
 /** The `branch-failures` reads of that service. */
 let runsReads = 0;
+/** The API key of the service the tests of the baseline start: the stub answers its chosen baselines. */
+const BASELINE_KEY = 'pd_baseline';
+/** The query of each `branch-failures` read of that service. */
+const baselineReads: URLSearchParams[] = [];
 
 function openEvents(res: http.ServerResponse): void {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -252,7 +256,11 @@ beforeAll(async () => {
       return res.end(JSON.stringify(found ?? null));
     }
     if (u === '/api/projects/menu') return res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
-    if (u.startsWith('/api/projects/7/locator-index')) return res.end(JSON.stringify(INDEX));
+    const baselineKey = req.headers['x-api-key'] === BASELINE_KEY;
+    if (u.startsWith('/api/projects/7/locator-index')) {
+      const branches = [{ name: 'feature/x', lastSeenAt: '2026-09-27T00:00:00Z', tests: 3 }];
+      return res.end(JSON.stringify(baselineKey ? { ...INDEX, branches } : INDEX));
+    }
     if (u.startsWith('/api/projects/7/code-index')) {
       return res.end(
         JSON.stringify({
@@ -316,6 +324,42 @@ beforeAll(async () => {
           ],
         }),
       );
+    }
+    if (u.startsWith('/api/projects/7/branch-failures?') && baselineKey) {
+      const query = new URL(u, url).searchParams;
+      baselineReads.push(query);
+      const answer = (run: Record<string, unknown> | null, failures: unknown[] = [], overlays: unknown[] = []) =>
+        res.end(JSON.stringify({ run, overlays, failures, resolved: [] }));
+      const ci = { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit };
+      if (query.get('run')) {
+        if (query.get('run') !== '118') {
+          res.statusCode = 404;
+          return res.end('{}');
+        }
+        const failure = { ...ROW_FAILURE, executionId: 1180, source: 'baseline', runId: 118 };
+        return answer({ ...ci, id: 118, branch: 'feature/x' }, [failure]);
+      }
+      if (query.get('origin') === 'local') {
+        if (query.get('branch') !== 'main') return answer(null);
+        const overlay = {
+          id: 60,
+          status: 'failed',
+          origin: 'local',
+          isFullRun: false,
+          startTime: '2026-09-27T11:00:00.000Z',
+          commit: null,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          flakyTests: 0,
+          skippedTests: 0,
+        };
+        const failure = { ...ROW_FAILURE, executionId: 600, source: 'overlay', runId: 60, isNew: true };
+        return answer(null, [failure], [overlay]);
+      }
+      if (query.get('branch') === 'feature/x') return answer({ ...ci, id: 120, branch: 'feature/x' });
+      if (query.get('branch') === 'main') return answer(ci, [ROW_FAILURE]);
+      return answer(null);
     }
     if (u.startsWith('/api/projects/7/branch-failures?')) {
       const query = new URL(u, url).searchParams;
@@ -785,6 +829,9 @@ describe('the Piwi language server', () => {
         updatedAt: expect.any(String),
         // The fixture installs no reporter.
         reporterVersion: null,
+        // An instance that does not say what launched the run.
+        baseline: { choice: { kind: 'ladder' }, label: 'run #41 on main' },
+        branches: ['main'],
       },
     ]);
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
@@ -831,6 +878,7 @@ describe('the Piwi language server', () => {
         own: false,
       },
       overlays: [],
+      baseline: { choice: { kind: 'ladder' }, label: 'run #41 on main' },
       updatedAt: expect.any(String),
     });
   });
@@ -2037,6 +2085,124 @@ describe('the desktop app', () => {
       stopDesktop();
       desktopClient.dispose();
     }
+  });
+});
+
+describe('the baseline chosen in the editor', () => {
+  let baselineClient: MessageConnection;
+  let stopBaseline: () => void;
+
+  /** The status once its baseline reads `label`. */
+  const statusWith = (label: string) =>
+    waitFor(async () => {
+      const s = (await baselineClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+      return s.contexts[0]?.baseline?.label === label ? s.contexts[0] : undefined;
+    });
+
+  /** Choose a baseline, and the status once it reads `label`, with the queries read meanwhile. */
+  const choose = async (choice: unknown, label: string) => {
+    const from = baselineReads.length;
+    await baselineClient.sendNotification('piwi/setBaseline', { root: dir, choice });
+    const status = await statusWith(label);
+    return { status, reads: baselineReads.slice(from).map((q) => Object.fromEntries(q)) };
+  };
+
+  beforeAll(async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopBaseline = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: BASELINE_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    baselineClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    baselineClient.listen();
+    // A service started again: the client sends the choice it keeps with the credentials.
+    await baselineClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      initializationOptions: { credentials: { baselines: { [dir]: { kind: 'run', runId: 118 } } } },
+    });
+    await baselineClient.sendNotification('initialized', {});
+  });
+
+  afterAll(() => {
+    stopBaseline?.();
+    baselineClient?.dispose();
+  });
+
+  test('a run chosen by its id, kept by the client, is read from the start, with the branches to choose from', async () => {
+    const status = await statusWith('CI run #118 on feature/x');
+    expect(status).toMatchObject({
+      branch: 'feature/x',
+      run: { id: 118 },
+      baseline: { choice: { kind: 'run', runId: 118 } },
+      branches: ['main', 'feature/x'],
+    });
+    const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.items.map((f) => f.executionId)).toEqual([1180]);
+    expect(failures.baseline).toEqual({ choice: { kind: 'run', runId: 118 }, label: 'CI run #118 on feature/x' });
+  });
+
+  test('the ladder reads the checked-out branch, as without a choice', async () => {
+    const { status, reads } = await choose({ kind: 'ladder' }, 'CI run #41 on main');
+    expect(status).toMatchObject({ branch: 'main', checkedOut: 'main', run: { id: 41 } });
+    expect(reads).toEqual([{ branch: 'main', overlays: '1' }]);
+  });
+
+  test('a branch reads its latest run, and one with no run says so and reads nothing else', async () => {
+    const chosen = await choose({ kind: 'branch', branch: 'feature/x' }, 'CI run #120 on feature/x');
+    expect(chosen.status).toMatchObject({ branch: 'feature/x', checkedOut: 'main', run: { id: 120 }, failures: 0 });
+    expect(chosen.reads).toEqual([{ branch: 'feature/x', overlays: '1' }]);
+
+    const none = await choose({ kind: 'branch', branch: 'release' }, 'release (no run)');
+    expect(none.status).toMatchObject({ branch: 'release', run: null, failures: 0 });
+    expect(none.reads).toEqual([{ branch: 'release', overlays: '1' }]);
+  });
+
+  test('a run the instance does not hold says so', async () => {
+    const { status, reads } = await choose({ kind: 'run', runId: 999 }, 'run #999 (no run)');
+    expect(status).toMatchObject({ run: null, failures: 0 });
+    expect(reads).toEqual([{ overlays: '1', run: '999' }]);
+  });
+
+  test("a developer's own runs only: the overlays alone, as local failures, with no baseline", async () => {
+    const { status, reads } = await choose({ kind: 'local' }, 'your local runs only');
+    expect(status).toMatchObject({ branch: 'main', run: null, failures: 1, overlays: 1 });
+    expect(reads).toEqual([{ branch: 'main', overlays: '1', origin: 'local' }]);
+    const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.run).toBeNull();
+    expect(failures.overlays?.map((o) => o.id)).toEqual([60]);
+    expect(failures.items).toMatchObject([{ executionId: 600, runId: 60, source: 'local', isNew: true }]);
+    expect(failures.baseline?.label).toBe('your local runs only');
+  });
+
+  test('the choice survives credentials that carry it, and credentials that name none bring the ladder back', async () => {
+    await choose({ kind: 'branch', branch: 'feature/x' }, 'CI run #120 on feature/x');
+    const from = baselineReads.length;
+    await baselineClient.sendNotification('piwi/setCredentials', {
+      baselines: { [dir]: { kind: 'branch', branch: 'feature/x' } },
+    });
+    await waitFor(() => (baselineReads.length > from ? true : undefined));
+    expect((await statusWith('CI run #120 on feature/x')).run?.id).toBe(120);
+    expect(baselineReads.slice(from).map((q) => q.get('branch'))).toEqual(['feature/x']);
+
+    await baselineClient.sendNotification('piwi/setCredentials', {});
+    await waitFor(() => (baselineReads.length > from + 1 ? true : undefined));
+    expect((await statusWith('CI run #120 on feature/x')).baseline?.choice).toEqual({
+      kind: 'branch',
+      branch: 'feature/x',
+    });
+
+    await baselineClient.sendNotification('piwi/setCredentials', { baselines: {} });
+    expect((await statusWith('CI run #41 on main')).baseline?.choice).toEqual({ kind: 'ladder' });
   });
 });
 

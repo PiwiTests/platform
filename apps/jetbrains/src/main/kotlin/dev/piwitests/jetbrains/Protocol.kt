@@ -154,8 +154,9 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
  * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
- * `@piwitests/reporter` the project installs (null when none is found). The fields after `checkedOut` are null from
- * an older service.
+ * `@piwitests/reporter` the project installs (null when none is found), `baseline` the baseline chosen and what it
+ * found, `branches` the branches a baseline can be chosen from, the default branch first. The fields after
+ * `checkedOut` are null from an older service.
  */
 data class RunStatus(
     val root: String? = null,
@@ -171,7 +172,22 @@ data class RunStatus(
     val updatedAt: String? = null,
     val liveTests: List<LiveTest>? = null,
     val reporterVersion: String? = null,
+    val baseline: Baseline? = null,
+    val branches: List<String>? = null,
 )
+
+/**
+ * The run the workspace is compared with: `kind` `ladder` (the latest complete run of the checked-out branch, a CI run
+ * first, else the default branch's, else the newest of any branch), `branch` (that `branch`'s latest complete run),
+ * `run` (the run `runId`) or `local` (a developer's own runs only, laid over none when no complete one exists).
+ */
+data class BaselineChoice(val kind: String = "ladder", val branch: String? = null, val runId: Int? = null)
+
+/** The baseline in force and what it found: `CI run #120 on feature/x`, ending with `(no run)` when it found none. */
+data class Baseline(val choice: BaselineChoice? = null, val label: String? = null)
+
+/** `piwi/setBaseline`: the baseline chosen for the context at `root`, read at once. */
+data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 
 data class RunStatusResult(val contexts: List<RunStatus>? = null)
 
@@ -261,14 +277,16 @@ data class FailuresOverlay(
 )
 
 /**
- * `piwi/failures`: the failures, the latest complete run of the first context that has one (`run`), the runs laid over
- * it, newest first, and when they were read (ISO 8601); the last three null from an older service.
+ * `piwi/failures`: the failures, the baseline run of the first context that has one (`run`, null when a developer's
+ * own runs are read alone), the runs laid over it, newest first, when they were read (ISO 8601) and the baseline
+ * chosen; the last four null from an older service.
  */
 data class FailuresResult(
     val items: List<WorkspaceFailure>? = null,
     val run: FailuresRun? = null,
     val overlays: List<FailuresOverlay>? = null,
     val updatedAt: String? = null,
+    val baseline: Baseline? = null,
 )
 
 /** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
@@ -414,7 +432,8 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
 
 /**
  * `piwi/setCredentials`: the instance saved in the IDE, and, with `desktop`, the desktop app first while it runs,
- * on the project `desktopProject` names, else the one linked there to the folder.
+ * on the project `desktopProject` names, else the one linked there to the folder. `baselines` are the baselines chosen
+ * per context root, kept on this machine; when sent, a context they leave out reads the ladder.
  */
 data class EditorCredentials(
     val serverUrl: String? = null,
@@ -422,6 +441,7 @@ data class EditorCredentials(
     val project: String? = null,
     val desktop: Boolean = false,
     val desktopProject: String? = null,
+    val baselines: Map<String, BaselineChoice>? = null,
 )
 
 /**
@@ -535,4 +555,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/commandEnded")
     fun commandEnded(params: CommandEndedParams)
+
+    @JsonNotification("piwi/setBaseline")
+    fun setBaseline(params: SetBaselineParams)
 }

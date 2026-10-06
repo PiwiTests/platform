@@ -79,9 +79,11 @@ import {
   type LineState,
 } from './analysis.js';
 import {
+  CI_ORIGINS,
   PiwiContext,
   desktopConfigPath,
   linkedDesktopProject,
+  parseBaselineChoice,
   readDesktopDiscovery,
   withServerUrl,
 } from './context.js';
@@ -139,6 +141,7 @@ import {
   SELECTIONS_REQUEST,
   TRACE_REQUEST,
   RUN_ARGS_REQUEST,
+  SET_BASELINE_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
   DESKTOP_REQUEST,
   STATUS_NOTIFICATION,
@@ -168,6 +171,7 @@ import {
   type RunCommand,
   type RunStatus,
   type RunStatusResult,
+  type SetBaselineParams,
   type RunSelectionParams,
   type ScreenshotParams,
   type ScreenshotResult,
@@ -204,8 +208,6 @@ const STREAM_POLL_FACTOR = 5;
 /** How often the desktop app's discovery file is checked. */
 const DESKTOP_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
-/** The origins of CI runs, as the instance stores them. */
-const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
 /** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
@@ -314,16 +316,17 @@ function plural(n: number, one: string, many = `${one}s`): string {
 }
 
 /**
- * Whether a run the context reads ran in CI: its latest complete run when the instance does not say (it is the CI run
- * the editor shows), a run laid over it by its origin.
+ * Whether a run the context reads ran in CI: its baseline when the instance does not say (it is the CI run the editor
+ * shows), a run laid over it by its origin.
  */
 function isCiRun(context: PiwiContext, runId: number | undefined): boolean {
   const answer = context.failures;
+  const overlay = runId === undefined ? undefined : answer?.overlays?.find((o) => o.id === runId);
+  if (overlay && runId !== answer?.run?.id) return CI_ORIGINS.has(overlay.origin);
   if (!answer?.run || runId === undefined || runId === answer.run.id) {
     return !answer?.run?.origin || CI_ORIGINS.has(answer.run.origin);
   }
-  const overlay = answer.overlays?.find((o) => o.id === runId);
-  return !!overlay && CI_ORIGINS.has(overlay.origin);
+  return false;
 }
 
 /** Whether a failure is listed from a run laid over the latest complete run that did not run in CI. */
@@ -757,7 +760,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             title: f.title,
             headline: f.headline,
             executionId: f.executionId,
-            runId: f.runId ?? context.failures!.run!.id,
+            runId: f.runId ?? context.failures?.run?.id ?? 0,
             url: client.executionUrl(f.executionId),
             hasTrace: f.traces.length > 0,
             source: failureSource(context, f.runId ?? context.failures?.run?.id),
@@ -805,26 +808,30 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       });
       return [...failing, ...fixed];
     });
-    const shown = contexts.find((c) => c.client && c.failures?.run);
-    const run = shown?.failures?.run;
-    if (!shown || !run) return { items };
+    const shown =
+      contexts.find((c) => c.client && c.failures?.run) ??
+      contexts.find((c) => c.client && c.failures?.overlays?.length);
+    if (!shown) return { items };
+    const run = shown.failures?.run;
     const client = shown.client!;
     return {
       items,
-      run: {
-        id: run.id,
-        branch: run.branch,
-        status: run.status,
-        startTime: run.startTime,
-        totalTests: run.totalTests,
-        passedTests: run.passedTests,
-        failedTests: run.failedTests,
-        flakyTests: run.flakyTests,
-        skippedTests: run.skippedTests,
-        url: client.runUrl(run.id),
-        ...(run.origin ? { origin: run.origin } : {}),
-        own: isOwnRun(shown, run.id),
-      },
+      run: run
+        ? {
+            id: run.id,
+            branch: run.branch,
+            status: run.status,
+            startTime: run.startTime,
+            totalTests: run.totalTests,
+            passedTests: run.passedTests,
+            failedTests: run.failedTests,
+            flakyTests: run.flakyTests,
+            skippedTests: run.skippedTests,
+            url: client.runUrl(run.id),
+            ...(run.origin ? { origin: run.origin } : {}),
+            own: isOwnRun(shown, run.id),
+          }
+        : null,
       overlays: (shown.failures?.overlays ?? []).map((o) => ({
         id: o.id,
         origin: o.origin,
@@ -836,6 +843,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         url: client.runUrl(o.id),
         own: isOwnRun(shown, o.id),
       })),
+      baseline: { choice: shown.baseline, label: shown.baselineLabel },
       ...(shown.runReadAt !== null ? { updatedAt: new Date(shown.runReadAt).toISOString() } : {}),
     };
   };
@@ -931,6 +939,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
             ? { liveTests: [...c.liveTests].map(([testCaseId, status]) => ({ testCaseId, status })) }
             : {}),
           reporterVersion: c.reporterVersion,
+          baseline: { choice: c.baseline, label: c.baselineLabel },
+          branches: c.branches,
         };
       }),
   });
@@ -1280,6 +1290,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   });
 
   let lastStatus = '';
+  /**
+   * The baselines the client keeps, applied to the contexts: every choice they name when the credentials carry them,
+   * the ladder for a context they leave out; the choices held stay when the credentials carry none.
+   */
+  const applyBaselines = () => {
+    const baselines = credentials.baselines;
+    if (!baselines || typeof baselines !== 'object') return;
+    for (const c of contexts) c.baseline = parseBaselineChoice(baselines[c.root]) ?? { kind: 'ladder' };
+  };
+
   async function refreshAll(): Promise<void> {
     await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
     runWatch.sync();
@@ -1320,6 +1340,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         if (!contexts.some((c) => c.root === root)) contexts.push(new PiwiContext(root));
       }
     }
+    applyBaselines();
     void refreshAll();
     refreshTimer = setInterval(() => void refreshAll(), options.refreshMs ?? REFRESH_MS);
     refreshTimer.unref?.();
@@ -2257,8 +2278,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     (params: ShareDesktopJobParams): Promise<ShareDesktopJobResult> => desktopJobs.share(params.jobId),
   );
 
+  connection.onNotification(SET_BASELINE_NOTIFICATION, async (params: SetBaselineParams) => {
+    const context = typeof params?.root === 'string' ? contextOfRoot(params.root) : null;
+    const choice = parseBaselineChoice(params?.choice);
+    if (!context || !choice) return;
+    context.baseline = choice;
+    if (await context.refreshRun()) runChanged();
+  });
+
   connection.onNotification(SET_CREDENTIALS_NOTIFICATION, (next: EditorCredentials) => {
     credentials = next ?? {};
+    applyBaselines();
     // The streams the instance refused are opened again with these credentials.
     void refreshAll().then(() => runWatch.retryRefused());
   });

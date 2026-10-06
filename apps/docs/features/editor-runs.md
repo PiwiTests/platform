@@ -33,16 +33,15 @@ started it.
 ## After a run
 
 The editor listens to the instance's event stream: within a second of a run of the project ending, it reads the
-branch's latest run and its failures again. While the stream is connected, it also reads them every five minutes, which
-catches a run reported to another server of an instance scaled out without sticky sessions; when the stream is
-unavailable, such as behind a proxy that buffers it, every minute.
+branch's latest run and its failures again. While the stream is connected, it also reads them every five minutes, for
+an instance scaled out without sticky sessions; without the stream, such as behind a proxy that buffers it, every
+minute.
 
 A run started from the editor is its own wherever it runs: the status bar follows it as it runs, and its failures
 read *your run #124* once it ends. When the command ends and no run on the instance carries its ref, the editor says
 so: `The run ended (exit code 1) but did not reach https://piwi.example.com: is the Piwi reporter in the Playwright
-config?` VS Code learns that a command ended through shell integration (VS Code 1.93 and later), and gives each run
-a terminal of its own; without it, the runs of a folder share one terminal, the run is still found and followed, and a
-run that never arrived goes unmentioned.
+config?` VS Code learns that a command ended through shell integration (1.93 and later), and gives each run a terminal
+of its own; without it, a folder's runs share one terminal, and a run that never arrived goes unmentioned.
 
 ## When your run ends
 
@@ -52,8 +51,7 @@ checkout.spec.ts › pays)`, then the tests it failed that were not failing befo
 **Open in dashboard** and, when something fails, **Re-run failing**. The `piwi.runNotifications` setting (**Settings →
 Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails, or never.
 
-While the run executes, the gutter follows it: a test shows as running when it begins, then its result as soon as it
-ends, until the run is read and the gutter shows the latest results again.
+While the run executes, the gutter follows it: a test shows as running when it begins, then its result once it ends.
 
 ## Failures follow your edits
 
@@ -67,12 +65,11 @@ follows each failing line through your changes, saved or not:
   *✎ edited since run #120*. The test keeps its failing mark until a run says otherwise.
 - Delete the test, and its failure leaves the editor.
 
-The next run that covers the test says what is true: a failure there is an error again, at the line it failed at, and
-a pass takes the failure away.
+The next run that covers the test says what is true: a failure there is an error again, and a pass takes it away.
 
-For a CI run, the files as the run saw them are those of the run's commit, read with `git show` once per commit and
-file. For a run on your machine, which ran your files as saved, a run that recorded no commit, or a commit your clone
-does not have, they are the files as saved when the editor first showed the failure.
+For a CI run, the files as the run saw them are those of the run's commit (`git show`). For a run on your machine, which
+ran your files as saved, a run that recorded no commit, or a commit your clone does not have, they are the files as
+saved when the editor first showed the failure.
 
 ## The failures view
 
@@ -93,10 +90,19 @@ Click a failure (double-click or Enter in a JetBrains IDE) to open its line. **R
 agent**, and, on a CI failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the
 desktop app** and **Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
 
-The title bar, or the toolbar, holds Refresh, **Re-run the failing tests**, **Open the run in the dashboard** and the
-grouping. In VS Code, **Follow the active editor** selects the first failure of the file you switch to, and the badge
-counts the failing tests, as the tool window's title does. The tree is read again when a run ends or an edit moves a
-failure, and keeps what you expanded. The Problems panel keeps its errors.
+The title bar, or the toolbar, holds Refresh, **Re-run the failing tests**, **Open the run in the dashboard**,
+**Compare with…** and the grouping. In VS Code, **Follow the active editor** selects the first failure of the file you
+switch to, and the badge counts the failing tests, as the tool window's title does. The tree is read again when a run
+ends or an edit moves a failure. The Problems panel keeps its errors.
+
+## Compare with another run
+
+By default, failures are read against the checked-out branch's latest complete run, else the default branch's. **Piwi:
+Compare with…** (**Tools → Piwi → Compare With…** in a JetBrains IDE, and the failures view's title bar) chooses another
+run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
+machine, the desktop app or an editor, without CI. Your runs since are laid over each. The status bar tooltip and the
+failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. The choice is
+kept on this machine, per Playwright config.
 
 ## Re-run the failing tests
 
@@ -110,12 +116,12 @@ The latest complete run on the branch: how many tests passed, failed and were fl
 local runs fixed (`2 failing · 1 fixed locally`). While a run started from this editor, or another run of the branch,
 is in progress, the item counts it instead (`4/9 · 1 failing · your run`) and returns to the latest run when it ends.
 
-Click it to read the latest run and its failures again, without the indexes **Piwi: Refresh** fetches; **Piwi:
-Refresh the latest run** does the same. The tooltip holds the run's counts, your local runs since, the run in
-progress, and when the run was read (`Updated 12 s ago · live` while the event stream is connected, `· read every
-minute` without it). In VS Code it ends with **Open run #120**, **Open in dashboard** and **Connect**; in a JetBrains
-IDE, **Tools → Piwi → Open the Latest Run in the Dashboard**, also in the Piwi tool window's toolbar, opens the run.
-When the extension is not connected, the item says why, and a click runs **Piwi: Connect**.
+Click it to read the latest run and its failures again (**Piwi: Refresh the latest run**), without the indexes **Piwi:
+Refresh** fetches. The tooltip holds the run's counts, the baseline, your local runs since, the run in progress, and
+when the run was read (`Updated 12 s ago · live` while the event stream is connected, `· read every minute` without it).
+In VS Code it ends with **Open run #120**, **Open in dashboard**, **Compare with…** and **Connect**; in a JetBrains IDE,
+**Tools → Piwi → Open the Latest Run in the Dashboard**, also in the Piwi tool window's toolbar, opens the run. When the
+extension is not connected, the item says why, and a click runs **Piwi: Connect**.
 
 ## Related
 

@@ -239,9 +239,49 @@ export interface EditorCredentials {
   desktop?: boolean | null;
   /** The desktop app's project with `desktop`; without one, the project linked there to the folder. */
   desktopProject?: string | null;
+  /**
+   * The baseline chosen for each context, by its root (`piwi/setBaseline`), kept on this machine by the client and
+   * sent again with every `piwi/setCredentials` and in the initialization options, so a restarted service has it. When
+   * present, it replaces every choice the service holds: a context it does not name reads the ladder. Absent, the
+   * choices stay.
+   */
+  baselines?: Record<string, BaselineChoice> | null;
 }
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
+
+/**
+ * The run the workspace is compared with: `ladder`, the latest complete run of the checked-out branch, a CI run first,
+ * else the default branch's, else the newest of any branch; `branch`, that branch's latest complete run; `run`, that
+ * run; `local`, a developer's own runs only (a machine, the desktop app, an editor), the newest complete one on the
+ * checked-out branch, else those runs alone with no baseline. Each reads the runs laid over it.
+ */
+export type BaselineChoice =
+  | { kind: 'ladder' }
+  | { kind: 'branch'; branch: string }
+  | { kind: 'run'; runId: number }
+  | { kind: 'local' };
+
+/** The baseline in force for a context, and the run it found, in a few words. */
+export interface Baseline {
+  choice: BaselineChoice;
+  /**
+   * `CI run #120 on feature/x`, `run #118 on main`, `your local runs only`, `local run #110 on feature/x`, `CI run #41,
+   * the newest run of any branch`; ending with `(no run)` when the choice found none: `release (no run)`.
+   */
+  label: string;
+}
+
+/**
+ * `piwi/setBaseline` (notification, client to server): the baseline chosen for the context at `root`, which the
+ * service reads at once. The client keeps it and sends it again in `EditorCredentials.baselines`.
+ */
+export interface SetBaselineParams {
+  root: string;
+  choice: BaselineChoice;
+}
+
+export const SET_BASELINE_NOTIFICATION = 'piwi/setBaseline';
 
 /** `piwi/trace`: download an execution's trace and return the command that opens it in Playwright's trace viewer. */
 export interface TraceParams {
@@ -327,6 +367,13 @@ export interface RunStatus {
    * none is found. Absent from an older service.
    */
   reporterVersion?: string | null;
+  /** The baseline chosen for this context and what it found; absent from an older service. */
+  baseline?: Baseline;
+  /**
+   * The branches a baseline can be chosen from: the default branch, then the branches with runs the project's locator
+   * index knows. Absent from an older service.
+   */
+  branches?: string[];
 }
 
 /** A test of the run in progress: `running` once it began, then its result. */
@@ -558,10 +605,15 @@ export interface FailuresOverlay {
  */
 export interface FailuresResult {
   items: WorkspaceFailure[];
-  /** The latest complete run of the first context that has one; absent from an older service. */
+  /**
+   * The baseline of the first context that has one, or runs laid over none (a developer's own runs only); null when
+   * only overlays are read. Absent from an older service.
+   */
   run?: FailuresRun | null;
   /** The runs of its branch laid over it, newest first. */
   overlays?: FailuresOverlay[];
+  /** The baseline chosen for that context and what it found; absent from an older service. */
+  baseline?: Baseline;
   /** When it was last read (ISO 8601). */
   updatedAt?: string;
 }

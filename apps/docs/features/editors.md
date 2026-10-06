@@ -114,6 +114,7 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Run selection… | Run one of the project's saved [selections](/features/test-selection) |
 | Piwi: Open the latest run | Open the run the status bar shows |
+| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-runs#compare-with-another-run) |
 | Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
 | Piwi: Record here, Record a new test file | Record in a browser opened through your project's own Playwright, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |

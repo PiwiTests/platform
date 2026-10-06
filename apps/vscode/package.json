@@ -149,6 +149,12 @@
         "icon": "$(list-tree)"
       },
       {
+        "command": "piwi.compareWith",
+        "title": "Compare with…",
+        "category": "Piwi",
+        "icon": "$(git-compare)"
+      },
+      {
         "command": "piwi.toggleFollowEditor",
         "title": "Follow the active editor",
         "category": "Piwi",
@@ -344,19 +350,24 @@
           "group": "navigation@3"
         },
         {
-          "command": "piwi.groupFailuresBy",
+          "command": "piwi.compareWith",
           "when": "view == piwi.failures",
           "group": "navigation@4"
         },
         {
+          "command": "piwi.groupFailuresBy",
+          "when": "view == piwi.failures",
+          "group": "navigation@5"
+        },
+        {
           "command": "piwi.toggleFollowEditor",
           "when": "view == piwi.failures && !piwi.followEditor",
-          "group": "navigation@5"
+          "group": "navigation@6"
         },
         {
           "command": "piwi.stopFollowingEditor",
           "when": "view == piwi.failures && piwi.followEditor",
-          "group": "navigation@5"
+          "group": "navigation@6"
         }
       ],
       "view/item/context": [

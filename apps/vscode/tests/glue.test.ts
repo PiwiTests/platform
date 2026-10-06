@@ -9,6 +9,7 @@ import type {
   StatusResult,
 } from '@piwitests/editor/protocol';
 import {
+  baselinePicks,
   pickNotice,
   configTestDir,
   connectChoices,
@@ -29,11 +30,13 @@ import {
   refreshingText,
   relativeTime,
   rerunFailingArgs,
+  runIdOf,
   runsInFiles,
   runVerdict,
   sourceLabel,
   statusBarView,
   testDecorations,
+  withBaseline,
   writeBlock,
   type FailureNode,
   type RecordedBlock,
@@ -83,7 +86,7 @@ const run = (over: Partial<NonNullable<RunStatusResult['contexts'][number]['run'
 describe('statusBarView', () => {
   const FROM = 'http://piwi, from the workspace .env';
   const LINKS =
-    '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Connect](command:piwi.connect)';
+    '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
 
   test('without a Playwright config, says so', () => {
     expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
@@ -206,7 +209,7 @@ describe('statusBarView', () => {
     };
     expect(statusBarView(connected, first)).toMatchObject({
       text: '$(sync~spin) Piwi: 0/9 · your run',
-      tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Connect](command:piwi.connect)`,
+      tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
       action: 'refresh',
     });
   });
@@ -246,7 +249,7 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, { contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0 }] });
     expect(view).toMatchObject({
       text: '$(beaker) Piwi: no run',
-      tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Connect](command:piwi.connect)`,
+      tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
       action: 'refresh',
     });
   });
@@ -458,6 +461,116 @@ describe('the tests of a file', () => {
       /^Run #41 of Acme on main \(feature\/cart has no run yet\)/,
     );
     expect(statusBarView(connected, run({})).tooltip).not.toMatch(/no run yet/);
+  });
+});
+
+describe('Compare with…', () => {
+  const at = (baseline: NonNullable<RunStatusResult['contexts'][number]['baseline']>): RunStatusResult => ({
+    contexts: [{ ...run({}).contexts[0]!, branch: 'main', checkedOut: 'feature/cart', baseline }],
+  });
+
+  test('offers the ladder, the default branch and the branches with runs, a run by id and the local runs', () => {
+    const picks = baselinePicks({ ...run({}).contexts[0]!, branches: ['main', 'feature/x'] });
+    expect(picks.map((p) => [p.label, p.description])).toEqual([
+      ['CI on the checked-out branch, else main (default)', 'current'],
+      ['main', 'default branch'],
+      ['feature/x', ''],
+      ['A run by id…', ''],
+      ['My local runs only', ''],
+    ]);
+    expect(picks.map((p) => p.choice)).toEqual([
+      { kind: 'ladder' },
+      { kind: 'branch', branch: 'main' },
+      { kind: 'branch', branch: 'feature/x' },
+      'run-by-id',
+      { kind: 'local' },
+    ]);
+  });
+
+  test('marks the choice in force, and keeps a chosen branch the list no longer names', () => {
+    const picks = baselinePicks({
+      ...run({}).contexts[0]!,
+      branches: ['main'],
+      baseline: { choice: { kind: 'branch', branch: 'release' }, label: 'release (no run)' },
+    });
+    expect(picks.map((p) => [p.label, p.description])).toEqual([
+      ['CI on the checked-out branch, else main (default)', ''],
+      ['main', 'default branch'],
+      ['release', 'current'],
+      ['A run by id…', ''],
+      ['My local runs only', ''],
+    ]);
+    const byId = baselinePicks({
+      ...run({}).contexts[0]!,
+      baseline: { choice: { kind: 'run', runId: 118 }, label: 'CI run #118 on main' },
+    });
+    expect(byId[0]!.label).toBe('CI on the checked-out branch, else the default branch (default)');
+    expect(byId.find((p) => p.choice === 'run-by-id')!.description).toBe('current: run #118');
+  });
+
+  test('reads a run id, with or without its #', () => {
+    expect([runIdOf('118'), runIdOf(' #118 '), runIdOf('0'), runIdOf('run 118'), runIdOf('')]).toEqual([
+      118,
+      118,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  test('keeps a choice per root, the ladder as none', () => {
+    const kept = withBaseline({ '/a': { kind: 'local' } }, '/b', { kind: 'run', runId: 118 });
+    expect(kept).toEqual({ '/a': { kind: 'local' }, '/b': { kind: 'run', runId: 118 } });
+    expect(withBaseline(kept, '/a', { kind: 'ladder' })).toEqual({ '/b': { kind: 'run', runId: 118 } });
+  });
+
+  test('the tooltip names the baseline, and a chosen branch is not a fallback', () => {
+    const view = statusBarView(
+      connected,
+      at({ choice: { kind: 'branch', branch: 'main' }, label: 'CI run #41 on main' }),
+    );
+    expect(view.tooltip).toMatch(/^Run #41 of Acme on main: 118 passed.*\n\nBaseline: CI run #41 on main\n\n/);
+    expect(view.tooltip).not.toMatch(/no run yet/);
+    expect(view.tooltip).toContain('[Compare with…](command:piwi.compareWith)');
+  });
+
+  test('a choice with no run says so', () => {
+    const none: RunStatusResult = {
+      contexts: [
+        {
+          root: '/w',
+          branch: 'release',
+          failures: 0,
+          run: null,
+          baseline: { choice: { kind: 'branch', branch: 'release' }, label: 'release (no run)' },
+        },
+      ],
+    };
+    expect(statusBarView(connected, none)).toMatchObject({
+      text: '$(beaker) Piwi: no run',
+      tooltip: expect.stringContaining('No run of Acme on release yet\n\nBaseline: release (no run)'),
+    });
+  });
+
+  test('the local runs alone count their failures', () => {
+    const local: RunStatusResult = {
+      contexts: [
+        {
+          root: '/w',
+          branch: 'main',
+          failures: 2,
+          failingTests: 1,
+          overlays: 2,
+          run: null,
+          baseline: { choice: { kind: 'local' }, label: 'your local runs only' },
+        },
+      ],
+    };
+    expect(statusBarView(connected, local)).toMatchObject({
+      text: '$(error) Piwi: 1 failing',
+      tooltip: expect.stringMatching(/^2 local runs of Acme on main, 1 test failing\n\nBaseline: your local runs only/),
+      error: true,
+    });
   });
 });
 
@@ -929,6 +1042,22 @@ describe('the failures view', () => {
     ]);
     expect(root!.children[0]).toMatchObject({ state: 'collapsed' });
     expect(root!.children[0]!.children[0]).toMatchObject({ kind: 'overlay', url: 'http://piwi/test-runs/124' });
+  });
+
+  test('the run names the baseline chosen; the local runs alone are the root without one', () => {
+    const label = 'CI run #120 on feature/x';
+    const [root] = failureTree({ ...result, baseline: { choice: { kind: 'ladder' }, label } }, 'file', { now });
+    expect(root!.tooltip).toMatch(/^Baseline: CI run #120 on feature\/x\n\nRun #120 of feature\/x: 6 passed/);
+    const local = { choice: { kind: 'local' as const }, label: 'your local runs only' };
+    const [alone] = failureTree({ ...result, run: null, baseline: local }, 'file', { now });
+    expect(alone).toMatchObject({
+      kind: 'run',
+      label: 'Your local runs · 2 failing · 1 fixed locally',
+      description: 'no baseline',
+      tooltip: 'Baseline: your local runs only',
+      url: null,
+    });
+    expect(alone!.children.map((n) => n.label)).toEqual(['Your runs', 'tests/checkout.spec.ts', 'tests/login.spec.ts']);
   });
 
   test('a failure says where, on which project, and whether it is new, with its run in the tooltip', () => {

@@ -337,9 +337,19 @@ export class PiwiClient {
     return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '' };
   }
 
-  /** The latest complete run on `branch` (any branch when null), with the later runs of its branch laid over it. */
-  branchFailures(projectId: number, branch: string | null): Promise<BranchFailures> {
+  /**
+   * The latest complete run on `branch` (any branch when null), with the later runs of its branch laid over it; with
+   * `run`, that run instead; with `origin: 'local'`, a developer's own runs only, laid over none when no complete one
+   * exists. An instance older than these answers as if they were absent.
+   */
+  branchFailures(
+    projectId: number,
+    branch: string | null,
+    baseline: { run?: number; origin?: 'local' } = {},
+  ): Promise<BranchFailures> {
     const query = new URLSearchParams(branch ? { branch, overlays: '1' } : { overlays: '1' });
+    if (baseline.run !== undefined) query.set('run', String(baseline.run));
+    if (baseline.origin) query.set('origin', baseline.origin);
     return this.get(`/api/projects/${projectId}/branch-failures?${query}`);
   }
 

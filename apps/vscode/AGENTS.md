@@ -43,8 +43,14 @@ when one is missing), beside the extension's own bundle (`dist/extension.cjs`, e
   trusted `MarkdownString`, whose commands are `STATUS_TOOLTIP_COMMANDS`: the counts and the branch, the local runs,
   the run in progress, `Updated 12 s ago · live` or `· read every minute` (`relativeTime`, written again every 30 s),
   the reporter version the project installs (`reporter 0.47.0`), then links to `piwi.openRun`,
-  `piwi.openInDashboard` and `piwi.connect`; **Piwi: Open the latest run**
+  `piwi.openInDashboard`, `piwi.compareWith` and `piwi.connect`; **Piwi: Open the latest run**
   (`piwi.openRun`) is in the palette too.
+- **Piwi: Compare with…** (`piwi.compareWith`, also in the failures view's title bar and the tooltip) picks the
+  baseline of the active file's context (`baselinePicks` in `src/glue.ts`: the ladder, each of `RunStatus.branches`, a
+  run by its id through an input box, `runIdOf`, and the local runs only), keeps it in `workspaceState`
+  (`piwi.baseline`, by root, the ladder as no entry: `withBaseline`), sends it with `piwi/setBaseline`, and sends the
+  whole map in the credentials (`baselines`). The tooltip and the view's root node name it (`baselineLine`); with the
+  local runs alone, the root is `Your local runs`.
 - Commands run in a terminal (`runInTerminal`), reused per folder and environment. A test run carries its own ref
   (`RunCommand.ref`, also in its environment). Where shell integration reports commands
   (`window.onDidStartTerminalShellExecution` and `onDidEndTerminalShellExecution`, VS Code 1.93 and later, read at

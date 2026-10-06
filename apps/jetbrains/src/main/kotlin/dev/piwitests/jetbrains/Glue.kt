@@ -152,7 +152,8 @@ object Glue {
     /**
      * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
      * fail, or what keeps the service from reading it. While a run is in progress, the editor's own or one on the
-     * branch, the text counts it, and the tooltip has both, with when the latest run was read. A click reads it again.
+     * branch, the text counts it, and the tooltip has both, with the baseline chosen and when the latest run was read. A
+     * click reads it again.
      * A null status means the service has not started: it starts with the first file of the project opened.
      */
     fun statusView(
@@ -172,20 +173,26 @@ object Glue {
         val reporter = run?.reporterVersion?.let { "\nreporter $it" } ?: ""
         val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + reporter + hint
         val live = run?.live
+        val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
         val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
-        val r = run?.run ?: return StatusView(
-            live?.let { liveText(it) } ?: "Piwi: no run",
-            "No run of $where yet$progress$from",
-            null,
-            StatusAction.REFRESH,
-        )
+        val overlays = run?.overlays ?: 0
+        val r = run?.run
+        if (r == null && overlays > 0) {
+            // A developer's own runs alone, with no baseline.
+            val failing = run?.failingTests ?: run?.failures ?: 0
+            val text = live?.let { liveText(it) } ?: if (failing > 0) "Piwi: $failing failing" else "Piwi: no failure"
+            val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$baseline$progress$from"
+            return StatusView(text, tooltip, null, StatusAction.REFRESH)
+        }
+        if (r == null) {
+            return StatusView(live?.let { liveText(it) } ?: "Piwi: no run", "No run of $where yet$baseline$progress$from", null, StatusAction.REFRESH)
+        }
         // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
         val failing = run.failingTests ?: r.failedTests
         val fixed = run.resolved ?: 0
-        val overlays = run.overlays ?: 0
         val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
-            "${r.flakyTests} flaky, ${r.skippedTests} skipped$local$progress$from"
+            "${r.flakyTests} flaky, ${r.skippedTests} skipped$baseline$local$progress$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
         val refresh = StatusAction.REFRESH
         return when {
@@ -348,19 +355,22 @@ object Glue {
      * The failures tree, as VS Code's view draws it: the latest complete run (`Run #120 · CI · feature/x · 3 failing ·
      * 1 fixed locally`, its age, or the editor's own run in progress, as its description), the runs laid over it under
      * `Your runs since`, and its failures grouped by `file`, `cluster` or `owner`, or `flat`, failing first, then
-     * edited, then fixed locally. Without a run (an older service), the groups alone; without a failure, nothing.
+     * edited, then fixed locally. With a developer's own runs alone, the root is `Your local runs`. Without a run (an
+     * older service), the groups alone; without a failure, nothing.
      */
     fun failureTree(result: FailuresResult?, grouping: String, now: Long = System.currentTimeMillis(), live: LiveRun? = null): List<FailureNode> {
         val items = result?.items.orEmpty()
         if (items.isEmpty()) return emptyList()
         val groups = grouped(items, grouping)
-        val run = result?.run ?: return groups
-        val overlays = result.overlays.orEmpty()
+        val run = result?.run
+        val overlays = result?.overlays.orEmpty()
+        val baseline = baselineLine(result?.baseline?.label)
+        if (run == null && (baseline == null || overlays.isEmpty())) return groups
         val runs = if (overlays.isEmpty()) emptyList() else listOf(
             FailureNode(
                 key = "runs",
                 kind = "runs",
-                label = "Your runs since",
+                label = if (run != null) "Your runs since" else "Your runs",
                 description = plural(overlays.size, "run"),
                 icon = "history",
                 expanded = false,
@@ -384,6 +394,20 @@ object Glue {
             ),
         )
         val running = live?.takeIf { it.own }
+        if (run == null) {
+            return listOf(
+                FailureNode(
+                    key = "run",
+                    kind = "run",
+                    label = "Your local runs · ${failureCounts(items)}",
+                    description = running?.let { "running ${it.done}/${it.total}" } ?: "no baseline",
+                    icon = "run",
+                    expanded = true,
+                    url = null,
+                    children = runs + groups,
+                ),
+            )
+        }
         return listOf(
             FailureNode(
                 key = "run",
@@ -399,16 +423,87 @@ object Glue {
         )
     }
 
-    /** The tool window's line on the run: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min ago`. */
+    /**
+     * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
+     * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
+     * developer's own runs alone; the baseline alone when it found no run.
+     */
     fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? {
-        val run = result?.run ?: return null
-        return listOfNotNull(
-            "Run #${run.id}",
-            originLabel(run.origin, run.own),
-            run.branch,
-            failureCounts(result.items.orEmpty()),
-            run.startTime?.let { relativeTime(it, now) },
-        ).joinToString(" · ")
+        val baseline = baselineLine(result?.baseline?.label)
+        val run = result?.run
+        val items = result?.items.orEmpty()
+        val parts = when {
+            run != null -> listOfNotNull(
+                "Run #${run.id}",
+                originLabel(run.origin, run.own),
+                run.branch,
+                failureCounts(items),
+                run.startTime?.let { relativeTime(it, now) },
+            )
+            !result?.overlays.isNullOrEmpty() -> listOf("Your local runs", failureCounts(items))
+            else -> emptyList()
+        }
+        return (parts + listOfNotNull(baseline)).ifEmpty { null }?.joinToString(" · ")
+    }
+
+    /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
+    fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
+
+    /** An entry of **Compare With…**: a baseline, or, with a null `choice`, a run by its id, asked for first. */
+    data class BaselineEntry(val label: String, val detail: String, val current: Boolean, val choice: BaselineChoice?)
+
+    /**
+     * What **Compare With…** offers for a context, as VS Code's Compare with… does: the ladder (`CI on the checked-out
+     * branch, else main (default)`), the default branch and each branch with runs, a run by its id, and the developer's
+     * own runs only; `current` marks the choice in force.
+     */
+    fun baselineEntries(run: RunStatus?): List<BaselineEntry> {
+        val current = run?.baseline?.choice ?: BaselineChoice("ladder")
+        val known = run?.branches.orEmpty()
+        val branches = if (current.kind == "branch" && current.branch != null && current.branch !in known) known + current.branch else known
+        val ladder = BaselineChoice("ladder")
+        val local = BaselineChoice("local")
+        fun same(choice: BaselineChoice) = choice.kind == current.kind && choice.branch == current.branch && choice.runId == current.runId
+        return listOf(
+            BaselineEntry(
+                "CI on the checked-out branch, else ${known.firstOrNull() ?: "the default branch"} (default)",
+                "The latest complete run of the branch, a CI run first, with your runs since laid over it",
+                same(ladder),
+                ladder,
+            ),
+        ) + branches.mapIndexed { i, branch ->
+            val choice = BaselineChoice("branch", branch = branch)
+            val default = if (i == 0 && known.firstOrNull() == branch) "The default branch: its" else "The"
+            BaselineEntry(branch, "$default latest complete run, a CI run first", same(choice), choice)
+        } + listOf(
+            BaselineEntry(
+                if (current.kind == "run") "A run by id… (now run #${current.runId})" else "A run by id…",
+                "One run of the project, with the runs of its branch since",
+                current.kind == "run",
+                null,
+            ),
+            BaselineEntry("My local runs only", "Your runs on this machine, in the desktop app or an editor, without CI", same(local), local),
+        )
+    }
+
+    /** The run id typed for **A run by id…** (`118` or `#118`); null when it is not one. */
+    fun runIdOf(text: String?): Int? =
+        Regex("^\\s*#?(\\d{1,9})\\s*$").find(text.orEmpty())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it > 0 }
+
+    /** A baseline as `PiwiLocalSettings` keeps it per root: `local`, `branch:<name>`, `run:<id>`; the ladder is none. */
+    fun encodeBaseline(choice: BaselineChoice): String? = when (choice.kind) {
+        "local" -> "local"
+        "branch" -> choice.branch?.let { "branch:$it" }
+        "run" -> choice.runId?.let { "run:$it" }
+        else -> null
+    }
+
+    /** A baseline `PiwiLocalSettings` keeps; null for the ladder or a value it cannot read. */
+    fun decodeBaseline(text: String?): BaselineChoice? = when {
+        text == "local" -> BaselineChoice("local")
+        text?.startsWith("branch:") == true -> text.removePrefix("branch:").ifBlank { null }?.let { BaselineChoice("branch", branch = it) }
+        text?.startsWith("run:") == true -> text.removePrefix("run:").toIntOrNull()?.takeIf { it > 0 }?.let { BaselineChoice("run", runId = it) }
+        else -> null
     }
 
     /**
@@ -440,10 +535,11 @@ object Glue {
     fun runsInFiles(runs: RunStatusResult?): RunStatusResult? =
         runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
 
-    /** When the checked-out branch has no run yet and another branch's is shown: which one, and why. */
+    /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {
         val checkedOut = run?.checkedOut ?: return ""
         if (run.branch == checkedOut) return ""
+        if (run.baseline?.choice?.kind.let { it != null && it != "ladder" }) return ""
         return " ($checkedOut has no run yet)"
     }
 

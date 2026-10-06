@@ -260,6 +260,7 @@ const tests = {
       'piwi.runTest',
       'piwi.rerunFailing',
       'piwi.groupFailuresBy',
+      'piwi.compareWith',
       'piwi.toggleFollowEditor',
       'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',

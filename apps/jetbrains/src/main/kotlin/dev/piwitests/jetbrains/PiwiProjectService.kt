@@ -58,8 +58,9 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * team shares: the desktop app chosen with Connect, its project, and whether it was offered;
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
- * the failures (`file`, `cluster`, `owner` or `flat`); and whether the runs Piwi starts pause
- * at the IDE's breakpoints.
+ * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
+ * at the IDE's breakpoints; and the baseline chosen with **Compare With…** for each
+ * Playwright config folder (`Glue.encodeBaseline`; the ladder is no entry).
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -73,6 +74,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordPage: String = "",
         var failuresGrouping: String = "file",
         var breakpoints: Boolean = true,
+        var baselines: MutableMap<String, String> = mutableMapOf(),
     )
 
     private var state = State()
@@ -211,7 +213,20 @@ class PiwiProjectService(private val project: Project) : Disposable {
             apiKey = url?.let { PasswordSafe.instance.getPassword(credentialAttributes(it)) },
             desktop = local.desktop,
             desktopProject = local.desktopProject.ifBlank { null },
+            baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
         )
+    }
+
+    /**
+     * Compare the context at `root` with `choice` (**Compare With…**): kept in `PiwiLocalSettings` and sent to the
+     * service (`piwi/setBaseline`), which reads it at once and says so in `piwi/runStatusChanged`. Sends over the
+     * network: never on the event thread.
+     */
+    fun setBaseline(root: String, choice: BaselineChoice) {
+        val baselines = local().baselines
+        val kept = Glue.encodeBaseline(choice)
+        if (kept == null) baselines.remove(root) else baselines[root] = kept
+        server()?.setBaseline(SetBaselineParams(root, choice))
     }
 
     /** Whether the password safe holds a key for the instance. */

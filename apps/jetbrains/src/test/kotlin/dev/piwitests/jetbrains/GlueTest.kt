@@ -847,6 +847,90 @@ class GlueTest {
     }
 
     @Test
+    fun `Compare With offers the ladder, the branches with runs, a run by id and the local runs`() {
+        val run = RunStatus(root = "/w", branch = "main", run = passed, branches = listOf("main", "feature/x"))
+        val entries = Glue.baselineEntries(run)
+        assertEquals(
+            listOf(
+                "CI on the checked-out branch, else main (default)" to true,
+                "main" to false,
+                "feature/x" to false,
+                "A run by id…" to false,
+                "My local runs only" to false,
+            ),
+            entries.map { it.label to it.current },
+        )
+        assertEquals(
+            listOf(
+                BaselineChoice("ladder"),
+                BaselineChoice("branch", branch = "main"),
+                BaselineChoice("branch", branch = "feature/x"),
+                null,
+                BaselineChoice("local"),
+            ),
+            entries.map { it.choice },
+        )
+        val chosen = Glue.baselineEntries(
+            run.copy(baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)")),
+        )
+        assertEquals(listOf("release"), chosen.filter { it.current }.map { it.label })
+        val byId = Glue.baselineEntries(RunStatus(baseline = Baseline(BaselineChoice("run", runId = 118), "CI run #118 on main")))
+        assertEquals("CI on the checked-out branch, else the default branch (default)", byId[0].label)
+        assertEquals("A run by id… (now run #118)" to true, byId[1].label to byId[1].current)
+    }
+
+    @Test
+    fun `a run id is read with or without its hash, and a choice is kept per root as text`() {
+        assertEquals(listOf(118, 118, null, null, null), listOf("118", " #118 ", "0", "run 118", "").map { Glue.runIdOf(it) })
+        for (choice in listOf(BaselineChoice("local"), BaselineChoice("branch", branch = "feature/x"), BaselineChoice("run", runId = 118))) {
+            assertEquals(choice, Glue.decodeBaseline(Glue.encodeBaseline(choice)))
+        }
+        assertEquals(null, Glue.encodeBaseline(BaselineChoice("ladder")))
+        assertEquals(null, Glue.decodeBaseline("run:abc"))
+    }
+
+    @Test
+    fun `the tooltip and the header name the baseline, and a chosen branch is not a fallback`() {
+        val chosen = RunStatusResult(
+            listOf(
+                RunStatus(
+                    root = "/w", branch = "main", checkedOut = "feature/cart", run = passed,
+                    baseline = Baseline(BaselineChoice("branch", branch = "main"), "CI run #41 on main"),
+                ),
+            ),
+        )
+        val tooltip = Glue.statusView(connected, chosen).tooltip
+        assertEquals(true, tooltip.startsWith("Run #41 of Acme on main: 118 passed, 0 failed, 2 flaky, 0 skipped\nBaseline: CI run #41 on main"))
+        val ladder = chosen.copy(contexts = chosen.contexts!!.map { it.copy(baseline = it.baseline!!.copy(choice = BaselineChoice("ladder"))) })
+        assertEquals(true, Glue.statusView(connected, ladder).tooltip.startsWith("Run #41 of Acme on main (feature/cart has no run yet)"))
+        val label = "CI run #120 on feature/x"
+        assertEquals(
+            "Run #120 · CI · feature/x · 2 failing · 1 fixed locally · 4 min ago · Baseline: $label",
+            Glue.runHeader(treeFailures.copy(baseline = Baseline(BaselineChoice("ladder"), label)), treeNow),
+        )
+        assertEquals(
+            "Baseline: release (no run)",
+            Glue.runHeader(FailuresResult(emptyList(), baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)"))),
+        )
+    }
+
+    @Test
+    fun `the local runs alone count their failures, under a root of their own`() {
+        val local = Baseline(BaselineChoice("local"), "your local runs only")
+        val runs = RunStatusResult(
+            listOf(RunStatus(root = "/w", branch = "main", failures = 2, failingTests = 1, overlays = 2, baseline = local)),
+        )
+        val view = Glue.statusView(connected, runs)
+        assertEquals("Piwi: 1 failing", view.text)
+        assertEquals(true, view.tooltip.startsWith("2 local runs of Acme on main, 1 test failing\nBaseline: your local runs only"))
+        val alone = treeFailures.copy(run = null, baseline = local)
+        val root = Glue.failureTree(alone, "file", treeNow).single()
+        assertEquals("Your local runs · 2 failing · 1 fixed locally" to "no baseline", root.label to root.description)
+        assertEquals(listOf("Your runs", "tests/checkout.spec.ts", "tests/login.spec.ts"), root.children.map { it.label })
+        assertEquals("Your local runs · 2 failing · 1 fixed locally · Baseline: your local runs only", Glue.runHeader(alone, treeNow))
+    }
+
+    @Test
     fun `a failure's context is the deepest Playwright config folder that holds it`() {
         val status = StatusResult(
             listOf(ContextStatus(root = "/w", connected = true), ContextStatus(root = "/w/e2e", connected = true)),

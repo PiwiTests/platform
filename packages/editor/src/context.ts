@@ -27,7 +27,7 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
-import type { ConnectionSource, EditorCredentials, LiveRun, LiveTestStatus } from './protocol.js';
+import type { BaselineChoice, ConnectionSource, EditorCredentials, LiveRun, LiveTestStatus } from './protocol.js';
 import {
   committedText,
   committedTextAt,
@@ -46,6 +46,15 @@ const FILE_CACHE_MS = 5 * 60_000;
 
 /** How many files a context keeps as the commits of its runs hold them: the latest read. */
 const MAX_COMMIT_TEXTS = 100;
+
+/** The origins of CI runs, as `branch-failures` names them. */
+export const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
+
+/** The origins of a developer's own runs: their machine, the desktop app, an editor. */
+const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
+
+/** The answer of a baseline that found no run. */
+const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [] });
 
 /** A file as a commit holds it: its text once read (null when the repository has none), and the read. */
 interface CommitText {
@@ -115,6 +124,46 @@ function linkedProject(desktop: DesktopDiscovery | null, root: string): string {
 }
 
 type ContextConnection = PiwiConnection & { source: ConnectionSource };
+
+/** A baseline choice as a client sent it; null when it is not one. */
+export function parseBaselineChoice(value: unknown): BaselineChoice | null {
+  const choice = value as { kind?: unknown; branch?: unknown; runId?: unknown } | null;
+  if (!choice || typeof choice !== 'object') return null;
+  if (choice.kind === 'ladder' || choice.kind === 'local') return { kind: choice.kind };
+  if (choice.kind === 'branch' && typeof choice.branch === 'string' && choice.branch.trim()) {
+    return { kind: 'branch', branch: choice.branch.trim() };
+  }
+  if (choice.kind === 'run' && Number.isInteger(choice.runId) && (choice.runId as number) > 0) {
+    return { kind: 'run', runId: choice.runId as number };
+  }
+  return null;
+}
+
+/**
+ * A baseline in a few words: the run it found (`CI run #120 on feature/x`, `local run #110 on feature/x`, `run #118`
+ * from an instance that does not say what launched it), `your local runs only` for a developer's own runs, and the
+ * choice followed by `(no run)` when it found none. `branch` is the branch read.
+ */
+export function baselineLabel(choice: BaselineChoice, answer: BranchFailures | null, branch: string | null): string {
+  const run = answer?.run;
+  const name = run
+    ? `${!run.origin ? '' : CI_ORIGINS.has(run.origin) ? 'CI ' : 'local '}run #${run.id}${run.branch ? ` on ${run.branch}` : ''}`
+    : null;
+  switch (choice.kind) {
+    case 'branch':
+      return name ?? `${choice.branch} (no run)`;
+    case 'run':
+      return name ?? `run #${choice.runId} (no run)`;
+    case 'local':
+      if (name) return `your local runs only: ${name}`;
+      return answer?.overlays?.length
+        ? 'your local runs only'
+        : `your local runs only${branch ? ` on ${branch}` : ''} (no run)`;
+    default:
+      if (!name) return 'the newest run of any branch (no run)';
+      return branch ? name : `${name}, the newest run of any branch`;
+  }
+}
 
 /**
  * The instance the environment, the workspace `.env` (the config's directory,
@@ -240,12 +289,19 @@ export class PiwiContext {
   /** The version of `@piwitests/reporter` the project installs, read at each refresh; null when none is found. */
   reporterVersion: string | null = null;
   /**
-   * The branch whose latest run is read: the checked-out one, else, while it has no run, the
-   * project's default branch, else null for the newest run of any branch.
+   * The branch whose latest run is read. On the ladder: the checked-out one, else, while it has no run, the project's
+   * default branch, else null for the newest run of any branch. Otherwise the chosen branch, the chosen run's, or for a
+   * developer's own runs the checked-out one.
    */
   runBranch: string | null = null;
   /** The branch checked out in the workspace; null on a detached head. */
   checkedOutBranch: string | null = null;
+  /** The run the workspace is compared with, chosen in the editor (`piwi/setBaseline`); the ladder until then. */
+  baseline: BaselineChoice = { kind: 'ladder' };
+  /** What `baseline` found at the latest read, in a few words (`baselineLabel`); empty before the first. */
+  baselineLabel = '';
+  /** The branches a baseline can be chosen from: the default branch, then those with runs the locator index knows. */
+  branches: string[] = [];
   /** Quarantined tests by test case id, and the passing streak that releases one. */
   quarantined = new Map<number, QuarantinedTest>();
   releaseAfter = 0;
@@ -257,7 +313,7 @@ export class PiwiContext {
   flaky = new Map<number, FlakyTest>();
   /** The project's Flake Lab tests on that branch, with their top suspect, by test case id. */
   flakeLab = new Map<number, FlakeLabEntry>();
-  /** The latest run on `runBranch` and its failures; null before the first answer. */
+  /** The baseline on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
   /** When `failures` was last read (ms since the epoch); null before the first answer. */
   runReadAt: number | null = null;
@@ -339,6 +395,9 @@ export class PiwiContext {
         }
       }
       const index = await this.client.locatorIndex(this.project.id, null);
+      this.branches = [
+        ...new Set([index.defaultBranch, ...index.branches.map((b) => b.name)].filter((b): b is string => !!b)),
+      ];
       // The checked-out branch when the index has uses of its own for it, else the default branch.
       const checkedOut = await currentBranch(this.repoRoot);
       this.branch =
@@ -420,6 +479,8 @@ export class PiwiContext {
     this.commitTexts.clear();
     this.runBranch = null;
     this.checkedOutBranch = null;
+    this.baselineLabel = '';
+    this.branches = [];
     this.functions = null;
     this.words = null;
     for (const cache of [
@@ -435,28 +496,54 @@ export class PiwiContext {
   }
 
   /**
-   * Fetch the latest run on the checked-out branch (the default branch on a
-   * detached head); while that branch has no run, the default branch's, else the
-   * newest of any branch. Returns whether the run or its failures changed.
+   * Fetch the baseline the editor chose and the runs laid over it. The ladder reads the latest run on the checked-out
+   * branch (the default branch on a detached head); while that branch has no run, the default branch's, else the
+   * newest of any branch. A branch, a run or a developer's own runs are read once: when they hold no run, nothing else
+   * is read. Returns whether the run, its failures or the baseline changed.
    */
   async refreshRun(): Promise<boolean> {
     if (!this.client || !this.project) return false;
+    const client = this.client;
+    const projectId = this.project.id;
     const checkedOut = await currentBranch(this.repoRoot);
-    // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
-    const branches = [
-      ...new Set([checkedOut ?? this.index?.defaultBranch ?? null, this.index?.defaultBranch ?? null, null]),
-    ];
+    const defaultBranch = this.index?.defaultBranch ?? null;
+    const choice = this.baseline;
     try {
-      let branch: string | null = branches[0] ?? null;
-      let next = await this.client.branchFailures(this.project.id, branch);
-      for (const other of branches.slice(1)) {
-        if (next.run) break;
-        branch = other;
-        next = await this.client.branchFailures(this.project.id, other);
+      let branch: string | null;
+      let next: BranchFailures;
+      if (choice.kind === 'branch') {
+        branch = choice.branch;
+        next = await client.branchFailures(projectId, branch);
+      } else if (choice.kind === 'run') {
+        next = await client.branchFailures(projectId, null, { run: choice.runId }).catch((e: unknown) => {
+          // A run the instance does not hold, or another project's.
+          if (e instanceof PiwiHttpError && (e.status === 400 || e.status === 404)) return noRun();
+          throw e;
+        });
+        // An instance that does not read `run` answers another run.
+        if (next.run && next.run.id !== choice.runId) next = noRun();
+        branch = next.run?.branch ?? null;
+      } else if (choice.kind === 'local') {
+        branch = checkedOut ?? defaultBranch;
+        next = await client.branchFailures(projectId, branch, { origin: 'local' });
+        // An instance that does not read `origin` answers a CI run.
+        if (next.run && !LOCAL_ORIGINS.has(next.run.origin ?? '')) next = noRun();
+      } else {
+        // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
+        const ladder = [...new Set([checkedOut ?? defaultBranch, defaultBranch, null])];
+        branch = ladder[0] ?? null;
+        next = await client.branchFailures(projectId, branch);
+        for (const other of ladder.slice(1)) {
+          if (next.run) break;
+          branch = other;
+          next = await client.branchFailures(projectId, other);
+        }
       }
+      const label = baselineLabel(choice, next, branch);
       const changed =
         branch !== this.runBranch ||
         checkedOut !== this.checkedOutBranch ||
+        label !== this.baselineLabel ||
         JSON.stringify(next) !== JSON.stringify(this.failures);
       if (next.run?.id !== this.failures?.run?.id) {
         this.healings.clear();
@@ -470,6 +557,7 @@ export class PiwiContext {
       for (const id of this.failureAnchors.keys()) if (!listed.has(id)) this.failureAnchors.delete(id);
       this.runBranch = branch;
       this.checkedOutBranch = checkedOut;
+      this.baselineLabel = label;
       this.failures = next;
       this.runReadAt = Date.now();
       return changed;

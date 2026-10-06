@@ -8,6 +8,7 @@
  * agent, inserts what Piwi Picker sends, and records tests (`recording.ts`).
  */
 import { randomBytes } from 'node:crypto';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   LanguageClient,
@@ -55,6 +56,7 @@ import {
   DESKTOP_REQUEST,
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
+  SET_BASELINE_NOTIFICATION,
   SET_CREDENTIALS_NOTIFICATION,
   STATUS_NOTIFICATION,
   STATUS_REQUEST,
@@ -62,7 +64,9 @@ import {
   SCREENSHOT_REQUEST,
   TRACE_REQUEST,
   type DesktopResult,
+  type BaselineChoice,
   type EditorCredentials,
+  type SetBaselineParams,
   type FileSummary,
   type McpServersResult,
   type RenderStepsResult,
@@ -111,6 +115,9 @@ import {
   STATUS_TOOLTIP_COMMANDS,
   pickNotice,
   statusBarView,
+  baselinePicks,
+  runIdOf,
+  withBaseline,
   type FailureNode,
 } from './glue';
 import { runBreakpoints, terminalEnvKey } from './breakpoints';
@@ -133,6 +140,8 @@ const SEND_PORT = 'piwi.sendPort';
 const DESKTOP_CHOSEN = 'piwi.desktop';
 const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
+/** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
+const BASELINES = 'piwi.baseline';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -190,6 +199,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     apiKey: serverUrl ? ((await context.secrets.get(apiKeySecret(serverUrl))) ?? null) : null,
     desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
+    baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
   };
 }
 
@@ -554,6 +564,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await runTests(args);
     }),
     vscode.commands.registerCommand('piwi.groupFailuresBy', () => failuresView.pickGrouping()),
+    vscode.commands.registerCommand('piwi.compareWith', async () => {
+      const contexts = runs?.contexts ?? [];
+      const file = vscode.window.activeTextEditor?.document.uri.fsPath;
+      // The context of the active file: the deepest config folder holding it.
+      const inFile = file
+        ? contexts
+            .filter((c) => {
+              const relative = path.relative(c.root, file);
+              return !relative.startsWith('..') && !path.isAbsolute(relative);
+            })
+            .sort((a, b) => b.root.length - a.root.length)
+        : [];
+      const target =
+        inFile[0] ??
+        (contexts.length > 1
+          ? await vscode.window
+              .showQuickPick(
+                contexts.map((c) => ({ label: c.root, c })),
+                { placeHolder: 'Compare which Playwright config?' },
+              )
+              .then((p) => p?.c)
+          : contexts[0]);
+      if (!target) {
+        if (!contexts.length) void vscode.window.showInformationMessage('Piwi: connect to an instance first.');
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(baselinePicks(target), {
+        placeHolder: `Compare with… (now: ${target.baseline?.label || 'the latest run'})`,
+        matchOnDetail: true,
+      });
+      if (!picked) return;
+      let choice: BaselineChoice;
+      if (picked.choice === 'run-by-id') {
+        const typed = await vscode.window.showInputBox({
+          prompt: 'The id of the run to compare with (its page in the dashboard shows it)',
+          placeHolder: '118',
+          validateInput: (text) => (runIdOf(text) ? null : 'A run id: a positive number, such as 118'),
+        });
+        const runId = typed === undefined ? null : runIdOf(typed);
+        if (!runId) return;
+        choice = { kind: 'run', runId };
+      } else {
+        choice = picked.choice;
+      }
+      const kept = context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES);
+      await context.workspaceState.update(BASELINES, withBaseline(kept, target.root, choice));
+      await lc.sendNotification(SET_BASELINE_NOTIFICATION, { root: target.root, choice } satisfies SetBaselineParams);
+    }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.stopFollowingEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.copyAgentContext', async (target: FailureNode) => {

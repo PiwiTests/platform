@@ -6,6 +6,7 @@
  * the recorded block a recording writes and follows through the edits around it.
  */
 import type {
+  BaselineChoice,
   ConnectionSource,
   DesktopJobUpdate,
   DesktopResult,
@@ -43,7 +44,7 @@ export interface StatusBarView {
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
 /** The commands the status bar item's tooltip links to. */
-export const STATUS_TOOLTIP_COMMANDS = ['piwi.openRun', 'piwi.openInDashboard', 'piwi.connect'];
+export const STATUS_TOOLTIP_COMMANDS = ['piwi.openRun', 'piwi.openInDashboard', 'piwi.compareWith', 'piwi.connect'];
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -100,6 +101,11 @@ function updatedLine(run: RunStatus | undefined, now: number): string | null {
   return `Updated ${relativeTime(run.updatedAt, now)}${how}`;
 }
 
+/** The baseline a context compares with, as the tooltip and the failures view name it: `Baseline: CI run #120 on main`. */
+export function baselineLine(label: string | undefined): string | null {
+  return label ? `Baseline: ${label}` : null;
+}
+
 /** The item's text while the latest run is read again: its icon spins. */
 export function refreshingText(text: string): string {
   return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
@@ -134,20 +140,44 @@ export function statusBarView(
     };
   }
   const run = runs?.contexts.find((c) => c.root === connected.root) ?? runs?.contexts[0];
-  // The checked-out branch has no run yet: another branch's is shown.
+  // On the ladder, the checked-out branch has no run yet: another branch's is shown.
+  const ladder = !run?.baseline || run.baseline.choice.kind === 'ladder';
   const fallback =
-    run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
+    ladder && run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
   const where = md(`${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`);
   const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
   const reporter = run?.reporterVersion ? md(`reporter ${run.reporterVersion}`) : null;
   const live = run?.live ?? null;
   const progress = live ? liveLine(live) : null;
   const updated = updatedLine(run, now);
+  const baseline = run?.baseline ? md(baselineLine(run.baseline.label)!) : null;
   const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
+  const compare = '[Compare with…](command:piwi.compareWith)';
   if (!run?.run) {
+    const links = `${dashboard} · ${compare} · ${connect}`;
+    if (run?.overlays) {
+      // A developer's own runs alone, with no baseline.
+      const failing = run.failingTests ?? run.failures;
+      return {
+        text: live ? liveText(live) : failing ? `$(error) Piwi: ${failing} failing` : '$(pass) Piwi: no failure',
+        tooltip: lines(
+          `${plural(run.overlays, 'local run')} of ${where}, ${plural(failing, 'test')} failing`,
+          baseline,
+          progress,
+          updated,
+          from,
+          reporter,
+          hint,
+          links,
+        ),
+        action: 'refresh',
+        url: null,
+        error: !live && failing > 0,
+      };
+    }
     return {
       text: live ? liveText(live) : '$(beaker) Piwi: no run',
-      tooltip: lines(`No run of ${where} yet`, progress, updated, from, reporter, hint, `${dashboard} · ${connect}`),
+      tooltip: lines(`No run of ${where} yet`, baseline, progress, updated, from, reporter, hint, links),
       action: 'refresh',
       url: null,
       error: false,
@@ -159,13 +189,14 @@ export function statusBarView(
   const fixed = run.resolved ?? 0;
   const tooltip = lines(
     `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    baseline,
     run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
     progress,
     updated,
     from,
     reporter,
     hint,
-    `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${connect}`,
+    `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${compare} · ${connect}`,
   );
   const view = { tooltip, action: 'refresh' as const, url: r.url, error: false };
   if (live || ACTIVE.has(r.status)) {
@@ -371,10 +402,11 @@ function grouped(items: WorkspaceFailure[], grouping: FailuresGrouping): Failure
 }
 
 /**
- * The failures view's tree: the latest complete run, `Run #120 · CI · feature/x · 3 failing · 1 fixed locally` (its age,
- * or the editor's own run in progress, as its description), with the runs laid over it under `Your runs since`, and its
- * failures grouped by file, cluster or owner, or flat, failing first, then edited, then fixed locally. Without a run
- * (an older service), the groups alone; without a failure, nothing.
+ * The failures view's tree: the baseline run, `Run #120 · CI · feature/x · 3 failing · 1 fixed locally` (its age, or the
+ * editor's own run in progress, as its description, and the baseline chosen, `Baseline: CI run #120 on feature/x`, in
+ * its tooltip), with the runs laid over it under `Your runs since`, and its failures grouped by file, cluster or owner,
+ * or flat, failing first, then edited, then fixed locally. With a developer's own runs alone, the root is `Your local
+ * runs`. Without a run (an older service), the groups alone; without a failure, nothing.
  */
 export function failureTree(
   result: FailuresResult | null,
@@ -385,17 +417,20 @@ export function failureTree(
   if (!items.length) return [];
   const groups = grouped(items, grouping);
   const run = result?.run;
-  if (!run) return groups;
-  const now = options.now ?? Date.now();
   const overlays = result?.overlays ?? [];
+  const baseline = baselineLine(result?.baseline?.label);
+  if (!run && !(baseline && overlays.length)) return groups;
+  const now = options.now ?? Date.now();
   const runs: FailureNode[] = overlays.length
     ? [
         {
           key: 'runs',
           kind: 'runs',
-          label: 'Your runs since',
+          label: run ? 'Your runs since' : 'Your runs',
           description: plural(overlays.length, 'run'),
-          tooltip: `The runs of ${md(run.branch ?? 'the branch')} since run #${run.id}, laid over it test by test`,
+          tooltip: run
+            ? `The runs of ${md(run.branch ?? 'the branch')} since run #${run.id}, laid over it test by test`
+            : 'Your runs of the branch, newest first, laid over one another test by test',
           icon: 'history',
           state: 'collapsed',
           url: null,
@@ -421,6 +456,22 @@ export function failureTree(
       ]
     : [];
   const live = options.live?.own ? options.live : null;
+  const running = live ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null;
+  if (!run) {
+    return [
+      {
+        key: 'run',
+        kind: 'run',
+        label: ['Your local runs', failureCounts(items)].join(' · '),
+        description: live ? `running ${live.done}/${live.total}` : 'no baseline',
+        tooltip: lines(md(baseline!), running),
+        icon: 'beaker',
+        state: 'expanded',
+        url: null,
+        children: [...runs, ...groups],
+      },
+    ];
+  }
   const label = [`Run #${run.id}`, originLabel(run.origin, run.own), run.branch, failureCounts(items)]
     .filter(Boolean)
     .join(' · ');
@@ -431,8 +482,9 @@ export function failureTree(
       label,
       description: live ? `running ${live.done}/${live.total}` : relativeTime(run.startTime, now),
       tooltip: lines(
+        baseline ? md(baseline) : null,
         `Run #${run.id}${run.branch ? ` of ${md(run.branch)}` : ''}: ${run.passedTests} passed, ${run.failedTests} failed, ${run.flakyTests} flaky, ${run.skippedTests} skipped`,
-        live ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null,
+        running,
       ),
       icon: 'beaker',
       state: 'expanded',
@@ -440,6 +492,81 @@ export function failureTree(
       children: [...runs, ...groups],
     },
   ];
+}
+
+/** An entry of **Compare with…**: a baseline, or `run-by-id`, which asks for the run's id first. */
+export interface BaselinePick {
+  label: string;
+  description: string;
+  detail: string;
+  choice: BaselineChoice | 'run-by-id';
+}
+
+function sameChoice(a: BaselineChoice, b: BaselineChoice): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * What **Compare with…** offers for a context: the ladder (`CI on the checked-out branch, else main (default)`), the
+ * default branch and each branch with runs, a run by its id, and the developer's own runs only; the choice in force is
+ * `current`.
+ */
+export function baselinePicks(run: RunStatus | undefined): BaselinePick[] {
+  const current: BaselineChoice = run?.baseline?.choice ?? { kind: 'ladder' };
+  const branches = [...(run?.branches ?? [])];
+  if (current.kind === 'branch' && !branches.includes(current.branch)) branches.push(current.branch);
+  const mark = (choice: BaselineChoice, also = '') =>
+    [also, sameChoice(choice, current) ? 'current' : ''].filter(Boolean).join(' · ');
+  const ladder: BaselineChoice = { kind: 'ladder' };
+  const local: BaselineChoice = { kind: 'local' };
+  return [
+    {
+      label: `CI on the checked-out branch, else ${run?.branches?.[0] ?? 'the default branch'} (default)`,
+      description: mark(ladder),
+      detail: 'The latest complete run of the branch, a CI run first, with your runs since laid over it',
+      choice: ladder,
+    },
+    ...branches.map((branch, i) => {
+      const choice: BaselineChoice = { kind: 'branch', branch };
+      return {
+        label: branch,
+        description: mark(choice, i === 0 && run?.branches?.[0] === branch ? 'default branch' : ''),
+        detail: `The latest complete run of ${branch}, a CI run first`,
+        choice,
+      };
+    }),
+    {
+      label: 'A run by id…',
+      description: current.kind === 'run' ? `current: run #${current.runId}` : '',
+      detail: 'One run of the project, with the runs of its branch since',
+      choice: 'run-by-id',
+    },
+    {
+      label: 'My local runs only',
+      description: mark(local),
+      detail: 'Your runs on this machine, in the desktop app or an editor, without CI',
+      choice: local,
+    },
+  ];
+}
+
+/** The run id typed for **A run by id…** (`118` or `#118`); null when it is not one. */
+export function runIdOf(text: string): number | null {
+  const m = /^\s*#?(\d{1,15})\s*$/.exec(text);
+  const id = m ? Number(m[1]) : 0;
+  return id > 0 ? id : null;
+}
+
+/** The baselines kept per context root, with `choice` for `root`: the ladder is kept as no entry. */
+export function withBaseline(
+  kept: Record<string, BaselineChoice> | undefined,
+  root: string,
+  choice: BaselineChoice,
+): Record<string, BaselineChoice> {
+  const next = { ...kept };
+  if (choice.kind === 'ladder') delete next[root];
+  else next[root] = choice;
+  return next;
 }
 
 /**

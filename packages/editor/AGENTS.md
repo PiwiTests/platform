@@ -13,7 +13,7 @@ clients stay thin and both editors give the same answers.
   `src/protocol.ts` (`piwi/fileSummary`, `piwi/testsForFile`, `piwi/runArgs`, `piwi/status`, `piwi/runStatus`,
   `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/mcp`, `piwi/renderSteps`, `piwi/refresh`, `piwi/refreshRun`,
   `piwi/desktopJob`, `piwi/shareDesktopJob`, `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`,
-  `piwi/pageCandidates`, `piwi/applyPick`, the `piwi/setCredentials`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
+  `piwi/pageCandidates`, `piwi/applyPick`, the `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted` and `piwi/commandEnded` notifications, and the
   `piwi/runStatusChanged`, `piwi/failuresChanged`, `piwi/runEnded`, `piwi/statusChanged`, `piwi/notice`,
   `piwi/desktopJobChanged` and `piwi/recordingChanged` notifications it sends). A client renders `piwi/fileSummary` natively (CodeLens, Code
   Vision), `piwi/runStatus` in its status bar, and `piwi/failures` as a tree in both editors (the JetBrains IDEs'
@@ -24,7 +24,16 @@ clients stay thin and both editors give the same answers.
   view names.
 - The latest run on the checked-out branch is read again whenever a run ends, and polled besides (below); while that
   branch has none, the default branch's, else the newest of any branch (`runBranch` and `checkedOut` in
-  `piwi/runStatus`).
+  `piwi/runStatus`). That ladder is the default baseline; a client may choose another per context
+  (`piwi/setBaseline { root, choice }`, `PiwiContext.baseline`): a branch's latest complete run, a run by its id
+  (`branch-failures?run=`; a 400 or 404 is no run), or a developer's own runs only (`branch-failures?origin=local` on
+  the checked-out branch: the newest complete local run, else the local runs alone, `run: null`). A choice is read
+  once: a branch or a run with no data reads nothing else. The client keeps the choices on its machine and sends them
+  in `EditorCredentials.baselines` (initialization options and every `piwi/setCredentials`), so a restarted service
+  has them; credentials without `baselines` leave the choices as they are, credentials with them replace them all.
+  `piwi/runStatus` carries `baseline` (the choice and `baselineLabel` in `src/context.ts`: `CI run #120 on
+  feature/x`, `your local runs only`, `release (no run)`) and `branches` (the default branch, then those of the
+  locator index), and `piwi/failures` the `baseline` of the context it shows.
   Its failures are published as `ci-failure` diagnostics in every file they point to, merged with the analysis of
   open documents. The instance lays over that run the runs of its branch finished since, whole or partial (a test
   re-run from the editor, `piwi run`, the desktop app: `branch-failures?overlays=1`), per test and Playwright project,

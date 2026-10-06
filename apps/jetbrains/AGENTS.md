@@ -44,13 +44,18 @@ the service through the platform's LSP API with the project's Node.js interprete
   (`PopupHandler.installPopupMenu`) runs the test, opens the trace, the screenshot or the page, copies the context for
   an agent (`piwi/agentContext`) and, on a CI failure while the desktop app runs, passes it to the app, through
   `PiwiCommands`. **Re-run the Failing Tests** (`Piwi.RerunFailing`, **Tools → Piwi** and the toolbar) runs
-  `Glue.rerunFailingArgs`. The service
+  `Glue.rerunFailingArgs`. **Compare With…** (`Piwi.CompareWith`, **Tools → Piwi** and the toolbar) is a popup of
+  `Glue.baselineEntries` (the ladder, each of `RunStatus.branches`, a run by its id through `Messages.showInputDialog`,
+  the local runs only) for the context of the file at hand; `PiwiProjectService.setBaseline` keeps the choice in
+  `PiwiLocalSettings.baselines` (by root, `Glue.encodeBaseline`, the ladder as no entry), sends `piwi/setBaseline`, and
+  `credentials()` sends them all as `baselines`. The header line names it (`Glue.runHeader`). The service
   starts with the first supported file opened (2024.1 has no way to start it without one): until then the status is
   null, and the status bar and tool window say so.
 - The status bar item (`PiwiStatusBar.kt`, `Glue.statusView`): a click runs `PiwiProjectService.refreshRun`
   (`piwi/refreshRun` then `refreshStatus`, on a pooled thread, `Piwi: refreshing…` meanwhile), and Connect while not
   connected. Its tooltip says the same as VS Code's in plain text: the counts, the local runs, the run in progress and
-  when the run was read (`Glue.relativeTime`), and the reporter version the project installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
+  when the run was read (`Glue.relativeTime`), the baseline (`Glue.baselineLine`), and the reporter version the project
+  installs. **Open the Latest Run in the Dashboard** (`Piwi.OpenLatestRun`, under
   **Tools → Piwi** and in the tool window's toolbar) opens the run the status bar shows.
 - `PiwiCommands.run` runs a command in the Run tool window, whose **Rerun** (`RunContentExecutor.withRerun`) stops it
   if it runs and starts it again with the same environment. For a test run (`RunCommand.ref`), a `ProcessListener`
@@ -127,8 +132,8 @@ the service through the platform's LSP API with the project's Node.js interprete
 - The instance URL and project live in `.idea/piwi.xml`; the API key in the IDE's `PasswordSafe`, **per instance**
   (`Glue.apiKeyEntry`): a project's settings, which a repository may commit, never select another instance's key. The
   choice of the desktop app and its project, and a recording's choices, live in `.idea/workspace.xml`
-  (`PiwiLocalSettings`, with the failures' grouping and the breakpoints setting), on this machine only; choosing the app never touches the
-  instance, its project or its key.
+  (`PiwiLocalSettings`, with the failures' grouping, the breakpoints setting and the baselines), on this machine only;
+  choosing the app never touches the instance, its project or its key.
 
 ## Rules
 

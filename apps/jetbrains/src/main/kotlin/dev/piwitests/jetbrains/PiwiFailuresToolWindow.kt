@@ -138,6 +138,8 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             val run = Glue.runHeader(result)
             header.text = if (run == null) connection else "<html>${escape(connection)}<br>${escape(run)}</html>"
             val connected = service.status?.contexts.orEmpty().any { it.connected }
+            // A baseline chosen that found no run says so.
+            val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
             tree.emptyText.clear()
             when {
                 service.status == null -> tree.emptyText.appendText(Glue.NOT_STARTED)
@@ -147,6 +149,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                         PiwiConnectFlow.run(project)
                     }
                 }
+                noRun != null -> tree.emptyText.appendText(noRun)
                 result?.run != null -> tree.emptyText.appendText("No failure in run #${result.run.id}")
                 else -> tree.emptyText.appendText("No failure in the latest run")
             }
@@ -159,6 +162,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
                 actions.getAction("Piwi.RerunFailing"),
                 actions.getAction("Piwi.OpenInDashboard"),
                 actions.getAction("Piwi.OpenLatestRun"),
+                actions.getAction("Piwi.CompareWith"),
                 Separator.getInstance(),
                 GroupFailuresAction(service, "file", "Group by File", AllIcons.Actions.GroupByFile, render),
                 GroupFailuresAction(service, "cluster", "Group by Cluster", AllIcons.Actions.GroupBy, render),
