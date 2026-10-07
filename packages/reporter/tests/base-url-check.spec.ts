@@ -60,6 +60,19 @@ describe('which projects the run selects', () => {
     expect(names([...PW, '--project=mobile-*'])).toEqual(['mobile-safari', 'mobile-chrome']);
     expect(names([...PW])).toHaveLength(4);
   });
+
+  it("takes Playwright's filteredProjects over the command line, and adds their dependencies", () => {
+    const setup = { name: 'setup' };
+    const chromium = { name: 'chromium', dependencies: ['setup'] };
+    const slow = { name: 'slow' };
+    const projects = [setup, chromium, slow];
+    const names = (argv: string[], filtered: object[]) =>
+      selectedProjects(projects, argv, filtered).map((p) => p.name);
+    expect(names([...PW], [chromium])).toEqual(['setup', 'chromium']);
+    expect(names([...PW, '--no-deps'], [chromium])).toEqual(['chromium']);
+    expect(names([...PW, '--project=chromium'], [{ name: 'slow' }])).toEqual(['slow']);
+    expect(names([...PW], [])).toEqual([]);
+  });
 });
 
 describe('baseUrlTargets', () => {
@@ -88,6 +101,13 @@ describe('baseUrlTargets', () => {
       },
     ]);
     expect(baseUrlTargets(config, [...PW, '--project=api']).map((t) => t.url)).toEqual(['https://api.example.test']);
+  });
+
+  it('leaves out a project declared default: false that the run does not select', () => {
+    const chromium = { name: 'chromium', use: { baseURL: 'https://staging.example.test' } };
+    const slow = { name: 'slow', default: false, use: { baseURL: 'https://perf.example.test' } };
+    const config = { projects: [chromium, slow], filteredProjects: [chromium] };
+    expect(baseUrlTargets(config, PW).map((t) => t.url)).toEqual(['https://staging.example.test']);
   });
 });
 
