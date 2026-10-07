@@ -106,7 +106,7 @@ Because replay is plain Playwright, there is nothing extra to install or start i
 
 An entry is **data, never code**: an allowlisted locator program plus, for a flow, an ordered list of steps and a postcondition oracle. Determinism and safety come from several guarantees:
 
-- **Deterministic bytes.** The model only ever *names* an element (its ARIA role + accessible name). The [`@piwitests/core`](/guide/concepts#locator-snapshot) scorer turns that into the committed locator, so model sampling never changes the file. Two runs that reach the same conclusion produce byte-identical JSON, and a no-op re-resolution leaves your working tree clean.
+- **Deterministic bytes.** The model only *names* an element (its ARIA role, accessible name and snapshot `ref`); the [`@piwitests/core`](/guide/concepts#locator-snapshot) scorer turns that into the committed locator, or Playwright's own locator for the `ref` when two elements share the name. Sampling never changes the file; a no-op re-resolution leaves the tree clean.
 - **No evaluation.** Every locator method and action is checked against an allowlist before it touches the page. A tampered or malformed artifact can never become arbitrary execution.
 - **Drift guard.** Each step records the element's role/name at author time. On replay, if the page positively shows that element has drifted (a rename), the flow **stops before acting** rather than clicking the wrong thing.
 - **Postcondition oracle.** Every flow ends with an assertion the agent chose (an element became visible/hidden, or the URL changed). Replay verifies it, so a subtly wrong flow fails loudly instead of passing.

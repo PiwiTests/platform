@@ -2,20 +2,20 @@
  * The authoring loop, reporter-side: drive the agent to compile a prompt into a
  * committed entry, then verify it. Each iteration sends the server a stateless
  * `{ template, param names, action history, masked snapshot }` and gets back one
- * decision — an element (role + name) + action, or done + postcondition. The
- * model's picks are turned into the committed locator by the deterministic
- * `@piwitests/core` scorer, so sampling never changes the bytes. Param values are
+ * decision — an element (role + name + snapshot ref) + action, or done +
+ * postcondition. The model's picks are turned into the committed locator by the
+ * deterministic `@piwitests/core` scorer, grounded on the element the ref names
+ * (`ground.ts`), so sampling never changes the bytes. Param values are
  * masked out of every outbound snapshot; secrets never leave the machine.
  *
  * The wire types mirror the server's `#shared/ai-step-resolution` (the reporter
  * must not import app `shared/`); a change here is a server-contract change.
  */
-import type { AriaCandidate } from '@piwitests/core';
 import type { Locator, Page, Response } from '@playwright/test';
 import { ariaSnapshotBestEffort } from '../capture/capture-fixtures.js';
 import type { LocatorEntry, Postcondition, RunEntry, RunStep } from './artifact.js';
 import { ARTIFACT_VERSION } from './artifact.js';
-import { compileFromCandidate, type CompiledLocator } from './compile.js';
+import { groundElement } from './ground.js';
 import { assertPostcondition, buildLocator, executeStep } from './interpreter.js';
 import { extractPlaceholders, isParametric, maskValues, type ParamValues } from './params.js';
 
@@ -94,17 +94,6 @@ export class ServerStepResolver implements StepResolver {
   }
 }
 
-// ── Mapping model output → deterministic artifact ────────────────────────────
-
-function candidateOf(element: ResolvedElement): AriaCandidate {
-  return { role: element.role, name: element.name ?? null, level: element.level ?? null };
-}
-
-/** Compile a model-chosen element into a structured locator + fingerprint. */
-export function locatorFromElement(element: ResolvedElement): CompiledLocator | null {
-  return compileFromCandidate(candidateOf(element));
-}
-
 /**
  * A `Locator`-shaped proxy that defers to `resolveOnce()` on first use — so a
  * `piwiLocator` cache miss in resolve mode can return synchronously, then author
@@ -124,14 +113,18 @@ export function lazyLocator(resolveOnce: () => Promise<Locator>): Locator {
   return new Proxy({}, handler) as unknown as Locator;
 }
 
-function buildPostcondition(resolved: ResolvedPostcondition | undefined, template: string): Postcondition {
+async function buildPostcondition(
+  resolved: ResolvedPostcondition | undefined,
+  template: string,
+  ctx: ResolutionContext,
+): Promise<Postcondition> {
   if (!resolved)
     throw new Error(`piwi AI: flow "${template}" resolved without a postcondition (the oracle is mandatory)`);
   if (resolved.assert === 'url') {
     if (!resolved.url) throw new Error(`piwi AI: flow "${template}" postcondition is a url assert without a url`);
     return { assert: 'url', url: resolved.url };
   }
-  const compiled = resolved.element ? locatorFromElement(resolved.element) : null;
+  const compiled = resolved.element ? await groundElement(ctx.page, resolved.element, ctx.params) : null;
   if (!compiled) throw new Error(`piwi AI: flow "${template}" postcondition element could not be compiled`);
   return { assert: resolved.assert, locator: compiled.locator };
 }
@@ -244,7 +237,7 @@ export async function resolveLocator(template: string, ctx: ResolutionContext): 
     ...(screenshot ? { screenshot } : {}),
   });
   if (!decision.element) throw new Error(`piwi AI: resolver returned no element for "${template}"`);
-  const compiled = locatorFromElement(decision.element);
+  const compiled = await groundElement(ctx.page, decision.element, ctx.params);
   if (!compiled) throw new Error(`piwi AI: element for "${template}" could not be compiled to a stable locator`);
 
   const entry: LocatorEntry = {
@@ -289,7 +282,7 @@ export async function resolveRun(template: string, ctx: ResolutionContext): Prom
     });
 
     if (decision.done) {
-      const postcondition = buildPostcondition(decision.postcondition, template);
+      const postcondition = await buildPostcondition(decision.postcondition, template, ctx);
       await assertPostcondition(postcondition, { page: ctx.page, params: ctx.params });
       return { version: ARTIFACT_VERSION, kind: 'run', template, steps, postcondition };
     }
@@ -297,7 +290,7 @@ export async function resolveRun(template: string, ctx: ResolutionContext): Prom
     if (!decision.element || !decision.action) {
       throw new Error(`piwi AI: resolver returned neither a step nor done for "${template}"`);
     }
-    const compiled = locatorFromElement(decision.element);
+    const compiled = await groundElement(ctx.page, decision.element, ctx.params);
     if (!compiled) throw new Error(`piwi AI: a step element for "${template}" could not be compiled`);
 
     const step: RunStep = { locator: compiled.locator, action: decision.action, fingerprint: compiled.fingerprint };

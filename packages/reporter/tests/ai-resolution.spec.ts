@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import type { Locator, Page } from '@playwright/test';
 import {
   lazyLocator,
-  locatorFromElement,
   readMaskedSnapshot,
   resolveLocator,
   resolveRun,
@@ -55,14 +54,6 @@ function scripted(responses: StepResolutionResponse[]): { resolver: StepResolver
     },
   };
 }
-
-describe('locatorFromElement', () => {
-  it('compiles a role + name element to a semantic locator + fingerprint', () => {
-    const compiled = locatorFromElement({ role: 'button', name: 'Save' });
-    expect(compiled?.locator).toEqual({ method: 'getByRole', args: ['button', { name: 'Save' }] });
-    expect(compiled?.fingerprint).toMatchObject({ role: 'button', name: 'Save' });
-  });
-});
 
 describe('resolveLocator', () => {
   it('resolves, compiles and verifies a single-element entry', async () => {
