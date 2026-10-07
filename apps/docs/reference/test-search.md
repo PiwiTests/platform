@@ -37,7 +37,7 @@ How the terms combine:
 
 - `file:`, `describe:`, `title:` and `error:` match anywhere in the text, and `*` stands for any characters:
   `file:checkout/*.spec.ts`. The other qualifiers match a whole value.
-- Case never matters.
+- Case and accents never matter: `resume` finds `Résumé`, and `CAFÉ` finds `cafe`.
 - Every term must match. The exception is a qualifier of which a test has only one value (`file:`, `browser:`, `owner:`,
   `priority:`, `feature:`): repeated, it matches any of the values, so `file:cart file:checkout` lists both files.
 - A leading `-` excludes: `-tag:slow`, `-describe:legacy`, `-flaky`.

@@ -385,6 +385,12 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   bold frozen header) and save them with `useDesktopDownload().saveBlob`, since a download link does nothing in
   the desktop shell. CSV stays only for machine consumers (the API `format=csv`, `/api/rollups`, the CLI).
   Page code imports the renderer lazily (`await import(...)`).
+- **Every search ignores case and accents** (`resume` finds `Résumé`). In memory, compare with `foldText` from
+  `#shared/utils/fold-text` on both sides (`foldText(name).includes(foldText(query))`) and mark matches with
+  `foldTextWithOffsets`; in SQL use `foldedContains` / `foldedEquals` from `#shared/utils/fold-text-sql`. Never
+  `.toLowerCase().includes(...)` or `lower(col) LIKE ...` for a typed search. A `UCommandPalette` /
+  `UDashboardSearch` passes `:fuse="{ fuseOptions: { ignoreDiacritics: true } }"`; `USelectMenu` and `UInputMenu`
+  already ignore both.
 - **Test lists search and order one way.** A list of tests searches with `TestSearchInput` and the language in
   `#shared/test-search` (in memory with `compileTestSearch`, in SQL with `testSearchConditions` from
   `#shared/utils/test-search-sql`), marks matches with `SearchHighlight`, and orders and groups its rows with

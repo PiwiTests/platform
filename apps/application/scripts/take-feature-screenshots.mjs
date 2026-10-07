@@ -2779,6 +2779,25 @@ const SCENES = [
     viewport: { width: 390, height: 1400 },
   },
   {
+    name: 'run-count-bar-active',
+    description: 'Run page count bar: an active segment grows taller than the track, in the middle and at both ends',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      const header = page.locator('[data-shot="run-header"]');
+      // The bar segment comes before the legend chip of the same name.
+      const segment = (name) => header.getByRole('button', { name, exact: true }).first();
+      await segment('3 failed').click();
+      await settle();
+      await shoot('middle', { of: '[data-shot="run-header"]', pad: 12 });
+      await segment('3 failed').click();
+      await segment('6 passed').click();
+      await segment('1 fixme').click();
+      await settle();
+      await shoot('ends', { of: '[data-shot="run-header"]', pad: 12 });
+    },
+  },
+  {
     name: 'catalog-filters',
     description:
       'Project Tests catalog: the search box and status chips, and the list header grouping by file and describe block with a filter on',

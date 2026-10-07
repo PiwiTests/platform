@@ -5,6 +5,7 @@ import type { CommitListItem } from '~~/types/api';
 import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDuration } from 'date-fns';
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
 import { formatAbsolute } from '#shared/i18n/locale-format';
+import { foldText } from '#shared/utils/fold-text';
 import { activeLocalePrefs } from './locale-format';
 import { statusPalette, statusPaletteKey } from './status-palette';
 
@@ -510,17 +511,15 @@ export function errorMessage(err: unknown, fallback = 'Unknown error'): string {
 }
 
 /**
- * Filter a commit list by a free-text query against message, author and SHA.
+ * Filter a commit list by a free-text query against message, author and SHA,
+ * ignoring case and accents.
  */
 export function filterCommits<T extends CommitListItem>(commits: T[], query: string): T[] {
-  const q = query.trim().toLowerCase();
+  const q = foldText(query.trim());
   if (!q) return commits;
   return commits.filter(
     (c) =>
-      c.message.toLowerCase().includes(q) ||
-      c.author.toLowerCase().includes(q) ||
-      c.sha.includes(q) ||
-      c.shortSha.includes(q),
+      foldText(c.message).includes(q) || foldText(c.author).includes(q) || c.sha.includes(q) || c.shortSha.includes(q),
   );
 }
 

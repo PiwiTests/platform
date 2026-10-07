@@ -1,4 +1,4 @@
-import { eq, and, desc, or, lt, gt, like, inArray } from 'drizzle-orm';
+import { eq, and, desc, or, lt, gt, inArray } from 'drizzle-orm';
 import {
   listProjects,
   getProjectFlakyTests,
@@ -63,6 +63,7 @@ import { rerunClusterInCi } from '../ci-rerun';
 import { createEnrichedLink } from '../integrations/link-create';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
+import { foldedContains } from '#shared/utils/fold-text-sql';
 import { listTags } from '#shared/handlers/tags';
 import { createLinkSchema, listLinks, type LinkEntityType } from '#shared/handlers/links';
 import { resolveLinkEntityProjectId } from '../project-access';
@@ -1187,10 +1188,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!q) return { items: [], nextCursor: null };
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
-    const pattern = `%${q}%`;
-
     const conditions = [eq(testCases.projectId, projectId)];
-    conditions.push(or(like(testCases.title, pattern), like(testCases.filePath, pattern))!);
+    conditions.push(or(foldedContains(testCases.title, q), foldedContains(testCases.filePath, q))!);
     if (cursor) conditions.push(lt(testCases.id, cursor));
 
     const rows = await db

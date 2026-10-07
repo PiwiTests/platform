@@ -10,6 +10,7 @@
  * groups hold. Administrators open every project without any binding. The
  * roles and what they grant are in `#shared/permissions`.
  */
+import { foldText } from '#shared/utils/fold-text';
 import {
   canGrantRole,
   InstanceRole,
@@ -337,11 +338,11 @@ export function projectAccessRows(grid: Pick<ProjectAccessGrid, 'users' | 'group
   ];
 }
 
-/** Case-insensitive match of `query` against any of `fields`; an empty query matches everything. */
+/** `query` in any of `fields`, ignoring case and accents; an empty query matches everything. */
 export function matchesProjectAccessQuery(query: string, fields: (string | null | undefined)[]): boolean {
-  const needle = query.trim().toLowerCase();
+  const needle = foldText(query.trim());
   if (!needle) return true;
-  return fields.some((field) => field?.toLowerCase().includes(needle));
+  return fields.some((field) => field != null && foldText(field).includes(needle));
 }
 
 // ── A project's members (`/api/projects/{id}/members`) ────────────────────────

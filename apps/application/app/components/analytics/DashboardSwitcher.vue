@@ -5,6 +5,7 @@
  * for 90 days in an *Unused* group.
  */
 import type { DashboardSummary } from '#shared/handlers/dashboards';
+import { foldText } from '#shared/utils/fold-text';
 
 const props = defineProps<{ current: { id: string; name: string }; items: DashboardSummary[] }>();
 
@@ -12,9 +13,9 @@ const open = ref(false);
 const search = ref('');
 
 const groups = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = foldText(search.value.trim());
   const matches = props.items.filter(
-    (d) => !q || d.name.toLowerCase().includes(q) || (d.description ?? '').toLowerCase().includes(q),
+    (d) => !q || foldText(d.name).includes(q) || foldText(d.description ?? '').includes(q),
   );
   return [
     { label: 'Built-in', items: matches.filter((d) => d.kind === 'builtin') },

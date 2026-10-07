@@ -185,6 +185,37 @@ describe('catalog search', () => {
   });
 });
 
+describe('catalog search across accents', () => {
+  beforeAll(async () => {
+    await db.insert(schema.projects).values({ id: 2, name: 'accents-project' });
+    await db.insert(schema.testCases).values([
+      {
+        projectId: 2,
+        filePath: 'tests/préférences.spec.ts',
+        suitePath: 'Paramètres',
+        title: 'Enregistre les PRÉFÉRENCES',
+        tags: ['Été'],
+        owner: 'José',
+      },
+      { projectId: 2, filePath: 'tests/compte.spec.ts', title: 'Supprime le compte' },
+    ]);
+  });
+
+  async function accentTitles(q: string): Promise<string[]> {
+    const page = await getProjectTestCases(db, 2, { q, sort: 'title', dir: 'asc' });
+    return page.items.map((item: any) => item.title);
+  }
+
+  test('accents and case never matter, in the query or in the test', async () => {
+    expect(await accentTitles('preferences')).toEqual(['Enregistre les PRÉFÉRENCES']);
+    expect(await accentTitles('describe:PARAMETRES')).toEqual(['Enregistre les PRÉFÉRENCES']);
+    expect(await accentTitles('file:prefer*spec')).toEqual(['Enregistre les PRÉFÉRENCES']);
+    expect(await accentTitles('tag:ete owner:jose')).toEqual(['Enregistre les PRÉFÉRENCES']);
+    expect(await accentTitles('cómpte')).toEqual(['Supprime le compte']);
+    expect(await accentTitles('-tag:ÉTÉ')).toEqual(['Supprime le compte']);
+  });
+});
+
 describe('file order', () => {
   test('sorts by file, then the line and column of the latest execution', async () => {
     const page = await getProjectTestCases(db, 1, { sort: 'file', dir: 'asc' });

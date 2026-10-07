@@ -41,6 +41,7 @@ beforeAll(async () => {
     { projectId: MINE, filePath: 'report.spec.ts', title: 'shows 1000 coverage' },
     { projectId: MINE, filePath: 'form.spec.ts', title: 'fills first_name' },
     { projectId: MINE, filePath: 'form.spec.ts', title: 'fills firstXname' },
+    { projectId: MINE, filePath: 'login.spec.ts', title: 'Connexion RÉUSSIE' },
   ]);
   await db.insert(schema.testRuns).values([
     { id: 100, projectId: MINE, status: 'passed', label: 'Login smoke', startTime: new Date(NOW - 24 * HOUR) },
@@ -73,6 +74,12 @@ describe('global search', () => {
     expect((await searchProjectsTestRunsCases(db as never, 'MY SHOP', 'all')).projects.map((p) => p.id)).toEqual([
       MINE,
     ]);
+  });
+
+  test('matching ignores accents, in the query or in the stored text', async () => {
+    expect(titles(await searchProjectsTestRunsCases(db as never, 'reussie', 'all'))).toEqual(['Connexion RÉUSSIE']);
+    expect(titles(await searchProjectsTestRunsCases(db as never, 'Réussie', 'all'))).toEqual(['Connexion RÉUSSIE']);
+    expect(titles(await searchProjectsTestRunsCases(db as never, 'lógin pàge', 'all'))).toEqual(['LOGIN page']);
   });
 
   test('% and _ in the query match themselves', async () => {
