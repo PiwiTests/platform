@@ -63,6 +63,28 @@ describe('formatAbsolute', () => {
     expect(out).not.toBe('N/A');
     expect(out).toContain('2026');
   });
+
+  test('builds one formatter per locale, zone and format, whatever the number of dates', () => {
+    const original = Intl.DateTimeFormat;
+    let built = 0;
+    Intl.DateTimeFormat = new Proxy(original, {
+      construct(target, args) {
+        built++;
+        return Reflect.construct(target, args);
+      },
+    });
+    try {
+      const prefs = { locale: 'de-DE', timeZone: 'Asia/Tokyo' };
+      const dates = Array.from({ length: 50 }, (_, i) => new Date(UTC_INSTANT.getTime() + i * 60_000));
+      const first = dates.map((d) => formatAbsolute(d, prefs));
+      expect(dates.map((d) => formatAbsolute(d, prefs))).toEqual(first);
+      formatAbsolute(UTC_INSTANT, { ...prefs, dateOnly: true });
+      expect(built).toBe(2);
+      expect(first[0]).toBe('22.9.2026, 23:30:05');
+    } finally {
+      Intl.DateTimeFormat = original;
+    }
+  });
 });
 
 describe('validation', () => {

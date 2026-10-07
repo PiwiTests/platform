@@ -5,11 +5,14 @@ import { isCurrentlySnoozed } from '#shared/inbox-queues';
 import type { TableColumn } from '@nuxt/ui';
 import type { ProjectFailureCluster } from '~~/types/api';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
 
 const props = defineProps<{
   projectId: string | number;
   /** The status the list opens on (a drill-down from Analytics); every status when unset. */
   initialStatus?: 'open' | 'resolved' | 'ignored';
+  /** The project page's run scope: the clusters seen in its runs, counted over them. */
+  scope?: ProjectRunScope | null;
 }>();
 
 const emit = defineEmits<{ count: [total: number] }>();
@@ -29,7 +32,7 @@ const {
   refresh,
 } = await useFetch(
   () => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(props.scope ? projectRunScopeQuery(props.scope) : {});
     if (statusFilter.value !== 'all') params.set('status', statusFilter.value);
     const qs = params.toString();
     return `/api/projects/${props.projectId}/failure-clusters${qs ? `?${qs}` : ''}`;

@@ -46,6 +46,7 @@ import { notLabRun } from './probes';
 import { getVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { TERMINAL_STATUSES, getProjectFlakyTestsWithVerified } from './projects';
 import type { DrizzleDB } from './db';
+import type { ProjectRunScope } from '../project-run-scope';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import type { FlakeLabStepFacts } from '../next-step';
 import { recordOutcome } from '../../server/utils/outcomes';
@@ -951,11 +952,15 @@ export async function resolveTestCaseByLocation(
   return candidates[0] ?? null;
 }
 
-/** The flaky list's read: each listed test's top suspect, and its latest lab result. */
+/**
+ * The flaky list's read: each listed test's top suspect, and its latest lab
+ * result. `profiles` reads the tests' summary profiles (see `getTopFlakeSuspects`).
+ */
 export async function getFlakyListSuspects(
   db: DrizzleDB,
   projectId: number,
   testCaseIds: number[],
+  opts: { profiles?: (testCaseIds: number[]) => Promise<FlakeProfile[]> } = {},
 ): Promise<Array<TopFlakeSuspect & { lab: FlakeLabSummary | null }>> {
   const summaries = await getFlakeLabSummaries(db, testCaseIds.slice(0, TOP_SUSPECTS_MAX_TESTS));
   const lab = new Map(summaries.map((l) => [l.testCaseId, l]));
@@ -963,7 +968,7 @@ export async function getFlakyListSuspects(
   const results = new Map<number, Map<string, FlakeSuspectResult>>();
   for (const summary of summaries)
     results.set(summary.testCaseId, await getFlakeSuspectResults(db, summary.testCaseId));
-  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { results });
+  const items = await getTopFlakeSuspects(db, projectId, testCaseIds, { results, profiles: opts.profiles });
   return items.map((item) => ({ ...item, lab: lab.get(item.testCaseId) ?? null }));
 }
 
@@ -1050,6 +1055,8 @@ export async function getProjectFlakeLab(
     runs?: number;
     environment?: string | null;
     branch?: string | null;
+    /** The project page's run scope; replaces `environment` and `branch`. */
+    scope?: ProjectRunScope | null;
     limit?: number;
     /** Also read each listed test's suspects, for the first {@link TOP_SUSPECTS_MAX_TESTS} tests that need a step. */
     suspects?: boolean;
@@ -1067,6 +1074,7 @@ export async function getProjectFlakeLab(
     opts.environment,
     undefined,
     opts.branch,
+    opts.scope,
   );
 
   // Every finished experiment, light: enough to place each test.

@@ -11,6 +11,36 @@ defineRouteMeta({
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
+        name: 'environments',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated environments; only their runs count. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'branches',
+        in: 'query',
+        required: false,
+        schema: { type: 'string' },
+        description:
+          'Run scope: comma-separated branches; only their runs count. Without it, the project’s default branch and runs with no branch count, unless `allBranches`.',
+      },
+      {
+        name: 'allBranches',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `branches`, count every branch instead of the default branch.',
+      },
+      {
+        name: 'fullRunsOnly',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: true },
+        description: 'Run scope: only full-suite runs count; `false` adds partial runs.',
+      },
+      {
         name: 'limit',
         in: 'query',
         required: false,

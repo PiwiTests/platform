@@ -300,8 +300,9 @@ test.describe('Environment UI Tests', () => {
     await page.waitForURL(/\/projects\/\d+/);
     await waitForHydration(page);
 
-    // The environment select in the filter bar offers every environment.
-    await page.getByText('All environments').click();
+    // The environment select in the Filters block offers every environment.
+    // Exact: the block's folded summary line also names "All environments".
+    await page.getByText('All environments', { exact: true }).click();
     await expect(page.getByRole('option', { name: 'production' })).toBeVisible();
     await expect(page.getByRole('option', { name: 'staging' })).toBeVisible();
     await expect(page.getByRole('option', { name: 'development' })).toBeVisible();
@@ -317,8 +318,8 @@ test.describe('Environment UI Tests', () => {
     await page.waitForURL(/\/projects\/\d+/);
     await waitForHydration(page);
 
-    // Pick production in the filter bar's environment select.
-    await page.getByText('All environments').click();
+    // Pick production in the Filters block's environment select.
+    await page.getByText('All environments', { exact: true }).click();
     await page.getByRole('option', { name: 'production' }).click();
     await page.keyboard.press('Escape');
 

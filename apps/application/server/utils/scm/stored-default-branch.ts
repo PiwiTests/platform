@@ -3,7 +3,7 @@
  * call and no provider import, so the demo mirror can share it with the server.
  */
 import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
-import { testRuns } from '../../database/schema';
+import { projects, testRuns } from '../../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { FALLBACK_DEFAULT_BRANCH } from './git-url';
 
@@ -48,4 +48,13 @@ export async function resolveStoredDefaultBranch(db: DrizzleDB, project: Default
   const common = await mostCommonRunBranch(db, project.id);
   if (common) return common;
   return FALLBACK_DEFAULT_BRANCH;
+}
+
+/** `resolveStoredDefaultBranch` for a project known by its id. */
+export async function projectDefaultBranch(db: DrizzleDB, projectId: number): Promise<string> {
+  const [project] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  return resolveStoredDefaultBranch(db, project ?? { id: projectId });
 }

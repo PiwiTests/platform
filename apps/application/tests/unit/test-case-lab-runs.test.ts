@@ -89,20 +89,31 @@ describe('test case stats leave lab runs out', () => {
     expect(testCase!.recentExecutions.map((e: { id: number }) => e.id)).toEqual([3, 2, 1]);
   });
 
-  test('the test-cases list aggregates real executions only', async () => {
-    const { items } = await getProjectTestCases(db as never, 1, { maxAgeDays: 1 });
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      totalRuns: 3,
-      passedRuns: 2,
-      failedRuns: 1,
-      flakyRuns: 0,
-      recentFlakyRuns: 0,
-      avgDuration: 2000,
-      lastStatus: 'passed',
-      status: 'passed',
-    });
-    expect(items[0].lastRun).toBe(at(30).getTime());
+  // Sorted by file, the page is picked first and only its tests' executions are joined.
+  test.each(['lastRun', 'file'] as const)(
+    'the test-cases list sorted by %s aggregates real executions only',
+    async (sort) => {
+      const { items } = await getProjectTestCases(db as never, 1, { maxAgeDays: 1, sort });
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        totalRuns: 3,
+        passedRuns: 2,
+        failedRuns: 1,
+        flakyRuns: 0,
+        recentFlakyRuns: 0,
+        avgDuration: 2000,
+        lastStatus: 'passed',
+        status: 'passed',
+      });
+      expect(items[0].lastRun).toBe(at(30).getTime());
+    },
+  );
+
+  // These runs name no environment: a scope that names one leaves them all out.
+  test('the test-cases list sorted by file leaves out a run with no environment from an environment scope', async () => {
+    const scope = { environments: ['ci'], branches: [], allBranches: true, fullRunsOnly: false };
+    const { items } = await getProjectTestCases(db as never, 1, { sort: 'file', scope });
+    expect(items[0]).toMatchObject({ totalRuns: 0, passedRuns: 0, failedRuns: 0 });
   });
 
   test('the stability trend buckets real executions only', async () => {

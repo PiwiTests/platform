@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui';
 import type { TimeoutOpportunity } from '#shared/analytics/timeout-hygiene';
+import { projectRunScopeQuery, type ProjectRunScope } from '#shared/project-run-scope';
 
 const props = defineProps<{
   projectId: string | number;
   projectName?: string | null;
+  /** The project page's run scope: the recent runs read are its runs. */
+  scope?: ProjectRunScope | null;
 }>();
 
 const { data, status } = await useFetch(() => `/api/projects/${props.projectId}/timeout-opportunities`, {
   lazy: true,
   server: false,
+  query: computed(() => (props.scope ? projectRunScopeQuery(props.scope) : {})),
   transform: (r: { items: TimeoutOpportunity[] }) => r.items,
 });
 

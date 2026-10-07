@@ -230,6 +230,19 @@ function showPartialRuns(): void {
   filters.value = { ...filters.value, fullRunsOnly: false };
 }
 
+const filtersActive = computed(() => filters.value.environments.length > 0 || !filters.value.fullRunsOnly);
+
+function resetFilters(): void {
+  filters.value = { environments: [], branches: [], fullRunsOnly: true };
+}
+
+const filtersSummary = computed(() =>
+  filterBarSummary(filters.value, {
+    branches: false,
+    hidden: hiddenPartialRunsCount.value > 0 ? [hiddenRunsPhrase(hiddenPartialRunsCount.value, 'partial')] : [],
+  }),
+);
+
 // ── Activity list ────────────────────────────────────────────────────────────
 
 function statusBorderClass(status: string): string {
@@ -253,9 +266,6 @@ function statusBorderClass(status: string): string {
         <template #leading>
           <UDashboardSidebarCollapse />
           <UBreadcrumb :items="[{ label: 'Home', icon: 'i-lucide-house', to: '/' }]" />
-        </template>
-        <template v-if="hasProjects" #trailing>
-          <FilterBar v-model="filters" :available-environments="availableEnvironments" :available-branches="[]" />
         </template>
       </UDashboardNavbar>
     </template>
@@ -288,21 +298,27 @@ function statusBorderClass(status: string): string {
       </div>
 
       <div v-else class="p-6 space-y-8">
-        <!-- Partial runs hidden by the "Full runs only" filter — without this, a
+        <!-- The note names the partial runs "Full runs only" hides — without it, a
              project's first (partial) run reads as if nothing arrived. -->
-        <UAlert
-          v-if="hiddenPartialRunsCount > 0"
-          icon="i-lucide-info"
-          color="primary"
-          variant="subtle"
-          :title="
-            hiddenPartialRunsCount === 1
-              ? '1 partial run is hidden'
-              : `${hiddenPartialRunsCount} partial runs are hidden`
-          "
-          description="The “Full runs only” filter hides runs that only cover part of the suite (e.g. a single spec or --grep)."
-          :actions="[{ label: 'Show them', color: 'primary', variant: 'solid', size: 'xs', onClick: showPartialRuns }]"
-        />
+        <FiltersBlock
+          v-if="hasProjects"
+          inline
+          inset
+          :summary="filtersSummary"
+          :resettable="filtersActive"
+          data-shot="home-filters"
+          @reset="resetFilters"
+        >
+          <FilterBar
+            v-model="filters"
+            :available-environments="availableEnvironments"
+            :available-branches="[]"
+            :show-reset="false"
+          />
+          <template v-if="hiddenPartialRunsCount > 0" #notes>
+            <HiddenRunsNote :partial-runs="hiddenPartialRunsCount" @include-partial="showPartialRuns" />
+          </template>
+        </FiltersBlock>
 
         <!-- Compact stat strip (full-run-aware) — every number is a link -->
         <div

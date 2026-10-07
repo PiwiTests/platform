@@ -1,6 +1,7 @@
 import { TOP_SUSPECTS_MAX_TESTS } from '#shared/handlers/flake-profile';
 import { getFlakyListSuspects } from '#shared/handlers/flake-lab';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
+import { cachedFlakeProfileSummaries } from '../../../utils/flake-profile-cache';
 import { getDatabase } from '../../../database';
 
 defineRouteMeta({
@@ -31,5 +32,9 @@ export default eventHandler(async (event) => {
     .map((v) => Number(v.trim()))
     .filter((n) => Number.isInteger(n) && n > 0);
   const db = await getDatabase();
-  return { items: await getFlakyListSuspects(db, projectId, ids) };
+  return {
+    items: await getFlakyListSuspects(db, projectId, ids, {
+      profiles: (testCaseIds) => cachedFlakeProfileSummaries(db, projectId, testCaseIds),
+    }),
+  };
 });

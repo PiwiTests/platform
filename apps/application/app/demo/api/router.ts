@@ -141,6 +141,7 @@ import {
   getProjectsOverview,
   getProjectSpecHealth,
 } from '#shared/handlers/projects';
+import { parseProjectRunScope } from '#shared/project-run-scope';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
   listProjectMarkers,
@@ -801,7 +802,17 @@ const routes: RouteEntry[] = [
       const from = q?.get('from') || undefined;
       const to = q?.get('to') || undefined;
       const fullRunsOnly = q?.get('fullRunsOnly') !== 'false';
-      return { items: await getProjectPerformance(await getDemoDb(), +m[1]!, runs, from, to, fullRunsOnly) };
+      return {
+        items: await getProjectPerformance(
+          await getDemoDb(),
+          +m[1]!,
+          runs,
+          from,
+          to,
+          fullRunsOnly,
+          parseProjectRunScope(q),
+        ),
+      };
     },
   },
   {
@@ -818,7 +829,7 @@ const routes: RouteEntry[] = [
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const maxAgeDays = Math.max(0, Math.floor(Number(q?.get('maxAgeDays')) || 0));
-      return getProjectTestCaseFacets(await getDemoDb(), +m[1]!, { maxAgeDays });
+      return getProjectTestCaseFacets(await getDemoDb(), +m[1]!, { maxAgeDays, scope: parseProjectRunScope(q) });
     },
   },
   {
@@ -828,7 +839,7 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const rawRuns = q ? parseInt(q.get('runs') ?? '', 10) : NaN;
       const runs = Math.min(Number.isNaN(rawRuns) ? 10 : rawRuns, 100);
-      return { items: await getProjectSlowTests(await getDemoDb(), +m[1]!, runs) };
+      return { items: await getProjectSlowTests(await getDemoDb(), +m[1]!, runs, parseProjectRunScope(q)) };
     },
   },
   {
@@ -842,15 +853,24 @@ const routes: RouteEntry[] = [
       // Custom thresholds from the timeout-hygiene setting apply here, like the
       // server route reads them (the demo persists the same app setting).
       const thresholds = await getTimeoutThresholds(db);
-      return { items: await getProjectTimeoutOpportunities(db, +m[1]!, runs, thresholds) };
+      return {
+        items: await getProjectTimeoutOpportunities(db, +m[1]!, runs, thresholds, parseProjectRunScope(q)),
+      };
     },
   },
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/failure-clusters$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { items: await getProjectFailureClusters(await getDemoDb(), +m[1]!) };
+      return {
+        items: await getProjectFailureClusters(
+          await getDemoDb(),
+          +m[1]!,
+          q?.get('status') ?? undefined,
+          parseProjectRunScope(q),
+        ),
+      };
     },
   },
   {
@@ -918,6 +938,7 @@ const routes: RouteEntry[] = [
         environment,
         { tags, owner, priority },
         branch,
+        parseProjectRunScope(q),
       );
       if (['false', '0'].includes(q?.get('enrich') ?? '')) return { items, verifiedFixed };
       // CODEOWNERS resolution needs an SCM client the browser cannot reach —
@@ -1642,6 +1663,7 @@ const routes: RouteEntry[] = [
         runs: int('runs'),
         environment: q?.get('environment')?.trim() || null,
         branch: q?.get('branch')?.trim() || null,
+        scope: parseProjectRunScope(q),
         limit: int('limit'),
         suspects: q?.get('suspects') === 'true' || q?.get('suspects') === '1',
       });

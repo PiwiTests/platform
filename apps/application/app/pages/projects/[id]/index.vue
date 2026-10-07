@@ -11,6 +11,8 @@ import type {
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
+import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
+import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -67,23 +69,29 @@ async function handleDeleteProject() {
   }
 }
 
-// === FILTER BAR (persisted per project) ===
+// === FILTERS (persisted per project) ===
+const defaultFilters = (): FilterBarState => ({
+  environments: [],
+  branches: [],
+  fullRunsOnly: true,
+  allBranches: false,
+});
 const filters = useCookie<FilterBarState>(`piwi-filters-project-${projectId}`, {
-  default: () => ({ environments: [], branches: [], fullRunsOnly: true }),
+  default: defaultFilters,
   encode: (v) => JSON.stringify(v),
   decode: (v) => {
     try {
-      return v ? (JSON.parse(v) as FilterBarState) : { environments: [], branches: [], fullRunsOnly: true };
+      return { ...defaultFilters(), ...(v ? (JSON.parse(v) as Partial<FilterBarState>) : {}) };
     } catch {
-      return { environments: [], branches: [], fullRunsOnly: true };
+      return defaultFilters();
     }
   },
 });
 
 // === DRILL-DOWN FROM ANALYTICS ===
-// A number on a dashboard links here with its scope: the filters it names
-// replace the saved ones, and its period and branch policy narrow the runs
-// until cleared.
+// A number on a dashboard links here with its scope: the filters and branch
+// policy it names replace the saved ones, and its period narrows the runs
+// table and chart until cleared.
 function viewerTimeZone(): string {
   const tz = activeLocalePrefs().timeZone;
   return tz === 'auto' ? Intl.DateTimeFormat().resolvedOptions().timeZone : tz;
@@ -101,6 +109,7 @@ function readDrill() {
       environments: parsed.environments,
       branches: parsed.branches,
       fullRunsOnly: parsed.fullRunsOnly,
+      allBranches: parsed.branches.length === 0 && !parsed.defaultBranchOnly,
     };
   }
 }
@@ -109,18 +118,11 @@ function clearDrill() {
   const { source: _s, period: _p, tz: _t, status: _st, allBranches: _a, ...rest } = route.query;
   router.replace({ query: rest });
 }
-/** The project's default branch as analytics resolves it: its setting, else `main`. */
-const projectDefaultBranch = computed(
-  () => (project.value as { defaultBranch?: string | null } | null)?.defaultBranch?.trim() || 'main',
+/** The branch the filters read with no branch picked: the project's setting, else its most common run branch. */
+const defaultBranch = computed(
+  () => project.value?.effectiveDefaultBranch || project.value?.defaultBranch?.trim() || 'main',
 );
-const drillText = computed(() => {
-  const d = drill.value;
-  if (!d) return null;
-  const parts: string[] = [];
-  if (d.period) parts.push(d.period.label);
-  if (d.defaultBranchOnly) parts.push(`${projectDefaultBranch.value} and runs with no known branch`);
-  return parts.length ? parts.join(' · ') : null;
-});
+const drillText = computed(() => drill.value?.period?.label ?? null);
 
 // A run's branch reads the scalar column, falling back to the SCM metadata for
 // runs reported before the branch column existed.
@@ -143,35 +145,48 @@ const availableBranches = computed(() => {
   return [...branches].sort();
 });
 
-function matchesFilters(run: TestRunSummary): boolean {
-  if (filters.value.fullRunsOnly && run.isFullRun === false) return false;
-  return matchesScope(run);
+// === RUN SCOPE ===
+// The filters as the run scope every tab that reads run history follows: the
+// header, the runs table and chart here, and the catalog, the failures, the
+// Flake Lab and the performance tab on the server.
+const runScope = computed<ProjectRunScope>(() => ({
+  environments: filters.value.environments,
+  branches: filters.value.branches,
+  allBranches: !!filters.value.allBranches,
+  fullRunsOnly: filters.value.fullRunsOnly,
+}));
+const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
+
+function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): boolean {
+  return runInProjectScope(
+    { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun },
+    scope,
+    defaultBranch.value,
+  );
 }
 
-/** Every filter but "Full runs only": environment, branch and the analytics drill-down. */
-function matchesScope(run: TestRunSummary): boolean {
-  if (
-    filters.value.environments.length > 0 &&
-    !(run.environment && filters.value.environments.includes(run.environment))
-  )
-    return false;
-  if (filters.value.branches.length > 0) {
-    const b = runBranch(run);
-    if (b === null || !filters.value.branches.includes(b)) return false;
-  }
-  const d = drill.value;
-  if (d?.period) {
-    const t = new Date(run.startTime).getTime();
-    if (t < d.period.from || t >= d.period.to) return false;
-  }
-  if (d?.defaultBranchOnly && filters.value.branches.length === 0) {
-    const b = runBranch(run);
-    if (b !== null && b !== projectDefaultBranch.value) return false;
-  }
-  return true;
+/** The drill-down period from Analytics, which narrows the runs table and chart only. */
+function inDrillPeriod(run: TestRunSummary): boolean {
+  const period = drill.value?.period;
+  if (!period) return true;
+  const t = new Date(run.startTime).getTime();
+  return t >= period.from && t < period.to;
 }
 
-const filteredRuns = computed(() => (project.value?.testRuns || []).filter(matchesFilters));
+const scopedRuns = computed(() => (project.value?.testRuns ?? []).filter((run) => inScope(run)));
+const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
+
+function resetFilters(): void {
+  filters.value = defaultFilters();
+}
+
+const filtersActive = computed(
+  () =>
+    filters.value.environments.length > 0 ||
+    filters.value.branches.length > 0 ||
+    !!filters.value.allBranches ||
+    !filters.value.fullRunsOnly,
+);
 
 // === RUNS TAB: kept runs ===
 // Kept runs are mostly old, past the recent window the project loads, so the
@@ -181,13 +196,15 @@ const { data: keptRunsData, refresh: refreshKeptRuns } = useFetch<{ items: TestR
   `/api/projects/${projectId}/kept-runs`,
   { lazy: true, server: false, default: () => ({ items: [], total: 0 }) },
 );
-const filteredKeptRuns = computed(() => (keptRunsData.value?.items ?? []).filter(matchesFilters));
+const filteredKeptRuns = computed(() =>
+  (keptRunsData.value?.items ?? []).filter((run) => inScope(run) && inDrillPeriod(run)),
+);
 const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filteredRuns.value));
 
 // The table shows one page of runs at a time, so the page's HTML and its
 // hydration stay the same size however many runs are loaded; the chart above it
 // draws them all.
-const RUNS_PAGE_SIZE = 50;
+const RUNS_PAGE_SIZE = 25;
 const runsPage = ref(1);
 const pagedRuns = computed(() =>
   tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
@@ -198,17 +215,46 @@ watch(tableRuns, (rows) => {
   if (runsPage.value > last) runsPage.value = last;
 });
 
-// Partial runs the other filters keep but "Full runs only" hides — the filter is
-// on by default, so without a notice a project's partial runs look missing.
-const hiddenPartialRunsCount = computed(() => {
-  if (!filters.value.fullRunsOnly) return 0;
-  const runs = keptOnly.value ? (keptRunsData.value?.items ?? []) : (project.value?.testRuns ?? []);
-  return runs.filter((r) => r.isFullRun === false && matchesScope(r)).length;
+// Runs the other filters keep but "Full runs only" or the default-branch
+// reading hides — both are on by default, so without a note those runs look
+// missing.
+const hiddenRuns = computed(() => {
+  const runs = (keptOnly.value ? keptRunsData.value?.items : project.value?.testRuns) ?? [];
+  const scope = runScope.value;
+  const withPartialRuns = { ...scope, fullRunsOnly: false };
+  const withAllBranches = { ...scope, allBranches: true };
+  let partial = 0;
+  let otherBranches = 0;
+  for (const run of runs) {
+    if (!inDrillPeriod(run) || inScope(run)) continue;
+    if (scope.fullRunsOnly && inScope(run, withPartialRuns)) partial++;
+    else if (scope.branches.length === 0 && !scope.allBranches && inScope(run, withAllBranches)) otherBranches++;
+  }
+  return { partial, otherBranches };
 });
 
-function showPartialRuns(): void {
+function includePartialRuns(): void {
   filters.value = { ...filters.value, fullRunsOnly: false };
 }
+
+function showAllBranches(): void {
+  filters.value = { ...filters.value, allBranches: true };
+}
+
+const filtersSummary = computed(() => {
+  const hidden: string[] = [];
+  if (hiddenRuns.value.otherBranches > 0)
+    hidden.push(hiddenRunsPhrase(hiddenRuns.value.otherBranches, 'other-branches'));
+  if (hiddenRuns.value.partial > 0) hidden.push(hiddenRunsPhrase(hiddenRuns.value.partial, 'partial'));
+  return filterBarSummary(filters.value, {
+    environments: availableEnvironments.value.length > 0,
+    branches: availableBranches.value.length > 0,
+    // As the bar: the policy reads only once a run is off the default branch.
+    branchPolicy: availableBranches.value.some((branch) => branch !== defaultBranch.value),
+    defaultBranch: defaultBranch.value,
+    hidden,
+  });
+});
 
 const keepRunId = ref<number | null>(null);
 const isKeepOpen = ref(false);
@@ -218,68 +264,81 @@ async function refreshAfterKeepChange() {
   await Promise.all([refresh(), refreshKeptRuns()]);
 }
 
-// A single selected environment / branch scopes the server-side flaky and
-// performance analysis so one environment or feature branch can be compared.
-const flakyEnvironment = computed(() =>
-  filters.value.environments.length === 1 ? filters.value.environments[0] : undefined,
-);
-const flakyBranch = computed(() => (filters.value.branches.length === 1 ? filters.value.branches[0] : undefined));
+// === HEADER FIGURES ===
+// Within the filters: the latest run and the pass rate come from the runs
+// already loaded; the open clusters and flaky counts come from the same
+// endpoints the Failures tab reads, fetched lazily so they never block the
+// first paint. The quarantine is the project's, whatever the filters.
+const PASS_RATE_RUNS = 20;
+const newestFirst = (a: TestRunSummary, b: TestRunSummary) =>
+  new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
 
-// === STATUS-LINE FIGURES ===
-// The latest run and the pass rate come from the runs already loaded; the open
-// clusters, flaky and quarantined counts come from the same endpoints the
-// Failures tab reads, fetched lazily so they never block the first paint.
-const latestRun = computed(() => {
-  const runs = project.value?.testRuns ?? [];
-  if (runs.length === 0) return null;
-  return [...runs].sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0]!;
-});
+const latestRun = computed(() => [...scopedRuns.value].sort(newestFirst)[0] ?? null);
 
-const passRate20 = computed(() => {
-  const runs = [...(project.value?.testRuns ?? [])]
-    .filter((r) => r.isFullRun !== false)
-    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-    .slice(0, 20);
+const passRateRuns = computed(() => [...scopedRuns.value].sort(newestFirst).slice(0, PASS_RATE_RUNS));
+const passRate = computed(() => {
   let passed = 0;
   let total = 0;
-  for (const r of runs) {
+  for (const r of passRateRuns.value) {
     passed += r.passedTests;
     total += r.totalTests;
   }
   return total > 0 ? Math.round((passed / total) * 100) : null;
 });
 
-const { data: clustersCount, refresh: refreshClustersCount } = await useFetch(
-  `/api/projects/${projectId}/failure-clusters`,
-  {
-    lazy: true,
-    server: false,
-    default: () => ({ total: 0, open: 0 }),
-    transform: (r: { items: Array<{ status?: string | null }> }) => ({
-      total: r.items.length,
-      open: r.items.filter((c) => (c.status ?? 'open') === 'open').length,
-    }),
-  },
-);
+const {
+  data: clustersCount,
+  status: clustersCountStatus,
+  refresh: refreshClustersCount,
+} = await useFetch(`/api/projects/${projectId}/failure-clusters`, {
+  lazy: true,
+  server: false,
+  query: runScopeQuery,
+  default: () => ({ total: 0, open: 0 }),
+  transform: (r: { items: Array<{ status?: string | null }> }) => ({
+    total: r.items.length,
+    open: r.items.filter((c) => (c.status ?? 'open') === 'open').length,
+  }),
+});
 
-const { data: flakyCount, refresh: refreshFlakyCount } = await useFetch(
-  () => `/api/projects/${projectId}/flaky-tests?runs=50&enrich=false`,
-  {
-    lazy: true,
-    server: false,
-    default: () => 0,
-    transform: (r: { items: FlakyTest[] }) => r.items.length,
-  },
-);
+const {
+  data: flakyCount,
+  status: flakyCountStatus,
+  refresh: refreshFlakyCount,
+} = await useFetch(`/api/projects/${projectId}/flaky-tests`, {
+  lazy: true,
+  server: false,
+  query: computed(() => ({ runs: 50, enrich: 'false', ...runScopeQuery.value })),
+  default: () => 0,
+  transform: (r: { items: FlakyTest[] }) => r.items.length,
+});
 
-const { data: quarantineCount, refresh: refreshQuarantineCount } = await useFetch(
-  `/api/projects/${projectId}/quarantine?candidates=false`,
-  {
-    lazy: true,
-    server: false,
-    default: () => 0,
-    transform: (r: { debt?: { active?: number } }) => r.debt?.active ?? 0,
-  },
+const {
+  data: quarantineCount,
+  status: quarantineCountStatus,
+  refresh: refreshQuarantineCount,
+} = await useFetch(`/api/projects/${projectId}/quarantine?candidates=false`, {
+  lazy: true,
+  server: false,
+  default: () => 0,
+  transform: (r: { debt?: { active?: number } }) => r.debt?.active ?? 0,
+});
+
+// The counts read as loading until each has answered once; a later refresh keeps the last figures.
+const failureCountsReady = ref(false);
+watchEffect(() => {
+  const settled = (status: string) => status === 'success' || status === 'error';
+  if ([clustersCountStatus.value, flakyCountStatus.value, quarantineCountStatus.value].every(settled))
+    failureCountsReady.value = true;
+});
+const headerFailures = computed(() =>
+  failureCountsReady.value
+    ? {
+        openClusters: clustersCount.value.open,
+        flaky: flakyCount.value ?? 0,
+        quarantined: projCapHidden('quarantine') ? null : (quarantineCount.value ?? 0),
+      }
+    : null,
 );
 
 // The catalog owns its fetch and emits its total for the Tests tab label.
@@ -427,11 +486,15 @@ const tabNavItems = computed(() =>
 const tabSelectItems = computed(() => tabItems.value.map((t) => ({ label: t.label, value: t.value })));
 const activeTabIcon = computed(() => tabItems.value.find((t) => t.value === activeTab.value)?.icon);
 
-// A status-line figure links to the tab that holds it (Failures also selects the
+// A header figure links to the tab that holds it (Failures also selects the
 // segment it belongs to).
 function goToTab(tab: TabValue, segment?: FailureSegment) {
   if (segment) failureSegment.value = segment;
   activeTab.value = tab;
+}
+
+function openHeaderTarget(target: ProjectHeaderTarget) {
+  goToTab('failures', target);
 }
 
 // === RUNS TAB: selection → compare or delete ===
@@ -630,27 +693,33 @@ const {
   transform: (r: { artifacts?: unknown[] }) => (r.artifacts?.length ?? 0) > 0,
 });
 
+// The slowest tests follow the run scope, not the window, so they are read
+// again only when the scope changes.
+let slowTestsScope: string | null = null;
 watch(
-  [activeTab, perfRunsWindow, () => filters.value.fullRunsOnly],
-  async ([tab, runsWindow]) => {
+  [activeTab, perfRunsWindow, runScopeQuery],
+  async ([tab, runsWindow, scopeQuery]) => {
     if (tab !== 'performance') return;
+    const scopeKey = JSON.stringify(scopeQuery);
+    const readSlowTests = slowTestsScope !== scopeKey;
     performanceLoading.value = true;
-    if (!slowTests.value) slowTestsLoading.value = true;
+    if (readSlowTests) slowTestsLoading.value = true;
     if (import.meta.server) return;
     if (aiStepsStatus.value === 'idle') void checkAiSteps();
-    const params = new URLSearchParams({ runs: String(runsWindow) });
-    if (!filters.value.fullRunsOnly) params.set('fullRunsOnly', 'false');
-    const perfRes = await $fetch<{ items: PerformanceTrendPoint[] }>(
-      `/api/projects/${projectId}/performance?${params.toString()}`,
-    ).catch((err) => {
+    const perfRes = await $fetch<{ items: PerformanceTrendPoint[] }>(`/api/projects/${projectId}/performance`, {
+      query: { runs: runsWindow, ...scopeQuery },
+    }).catch((err) => {
       console.warn('[PerformanceTab] Failed to fetch performance trend:', err);
       return null;
     });
     performanceData.value = perfRes?.items ?? null;
     performanceLoading.value = false;
-    if (slowTestsLoading.value) {
+    if (readSlowTests) {
+      slowTestsScope = scopeKey;
       slowTestsError.value = false;
-      const slowRes = await $fetch<{ items: SlowTest[] }>(`/api/projects/${projectId}/slow-tests`).catch((err) => {
+      const slowRes = await $fetch<{ items: SlowTest[] }>(`/api/projects/${projectId}/slow-tests`, {
+        query: scopeQuery,
+      }).catch((err) => {
         slowTestsError.value = true;
         console.warn('[PerformanceTab] Failed to fetch slow tests:', err);
         return null;
@@ -791,69 +860,45 @@ const moreMenuItems = computed(() => {
 
     <template #body>
       <div class="flex flex-col h-full overflow-y-auto gap-4">
-        <!-- Header block: description, tags, status line, filter bar -->
-        <div class="space-y-3">
-          <p v-if="project?.description" class="text-gray-600 dark:text-gray-400">
-            {{ project.description }}
-          </p>
+        <ProjectHeader
+          :title="project?.label || project?.name || 'Project'"
+          :description="project?.description"
+          :tags="project?.tags"
+          :latest-run="latestRun"
+          :pass-rate="passRate"
+          :pass-rate-runs="passRateRuns.length"
+          :has-runs="(project?.testRuns?.length ?? 0) > 0"
+          :failures="headerFailures"
+          @open="openHeaderTarget"
+        />
 
-          <div v-if="project?.tags && project.tags.length > 0" class="flex flex-wrap gap-1">
-            <TagBadge v-for="tag in project.tags" :key="tag.id" :text="tag.text" :color="tag.color" />
-          </div>
-
-          <!-- Status line: the project's condition on entry, each figure a link -->
-          <div
-            v-if="latestRun"
-            class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted"
-            data-shot="status-line"
-          >
-            <HelpHint topic="project.status-line" />
-            <button type="button" class="inline-flex items-center gap-1.5 hover:underline" @click="goToTab('runs')">
-              <RunStatusBadge :status="latestRun.status" />
-              <span>Latest run #{{ latestRun.id }} {{ formatRelativeTime(latestRun.startTime) }}</span>
-            </button>
-            <span class="text-gray-300 dark:text-gray-600">·</span>
-            <button
-              v-if="passRate20 !== null"
-              type="button"
-              class="hover:underline tabular-nums"
-              @click="goToTab('runs')"
-            >
-              {{ passRate20 }}% pass rate <span class="text-gray-400">(last 20 runs)</span>
-            </button>
-            <span class="text-gray-300 dark:text-gray-600">·</span>
-            <button
-              type="button"
-              class="hover:underline tabular-nums"
-              :class="clustersCount.open > 0 ? STATUS_PALETTE.failed.text : ''"
-              @click="goToTab('failures', 'clusters')"
-            >
-              {{ clustersCount.open }} open {{ clustersCount.open === 1 ? 'cluster' : 'clusters' }}
-            </button>
-            <span class="text-gray-300 dark:text-gray-600">·</span>
-            <button
-              type="button"
-              class="hover:underline tabular-nums"
-              :class="(flakyCount ?? 0) > 0 ? STATUS_PALETTE.flaky.text : ''"
-              @click="goToTab('failures', 'flaky')"
-            >
-              {{ flakyCount ?? 0 }} flaky
-            </button>
-            <span class="text-gray-300 dark:text-gray-600">·</span>
-            <button type="button" class="hover:underline tabular-nums" @click="goToTab('failures', 'quarantine')">
-              {{ quarantineCount ?? 0 }} quarantined
-            </button>
-          </div>
-
-          <div class="flex items-center gap-1.5">
-            <FilterBar
-              v-model="filters"
-              :available-environments="availableEnvironments"
-              :available-branches="availableBranches"
+        <!-- The filters the header and every tab that reads run history follow -->
+        <FiltersBlock
+          inline
+          :summary="filtersSummary"
+          :resettable="filtersActive"
+          help="project.filters"
+          test-id="project-filters"
+          data-shot="project-filters"
+          @reset="resetFilters"
+        >
+          <FilterBar
+            v-model="filters"
+            :available-environments="availableEnvironments"
+            :available-branches="availableBranches"
+            branch-policy
+            :default-branch="defaultBranch"
+            :show-reset="false"
+          />
+          <template v-if="hiddenRuns.partial > 0 || hiddenRuns.otherBranches > 0" #notes>
+            <HiddenRunsNote
+              :partial-runs="hiddenRuns.partial"
+              :other-branch-runs="hiddenRuns.otherBranches"
+              @include-partial="includePartialRuns"
+              @all-branches="showAllBranches"
             />
-            <HelpHint topic="project.filters" />
-          </div>
-        </div>
+          </template>
+        </FiltersBlock>
 
         <!-- Desktop shell only (renders nothing without the IPC bridge). -->
         <DesktopProjectLinkCard :project-id="projectId" />
@@ -889,23 +934,6 @@ const moreMenuItems = computed(() => {
               Show every run
             </button>
           </p>
-          <UAlert
-            v-if="hiddenPartialRunsCount > 0"
-            icon="i-lucide-info"
-            color="primary"
-            variant="subtle"
-            class="mb-4"
-            data-testid="hidden-partial-runs"
-            :title="
-              hiddenPartialRunsCount === 1
-                ? '1 partial run is hidden'
-                : `${hiddenPartialRunsCount} partial runs are hidden`
-            "
-            description="The “Full runs only” filter hides runs that only cover part of the suite (e.g. a single spec or --grep)."
-            :actions="[
-              { label: 'Show them', color: 'primary', variant: 'solid', size: 'xs', onClick: showPartialRuns },
-            ]"
-          />
           <ChartCard
             v-if="filteredRuns.length > 0"
             title="Run trend"
@@ -1020,13 +1048,13 @@ const moreMenuItems = computed(() => {
                     >
                       Run #{{ row.original.id }}
                     </a>
-                    <UTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
+                    <DeferredTooltip v-if="row.original.keptAt" :text="describeKeep(row.original)">
                       <UIcon
                         name="i-lucide-lock"
                         class="size-3.5 shrink-0 text-muted"
                         :aria-label="`Run #${row.original.id} is kept forever`"
                       />
-                    </UTooltip>
+                    </DeferredTooltip>
                     <span v-if="row.original.label" class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-32">
                       {{ row.original.label }}
                     </span>
@@ -1043,13 +1071,13 @@ const moreMenuItems = computed(() => {
                   <span class="inline-flex items-center gap-1">Scope <HelpHint topic="run.partial" /></span>
                 </template>
                 <template #isFullRun-cell="{ row }">
-                  <UTooltip :text="scopeTooltip(row.original)">
+                  <DeferredTooltip :text="scopeTooltip(row.original)">
                     <UIcon
                       :name="row.original.isFullRun === false ? 'i-lucide-list-filter' : 'i-lucide-list-checks'"
                       class="size-4 shrink-0 cursor-help"
                       :class="row.original.isFullRun === false ? 'text-amber-500' : 'text-green-500'"
                     />
-                  </UTooltip>
+                  </DeferredTooltip>
                 </template>
                 <template #browsers-header>
                   <span class="sr-only">Browsers</span>
@@ -1109,71 +1137,25 @@ const moreMenuItems = computed(() => {
                 </template>
                 <template #actions-cell="{ row }">
                   <div class="flex justify-end">
-                    <UDropdownMenu :items="runMenuItems(row.original)" :content="{ align: 'end' }">
-                      <UButton
-                        size="xs"
-                        color="neutral"
-                        variant="ghost"
-                        icon="i-lucide-ellipsis-vertical"
-                        :aria-label="`Run #${row.original.id} actions`"
-                        @click.stop
-                      />
-                    </UDropdownMenu>
+                    <RunActionsMenu
+                      :label="`Run #${row.original.id} actions`"
+                      :items="() => runMenuItems(row.original)"
+                    />
                   </div>
                 </template>
               </UTable>
             </div>
 
-            <!-- Below md: one card per run -->
-            <div v-if="tableRuns.length > 0" class="space-y-2 md:hidden">
-              <div v-for="run in pagedRuns" :key="run.id" class="rounded-lg border border-default p-3 space-y-2">
-                <div class="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    :checked="isRunSelected(run.id)"
-                    class="cursor-pointer size-4 mt-1 accent-primary shrink-0"
-                    :aria-label="`Select run #${run.id}`"
-                    @click.stop="toggleRunSelection(run.id)"
-                  />
-                  <NuxtLink :to="`/test-runs/${run.id}`" class="flex-1 min-w-0 space-y-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <RunStatusBadge :status="run.status" />
-                      <span class="font-medium text-primary">Run #{{ run.id }}</span>
-                      <UIcon
-                        v-if="run.keptAt"
-                        name="i-lucide-lock"
-                        class="size-3.5 shrink-0 text-muted"
-                        :aria-label="`Run #${run.id} is kept forever`"
-                      />
-                      <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
-                    </div>
-                    <TestStatusBar
-                      :passed="run.passedTests"
-                      :failed="run.failedTests"
-                      :skipped="run.skippedTests"
-                      :fixme="run.fixmeTests ?? 0"
-                      :flaky="run.flakyTests"
-                      :did-not-run="run.didNotRunTests ?? 0"
-                      :total="run.totalTests"
-                    />
-                    <div class="flex items-center justify-between text-xs text-muted">
-                      <ClientDate :date="run.startTime" />
-                      <DurationValue :ms="run.duration" />
-                    </div>
-                  </NuxtLink>
-                  <UDropdownMenu :items="runMenuItems(run)" :content="{ align: 'end' }">
-                    <UButton
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-ellipsis-vertical"
-                      :aria-label="`Run #${run.id} actions`"
-                      @click.stop.prevent
-                    />
-                  </UDropdownMenu>
-                </div>
-              </div>
-            </div>
+            <!-- Below md: one card per run, hydrated only where it shows. No `>` in this
+                 tag: Nuxt's lazy-hydration transform reads it with a parser that stops there. -->
+            <LazyProjectRunCards
+              v-if="tableRuns.length"
+              hydrate-on-visible
+              :runs="pagedRuns"
+              :selected-run-ids="selectedRunIds"
+              :menu-items="runMenuItems"
+              @toggle="toggleRunSelection"
+            />
 
             <div v-if="tableRuns.length > RUNS_PAGE_SIZE" class="flex justify-center mt-3">
               <UPagination
@@ -1214,6 +1196,7 @@ const moreMenuItems = computed(() => {
           <ProjectTestCasesTable
             :project-id="projectId"
             :project-name="project?.name"
+            :scope="runScope"
             sync-query
             @total="testCasesTotal = $event"
           />
@@ -1254,6 +1237,7 @@ const moreMenuItems = computed(() => {
               :key="clustersRefreshKey"
               :project-id="String(projectId)"
               :initial-status="drill?.status ?? undefined"
+              :scope="runScope"
               @count="clustersCount.total = $event"
             />
           </template>
@@ -1261,8 +1245,7 @@ const moreMenuItems = computed(() => {
           <FlakyTestsList
             v-else-if="failureSegment === 'flaky'"
             :project-id="String(projectId)"
-            :environment="flakyEnvironment"
-            :branch="flakyBranch"
+            :scope="runScope"
             :project-name="project?.name"
             @count="flakyCount = $event"
             @quarantined="refreshQuarantineCount"
@@ -1279,12 +1262,7 @@ const moreMenuItems = computed(() => {
 
         <!-- FLAKE LAB TAB -->
         <div v-if="activeTab === 'flake-lab'">
-          <FlakeLabPanel
-            :project-id="Number(projectId)"
-            :environment="flakyEnvironment"
-            :branch="flakyBranch"
-            :project-name="project?.name"
-          />
+          <FlakeLabPanel :project-id="Number(projectId)" :scope="runScope" :project-name="project?.name" />
         </div>
 
         <!-- GAPS TAB -->
@@ -1294,17 +1272,21 @@ const moreMenuItems = computed(() => {
 
         <!-- PERFORMANCE TAB -->
         <div v-if="activeTab === 'performance'" class="space-y-4">
-          <div class="flex flex-wrap items-center gap-3">
-            <span class="text-sm text-muted shrink-0">Period:</span>
-            <USelect v-model="perfRunsWindow" :items="RUNS_WINDOW_OPTIONS" size="sm" class="w-40" />
-          </div>
-
           <ChartCard
             title="Performance trend"
             subtitle="Duration metrics per run, newest on the right"
             help="project.performance"
             data-shot="performance-trend"
           >
+            <template #actions>
+              <USelect
+                v-model="perfRunsWindow"
+                :items="RUNS_WINDOW_OPTIONS"
+                size="xs"
+                class="w-36"
+                aria-label="Runs in the trend"
+              />
+            </template>
             <LoadingState v-if="performanceInitialLoading" text="Loading chart…" />
             <PerformanceTrendChart
               v-else
@@ -1385,7 +1367,7 @@ const moreMenuItems = computed(() => {
             <div v-else class="text-center py-8 text-gray-500">No slow test data available yet.</div>
           </UCard>
 
-          <TimeoutOpportunitiesTable :project-id="String(projectId)" :project-name="project?.name" />
+          <TimeoutOpportunitiesTable :project-id="String(projectId)" :project-name="project?.name" :scope="runScope" />
 
           <ProjectSlowEndpoints
             v-model:run-id="slowEndpointsRunId"
