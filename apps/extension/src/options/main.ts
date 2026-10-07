@@ -40,6 +40,7 @@ import { clearCachedLocatorIndexes } from '../shared/locator-index-cache.js';
 import { clearLocatorBranchOverrides } from '../shared/locator-branch.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
 import { clearRecordIntent } from '../shared/recording-storage.js';
+import { hostPattern } from '../shared/web-origin.js';
 import {
   LANGUAGES,
   browserCatalogLanguage,
@@ -179,7 +180,7 @@ function setPill(pill: HTMLElement, on: boolean, onKey: MessageKey, offKey: Mess
 function requestInstanceHostPermission(instanceUrl: string): Promise<boolean> {
   try {
     const origin = new URL(instanceUrl).origin;
-    return requestOrigins([`${origin}/*`]);
+    return requestOrigins([hostPattern(origin)]);
   } catch {
     return Promise.resolve(false);
   }
@@ -931,7 +932,7 @@ async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> 
   } catch {
     return;
   }
-  await chrome.permissions.remove({ origins: [`${origin}/*`] }).catch(() => undefined);
+  await chrome.permissions.remove({ origins: [hostPattern(origin)] }).catch(() => undefined);
 }
 
 disconnectBtn.addEventListener('click', () => {
@@ -1128,7 +1129,7 @@ desktopPairBtn.addEventListener('click', () => {
     setDesktopStatus(t('options_desktopNotLoopback'), 'error');
     return;
   }
-  const granted = requestOrigins([`${url}/*`]);
+  const granted = requestOrigins([hostPattern(url)]);
   // Disabled until this pairing ends, so a second click starts no second one.
   desktopPairBtn.disabled = true;
   void (async () => {
@@ -1195,7 +1196,7 @@ desktopSaveBtn.addEventListener('click', () => {
     return;
   }
   // Asked first, while the click still counts as a user gesture; the one loopback origin only.
-  const granted = requestOrigins([`${url}/*`]);
+  const granted = requestOrigins([hostPattern(url)]);
   whileRunning(desktopSaveBtn, async () => {
     if (!(await granted)) {
       setDesktopStatus(t('options_desktopNeedsAccess'), 'error');
@@ -1210,7 +1211,7 @@ desktopForgetBtn.addEventListener('click', () => {
   void (async () => {
     const desktop = await getDesktopSettings();
     await clearDesktopSettings();
-    if (desktop) await chrome.permissions.remove({ origins: [`${desktop.url}/*`] }).catch(() => false);
+    if (desktop) await chrome.permissions.remove({ origins: [hostPattern(desktop.url)] }).catch(() => false);
     desktopTokenEl.value = '';
     setDesktopStatus(t('options_desktopForgotten'), 'ok');
     await renderDesktopState();
