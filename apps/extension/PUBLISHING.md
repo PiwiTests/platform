@@ -60,7 +60,7 @@ Not urgent, because Edge users are already served: opening the Chrome Web Store 
 ```json
 "browser_specific_settings": {
   "gecko": {
-    "id": "piwi-picker@piwitests.dev",
+    "id": "picker@piwitests.dev",
     "strict_min_version": "140.0",
     "data_collection_permissions": { "required": ["none"] }
   }
