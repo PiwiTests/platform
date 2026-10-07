@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
+import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -294,7 +294,13 @@ export default defineNuxtConfig({
     prefetchPreloadTags: true,
   },
 
-  compatibilityDate: '2025-02-23',
+  compatibilityDate: '2026-10-07',
+
+  // Pre-render /_openapi.json so it ships as a static file in the demo.
+  // Nitro's built-in OpenAPI handler reads compiled route metadata (from
+  // defineRouteMeta transforms) and writes the full spec to
+  // .output/public/_openapi.json, which the /docs page fetches at runtime.
+  prerender: isDemo ? { routes: ['/_openapi.json'] } : undefined,
 
   nitro: {
     hooks: {
@@ -307,11 +313,8 @@ export default defineNuxtConfig({
         types.routes = {};
       },
     },
-    // Pre-render /_openapi.json so it ships as a static file in the demo.
-    // Nitro's built-in OpenAPI handler reads compiled route metadata (from
-    // defineRouteMeta transforms) and writes the full spec to
-    // .output/public/_openapi.json, which the /docs page fetches at runtime.
-    prerender: isDemo ? { failOnError: false, routes: ['/_openapi.json'] } : undefined,
+    // Nitro-only prerender options; the routes are the top-level `prerender`.
+    prerender: isDemo ? { failOnError: false } : undefined,
     // The demo's prerender cache lives in memory (a generate run discards it
     // anyway), so the prerenderer never imports @nuxt/nitro-server's disk cache
     // driver, which it registers by file:// URL on Windows.
