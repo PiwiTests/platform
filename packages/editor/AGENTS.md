@@ -169,6 +169,9 @@ needs the extension's sources, and a change to the recorder there changes what t
 - **The protocol is a contract.** A client of an older version talks to this server, and a published client's
   commands (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`) are named in `SummaryLine.command`. A change to `protocol.ts`
   lands with both clients in the same change, and a renamed request or command is a breaking change.
+- **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`): every
+  `cwd` the service hands a client (`piwi/runArgs`, `piwi/runSelection`, the trace, `piwi.runCommand` lines), never the
+  folder as the editor spelled it, which on Windows may carry a lower-case drive letter.
 - **Nothing blocks typing.** The project's indexes, failures, function catalog and vocabulary are fetched on the
   refresh timer, on `piwi/refresh` and after `piwi/setCredentials` (the failures also when a run ends, on the poll and
   on `piwi/refreshRun`), and requests answer from them. What belongs to one

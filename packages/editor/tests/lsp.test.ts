@@ -2173,6 +2173,48 @@ describe('the desktop app', () => {
   });
 });
 
+describe('the folder a command runs in', () => {
+  test('is the config folder as the file system spells it, whatever spelling the editor gave', async () => {
+    // A link stands for another spelling of the same folder, as `c:\…` for `C:\…` on Windows.
+    const linked = path.join(os.tmpdir(), `piwi-linked-${process.pid}`);
+    fs.rmSync(linked, { force: true });
+    fs.symlinkSync(dir, linked, 'dir');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopLinked = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    const linkedClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    linkedClient.listen();
+    try {
+      await linkedClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(linked).href, name: 'shop' }],
+      });
+      await linkedClient.sendNotification('initialized', {});
+      await waitFor(async () => {
+        const s = (await linkedClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts[0]?.connected ? s : undefined;
+      });
+      const spec = pathToFileURL(path.join(linked, 'tests/checkout.spec.ts')).href;
+      const command = (await linkedClient.sendRequest('piwi/runArgs', {
+        uri: spec,
+        testIds: [1],
+        breakpoints: [{ uri: spec, line: 2 }],
+      })) as RunCommand;
+      expect(command.cwd).toBe(fs.realpathSync.native(dir));
+      expect(command.env).toMatchObject({ PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3' });
+    } finally {
+      stopLinked();
+      linkedClient.dispose();
+      fs.rmSync(linked, { force: true });
+    }
+  });
+});
+
 describe('the baseline chosen in the editor', () => {
   let baselineClient: MessageConnection;
   let stopBaseline: () => void;

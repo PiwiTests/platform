@@ -98,6 +98,7 @@ import { DesktopJobs } from './desktop-jobs.js';
 import { RunWatch, newRunRef } from './run-watch.js';
 import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
+import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
   blockImports,
@@ -420,6 +421,15 @@ export function editorRunEnv(ref?: string): Record<string, string> {
 }
 
 /**
+ * The folder a command of a context runs in: the config's folder as the file system spells it (`canonicalPath`), so
+ * the project's Playwright and the config it loads resolve `@playwright/test` to one path whatever the case the
+ * editor gave the folder in (`c:\…` for `C:\…` on Windows).
+ */
+export function commandFolder(context: PiwiContext): string {
+  return canonicalPath(context.root);
+}
+
+/**
  * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
  * open its Flakiness tab, then the `piwi flake` commands it can run, each through
  * `piwi.runCommand` in the config's folder and reporting to the instance the
@@ -456,7 +466,7 @@ export function flakeLabLines(
           command: 'piwi.runCommand',
           arguments: [
             {
-              cwd: context.root,
+              cwd: commandFolder(context),
               command: withServerUrl(a.command, serverUrl, context.root, env),
               env: editorRunEnv(),
             } satisfies RunCommandArgs,
@@ -1595,7 +1605,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
               command: 'piwi.runCommand',
               arguments: [
                 {
-                  cwd: owner.root,
+                  cwd: commandFolder(owner),
                   command: fixPlan.verify.command,
                   env: editorRunEnv(),
                 } satisfies RunCommandArgs,
@@ -2083,7 +2093,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const ref = newRunRef();
     runWatch.watch(context, ref);
     const run: RunCommand = {
-      cwd: context.root,
+      cwd: commandFolder(context),
       args,
       command: command || `npx playwright test ${args.join(' ')}`,
       env: editorRunEnv(ref),
@@ -2131,7 +2141,13 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!context || !selection?.command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
-    const run: RunCommand = { cwd: context.root, command: selection.command, args: [], env: editorRunEnv(ref), ref };
+    const run: RunCommand = {
+      cwd: commandFolder(context),
+      command: selection.command,
+      args: [],
+      env: editorRunEnv(ref),
+      ref,
+    };
     return withBreakpoints(context, run, params.breakpoints);
   });
 
@@ -2179,7 +2195,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       if (!failure?.traces.length) continue;
       const trace = await context.evidence(failure.traces[failure.traces.length - 1]!);
       if (!trace) return null;
-      return { path: trace, cwd: context.root, command: `npx playwright show-trace "${trace}"` };
+      return { path: trace, cwd: commandFolder(context), command: `npx playwright show-trace "${trace}"` };
     }
     return null;
   });
