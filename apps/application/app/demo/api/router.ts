@@ -169,6 +169,7 @@ import {
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
   listSelections,
+  listResolvedSelections,
   getSelection,
   createSelection,
   updateSelection,
@@ -2283,9 +2284,16 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/selections$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { items: await listSelections(await getDemoDb(), +m[1]!) };
+      const resolve = query?.get('resolve');
+      const db = await getDemoDb();
+      return {
+        items:
+          resolve === 'true' || resolve === '1'
+            ? await listResolvedSelections(db, +m[1]!)
+            : await listSelections(db, +m[1]!),
+      };
     },
   },
   {
