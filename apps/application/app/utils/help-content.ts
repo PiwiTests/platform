@@ -505,6 +505,11 @@ export const HELP_TOPICS = {
     doc: 'features/ui-overview#test-run-detail',
     envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
   },
+  'run.shuffle': {
+    title: 'Shuffled run',
+    text: 'Playwright ran this run’s tests in a random order (--shuffle). Click the seed to copy --shuffle with it: a run with the same tests, workers and seed runs them in the same order again, to reproduce a failure that depends on which test ran before.',
+    doc: 'features/run-changes#shuffled-runs',
+  },
   'run.metadata': {
     title: 'Tags, links & custom data',
     text: 'Extra context attached to the run: tags for grouping, links to external issues, and any custom key/value data your reporter sent.',
