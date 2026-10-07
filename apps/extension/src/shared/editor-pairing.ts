@@ -8,6 +8,7 @@
  */
 import type { EditorPairing } from '@piwitests/core/editor-send';
 import { isExtensionContext, moveLegacySecret, secretArea, type SecretArea } from './secret-store.js';
+import { hostPattern } from './web-origin.js';
 
 const PAIRING_KEY = 'piwiEditorPairing';
 
@@ -56,5 +57,5 @@ export async function moveLegacyEditorPairing(area: SecretArea = secretArea()): 
 
 /** The host permission pattern for an editor's endpoint: its origin only. */
 export function editorOriginPattern(pairing: EditorPairing): string {
-  return `${new URL(pairing.url).origin}/*`;
+  return hostPattern(new URL(pairing.url).origin);
 }

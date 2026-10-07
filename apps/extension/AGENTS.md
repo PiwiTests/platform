@@ -291,7 +291,10 @@ non-simple, so the browser preflights them. A granted host permission for the in
 is what actually makes the fetch work; the options page requests it inside the click (Connect, Save and test, Save,
 Refresh; a service worker has no user gesture and can never request one itself), calling `chrome.permissions.request`
 first, before anything is awaited: Firefox shows no prompt for a request made after an `await`, and an origin already
-granted answers true without one.
+granted answers true without one. Every host pattern built for an origin comes from `hostPattern` (`src/shared/web-origin.ts`),
+never `${origin}/*` by hand. Firefox accepts a pattern with a port (`http://localhost:3000/*`) and lists it as
+granted, but the pattern matches nothing (bug 1362809), so CORS still blocks the fetch. In Firefox only, `hostPattern` leaves
+the port out.
 
 `test-function-panel.ts` (+ its pure half, `test-function-scan.ts`) is the other consumer of
 the cached catalog: a standalone popup action ("Test functions") that scores every catalog

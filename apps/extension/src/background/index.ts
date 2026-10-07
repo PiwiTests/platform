@@ -19,6 +19,7 @@ import {
 import { parseSteps, sessionFromSteps } from '@piwitests/core/steps';
 import { postToEditor } from '../shared/piwi-client.js';
 import { editorOriginPattern, getEditorPairing } from '../shared/editor-pairing.js';
+import { hostPattern } from '../shared/web-origin.js';
 import { moveLegacySecrets } from '../shared/legacy-secrets.js';
 import type { SendToEditorResult } from '../shared/editor-send.js';
 import type { ScreenshotFailure } from '../shared/bug-storage.js';
@@ -700,7 +701,7 @@ function replayOriginPattern(origin: unknown): string | null {
   try {
     const url = new URL(origin);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    return url.origin === origin ? `${origin}/*` : null;
+    return url.origin === origin ? hostPattern(origin) : null;
   } catch {
     return null;
   }

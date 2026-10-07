@@ -2,6 +2,7 @@ import { sessionFromSteps } from '@piwitests/core/steps';
 import { conditionText } from '../shared/condition-words.js';
 import { t } from '../shared/i18n.js';
 import { getReplayState, updateReplayState, type ReplayState } from '../shared/replay-storage.js';
+import { hostPattern } from '../shared/web-origin.js';
 import { driverText, replayVerdict, stepGlyph, verdictText, type ReplayVerdict } from '../content/replay-core.js';
 import { stepRow, viewHead } from './panel-record.js';
 import { button, el, emptyState } from './ui.js';
@@ -18,7 +19,7 @@ const REPLAY_WAKE_MESSAGE = 'piwi-replay-wake';
 async function notifyReplay(origin: string, wake: boolean | 'waiting'): Promise<void> {
   let tabs: chrome.tabs.Tab[] = [];
   try {
-    tabs = await chrome.tabs.query({ url: `${origin}/*` });
+    tabs = await chrome.tabs.query({ url: hostPattern(origin) });
   } catch {
     return;
   }

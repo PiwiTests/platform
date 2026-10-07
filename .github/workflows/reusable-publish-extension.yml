@@ -116,7 +116,7 @@ jobs:
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           metadata="piwi-picker-v$VERSION-amo-metadata.json"
-          if curl -sf -o /dev/null "https://addons.mozilla.org/api/v5/addons/addon/piwi-picker@piwitests.dev/"; then
+          if curl -sf -o /dev/null "https://addons.mozilla.org/api/v5/addons/addon/picker@piwitests.dev/"; then
             jq '{version}' "$metadata" > "$RUNNER_TEMP/amo-version-metadata.json"
             metadata="$RUNNER_TEMP/amo-version-metadata.json"
           fi
