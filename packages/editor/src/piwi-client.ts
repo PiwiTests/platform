@@ -437,36 +437,72 @@ export class PiwiClient {
     return { entries: body.entries ?? [], releaseAfter: body.releaseAfterConsecutivePasses ?? 0 };
   }
 
-  /** The tags and features the project's tests declare, and the Test Map's features. */
+  /**
+   * The tags and features the project's tests declare, and the Test Map's features. The catalog's search values hold
+   * them for every test; an instance without them is read for its first thousand tests instead.
+   */
   async vocabulary(projectId: number): Promise<{ tags: string[]; features: string[] }> {
-    const [catalog, map] = await Promise.all([
-      this.get<{ items?: Array<{ tags?: string[] | null; feature?: string | null }> }>(
-        `/api/projects/${projectId}/test-cases?limit=1000`,
-      ).catch(() => ({ items: [] })),
+    const [declared, map] = await Promise.all([
+      this.get<{ values?: { tag?: Array<{ value: string }>; feature?: Array<{ value: string }> } }>(
+        `/api/projects/${projectId}/test-cases/facets`,
+      )
+        .then((body) => ({
+          tags: (body.values?.tag ?? []).map((t) => t.value),
+          features: (body.values?.feature ?? []).map((f) => f.value),
+        }))
+        .catch(async (e: unknown) => {
+          if (!(e instanceof PiwiHttpError && e.status === 404)) throw e;
+          const catalog = await this.get<{ items?: Array<{ tags?: string[] | null; feature?: string | null }> }>(
+            `/api/projects/${projectId}/test-cases?limit=1000`,
+          );
+          const items = catalog.items ?? [];
+          return {
+            tags: items.flatMap((item) => item.tags ?? []),
+            features: items.flatMap((item) => (item.feature ? [item.feature] : [])),
+          };
+        })
+        .catch(() => ({ tags: [], features: [] })),
       this.get<{ features?: Array<{ key: string }> }>(`/api/projects/${projectId}/feature-map`).catch(() => ({
         features: [],
       })),
     ]);
-    const tags = new Set<string>();
-    const features = new Set<string>();
-    for (const item of catalog.items ?? []) {
-      for (const tag of item.tags ?? []) tags.add(tag);
-      if (item.feature) features.add(item.feature);
-    }
-    for (const f of map.features ?? []) features.add(f.key);
-    return { tags: [...tags].sort(), features: [...features].sort() };
+    const features = [...declared.features, ...(map.features ?? []).map((f) => f.key)];
+    return { tags: [...new Set(declared.tags)].sort(), features: [...new Set(features)].sort() };
   }
 
-  /** The project's saved and built-in selections. */
-  async selections(projectId: number): Promise<Array<{ key: string; name: string }>> {
-    const body = await this.get<{ items?: Array<{ key: string; name?: string | null }> }>(
-      `/api/projects/${projectId}/selections`,
+  /**
+   * The project's saved and built-in selections, the first `max` of them, each resolved now: its tests and the command
+   * that runs them. One request resolves them all; an instance that lists them without resolving them is asked for
+   * each in turn, and one it cannot resolve is left out.
+   */
+  async resolvedSelections(
+    projectId: number,
+    max: number,
+  ): Promise<Array<{ key: string; name: string; testCaseIds: number[]; command: string }>> {
+    const body = await this.get<{
+      items?: Array<{
+        key: string;
+        name?: string | null;
+        resolved?: { testCaseIds?: number[]; command?: string };
+      }>;
+    }>(`/api/projects/${projectId}/selections?resolve=true`);
+    const found = await Promise.all(
+      (body.items ?? []).slice(0, max).map(async (s) => {
+        const name = s.name || s.key;
+        if (s.resolved) {
+          return { key: s.key, name, testCaseIds: s.resolved.testCaseIds ?? [], command: s.resolved.command ?? '' };
+        }
+        const one = await this.resolveSelection(projectId, s.key).catch(() => null);
+        return one
+          ? { key: s.key, name, testCaseIds: one.tests.map((t) => t.testCaseId), command: one.materialization.command }
+          : null;
+      }),
     );
-    return (body.items ?? []).map((s) => ({ key: s.key, name: s.name || s.key }));
+    return found.filter((s): s is NonNullable<typeof s> => !!s);
   }
 
   /** A selection resolved now: its tests and the command that runs them. */
-  resolveSelection(
+  private resolveSelection(
     projectId: number,
     key: string,
   ): Promise<{ tests: Array<{ testCaseId: number }>; materialization: { args: string[]; command: string } }> {

@@ -170,6 +170,17 @@ let runsReads = 0;
 const BASELINE_KEY = 'pd_baseline';
 /** The query of each `branch-failures` read of that service. */
 const baselineReads: URLSearchParams[] = [];
+/**
+ * The API key of the service the tests of a slow instance start: the stub answers it as an instance from before the
+ * catalog's search values and the selections resolved together, and holds its flake-lab and selections reads until a
+ * test lets them through.
+ */
+const SLOW_KEY = 'pd_slow';
+/** Lets the reads that service's stub holds through; null once called. */
+let releaseSlow: (() => void) | null = null;
+const slowReleased = new Promise<void>((resolve) => (releaseSlow = resolve));
+/** The reads that service's stub held. */
+let slowHeld = 0;
 
 function openEvents(res: http.ServerResponse): void {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -225,6 +236,12 @@ beforeAll(async () => {
     res.setHeader('Content-Type', 'application/json');
     const u = req.url ?? '';
     const runsKey = req.headers['x-api-key'] === RUNS_KEY;
+    const slowKey = req.headers['x-api-key'] === SLOW_KEY;
+    if (slowKey && releaseSlow && /^\/api\/projects\/7\/(flake-lab|selections)\b/.test(u)) {
+      slowHeld++;
+      void slowReleased.then(() => server.emit('request', req, res));
+      return;
+    }
     if (u === '/api/stream' && runsKey) {
       openEvents(res);
       instanceStreams.add(res);
@@ -280,7 +297,24 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/test-cases?limit=1000') {
+    if (u === '/api/projects/7/test-cases/facets') {
+      if (slowKey) {
+        res.statusCode = 404;
+        return res.end('{}');
+      }
+      return res.end(
+        JSON.stringify({
+          values: {
+            tag: [
+              { value: 'smoke', count: 2 },
+              { value: 'checkout', count: 1 },
+            ],
+            feature: [{ value: 'Payments', count: 1 }],
+          },
+        }),
+      );
+    }
+    if (u === '/api/projects/7/test-cases?limit=1000' && slowKey) {
       return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
     }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Frows.spec.ts') {
@@ -455,17 +489,19 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/selections') {
-      return res.end(
-        JSON.stringify({
-          items: [
-            { key: 'smoke', name: 'Smoke' },
-            { key: 'failed', name: null },
-          ],
-        }),
-      );
+    if (u === '/api/projects/7/selections?resolve=true') {
+      const items = [
+        {
+          key: 'smoke',
+          name: 'Smoke',
+          resolved: { testCaseIds: [1], command: 'npx playwright test tests/checkout.spec.ts:3' },
+        },
+        { key: 'failed', name: null, resolved: { testCaseIds: [3], command: 'npx playwright test --grep x' } },
+      ];
+      // An instance that does not read `resolve` lists the selections alone.
+      return res.end(JSON.stringify({ items: slowKey ? items.map(({ resolved: _, ...s }) => s) : items }));
     }
-    if (u === '/api/projects/7/selections/smoke/resolve') {
+    if (u === '/api/projects/7/selections/smoke/resolve' && slowKey) {
       return res.end(
         JSON.stringify({
           tests: [{ testCaseId: 1 }],
@@ -476,7 +512,7 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/selections/failed/resolve') {
+    if (u === '/api/projects/7/selections/failed/resolve' && slowKey) {
       return res.end(
         JSON.stringify({
           tests: [{ testCaseId: 3 }],
@@ -2351,6 +2387,84 @@ describe('the baseline chosen in the editor', () => {
 
     await baselineClient.sendNotification('piwi/setCredentials', { baselines: {} });
     expect((await statusWith('CI run #41 on main')).baseline?.choice).toEqual({ kind: 'ladder' });
+  });
+});
+
+describe('an instance slow to answer the indexes', () => {
+  let slowClient: MessageConnection;
+  let stopSlow: () => void;
+  const slowPublished = new Map<string, Array<{ message: string; code?: string }>>();
+  const selectionsOf = async () =>
+    ((await slowClient.sendRequest('piwi/selections', { uri: uri('tests/checkout.spec.ts') })) as { items: unknown[] })
+      .items;
+
+  beforeAll(async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopSlow = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: SLOW_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    slowClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    slowClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      slowPublished.set(p.uri, p.diagnostics);
+    });
+    slowClient.listen();
+    await slowClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+    });
+    await slowClient.sendNotification('initialized', {});
+  });
+
+  afterAll(() => {
+    releaseSlow?.();
+    stopSlow?.();
+    slowClient?.dispose();
+  });
+
+  test('the latest run’s failures show while the indexes read after it are still on their way', async () => {
+    const failure = await waitFor(() =>
+      [...slowPublished.values()].flat().find((d) => d.code === 'ci-failure' && d.message.includes('#41')),
+    );
+    expect(failure.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, run #41)");
+    // The flake-lab and selections reads are still held.
+    await waitFor(() => (slowHeld >= 2 ? true : undefined));
+    expect(releaseSlow).not.toBeNull();
+    const status = (await slowClient.sendRequest('piwi/status')) as StatusResult;
+    expect(status.contexts[0]).toMatchObject({ connected: true, projectName: 'Acme Mugs', problem: null });
+    expect(await selectionsOf()).toEqual([]);
+  });
+
+  test('an instance that neither resolves the selections together nor lists search values is read as before', async () => {
+    releaseSlow!();
+    releaseSlow = null;
+    const items = await waitFor(async () => {
+      const listed = await selectionsOf();
+      return listed.length ? listed : undefined;
+    });
+    expect(items).toEqual([
+      { key: 'smoke', name: 'Smoke', count: 1, includesFile: true },
+      { key: 'failed', name: 'failed', count: 1, includesFile: false },
+    ]);
+    const text =
+      "import { test } from '@playwright/test';\n\ntest('pays', { tag: ['@sm'] }, async ({ page }) => {});\n";
+    await slowClient.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: uri('tests/checkout.spec.ts'), languageId: 'typescript', version: 1, text },
+    });
+    const tags = (await slowClient.sendRequest('textDocument/completion', {
+      textDocument: { uri: uri('tests/checkout.spec.ts') },
+      position: { line: 2, character: text.split('\n')[2]!.indexOf("'@sm'") + 4 },
+    })) as Array<{ label: string }>;
+    expect(tags.map((i) => i.label)).toEqual(['@checkout', '@smoke']);
   });
 });
 

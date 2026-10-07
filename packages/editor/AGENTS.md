@@ -179,6 +179,12 @@ needs the extension's sources, and a change to the recorder there changes what t
   fetched once, when first needed, and kept: only the diagnostics or the quick fix that need it wait for it. A
   failure's files at its run's commit are read once too, and its diagnostics wait for nothing: the files as saved stand
   in until they are read.
+- **The failures come first on a refresh** (`PiwiContext.refresh`): the project and its locator index (the ladder
+  needs the default branch), then the latest run, whose failures and status are published at once (`onRun`); only then
+  the other indexes, side by side, each keeping what it held when its read fails. Their slow reads are one request
+  each: the selections resolved together (`selections?resolve=true`), the vocabulary from the catalog's search values
+  (`test-cases/facets`); an instance without them is read the old way (each selection's `resolve`, the first thousand
+  tests).
 - **The connection order is fixed** (`resolveContextConnection`): the desktop app while it runs when the editor
   chose it (`desktop` in `piwi/setCredentials`, kept on the user's machine: the app is theirs, so their choice comes
   first); then the named instance (`namedInstance`): the environment, the workspace `.env`, the editor's own settings

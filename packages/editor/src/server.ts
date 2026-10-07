@@ -1369,18 +1369,28 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     for (const c of contexts) c.baseline = parseBaselineChoice(baselines[c.root]) ?? { kind: 'ladder' };
   };
 
-  async function refreshAll(): Promise<void> {
-    await Promise.all(contexts.map((c) => c.refresh(env, credentials)));
-    runWatch.sync();
-    // A key the instance refused may be valid again: the streams it refused are opened again on each refresh.
-    runWatch.retryRefused();
-    runChanged();
+  /** Tell the client the contexts' status when it changed. */
+  const statusChanged = () => {
     const next = currentStatus();
     const serialized = JSON.stringify(next);
     if (serialized !== lastStatus) {
       lastStatus = serialized;
       void connection.sendNotification(STATUS_NOTIFICATION, next);
     }
+  };
+
+  async function refreshAll(): Promise<void> {
+    // A context's failures are published once its run is read, without waiting for the indexes read after it.
+    const runRead = () => {
+      runChanged();
+      statusChanged();
+    };
+    await Promise.all(contexts.map((c) => c.refresh(env, credentials, runRead)));
+    runWatch.sync();
+    // A key the instance refused may be valid again: the streams it refused are opened again on each refresh.
+    runWatch.retryRefused();
+    runChanged();
+    statusChanged();
     for (const document of documents.all()) schedule(document, 0);
   }
 

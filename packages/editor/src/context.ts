@@ -354,10 +354,11 @@ export class PiwiContext {
   }
 
   /**
-   * Resolve the connection and project, then fetch the indexes. Never throws:
-   * a failure is kept in `problem`, and cached data stays.
+   * Resolve the connection and project, read the latest run (then `onRun` is called, so its failures show before the
+   * rest arrives), then fetch the other indexes side by side. Never throws: a failure is kept in `problem`, and cached
+   * data stays.
    */
-  async refresh(env: Record<string, string | undefined>, editor: EditorCredentials): Promise<void> {
+  async refresh(env: Record<string, string | undefined>, editor: EditorCredentials, onRun?: () => void): Promise<void> {
     this.repoRoot = await repositoryRoot(this.root);
     this.reporterVersion = reporterVersion(this.root, this.repoRoot);
     const head = await headCommit(this.repoRoot);
@@ -405,46 +406,56 @@ export class PiwiContext {
           ? checkedOut
           : null;
       this.index = this.branch ? await this.client.locatorIndex(this.project.id, this.branch) : index;
-      this.codeIndex = await this.client.codeIndex(this.project.id, this.branch).catch(() => null);
-      const flaky = await this.client.flakyTests(this.project.id, this.branch).catch(() => null);
-      if (flaky) this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]));
-      const flakeLab = await this.client.flakeLab(this.project.id, this.branch).catch(() => null);
-      if (flakeLab) this.flakeLab = new Map(flakeLab.map((t) => [t.testCaseId, t]));
-      const quarantine = await this.client.quarantine(this.project.id).catch(() => null);
-      if (quarantine) {
-        this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
-        this.releaseAfter = quarantine.releaseAfter;
-      }
-      const selections = await this.client.selections(this.project.id).catch(() => null);
-      if (selections) {
-        const project = this.project;
-        const client = this.client;
-        this.selections = (
-          await Promise.all(
-            selections.slice(0, MAX_SELECTIONS).map(async (s) => {
-              const resolved = await client.resolveSelection(project.id, s.key).catch(() => null);
-              return resolved
-                ? {
-                    key: s.key,
-                    name: s.name,
-                    tests: new Set(resolved.tests.map((t) => t.testCaseId)),
-                    command: resolved.materialization.command,
-                  }
-                : null;
-            }),
-          )
-        ).filter((s): s is NonNullable<typeof s> => !!s);
-      }
-      const timeouts = await this.client.timeoutOpportunities(this.project.id).catch(() => null);
-      if (timeouts) this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]));
+      // The failures first: what the other indexes add to them comes once they answer.
+      this.problem = null;
+      await this.refreshRun();
+      onRun?.();
+      const client = this.client;
+      const projectId = this.project.id;
       this.catalog.clear();
       this.alternatives.clear();
       this.functions = null;
       this.words = null;
-      // Completion reads these: fetched here, so no keystroke waits on them.
-      await Promise.all([this.functionCatalog(), this.vocabulary()]);
-      this.problem = null;
-      await this.refreshRun();
+      await Promise.all([
+        client
+          .codeIndex(projectId, this.branch)
+          .catch(() => null)
+          .then((codeIndex) => (this.codeIndex = codeIndex)),
+        client
+          .flakyTests(projectId, this.branch)
+          .then((flaky) => (this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]))))
+          .catch(() => {}),
+        client
+          .flakeLab(projectId, this.branch)
+          .then((flakeLab) => (this.flakeLab = new Map(flakeLab.map((t) => [t.testCaseId, t]))))
+          .catch(() => {}),
+        client
+          .quarantine(projectId)
+          .then((quarantine) => {
+            this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
+            this.releaseAfter = quarantine.releaseAfter;
+          })
+          .catch(() => {}),
+        client
+          .resolvedSelections(projectId, MAX_SELECTIONS)
+          .then(
+            (selections) =>
+              (this.selections = selections.map((s) => ({
+                key: s.key,
+                name: s.name,
+                tests: new Set(s.testCaseIds),
+                command: s.command,
+              }))),
+          )
+          .catch(() => {}),
+        client
+          .timeoutOpportunities(projectId)
+          .then((timeouts) => (this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]))))
+          .catch(() => {}),
+        // Completion reads these: fetched here, so no keystroke waits on them.
+        this.functionCatalog(),
+        this.vocabulary(),
+      ]);
     } catch (e) {
       const refused = e instanceof PiwiHttpError && (e.status === 401 || e.status === 403);
       this.problem = refused
