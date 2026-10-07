@@ -23,6 +23,7 @@ vi.mock('../../server/storage', () => ({
 // PIWI_DATABASE_URL is set, so clear it before importing the handlers.
 delete process.env.PIWI_DATABASE_URL;
 const lab = await import('../../shared/handlers/flake-lab');
+const { getFlakeProfileSummaries } = await import('../../shared/handlers/flake-profile');
 const { deleteRunsByIds } = await import('../../server/utils/retention');
 
 const NOW = new Date('2026-09-28T12:00:00Z');
@@ -276,6 +277,19 @@ describe('the reproduce plan', () => {
       expect(flaky.untestedSuspects).toBe(plan.suspects.length - 1);
       const plain = await lab.getProjectFlakeLab(db as never, 1, { now: NOW });
       expect(plain.tests.find((t) => t.testCaseId === FLAKY)!.suspect).toBeUndefined();
+      // The server reads the profiles through its cache: one call for every listed test.
+      const asked: number[][] = [];
+      const kept = await lab.getProjectFlakeLab(db as never, 1, {
+        suspects: true,
+        now: NOW,
+        profiles: async (ids) => {
+          asked.push(ids);
+          return getFlakeProfileSummaries(db as never, ids, { now: NOW });
+        },
+      });
+      expect(asked).toHaveLength(1);
+      expect(asked[0]).toContain(FLAKY);
+      expect(kept.tests.find((t) => t.testCaseId === FLAKY)!.suspect).toEqual(flaky.suspect);
     } finally {
       await db.delete(schema.flakeExperiments).where(eq(schema.flakeExperiments.id, row!.id));
     }
