@@ -60,17 +60,39 @@ const segments = computed<Segment[]>(() => {
 function isActive(status: string): boolean {
   return props.activeStatuses.includes(status);
 }
+
+// The segments reach the track's right end once every test has an outcome;
+// while a run is live the not-yet-run remainder is bare track.
+const fillsTrack = computed(() => segments.value.reduce((sum, s) => sum + s.count, 0) >= props.total);
+
+/**
+ * The track does not clip its segments (an active one grows taller than it),
+ * so the segments at its ends round its corners themselves, with a minimum
+ * width so a tiny end segment still holds the whole curve. An active segment
+ * grows vertically only, centred on the track, its inner corners softened.
+ */
+function segmentClass(seg: Segment, index: number): string[] {
+  const active = isActive(seg.status);
+  const first = index === 0;
+  const last = index === segments.value.length - 1 && fillsTrack.value;
+  return [
+    seg.palette.bg,
+    active ? 'h-4' : 'h-2.5',
+    first ? 'rounded-l-full min-w-1.5' : active ? 'rounded-l-sm' : '',
+    last ? 'rounded-r-full min-w-1.5' : active ? 'rounded-r-sm' : '',
+  ];
+}
 </script>
 
 <template>
   <div v-if="total > 0" class="space-y-1.5">
-    <div class="flex gap-0.5 h-2.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+    <div class="flex items-center gap-0.5 h-2.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-700">
       <button
-        v-for="seg in segments"
+        v-for="(seg, index) in segments"
         :key="seg.key"
         type="button"
-        class="h-full transition-all cursor-pointer"
-        :class="[seg.palette.bg, isActive(seg.status) ? ['ring-2', seg.palette.ring] : '']"
+        class="transition-all cursor-pointer"
+        :class="segmentClass(seg, index)"
         :style="{ width: (seg.count / total) * 100 + '%' }"
         :aria-label="`${seg.count} ${seg.label}`"
         :aria-pressed="isActive(seg.status)"
