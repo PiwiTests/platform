@@ -2,16 +2,15 @@
  * The search language of the test lists (`#shared/test-search`) as SQL
  * predicates, for a list the server pages. It follows the in-memory matcher
  * term for term: text fields match anywhere inside the value with `*` as a
- * wildcard, the others match a whole value, case never matters, and repeated
- * single-value qualifiers widen.
+ * wildcard, the others match a whole value, case and accents never matter
+ * (`foldedContains` / `foldedEquals`), and repeated single-value qualifiers
+ * widen.
  *
- * Both sides of every comparison go through the database's own `lower()`, so
- * a value typed in the stored case always matches (SQLite only folds ASCII
- * letters). A NULL column compares as an empty value, so an exclusion
- * (`-owner:alice`) keeps the rows with no value, as the in-memory matcher does.
+ * A NULL column compares as an empty value, so an exclusion (`-owner:alice`)
+ * keeps the rows with no value, as the in-memory matcher does.
  */
 import { not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
-import { escapeLikePattern } from '#shared/utils/tag-filter';
+import { foldedContains, foldedEquals } from '#shared/utils/fold-text-sql';
 import { freeTextFields, testSearchFieldDef, type TestSearchField, type TestSearchQuery } from '#shared/test-search';
 
 /**
@@ -25,19 +24,17 @@ const JSON_ARRAY_FIELDS: ReadonlySet<TestSearchField> = new Set(['tag', 'lock'])
 
 /** `value` anywhere in the column, `*` as a wildcard. */
 function containsPredicate(column: SQLWrapper, value: string): SQL {
-  const pattern = `%${escapeLikePattern(value).replace(/\*/g, '%')}%`;
-  return sql`lower(COALESCE(${column}, '')) LIKE lower(${pattern}) ESCAPE '\\'`;
+  return foldedContains(sql`COALESCE(${column}, '')`, value, { wildcard: true });
 }
 
 /** The column holds exactly `value`. */
 function exactPredicate(column: SQLWrapper, value: string): SQL {
-  return sql`lower(COALESCE(${column}, '')) = lower(${value})`;
+  return foldedEquals(sql`COALESCE(${column}, '')`, value);
 }
 
 /** The JSON array column has an element equal to `value`: the JSON-encoded element, quotes included. */
 function arrayElementPredicate(column: SQLWrapper, value: string): SQL {
-  const pattern = `%${escapeLikePattern(JSON.stringify(value))}%`;
-  return sql`lower(COALESCE(CAST(${column} AS TEXT), '')) LIKE lower(${pattern}) ESCAPE '\\'`;
+  return foldedContains(sql`COALESCE(CAST(${column} AS TEXT), '')`, JSON.stringify(value));
 }
 
 function fieldPredicate(field: TestSearchField, value: string, columns: TestSearchColumns): SQL | null {

@@ -322,7 +322,10 @@ export const MCP_TOOL_DEFS = [
       type: 'object',
       properties: {
         projectId: { type: 'number', description: 'Project ID' },
-        q: { type: 'string', description: 'Search query — matched against title and file path (case-insensitive)' },
+        q: {
+          type: 'string',
+          description: 'Search query — matched against title and file path, ignoring case and accents',
+        },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
         cursor: { type: 'string', description: 'Opaque cursor from a previous response to get the next page' },
       },

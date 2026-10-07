@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
+import { foldText } from '#shared/utils/fold-text';
 
 useHead({ title: 'Projects — Piwi Dashboard' });
 
@@ -39,8 +40,8 @@ const filteredProjects = computed(() => {
   let result = projects.value || [];
 
   if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase();
-    result = result.filter((p) => (p.label || p.name).toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+    const q = foldText(searchQuery.value.trim());
+    result = result.filter((p) => foldText(p.label || p.name).includes(q) || foldText(p.name).includes(q));
   }
 
   if (selectedTagIds.value.length > 0) {

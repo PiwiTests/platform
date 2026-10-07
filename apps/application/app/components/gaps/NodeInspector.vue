@@ -8,6 +8,7 @@
  * node itself close the list.
  */
 import { compareBySeverity, gapClassBadgeColor } from '~/utils/gap-classes';
+import { foldText } from '#shared/utils/fold-text';
 
 interface GraphNode {
   kind: string;
@@ -57,10 +58,10 @@ function relations(n: GraphNode): string {
 }
 
 const groups = computed(() => {
-  const q = filter.value.trim().toLowerCase();
+  const q = foldText(filter.value.trim());
   const byKind = new Map<string, GraphNode[]>();
   for (const n of props.neighbors) {
-    if (q && !shown(n).toLowerCase().includes(q) && !n.kind.includes(q)) continue;
+    if (q && !foldText(shown(n)).includes(q) && !n.kind.includes(q)) continue;
     const arr = byKind.get(n.kind) ?? [];
     arr.push(n);
     byKind.set(n.kind, arr);

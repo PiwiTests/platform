@@ -1,6 +1,6 @@
-import { and, or, eq, desc, inArray, sql, type SQLWrapper } from 'drizzle-orm';
+import { and, or, eq, desc, inArray, type SQLWrapper } from 'drizzle-orm';
 import { testRuns, testCases, projects } from '../../server/database/schema';
-import { escapeLikePattern } from '../utils/tag-filter';
+import { foldedContains } from '../utils/fold-text-sql';
 import type { DrizzleDB } from './db';
 
 type ProjectScope = 'all' | Set<number>;
@@ -14,9 +14,8 @@ export async function searchProjectsTestRunsCases(db: DrizzleDB, q: string, scop
   }
 
   const term = q.trim();
-  // A case-insensitive substring match on both dialects, with `%`, `_` and `\` in the term taken literally.
-  const pattern = `%${escapeLikePattern(term)}%`;
-  const matches = (column: SQLWrapper) => sql`lower(${column}) LIKE lower(${pattern}) ESCAPE '\\'`;
+  // A substring match that ignores case and accents, with every character of the term taken literally.
+  const matches = (column: SQLWrapper) => foldedContains(column, term);
   const runId = /^\d+$/.test(term) ? Number(term) : NaN;
   const isRunId = Number.isSafeInteger(runId) && runId <= MAX_SERIAL_ID;
   // The scope filters each query before its limit, so a caller's matches are never crowded out by other projects'.

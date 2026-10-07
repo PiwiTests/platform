@@ -5,6 +5,7 @@
  * where the Test Map is declined.
  */
 import { ANALYTICS_BANDS, ANALYTICS_WIDGETS, type AnalyticsWidgetId } from '#shared/analytics/registry';
+import { foldText } from '#shared/utils/fold-text';
 
 defineProps<{ bandTitle: string }>();
 const emit = defineEmits<{ add: [type: AnalyticsWidgetId]; closed: [] }>();
@@ -14,14 +15,14 @@ const { isHidden } = await useInstanceCapabilities();
 const search = ref('');
 
 const groups = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = foldText(search.value.trim());
   return ANALYTICS_BANDS.map((band) => ({
     label: band.label,
     widgets: ANALYTICS_WIDGETS.filter(
       (w) =>
         w.band === band.id &&
         (!('capability' in w) || !isHidden(w.capability)) &&
-        (!q || w.title.toLowerCase().includes(q) || w.description.toLowerCase().includes(q)),
+        (!q || foldText(w.title).includes(q) || foldText(w.description).includes(q)),
     ),
   })).filter((g) => g.widgets.length > 0);
 });

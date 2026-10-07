@@ -10,7 +10,8 @@
  *
  * Text fields (title, describe, file, error) match anywhere inside the value,
  * and `*` stands for any characters; the others (tag, lock, browser, owner,
- * priority, feature) match a whole value. Case never matters. Every term must
+ * priority, feature) match a whole value. Case and accents never matter
+ * (`foldText`). Every term must
  * match, except that repeating a qualifier of a field a test has one value of
  * (file, browser, owner, priority, feature) matches any of the values. A
  * qualifier the list does not know is read as a free word.
@@ -19,6 +20,8 @@
  * highlight matches and suggest completions) and the server (the catalog turns
  * the same terms into SQL), so a query means the same thing on both lists.
  */
+
+import { foldText, foldTextWithOffsets } from '#shared/utils/fold-text';
 
 export type TestSearchField =
   | 'file'
@@ -282,32 +285,29 @@ function escapeRegExp(text: string): string {
 
 /**
  * A contains-value as a matcher: its `*`-separated parts must appear in order,
- * anywhere in the text, ignoring case. Each part is found with a plain literal
- * search from where the last one ended, so the cost stays linear in the text
- * however many stars the value holds. Stars at either end add nothing (the
- * match is anywhere already), so a highlight covers only what the value names.
+ * anywhere in the text, ignoring case and accents. It reads folded text
+ * (`foldText`). Each part is found with a plain literal search from where the
+ * last one ended, so the cost stays linear in the text however many stars the
+ * value holds. Stars at either end add nothing (the match is anywhere already),
+ * so a highlight covers only what the value names.
  */
 interface ContainsMatcher {
-  /** The first span, from the start of its first part to the end of its last, at or after `from`. */
-  find(text: string, from?: number): [number, number] | null;
+  /** The first span of `folded`, from the start of its first part to the end of its last, at or after `from`. */
+  find(folded: string, from?: number): [number, number] | null;
 }
 
 function containsMatcher(value: string): ContainsMatcher {
-  const parts = value
-    .split('*')
-    .filter(Boolean)
-    .map((part) => new RegExp(escapeRegExp(part), 'gi'));
+  const parts = value.split('*').map(foldText).filter(Boolean);
   return {
-    find(text, from = 0) {
+    find(folded, from = 0) {
       if (parts.length === 0) return null;
       let at = from;
       let start = -1;
       for (const part of parts) {
-        part.lastIndex = at;
-        const hit = part.exec(text);
-        if (!hit) return null;
-        if (start < 0) start = hit.index;
-        at = hit.index + hit[0].length;
+        const hit = folded.indexOf(part, at);
+        if (hit < 0) return null;
+        if (start < 0) start = hit;
+        at = hit + part.length;
       }
       return [start, at];
     },
@@ -345,15 +345,16 @@ function termPredicate(term: TestSearchTerm, fields: readonly TestSearchField[])
   if (term.field === null) {
     const matcher = containsMatcher(term.value);
     const lookIn = freeTextFields(fields);
-    return (subject) => lookIn.some((field) => subjectTexts(subject, field).some((text) => !!matcher.find(text)));
+    return (subject) =>
+      lookIn.some((field) => subjectTexts(subject, field).some((text) => !!matcher.find(foldText(text))));
   }
   const field = term.field;
   if (testSearchFieldDef(field).match === 'contains') {
     const matcher = containsMatcher(term.value);
-    return (subject) => subjectTexts(subject, field).some((text) => !!matcher.find(text));
+    return (subject) => subjectTexts(subject, field).some((text) => !!matcher.find(foldText(text)));
   }
-  const wanted = term.value.toLowerCase();
-  return (subject) => subjectTexts(subject, field).some((text) => text.toLowerCase() === wanted);
+  const wanted = foldText(term.value);
+  return (subject) => subjectTexts(subject, field).some((text) => foldText(text) === wanted);
 }
 
 /**
@@ -406,12 +407,13 @@ export function testSearchHighlights(query: TestSearchQuery): TestSearchHighligh
 /** The `[start, end)` spans of `text` that match any pattern, sorted and merged. */
 export function highlightRanges(text: string, patterns: readonly string[] | null | undefined): Array<[number, number]> {
   if (!text || !patterns?.length) return [];
+  const folded = foldTextWithOffsets(text);
   const ranges: Array<[number, number]> = [];
   for (const value of patterns) {
     if (isBlankTerm(null, value)) continue;
     const matcher = containsMatcher(value);
-    for (let span = matcher.find(text); span; span = matcher.find(text, span[1])) {
-      ranges.push(span);
+    for (let span = matcher.find(folded.text); span; span = matcher.find(folded.text, span[1])) {
+      ranges.push([folded.starts[span[0]]!, folded.ends[span[1] - 1]!]);
     }
   }
   ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -499,7 +501,7 @@ function tokenAtCaret(tokens: TestSearchToken[], caret: number): TestSearchToken
 /** Better matches first: the whole value, then a prefix, then a word start, then anywhere. */
 function matchRank(value: string, typed: string): number {
   if (!typed) return 3;
-  const lower = value.toLowerCase();
+  const lower = foldText(value);
   if (lower === typed) return 0;
   if (lower.startsWith(typed)) return 1;
   if (new RegExp(`(^|[^a-z0-9])${escapeRegExp(typed)}`).test(lower)) return 2;
@@ -517,7 +519,7 @@ function byRank(a: RankedValue, b: RankedValue): number {
 
 function rankValues(values: TestSearchValue[], typed: string, used: ReadonlySet<string>, limit: number) {
   return values
-    .filter((entry) => !used.has(entry.value.toLowerCase()))
+    .filter((entry) => !used.has(foldText(entry.value)))
     .map((entry): RankedValue => ({ entry, rank: matchRank(entry.value, typed) }))
     .filter((ranked) => ranked.rank >= 0)
     .sort(byRank)
@@ -547,7 +549,7 @@ export function completeTestSearch(options: {
   for (const other of tokens) {
     if (other === token || !other.field) continue;
     const set = used.get(other.field) ?? new Set<string>();
-    set.add(termValue(other.field, other.value).toLowerCase());
+    set.add(foldText(termValue(other.field, other.value)));
     used.set(other.field, set);
   }
   const usedIn = (field: TestSearchField) => used.get(field) ?? new Set<string>();
@@ -562,13 +564,13 @@ export function completeTestSearch(options: {
 
   if (token.field) {
     const def = testSearchFieldDef(token.field);
-    const typed = termValue(token.field, token.value).toLowerCase();
+    const typed = foldText(termValue(token.field, token.value));
     const ranked = rankValues(values[token.field] ?? [], typed, usedIn(token.field), limit);
     return { ...base, suggestions: ranked.map(({ entry }) => valueSuggestion(def, entry)) };
   }
 
   if (token.quoted) return { ...base, suggestions: [] };
-  const typed = token.value.toLowerCase();
+  const typed = foldText(token.value);
   const defs = TEST_SEARCH_FIELD_DEFS.filter((def) => fields.includes(def.field));
   const keyMatches = defs
     .filter((def) => !typed || def.key.startsWith(typed) || def.aliases.some((alias) => alias.startsWith(typed)))
