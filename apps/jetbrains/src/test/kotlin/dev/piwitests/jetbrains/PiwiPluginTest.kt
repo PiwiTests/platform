@@ -398,7 +398,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 val specLines = server.fileSummary(UriParams(spec)).get(5, TimeUnit.SECONDS)?.lines.orEmpty()
                 val test = specLines.single { it.status != null }
                 assertEquals("failed", test.status)
-                assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900"), test.failure)
+                assertEquals(TestFailure(4, "not found", "Error: locator.click: Timeout 5000ms exceeded.", 900, "${stub.url}/test-run-cases/900", "failing"), test.failure)
                 assertEquals(
                     listOf(
                         Triple(4, "✗ not found", "piwi.openInDashboard"),
