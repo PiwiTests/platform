@@ -47,6 +47,7 @@ import {
 } from '#shared/locator-chain';
 import { isLabRun } from '#shared/handlers/probes';
 import { escapeLikePattern } from '#shared/utils/tag-filter';
+import { foldedContains } from '#shared/utils/fold-text-sql';
 import type { DrizzleDB } from '#shared/handlers/db';
 import type {
   ExecutionLocatorUse,
@@ -741,7 +742,7 @@ export async function getLocatorUsages(
               eq(locatorUsages.locator, value),
               sql`${locatorUsages.locator} LIKE ${`${escapeLikePattern(value)}.%`} ESCAPE '\\'`,
             )
-          : sql`lower(${locatorUsages.locator}) LIKE ${`%${escapeLikePattern(value.toLowerCase())}%`} ESCAPE '\\'`;
+          : foldedContains(locatorUsages.locator, value);
 
   const rows = await db
     .select({

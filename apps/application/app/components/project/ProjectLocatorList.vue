@@ -7,6 +7,7 @@
  */
 import type { LocatorIndex } from '#shared/locator-index';
 import { assessLocator, stabilityLabels } from '#shared/locator-stability';
+import { foldText } from '#shared/utils/fold-text';
 import type { LocatorStabilityFilter } from '~/utils/locator-stability';
 import { ALL_PAGES, formatPageList } from '~/utils/locator-pages';
 
@@ -51,12 +52,12 @@ const stabilityItems = computed(() => [
 ]);
 
 const rows = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = foldText(search.value.trim());
   return assessed.value
     .filter(({ entry, stability: s, pages }) => {
       if (stability.value !== 'all' && s?.level !== stability.value) return false;
       if (page.value !== ALL_PAGES && !pages.includes(page.value)) return false;
-      return !q || entry.locator.toLowerCase().includes(q);
+      return !q || foldText(entry.locator).includes(q);
     })
     .map(({ entry, stability: s, pages }) => ({
       entry,

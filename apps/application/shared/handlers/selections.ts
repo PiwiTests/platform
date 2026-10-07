@@ -13,6 +13,7 @@ import { testCases, testRunsCases, testSelections } from '../../server/database/
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
 import { eligibleExecutionSql } from '../run-eligibility';
+import { foldText } from '#shared/utils/fold-text';
 import {
   BUILTIN_SELECTIONS,
   getBuiltinSelection,
@@ -234,10 +235,10 @@ function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean 
     const posix = row.filePath.replace(/\\/g, '/');
     if (!group.files.some((g) => globToRegExp(g).test(posix))) return false;
   }
-  if (group.suitePath && !row.suitePath.toLowerCase().includes(group.suitePath.toLowerCase())) return false;
+  if (group.suitePath && !foldText(row.suitePath).includes(foldText(group.suitePath))) return false;
   if (group.text) {
-    const needle = group.text.toLowerCase();
-    if (!row.title.toLowerCase().includes(needle) && !row.filePath.toLowerCase().includes(needle)) return false;
+    const needle = foldText(group.text);
+    if (!foldText(row.title).includes(needle) && !foldText(row.filePath).includes(needle)) return false;
   }
   if (group.quarantined !== undefined && row.quarantined !== group.quarantined) return false;
   if (group.flaky !== undefined && row.flaky !== group.flaky) return false;

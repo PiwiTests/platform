@@ -36,8 +36,18 @@ export function installSnapshotPickerExtras() {
     }
     hintBoxes = [];
   }
+  // Case and accents never matter, as in `foldText` (`#shared/utils/fold-text`), which this serialized code cannot import.
   function norm(s) {
-    return (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return (s || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\u00f8\u0142\u0111\u0127\u0131]/g, function (c) {
+        return { '\u00f8': 'o', '\u0142': 'l', '\u0111': 'd', '\u0127': 'h', '\u0131': 'i' }[c];
+      })
+      .normalize('NFC');
   }
   function textMatches(hintText) {
     var q = norm(hintText);

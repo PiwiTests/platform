@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Search'],
     summary: 'Search across projects, test runs, and test cases',
     description:
-      'Case-insensitive search across project names/labels, run labels/IDs, and test case titles, within the projects the caller can open. Returns up to 5 results per category.',
+      'Search across project names/labels, run labels/IDs, and test case titles, ignoring case and accents, within the projects the caller can open. Returns up to 5 results per category.',
     parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string' } }],
     'x-required-permission': 'project:read',
   },
