@@ -43,8 +43,11 @@ export interface SummaryLine {
   failure?: TestFailure;
 }
 
-/** A test's latest result: `failed` when it failed in the latest run the service reads. */
-export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknown';
+/**
+ * A test's latest result: `failed` when it failed in the latest run the service reads; `running` while the run in
+ * progress the service follows runs it, and that run's result as soon as it ends the test.
+ */
+export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'running' | 'unknown';
 
 /**
  * Where and why a test failed. The lines above `line` (the reason, the screenshot, the trace) are
@@ -52,8 +55,8 @@ export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'unknow
  */
 export interface TestFailure {
   /**
-   * 0-based line of this file the failure went through: the innermost frame of the error's stack within
-   * the test, else within this file, else the `test(…)` line.
+   * 0-based line of this file the failure went through, followed through the edits since the run: the innermost
+   * frame of the error's stack within the test, else within this file, else the `test(…)` line.
    */
   line: number;
   /** One line on why it failed. */
@@ -63,6 +66,11 @@ export interface TestFailure {
   executionId: number;
   /** The execution's page in the dashboard. */
   url: string;
+  /**
+   * `edited` once the line the run failed at changed since (the test stays `failed` until a run covers it),
+   * `failing` otherwise. Absent from an older service.
+   */
+  state?: 'failing' | 'edited';
 }
 
 /** `piwi/fileSummary`: what to show above a file and above its test and locator lines. */
@@ -101,11 +109,22 @@ export interface TestsForFile {
 
 export const TESTS_FOR_FILE_REQUEST = 'piwi/testsForFile';
 
+/** A line breakpoint of the editor: the file and its 0-based line. */
+export interface EditorBreakpoint {
+  uri: string;
+  line: number;
+}
+
 /** `piwi/runArgs`: the command line that runs tests, as `piwi run` builds it. */
 export interface RunTestsArgs {
   /** Any file of the workspace the tests belong to, to pick the Playwright config. */
   uri: string;
   testIds: number[];
+  /**
+   * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
+   * locator action or assertion on their line, headed, with Piwi's pause bar (`PIWI_PAUSE_AT` in `RunCommand.env`).
+   */
+  breakpoints?: EditorBreakpoint[];
 }
 
 export interface RunCommand {
@@ -117,6 +136,16 @@ export interface RunCommand {
   args: string[];
   /** Environment variables to set on the command's process. */
   env?: Record<string, string>;
+  /**
+   * The ref the run carries (`PIWI_ORIGIN_REF` in `env`), by which the service finds and follows it: the client
+   * names it in `piwi/commandEnded` once the command ends. Absent from an older service.
+   */
+  ref?: string;
+  /**
+   * A sentence for the client to show once as a warning while the command runs anyway: breakpoints were passed to a
+   * project whose `@piwitests/reporter` does not pause at them. Absent otherwise.
+   */
+  notice?: string;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -187,6 +216,12 @@ export const DESKTOP_REQUEST = 'piwi/desktop';
 export const REFRESH_REQUEST = 'piwi/refresh';
 
 /**
+ * `piwi/refreshRun`: read each context's latest run, its failures and the run in progress again now, not the indexes
+ * `piwi/refresh` fetches; answers `RunStatusResult`.
+ */
+export const REFRESH_RUN_REQUEST = 'piwi/refreshRun';
+
+/**
  * `piwi/setCredentials` (notification): the connection the editor's own
  * settings hold, the API key from its secret store. `serverUrl` comes after
  * the environment and the workspace `.env`, and before the desktop app; with
@@ -204,9 +239,49 @@ export interface EditorCredentials {
   desktop?: boolean | null;
   /** The desktop app's project with `desktop`; without one, the project linked there to the folder. */
   desktopProject?: string | null;
+  /**
+   * The baseline chosen for each context, by its root (`piwi/setBaseline`), kept on this machine by the client and
+   * sent again with every `piwi/setCredentials` and in the initialization options, so a restarted service has it. When
+   * present, it replaces every choice the service holds: a context it does not name reads the ladder. Absent, the
+   * choices stay.
+   */
+  baselines?: Record<string, BaselineChoice> | null;
 }
 
 export const SET_CREDENTIALS_NOTIFICATION = 'piwi/setCredentials';
+
+/**
+ * The run the workspace is compared with: `ladder`, the latest complete run of the checked-out branch, a CI run first,
+ * else the default branch's, else the newest of any branch; `branch`, that branch's latest complete run; `run`, that
+ * run; `local`, a developer's own runs only (a machine, the desktop app, an editor), the newest complete one on the
+ * checked-out branch, else those runs alone with no baseline. Each reads the runs laid over it.
+ */
+export type BaselineChoice =
+  | { kind: 'ladder' }
+  | { kind: 'branch'; branch: string }
+  | { kind: 'run'; runId: number }
+  | { kind: 'local' };
+
+/** The baseline in force for a context, and the run it found, in a few words. */
+export interface Baseline {
+  choice: BaselineChoice;
+  /**
+   * `CI run #120 on feature/x`, `run #118 on main`, `your local runs only`, `local run #110 on feature/x`, `CI run #41,
+   * the newest run of any branch`; ending with `(no run)` when the choice found none: `release (no run)`.
+   */
+  label: string;
+}
+
+/**
+ * `piwi/setBaseline` (notification, client to server): the baseline chosen for the context at `root`, which the
+ * service reads at once. The client keeps it and sends it again in `EditorCredentials.baselines`.
+ */
+export interface SetBaselineParams {
+  root: string;
+  choice: BaselineChoice;
+}
+
+export const SET_BASELINE_NOTIFICATION = 'piwi/setBaseline';
 
 /** `piwi/trace`: download an execution's trace and return the command that opens it in Playwright's trace viewer. */
 export interface TraceParams {
@@ -234,7 +309,10 @@ export interface ScreenshotResult {
 
 export const SCREENSHOT_REQUEST = 'piwi/screenshot';
 
-/** The latest run on the checked-out branch of one workspace context. */
+/**
+ * The latest run on the checked-out branch of one workspace context: its latest complete run, and the later runs of
+ * that branch the service lays over it (a test re-run from an editor, a run on a developer's machine).
+ */
 export interface RunStatus {
   /** The Playwright config's directory. */
   root: string;
@@ -258,8 +336,67 @@ export interface RunStatus {
     /** The run's page in the dashboard. */
     url: string;
   } | null;
-  /** Failed executions the Problems panel lists for this run. */
+  /** Failed executions the Problems panel lists for this run, as the runs laid over it leave them. */
   failures: number;
+  /** The tests among those failures: a test failing on several Playwright projects counts once. */
+  failingTests?: number;
+  /** The tests that failed in `run` and passed since in a run laid over it, on every project they failed on. */
+  resolved?: number;
+  /** The runs of the branch since `run` that the service lays over it. */
+  overlays?: number;
+  /**
+   * The run in progress the context follows: the editor's own (`own`), wherever it runs, else one on `branch` or the
+   * checked-out branch. Null while none runs; it goes back to null in the notification that carries the failures read
+   * once it ended.
+   */
+  live?: LiveRun | null;
+  /**
+   * `live` while the instance's event stream is connected: the service learns that a run ended within a second, and
+   * reads the latest run every five minutes besides; `polling` otherwise, every minute.
+   */
+  stream?: 'live' | 'polling';
+  /** When the latest run was last read (ISO 8601); absent before the first read. */
+  updatedAt?: string;
+  /**
+   * The tests `live` began or ended, as its stream says, until the latest run is read once it ended; absent while it
+   * has none, and from an older service.
+   */
+  liveTests?: LiveTest[];
+  /**
+   * The version of `@piwitests/reporter` the project installs, read from `node_modules` at each refresh; null when
+   * none is found. Absent from an older service.
+   */
+  reporterVersion?: string | null;
+  /** The baseline chosen for this context and what it found; absent from an older service. */
+  baseline?: Baseline;
+  /**
+   * The branches a baseline can be chosen from: the default branch, then the branches with runs the project's locator
+   * index knows. Absent from an older service.
+   */
+  branches?: string[];
+}
+
+/** A test of the run in progress: `running` once it began, then its result. */
+export type LiveTestStatus = 'running' | 'passed' | 'failed' | 'flaky' | 'skipped';
+
+export interface LiveTest {
+  testCaseId: number;
+  status: LiveTestStatus;
+}
+
+/** A run in progress, as its events count it. */
+export interface LiveRun {
+  runId: number;
+  /** `running`, `initializing` or `finalizing`. */
+  status: string;
+  /** The tests that ended (passed, failed, flaky, skipped or not run) out of `total`. */
+  done: number;
+  total: number;
+  failed: number;
+  /** ISO 8601. */
+  startedAt: string;
+  /** Whether the editor started it: a command of `piwi/runArgs` or `piwi/runSelection`. */
+  own: boolean;
 }
 
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
@@ -271,6 +408,63 @@ export const RUN_STATUS_REQUEST = 'piwi/runStatus';
 
 /** `piwi/runStatusChanged` (notification, server to client): a context's latest run changed; carries `RunStatusResult`. */
 export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
+
+/**
+ * `piwi/commandStarted` (notification, client to server): the client sent the command of a `RunCommand` built with
+ * `ref` to a terminal. `terminalRef` is the ref of that terminal's environment when it is another one, which the run
+ * carries instead: the service does not look for `ref`, and recognizes the run by `terminalRef`.
+ */
+export interface CommandStartedParams {
+  ref: string;
+  terminalRef?: string;
+}
+
+export const COMMAND_STARTED_NOTIFICATION = 'piwi/commandStarted';
+
+/**
+ * `piwi/commandEnded` (notification, client to server): the command of a `RunCommand` with a `ref` ended, with its exit
+ * code when the client knows it. The service reads the run once more, and says in `piwi/notice` when no run carries
+ * the ref.
+ */
+export interface CommandEndedParams {
+  ref: string;
+  exitCode: number | null;
+}
+
+export const COMMAND_ENDED_NOTIFICATION = 'piwi/commandEnded';
+
+/**
+ * `piwi/runEnded` (notification, server to client): a run the editor started ended, and the latest run was read again
+ * with it. `fixed` counts the tests failing before it that it passed; `stillFailing` names the tests failing before it
+ * that it failed again, `newFailures` those it failed that were not failing before, each as `login.spec.ts › logs in`,
+ * at most five, with their counts in `stillFailingCount` and `newFailureCount`.
+ */
+export interface RunEnded {
+  root: string;
+  runId: number;
+  /** The run's page in the dashboard. */
+  url: string;
+  passed: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  fixed: number;
+  stillFailing: string[];
+  newFailures: string[];
+  stillFailingCount: number;
+  newFailureCount: number;
+}
+
+export const RUN_ENDED_NOTIFICATION = 'piwi/runEnded';
+
+/** `piwi/notice` (notification, server to client): a sentence for the client to show once, about the context at `root`. */
+export interface Notice {
+  root: string;
+  severity: 'information' | 'warning';
+  message: string;
+}
+
+export const NOTICE_NOTIFICATION = 'piwi/notice';
 
 /** An MCP server the editor's agent can register: Piwi's, with the connection the service already has. */
 export interface McpServerDefinition {
@@ -313,34 +507,137 @@ export interface RunSelectionParams {
   /** Any file of the workspace, to pick the Playwright config. */
   uri: string;
   key: string;
+  /** The editor's enabled line breakpoints, as in `RunTestsArgs`. */
+  breakpoints?: EditorBreakpoint[];
 }
 
 export const RUN_SELECTION_REQUEST = 'piwi/runSelection';
 
-/** A failure of the latest run, where it shows in the workspace. */
+/**
+ * A failure of the latest run, where it shows in the workspace, or a failure of that run that a later run passed
+ * (`state: 'fixed-locally'`), at its `test(…)` line.
+ */
 export interface WorkspaceFailure {
   /** The file the failure shows in: its failing call, else its `test(…)` line. */
   uri: string;
-  /** 0-based. */
+  /** 0-based, followed through the edits since the run. */
   line: number;
   title: string;
+  /** Null for a failure fixed since. */
   headline: string | null;
+  /** The execution that failed, or for a failure fixed since, the execution that passed. */
   executionId: number;
+  /** The run of `executionId`. */
   runId: number;
   /** The execution's page in the dashboard. */
   url: string;
   hasTrace: boolean;
+  /**
+   * `ci` when `runId` is a CI run, `own` when this editor started it, `local` when it ran elsewhere on a developer's
+   * machine, in the desktop app or an editor.
+   */
+  source?: 'ci' | 'local' | 'own';
+  /**
+   * `failing`; `edited` once the line the run failed at changed since; `fixed-locally` when a run laid over the
+   * latest complete run passed the test since.
+   */
+  state?: 'failing' | 'edited' | 'fixed-locally';
+  /** The Playwright project; null when unknown. */
+  browserName?: string | null;
+  /** The test's spec, relative to the Playwright config's folder, with forward slashes. */
+  file?: string;
+  /** How the execution failed: `failed` or `timedOut`. Absent for a failure fixed since. */
+  status?: 'failed' | 'timedOut';
+  testCaseId?: number;
+  /** The failure cluster the execution belongs to, and its title; null when it has none. */
+  clusterId?: number | null;
+  clusterTitle?: string | null;
+  /** The test's owner (`piwi:owner`, CODEOWNERS); null when it has none. */
+  owner?: string | null;
+  /** A new regression in the latest complete run, or a test that did not fail on this project there. */
+  isNew?: boolean;
+  /** In milliseconds; null when not recorded. */
+  duration?: number | null;
+  hasScreenshot?: boolean;
+}
+
+/** The latest complete run a context reads, as `piwi/failures` names it. */
+export interface FailuresRun {
+  id: number;
+  branch: string | null;
+  status: string;
+  /** ISO 8601. */
+  startTime: string;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  flakyTests: number;
+  skippedTests: number;
+  /** The run's page in the dashboard. */
+  url: string;
+  /** What launched it: `ci`, `ci-rerun`, `local`, `desktop`, `editor`…; absent from an older instance. */
+  origin?: string;
+  /** Whether the editor started it. */
+  own?: boolean;
+}
+
+/** A run laid over the latest complete run: a test re-run from an editor, a run on a developer's machine. */
+export interface FailuresOverlay {
+  id: number;
+  origin: string;
+  /** ISO 8601. */
+  startTime: string;
+  status: string;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  /** The run's page in the dashboard. */
+  url: string;
+  /** Whether the editor started it. */
+  own: boolean;
 }
 
 /**
  * `piwi/failures`: the failures of each context's latest run, for a client that lists them natively (the JetBrains
- * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics.
+ * IDEs publish diagnostics of open files only). The same failures are published as `ci-failure` diagnostics, an
+ * `edited` one as an information; a failure whose test's `test(…)` call left its spec is in neither. The failures a
+ * later run fixed (`fixed-locally`) follow them and publish none.
  */
 export interface FailuresResult {
   items: WorkspaceFailure[];
+  /**
+   * The baseline of the first context that has one, or runs laid over none (a developer's own runs only); null when
+   * only overlays are read. Absent from an older service.
+   */
+  run?: FailuresRun | null;
+  /** The runs of its branch laid over it, newest first. */
+  overlays?: FailuresOverlay[];
+  /** The baseline chosen for that context and what it found; absent from an older service. */
+  baseline?: Baseline;
+  /** When it was last read (ISO 8601). */
+  updatedAt?: string;
 }
 
 export const FAILURES_REQUEST = 'piwi/failures';
+
+/**
+ * `piwi/failuresChanged` (notification, server to client): what `piwi/failures` answers changed, such as a failure's
+ * line or state after an edit, or the failures of a run read again; carries `FailuresResult`.
+ */
+export const FAILURES_NOTIFICATION = 'piwi/failuresChanged';
+
+/** `piwi/agentContext`: one block about a failure for a coding agent: the failure, its healing and its fix plan. */
+export interface AgentContextParams {
+  /** Any file of the workspace the failure belongs to, to pick the Playwright config. */
+  uri: string;
+  executionId: number;
+}
+
+export interface AgentContextResult {
+  text: string;
+}
+
+export const AGENT_CONTEXT_REQUEST = 'piwi/agentContext';
 
 /**
  * `piwi/renderSteps`: a flow recorded in Piwi Picker (a steps document, as `piwi codegen` reads it) rendered as the
@@ -591,3 +888,29 @@ export interface ShareDesktopJobResult {
 }
 
 export const SHARE_DESKTOP_JOB_REQUEST = 'piwi/shareDesktopJob';
+
+/**
+ * `piwi/applyPick`: the edit that puts a locator picked while a run was paused at a breakpoint in place of the locator
+ * chain its line holds now. The file is `uri`, else `file`, a path relative to a Playwright config's folder as the run
+ * reported it (`@piwitests/core/editor-send`'s `at`), looked for under each config's folder; `line` is 0-based.
+ */
+export interface ApplyPickParams {
+  uri?: string;
+  file?: string;
+  line: number;
+  locator: string;
+}
+
+/**
+ * The file found (null when none is) and the edit on its line, as the file stands, open or saved: null when the line
+ * holds no locator, which the client then inserts at the cursor.
+ */
+export interface ApplyPickResult {
+  uri: string | null;
+  edit: {
+    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+    newText: string;
+  } | null;
+}
+
+export const APPLY_PICK_REQUEST = 'piwi/applyPick';

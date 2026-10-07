@@ -17,7 +17,13 @@
  * recorded a CI provider, and `local` otherwise.
  *
  * Local runs (a developer's machine, the desktop app, an editor) count like CI
- * runs, except as the editor's CI failures while a CI run exists on the branch.
+ * runs, except as the editor's CI failures while a CI run exists on the branch,
+ * and for a finished run's outbound effects (its notifications, pull-request
+ * comment and commit status, AI diagnosis and auto-heal): a run from an editor
+ * never sends them, and a run from a developer's machine or the desktop app
+ * sends them only when it ran the whole suite. A finished run's analysis (fix
+ * verification, change coverage, the hand-back outcomes) does not follow that
+ * rule: each step reads the run under its own use.
  */
 
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
@@ -51,6 +57,9 @@ export const INVESTIGATION_RUN_ORIGINS = ['bisect', 'reproduce'] as const satisf
 /** The origins of CI runs, which the editor shows as the branch's CI failures. */
 export const CI_RUN_ORIGINS = ['ci', 'ci-rerun'] as const satisfies readonly RunOriginKind[];
 
+/** The origins of a developer's own runs: their machine, the desktop app, an editor. */
+export const LOCAL_RUN_ORIGINS = ['local', 'desktop', 'editor'] as const satisfies readonly RunOriginKind[];
+
 const LAB_AND_INVESTIGATION: readonly RunOriginKind[] = [...LAB_RUN_ORIGINS, ...INVESTIGATION_RUN_ORIGINS];
 
 /** What a use reads runs for. */
@@ -61,6 +70,7 @@ export type RunUse =
   | 'flakiness'
   | 'selection-catalog'
   | 'branch-failures'
+  | 'editor-overlay'
   | 'change-coverage'
   | 'shared-state'
   | 'auto-heal'
@@ -75,6 +85,8 @@ export interface RunUseRule {
   excludesIncidents: boolean;
   /** Read only complete runs: the whole suite, finished. */
   completeOnly: boolean;
+  /** The origins whose runs this use reads only when complete; none when absent. */
+  completeOnlyFor?: readonly RunOriginKind[];
   /** Leave out a historical import: a report imported after newer runs were stored. */
   excludesHistoricalImports: boolean;
 }
@@ -83,7 +95,12 @@ export interface RunUseRule {
  * The rule per use. Further conditions stay with the use that owns them: fix
  * verification also needs a new commit on the cluster's branch or the default
  * branch, the editor's CI failures prefer a CI run on the branch
- * (`CI_RUN_ORIGINS`), and the bug-report lifecycle reads the default branch.
+ * (`CI_RUN_ORIGINS`), the runs the editor overlays on that run are the finished
+ * runs of its branch started after it, and the bug-report lifecycle reads the
+ * default branch. The `notifications` use decides a finished run's outbound
+ * effects alone: never for a run from an editor, and for a run from a
+ * developer's machine or the desktop app only when it ran the whole suite
+ * (`completeOnlyFor`); the analysis behind them follows its own uses.
  */
 export const RUN_USES: Record<RunUse, RunUseRule> = {
   /** Execution baselines: the environment, visual and page diffs, the AI's baseline comparison, the last pass. */
@@ -126,6 +143,13 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     completeOnly: true,
     excludesHistoricalImports: false,
   },
+  /** The runs the editor overlays on the branch's latest complete run. */
+  'editor-overlay': {
+    excludes: LAB_AND_INVESTIGATION,
+    excludesIncidents: true,
+    completeOnly: false,
+    excludesHistoricalImports: false,
+  },
   /** Change coverage and every "not reached in the last N runs" analysis. */
   'change-coverage': {
     excludes: LAB_AND_INVESTIGATION,
@@ -153,14 +177,16 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludesHistoricalImports: false,
   },
   /**
-   * Notifications, pull-request feedback, the gate and the other finalize side
-   * effects. An environment incident sends one `environment.incident` event
-   * instead, and the gate reads it as inconclusive.
+   * A finished run's outbound effects: notifications, the pull-request comment
+   * and commit status, AI diagnosis and auto-heal. An environment incident
+   * sends one `environment.incident` event instead, and the gate reads it as
+   * inconclusive.
    */
   notifications: {
-    excludes: LAB_RUN_ORIGINS,
+    excludes: [...LAB_RUN_ORIGINS, 'editor'],
     excludesIncidents: true,
     completeOnly: false,
+    completeOnlyFor: ['local', 'desktop'],
     excludesHistoricalImports: false,
   },
   /** The runs the incident classifier judges, and the runs of other projects it compares them with. */
@@ -251,9 +277,11 @@ export function isCompleteRun(run: EligibleRunInput): boolean {
 /** True when `run` may feed `use`. */
 export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
   const rule = RUN_USES[use];
-  if ((rule.excludes as readonly string[]).includes(runOrigin(run.metadata))) return false;
+  const origin = runOrigin(run.metadata);
+  if ((rule.excludes as readonly string[]).includes(origin)) return false;
   if (rule.excludesIncidents && isIncidentRun(run.metadata)) return false;
   if (rule.completeOnly && !isCompleteRun(run)) return false;
+  if (((rule.completeOnlyFor ?? []) as readonly string[]).includes(origin) && !isCompleteRun(run)) return false;
   if (rule.excludesHistoricalImports && run.historicalImport) return false;
   return true;
 }
@@ -335,17 +363,24 @@ const TEST_RUN_COLUMNS: EligibleRunColumns = {
   status: testRuns.status,
 };
 
+/** SQL predicate: the run covered the whole suite and finished (`isCompleteRun`). */
+function completeRunSql(columns: EligibleRunColumns): SQL {
+  const unfinished = sql.join(
+    UNFINISHED_RUN_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  );
+  return sql`(${columns.isFullRun} = 1 AND ${columns.status} NOT IN (${unfinished}))`;
+}
+
 /** SQL predicate keeping only runs that may feed `use`: the SQL form of `isEligibleRun`. */
 export function eligibleRunSql(use: RunUse, columns: EligibleRunColumns = TEST_RUN_COLUMNS): SQL {
   const rule = RUN_USES[use];
   const parts = [sql`NOT ${runOriginIn(columns.origin, rule.excludes)}`];
   if (rule.excludesIncidents) parts.push(sql`NOT ${incidentRunSql(columns.metadata)}`);
-  if (rule.completeOnly) {
-    const unfinished = sql.join(
-      UNFINISHED_RUN_STATUSES.map((s) => sql`${s}`),
-      sql`, `,
-    );
-    parts.push(sql`${columns.isFullRun} = 1 AND ${columns.status} NOT IN (${unfinished})`);
+  if (rule.completeOnly) parts.push(completeRunSql(columns));
+  const completeOnlyFor = rule.completeOnlyFor ?? [];
+  if (completeOnlyFor.length) {
+    parts.push(sql`NOT (${runOriginIn(columns.origin, completeOnlyFor)} AND NOT ${completeRunSql(columns)})`);
   }
   return sql`(${sql.join(parts, sql` AND `)})`;
 }

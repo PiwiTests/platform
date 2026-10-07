@@ -15,8 +15,10 @@ per-directory responsibilities.
 3. **Side effects** — `PIWI_*` env vars (`internal/config/env.ts`), `piwi-*` attachment names
    (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, `[Piwi Dashboard]`-prefixed log output, the
    `__piwiProbeElement` global the capture fixtures install into every instrumented page
-   (`internal/capture/capture-fixtures.ts`), and the boxed stack prefix `internal/capture/quiet-capture.ts` registers
-   for this package's `dist/` in each worker.
+   (`internal/capture/capture-fixtures.ts`), the boxed stack prefix `internal/capture/quiet-capture.ts` registers
+   for this package's `dist/` in each worker, and the editor's breakpoints (`internal/capture/pause-at.ts`): a headed
+   local run with `PIWI_PAUSE_AT` pauses before an action on those lines, and posts a locator picked meanwhile to the
+   editor's `PIWI_EDITOR_SEND` address with the line, as `@piwitests/core/editor-send` reads it.
 4. **The desktop discovery file** — `~/.piwi/desktop.json` and its `{ url, token }` shape
    (`internal/config/desktop.ts`). The desktop shell writes it (`apps/desktop/src-tauri/src/lib.rs`) and this package reads
    it, on independent release cycles, so path and shape changes must land in both.

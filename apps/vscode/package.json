@@ -32,6 +32,40 @@
     "workspaceContains:**/playwright.config.{ts,js,mjs,cjs}"
   ],
   "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "piwi",
+          "title": "Piwi",
+          "icon": "media/piwi.svg"
+        }
+      ]
+    },
+    "views": {
+      "piwi": [
+        {
+          "id": "piwi.failures",
+          "name": "Failures"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "piwi.failures",
+        "contents": "Piwi is not connected to an instance, so it has no run to show.\n[Connect](command:piwi.connect)",
+        "when": "piwi.failuresView == disconnected"
+      },
+      {
+        "view": "piwi.failures",
+        "contents": "No failure in the latest run of this branch: nothing to fix, and nothing your runs since broke.\n[Refresh](command:piwi.refreshRun)",
+        "when": "piwi.failuresView == clear"
+      },
+      {
+        "view": "piwi.failures",
+        "contents": "The Piwi editor service is not answering. It starts with the first file of a Playwright workspace opened; refresh once it runs.\n[Refresh](command:piwi.refresh)",
+        "when": "piwi.failuresView == unavailable"
+      }
+    ],
     "commands": [
       {
         "command": "piwi.connect",
@@ -54,6 +88,12 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.refreshRun",
+        "title": "Refresh the latest run",
+        "category": "Piwi",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "piwi.runTestsForFile",
         "title": "Run the tests that reach this file",
         "category": "Piwi"
@@ -66,12 +106,14 @@
       {
         "command": "piwi.openInDashboard",
         "title": "Open in dashboard",
-        "category": "Piwi"
+        "category": "Piwi",
+        "icon": "$(globe)"
       },
       {
         "command": "piwi.openRun",
         "title": "Open the latest run",
-        "category": "Piwi"
+        "category": "Piwi",
+        "icon": "$(globe)"
       },
       {
         "command": "piwi.copyMcpConfiguration",
@@ -89,14 +131,67 @@
         "category": "Piwi"
       },
       {
+        "command": "piwi.runTest",
+        "title": "Run this test",
+        "category": "Piwi",
+        "icon": "$(play)"
+      },
+      {
+        "command": "piwi.rerunFailing",
+        "title": "Re-run the failing tests",
+        "category": "Piwi",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "piwi.groupFailuresBy",
+        "title": "Group the failures by…",
+        "category": "Piwi",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "piwi.compareWith",
+        "title": "Compare with…",
+        "category": "Piwi",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "piwi.toggleFollowEditor",
+        "title": "Follow the active editor",
+        "category": "Piwi",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "piwi.stopFollowingEditor",
+        "title": "Stop following the active editor",
+        "category": "Piwi",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "piwi.copyAgentContext",
+        "title": "Copy context for agent",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.reproduceInDesktop",
+        "title": "Reproduce in the desktop app",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.bisectInDesktop",
+        "title": "Find the breaking commit in the desktop app",
+        "category": "Piwi"
+      },
+      {
         "command": "piwi.openTrace",
         "title": "Open the trace",
-        "category": "Piwi"
+        "category": "Piwi",
+        "icon": "$(file-zip)"
       },
       {
         "command": "piwi.openScreenshot",
         "title": "Open the failure screenshot",
-        "category": "Piwi"
+        "category": "Piwi",
+        "icon": "$(file-media)"
       },
       {
         "command": "piwi.runCommand",
@@ -166,6 +261,30 @@
           "when": "false"
         },
         {
+          "command": "piwi.runTest",
+          "when": "false"
+        },
+        {
+          "command": "piwi.copyAgentContext",
+          "when": "false"
+        },
+        {
+          "command": "piwi.reproduceInDesktop",
+          "when": "false"
+        },
+        {
+          "command": "piwi.bisectInDesktop",
+          "when": "false"
+        },
+        {
+          "command": "piwi.toggleFollowEditor",
+          "when": "!piwi.followEditor"
+        },
+        {
+          "command": "piwi.stopFollowingEditor",
+          "when": "piwi.followEditor"
+        },
+        {
           "command": "piwi.record",
           "when": "editorLangId =~ /^(typescript|javascript)(react)?$/"
         },
@@ -213,6 +332,100 @@
           "group": "piwi@3",
           "when": "editorLangId =~ /^(typescript|javascript)(react)?$/ && piwi.recordingPaused"
         }
+      ],
+      "view/title": [
+        {
+          "command": "piwi.refreshRun",
+          "when": "view == piwi.failures",
+          "group": "navigation@1"
+        },
+        {
+          "command": "piwi.rerunFailing",
+          "when": "view == piwi.failures",
+          "group": "navigation@2"
+        },
+        {
+          "command": "piwi.openRun",
+          "when": "view == piwi.failures",
+          "group": "navigation@3"
+        },
+        {
+          "command": "piwi.compareWith",
+          "when": "view == piwi.failures",
+          "group": "navigation@4"
+        },
+        {
+          "command": "piwi.groupFailuresBy",
+          "when": "view == piwi.failures",
+          "group": "navigation@5"
+        },
+        {
+          "command": "piwi.toggleFollowEditor",
+          "when": "view == piwi.failures && !piwi.followEditor",
+          "group": "navigation@6"
+        },
+        {
+          "command": "piwi.stopFollowingEditor",
+          "when": "view == piwi.failures && piwi.followEditor",
+          "group": "navigation@6"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "piwi.runTest",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "piwi.openTrace",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\btrace\\b/",
+          "group": "inline@2"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\./",
+          "group": "inline@3"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.(run|overlay)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "piwi.runTest",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\./",
+          "group": "1_run@1"
+        },
+        {
+          "command": "piwi.openTrace",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\btrace\\b/",
+          "group": "2_evidence@1"
+        },
+        {
+          "command": "piwi.openScreenshot",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bscreenshot\\b/",
+          "group": "2_evidence@2"
+        },
+        {
+          "command": "piwi.openInDashboard",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\./",
+          "group": "2_evidence@3"
+        },
+        {
+          "command": "piwi.copyAgentContext",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bagent\\b/",
+          "group": "3_agent@1"
+        },
+        {
+          "command": "piwi.reproduceInDesktop",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdesktop\\b/",
+          "group": "4_desktop@1"
+        },
+        {
+          "command": "piwi.bisectInDesktop",
+          "when": "view == piwi.failures && viewItem =~ /^piwi\\.failure\\..*\\bdesktop\\b/",
+          "group": "4_desktop@2"
+        }
       ]
     },
     "configuration": {
@@ -227,6 +440,26 @@
           "type": "string",
           "default": "",
           "description": "The project's name or id on the instance. The desktop app's project is the one picked with Piwi: Connect, else the one linked there to this folder."
+        },
+        "piwi.breakpoints": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker. A run with a breakpoint in a test or page object file runs headed and pauses before the locator action or assertion on that line, with Piwi's pause bar: **Resume**, **Step**, **Pick a locator**, **Finish**. A locator picked there replaces the one on the breakpoint's line. Needs `@piwitests/reporter` 0.48.0 or later."
+        },
+        "piwi.runNotifications": {
+          "type": "string",
+          "enum": [
+            "always",
+            "failures",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Say what every run started from the editor changed, once it ends.",
+            "Only when the run failed a test.",
+            "Never: the status bar, the gutter and the failures view still show it."
+          ],
+          "default": "always",
+          "description": "When a run started from the editor ends, a notification says what it changed: the failures it fixed, those still failing, and its new failures."
         }
       }
     },

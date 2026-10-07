@@ -20,7 +20,7 @@ const now = Date.now();
 const stale = new Date(now - STALE_TIMEOUT_MS - 60_000);
 
 // Run 1 is a CI run on main whose reporter went quiet with one failure stored;
-// run 2 is a quiet probe run.
+// run 2 is a quiet probe run, run 3 a quiet run of one test from an editor.
 beforeAll(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
@@ -38,7 +38,13 @@ beforeAll(async () => {
     environment: 'staging',
     metadata,
   });
-  await db.insert(schema.testRuns).values([run(1, { scm: { branch: 'main' } }), run(2, { piwiProbe: true })]);
+  await db
+    .insert(schema.testRuns)
+    .values([
+      run(1, { scm: { branch: 'main' } }),
+      run(2, { piwiProbe: true }),
+      { ...run(3, { piwiOrigin: { kind: 'editor' } }), origin: 'editor', isFullRun: 0 },
+    ]);
   await db.insert(schema.testCases).values([{ id: 1, projectId: 1, title: 'pays', filePath: 'pay.spec.ts' }]);
   await db
     .insert(schema.testRunsCases)
@@ -60,9 +66,9 @@ describe('run.interrupted', () => {
   test('a reaped run sends run.interrupted and runs no finish-time side effects', async () => {
     const reaped = await interruptStaleRuns(db, now);
 
-    expect([...reaped].sort()).toEqual([1, 2]);
+    expect([...reaped].sort()).toEqual([1, 2, 3]);
     expect(runFinalizeSideEffects).not.toHaveBeenCalled();
-    // The probe run stays silent; the CI run names its branch, environment and stored failure.
+    // The probe run and the editor run stay silent; the CI run names its branch, environment and stored failure.
     expect(emitNotification.mock.calls.map(([, event, payload]) => [event, payload.runId])).toEqual([
       ['run.interrupted', 1],
     ]);

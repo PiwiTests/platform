@@ -1,21 +1,28 @@
 /**
  * What the extension shows, computed from the editor service's answers with
  * no VS Code API, so it is tested without an editor: the status bar item, the
- * file patterns the service reads, the MCP configuration editors without
- * the MCP provider API are given to paste, and the recorded block a recording
- * writes and follows through the edits around it.
+ * failures view's tree, the file patterns the service reads, the MCP
+ * configuration editors without the MCP provider API are given to paste, and
+ * the recorded block a recording writes and follows through the edits around it.
  */
 import type {
+  BaselineChoice,
   ConnectionSource,
   DesktopJobUpdate,
   DesktopResult,
+  FailuresResult,
+  LiveRun,
   McpServerDefinition,
   RecordingPlacement,
   RecordingUpdate,
+  RunStatus,
+  RunEnded,
   RunStatusResult,
+  RunTestsArgs,
   StatusResult,
   SummaryLine,
   TestLineStatus,
+  WorkspaceFailure,
 } from '@piwitests/editor/protocol';
 
 /** The files the editor service reads: test and application code, and translations. */
@@ -24,9 +31,11 @@ export const DOCUMENT_PATTERN =
 
 export interface StatusBarView {
   text: string;
+  /** Markdown: what the item shows and when it was read, then links to the run, the dashboard and Connect. */
   tooltip: string;
-  /** `open` opens `url` in the browser; `connect` runs Piwi: Connect. */
-  action: 'open' | 'connect' | 'none';
+  /** `refresh` reads the latest run again (`piwi.refreshRun`); `connect` runs Piwi: Connect. */
+  action: 'refresh' | 'connect' | 'none';
+  /** The latest run's page, which `piwi.openRun` opens. */
   url: string | null;
   /** Whether the item uses the editor's error background. */
   error: boolean;
@@ -34,91 +43,540 @@ export interface StatusBarView {
 
 const ACTIVE = new Set(['running', 'initializing', 'finalizing']);
 
+/** The commands the status bar item's tooltip links to. */
+export const STATUS_TOOLTIP_COMMANDS = ['piwi.openRun', 'piwi.openInDashboard', 'piwi.compareWith', 'piwi.connect'];
+
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-/**
- * A line on the desktop app when it is not in use: it runs and Connect can
- * switch to it, or it was chosen and does not run. Empty otherwise.
- */
-function desktopHint(status: StatusResult | null, desktopChosen: boolean): string {
-  const inUse = status?.contexts.some((c) => c.source === 'desktop');
-  if (!status || inUse) return '';
-  if (status.desktopUrl) return '\nThe Piwi desktop app runs on this machine: Piwi: Connect to use it.';
-  return desktopChosen ? '\nThe Piwi desktop app, chosen with Piwi: Connect, is not running.' : '';
+/** A text shown as written in Markdown. */
+function md(text: string): string {
+  return text.replace(/[\\`*_[\]<>|]/g, '\\$&');
 }
 
-/** The status bar item: the latest run on the checked-out branch, or what keeps the service from reading it. */
+/** Markdown lines, each a paragraph of its own, without the empty ones. */
+function lines(...parts: Array<string | null | undefined>): string {
+  return parts.filter(Boolean).join('\n\n');
+}
+
+/** How long before `now` an ISO 8601 time is: `12 s ago`, `4 min ago`, `2 h ago`, `3 d ago`, or `just now`. */
+export function relativeTime(iso: string, now: number): string {
+  const seconds = Math.floor((now - Date.parse(iso)) / 1000);
+  if (!(seconds >= 1)) return 'just now';
+  if (seconds < 60) return `${seconds} s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
+}
+
+/**
+ * A line on the desktop app when it is not in use: it runs and Connect can
+ * switch to it, or it was chosen and does not run. Null otherwise.
+ */
+function desktopHint(status: StatusResult | null, desktopChosen: boolean): string | null {
+  const inUse = status?.contexts.some((c) => c.source === 'desktop');
+  if (!status || inUse) return null;
+  if (status.desktopUrl) return 'The Piwi desktop app runs on this machine: Piwi: Connect to use it.';
+  return desktopChosen ? 'The Piwi desktop app, chosen with Piwi: Connect, is not running.' : null;
+}
+
+/** A run in progress in the status bar: `$(sync~spin) Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+function liveText(live: LiveRun): string {
+  const failing = live.failed ? ` · ${live.failed} failing` : '';
+  return `$(sync~spin) Piwi: ${live.done}/${live.total}${failing}${live.own ? ' · your run' : ''}`;
+}
+
+/** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+function liveLine(live: LiveRun): string {
+  const failing = live.failed ? ` · ${live.failed} failing` : '';
+  return `${live.own ? 'Your run' : 'Run'} #${live.runId} is running: ${live.done}/${live.total}${failing}`;
+}
+
+/** When the latest run was read, and how the service learns of the next: `Updated 12 s ago · live`. */
+function updatedLine(run: RunStatus | undefined, now: number): string | null {
+  if (!run?.updatedAt) return null;
+  const how = run.stream === 'live' ? ' · live' : run.stream === 'polling' ? ' · read every minute' : '';
+  return `Updated ${relativeTime(run.updatedAt, now)}${how}`;
+}
+
+/** The baseline a context compares with, as the tooltip and the failures view name it: `Baseline: CI run #120 on main`. */
+export function baselineLine(label: string | undefined): string | null {
+  return label ? `Baseline: ${label}` : null;
+}
+
+/** The item's text while the latest run is read again: its icon spins. */
+export function refreshingText(text: string): string {
+  return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
+}
+
+/**
+ * The status bar item: the latest run on the checked-out branch, with what the runs laid over it fixed or still fail,
+ * or what keeps the service from reading it. While a run is in progress, the editor's own or one on the branch, the
+ * item counts it, and the tooltip has both. A click reads the latest run again; the tooltip says when it was read and
+ * links to the run, the dashboard and Connect.
+ */
 export function statusBarView(
   status: StatusResult | null,
   runs: RunStatusResult | null,
   desktopChosen = false,
+  now = Date.now(),
 ): StatusBarView {
   const contexts = status?.contexts ?? [];
   if (!contexts.length) {
     return { text: '$(beaker) Piwi', tooltip: 'No Playwright config found', action: 'none', url: null, error: false };
   }
   const hint = desktopHint(status, desktopChosen);
+  const connect = '[Connect](command:piwi.connect)';
   const connected = contexts.find((c) => c.connected);
   if (!connected) {
     return {
       text: '$(plug) Piwi: connect',
-      tooltip: (contexts[0]!.problem ?? 'Not connected') + hint,
+      tooltip: lines(md(contexts[0]!.problem ?? 'Not connected'), hint, connect),
       action: 'connect',
       url: null,
       error: false,
     };
   }
   const run = runs?.contexts.find((c) => c.root === connected.root) ?? runs?.contexts[0];
-  // The checked-out branch has no run yet: another branch's is shown.
+  // On the ladder, the checked-out branch has no run yet: another branch's is shown.
+  const ladder = !run?.baseline || run.baseline.choice.kind === 'ladder';
   const fallback =
-    run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
-  const where = `${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`;
-  const from = (connected.serverUrl ? `\n${connected.serverUrl}, from ${sourceLabel(connected.source)}` : '') + hint;
+    ladder && run?.run && run.checkedOut && run.checkedOut !== run.branch ? ` (${run.checkedOut} has no run yet)` : '';
+  const where = md(`${connected.projectName ?? 'Piwi'}${run?.branch ? ` on ${run.branch}` : ''}${fallback}`);
+  const from = connected.serverUrl ? md(`${connected.serverUrl}, from ${sourceLabel(connected.source)}`) : null;
+  const reporter = run?.reporterVersion ? md(`reporter ${run.reporterVersion}`) : null;
+  const live = run?.live ?? null;
+  const progress = live ? liveLine(live) : null;
+  const updated = updatedLine(run, now);
+  const baseline = run?.baseline ? md(baselineLine(run.baseline.label)!) : null;
+  const dashboard = '[Open in dashboard](command:piwi.openInDashboard)';
+  const compare = '[Compare with…](command:piwi.compareWith)';
   if (!run?.run) {
+    const links = `${dashboard} · ${compare} · ${connect}`;
+    if (run?.overlays) {
+      // A developer's own runs alone, with no baseline.
+      const failing = run.failingTests ?? run.failures;
+      return {
+        text: live ? liveText(live) : failing ? `$(error) Piwi: ${failing} failing` : '$(pass) Piwi: no failure',
+        tooltip: lines(
+          `${plural(run.overlays, 'local run')} of ${where}, ${plural(failing, 'test')} failing`,
+          baseline,
+          progress,
+          updated,
+          from,
+          reporter,
+          hint,
+          links,
+        ),
+        action: 'refresh',
+        url: null,
+        error: !live && failing > 0,
+      };
+    }
     return {
-      text: '$(beaker) Piwi: no run',
-      tooltip: `No run of ${where} yet${from}`,
-      action: 'none',
+      text: live ? liveText(live) : '$(beaker) Piwi: no run',
+      tooltip: lines(`No run of ${where} yet`, baseline, progress, updated, from, reporter, hint, links),
+      action: 'refresh',
       url: null,
       error: false,
     };
   }
   const r = run.run;
-  const tooltip = `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped${from}`;
-  if (ACTIVE.has(r.status)) {
+  // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+  const failing = run.failingTests ?? r.failedTests;
+  const fixed = run.resolved ?? 0;
+  const tooltip = lines(
+    `Run #${r.id} of ${where}: ${r.passedTests} passed, ${r.failedTests} failed, ${r.flakyTests} flaky, ${r.skippedTests} skipped`,
+    baseline,
+    run.overlays ? `${plural(run.overlays, 'local run')} since · ${plural(fixed, 'test')} fixed locally` : null,
+    progress,
+    updated,
+    from,
+    reporter,
+    hint,
+    `[Open run #${r.id}](command:piwi.openRun) · ${dashboard} · ${compare} · ${connect}`,
+  );
+  const view = { tooltip, action: 'refresh' as const, url: r.url, error: false };
+  if (live || ACTIVE.has(r.status)) {
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
-    const failing = r.failedTests ? ` · ${r.failedTests} failing` : '';
-    return {
-      text: `$(sync~spin) Piwi: ${done}/${r.totalTests}${failing}`,
-      tooltip,
-      action: 'open',
-      url: r.url,
-      error: false,
-    };
-  }
-  if (r.failedTests > 0) {
-    const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
-    return {
-      text: `$(error) Piwi: ${r.failedTests} failing${flaky}`,
-      tooltip,
-      action: 'open',
-      url: r.url,
-      error: true,
-    };
-  }
-  if (r.status !== 'passed' && r.status !== 'failed') {
-    return { text: `$(warning) Piwi: ${r.status}`, tooltip, action: 'open', url: r.url, error: false };
+    const failed = r.failedTests ? ` · ${r.failedTests} failing` : '';
+    return { ...view, text: live ? liveText(live) : `$(sync~spin) Piwi: ${done}/${r.totalTests}${failed}` };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  if (failing > 0) {
+    const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
+    return { ...view, text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`, error: true };
+  }
+  if (r.status !== 'passed' && r.status !== 'failed') return { ...view, text: `$(warning) Piwi: ${r.status}` };
+  if (fixed > 0) return { ...view, text: `$(pass) Piwi: ${fixed} fixed locally` };
+  return { ...view, text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}` };
+}
+
+/**
+ * What the notification says once a locator picked while a run was paused at a breakpoint reached the editor: it
+ * replaced the locator of its line, or it went to the cursor because the line holds none, or because the file is not
+ * in the workspace.
+ */
+export function pickNotice(at: { file: string; line: number }, outcome: 'replaced' | 'no-locator' | 'no-file'): string {
+  const name = at.file.slice(at.file.lastIndexOf('/') + 1);
+  if (outcome === 'replaced') return `Piwi: the picked locator replaced the one at line ${at.line} of ${name}.`;
+  if (outcome === 'no-locator') {
+    return `Piwi: the picked locator was inserted at the cursor: line ${at.line} of ${name} holds no locator anymore.`;
+  }
+  return `Piwi: the picked locator was inserted at the cursor: ${at.file} is not in this workspace.`;
+}
+
+/**
+ * The runs as the files show them, in one string: without the run in progress, the stream and the time of the last
+ * read, which move while the latest run and its failures stay. The files are drawn again when it changes.
+ */
+export function runsInFiles(runs: RunStatusResult | null): string {
+  return JSON.stringify(
+    runs?.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })) ?? null,
+  );
+}
+
+/** How the failures view groups the failures under the run. */
+export type FailuresGrouping = 'file' | 'cluster' | 'owner' | 'flat';
+
+export const FAILURES_GROUPINGS: Array<{ grouping: FailuresGrouping; label: string; detail: string }> = [
+  { grouping: 'file', label: 'File', detail: 'The spec each failing test is in' },
+  { grouping: 'cluster', label: 'Cluster', detail: 'The failure cluster: one root cause, one group' },
+  { grouping: 'owner', label: 'Owner', detail: 'The owner the test names, or CODEOWNERS' },
+  { grouping: 'flat', label: 'Flat', detail: 'Every failure under the run' },
+];
+
+/** A node of the failures view. */
+export interface FailureNode {
+  /** Stable across refreshes: the view keeps a node's expansion and selection by it. */
+  key: string;
+  kind: 'run' | 'runs' | 'overlay' | 'group' | 'failure';
+  label: string;
+  description: string;
+  /** Markdown. */
+  tooltip: string;
+  /** A codicon name: `error`, `edit`, `check` for a failure's state, others for the rest. */
+  icon: string;
+  /** `expanded` and `collapsed` for a node with children, `none` for a leaf. */
+  state: 'expanded' | 'collapsed' | 'none';
+  /** The page a click on a run opens; a failure's execution page. */
+  url: string | null;
+  /** The failure a leaf stands for. */
+  failure?: WorkspaceFailure;
+  children: FailureNode[];
+}
+
+/** The order of a failure's state in its group: failing first, then edited, then fixed locally. */
+const STATE_ORDER: Record<string, number> = { failing: 0, edited: 1, 'fixed-locally': 2 };
+
+/** What launched a run, in a few words: `CI`, `your run`, `local`, `desktop app`, `editor`. */
+function originLabel(origin: string | undefined, own: boolean | undefined): string {
+  if (own) return 'your run';
+  if (!origin || origin === 'ci' || origin === 'ci-rerun') return 'CI';
+  return origin === 'desktop' ? 'desktop app' : origin;
+}
+
+/** A test a failure stands for: its id, else its title in its file. */
+function testKey(f: WorkspaceFailure): string {
+  return f.testCaseId !== undefined ? String(f.testCaseId) : `${f.file ?? f.uri}\n${f.title}`;
+}
+
+/** Whether a failure still fails: failing, or edited since its run. */
+function stillFails(f: WorkspaceFailure): boolean {
+  return f.state !== 'fixed-locally';
+}
+
+/** `3 failing · 1 fixed locally`, counting tests: a test failing on several projects counts once. */
+function failureCounts(items: WorkspaceFailure[]): string {
+  const failing = new Set(items.filter(stillFails).map(testKey)).size;
+  const fixed = new Set(items.filter((f) => !stillFails(f)).map(testKey)).size;
+  return [failing || !fixed ? `${failing} failing` : null, fixed ? `${fixed} fixed locally` : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** How many tests still fail among the failures: the view's badge. */
+export function failingCount(result: FailuresResult | null): number {
+  return new Set((result?.items ?? []).filter(stillFails).map(testKey)).size;
+}
+
+/**
+ * What a failure says about its run: `fixed locally in run #124` for a failure a later run passed (`fixed in run #124`
+ * when that run is a CI run, `fixed locally in your run #124` when the editor started it), `edited since run #120` for a
+ * failure whose line changed since its run (`edited since your run #124`, `edited since local run #124`), `your run
+ * #124` for a failure of a run the editor started, `local run #124` for a failure of another run that did not run in
+ * CI, `run #120` otherwise.
+ */
+export function failureRunNote(f: WorkspaceFailure): string {
+  const run =
+    f.source === 'own' ? `your run #${f.runId}` : f.source === 'local' ? `local run #${f.runId}` : `run #${f.runId}`;
+  if (f.state === 'fixed-locally') {
+    if (f.source === 'ci') return `fixed in run #${f.runId}`;
+    return f.source === 'own' ? `fixed locally in your run #${f.runId}` : `fixed locally in run #${f.runId}`;
+  }
+  return f.state === 'edited' ? `edited since ${run}` : run;
+}
+
+/** The file a failure shows in, at its line: the spec's path when it shows in the spec, else the file's name. */
+function failurePlace(f: WorkspaceFailure): string {
+  const name = decodeURIComponent(f.uri.slice(f.uri.lastIndexOf('/') + 1));
+  const shown = f.file && decodeURIComponent(f.uri).endsWith(`/${f.file}`) ? f.file : name;
+  return `${shown}:${f.line + 1}`;
+}
+
+function failureLeaf(f: WorkspaceFailure): FailureNode {
+  const icon = f.state === 'fixed-locally' ? 'check' : f.state === 'edited' ? 'edit' : 'error';
+  const description = [failurePlace(f), f.browserName, f.isNew && stillFails(f) ? 'new' : null]
+    .filter(Boolean)
+    .join(' · ');
+  const tooltip = lines(
+    `**${md(f.title)}**`,
+    f.headline ? md(f.headline) : null,
+    md(failureRunNote(f)),
+    f.status === 'timedOut' ? 'Timed out' : null,
+    f.clusterTitle ? `Cluster: ${md(f.clusterTitle)}` : null,
+    f.owner ? `Owner: ${md(f.owner)}` : null,
+  );
   return {
-    text: `$(pass) Piwi: ${plural(r.passedTests, 'passed', 'passed')}${flaky}`,
+    key: `failure:${f.executionId}`,
+    kind: 'failure',
+    label: f.title,
+    description,
     tooltip,
-    action: 'open',
-    url: r.url,
-    error: false,
+    icon,
+    state: 'none',
+    url: f.url,
+    failure: f,
+    children: [],
   };
+}
+
+function sortFailures(items: WorkspaceFailure[]): WorkspaceFailure[] {
+  return [...items].sort(
+    (a, b) =>
+      (STATE_ORDER[a.state ?? 'failing'] ?? 0) - (STATE_ORDER[b.state ?? 'failing'] ?? 0) ||
+      (a.file ?? a.uri).localeCompare(b.file ?? b.uri) ||
+      a.line - b.line ||
+      a.title.localeCompare(b.title),
+  );
+}
+
+/** The group a failure goes in, and the label of a group without a value, which comes last. */
+function groupOf(f: WorkspaceFailure, grouping: Exclude<FailuresGrouping, 'flat'>): { key: string; label: string } {
+  if (grouping === 'file') {
+    const file = f.file ?? decodeURIComponent(f.uri.slice(f.uri.lastIndexOf('/') + 1));
+    return { key: `file:${file}`, label: file };
+  }
+  if (grouping === 'cluster') {
+    if (f.clusterId === null || f.clusterId === undefined) return { key: 'cluster:', label: 'Ungrouped' };
+    return { key: `cluster:${f.clusterId}`, label: f.clusterTitle || `Cluster #${f.clusterId}` };
+  }
+  return f.owner ? { key: `owner:${f.owner}`, label: f.owner } : { key: 'owner:', label: 'Unowned' };
+}
+
+/** The groups of the failures, by label, the group of those without a value last. */
+function grouped(items: WorkspaceFailure[], grouping: FailuresGrouping): FailureNode[] {
+  if (grouping === 'flat') return sortFailures(items).map(failureLeaf);
+  const groups = new Map<string, { label: string; items: WorkspaceFailure[] }>();
+  for (const f of items) {
+    const { key, label } = groupOf(f, grouping);
+    const group = groups.get(key) ?? groups.set(key, { label, items: [] }).get(key)!;
+    group.items.push(f);
+  }
+  const icon = grouping === 'file' ? 'file' : grouping === 'cluster' ? 'symbol-namespace' : 'person';
+  return [...groups]
+    .sort(([a, x], [b, y]) => Number(a.endsWith(':')) - Number(b.endsWith(':')) || x.label.localeCompare(y.label))
+    .map(([key, group]) => ({
+      key: `group:${key}`,
+      kind: 'group' as const,
+      label: group.label,
+      description: failureCounts(group.items),
+      tooltip: md(group.label),
+      icon,
+      state: 'expanded' as const,
+      url: null,
+      children: sortFailures(group.items).map(failureLeaf),
+    }));
+}
+
+/**
+ * The failures view's tree: the baseline run, `Run #120 · CI · feature/x · 3 failing · 1 fixed locally` (its age, or the
+ * editor's own run in progress, as its description, and the baseline chosen, `Baseline: CI run #120 on feature/x`, in
+ * its tooltip), with the runs laid over it under `Your runs since`, and its failures grouped by file, cluster or owner,
+ * or flat, failing first, then edited, then fixed locally. With a developer's own runs alone, the root is `Your local
+ * runs`. Without a run (an older service), the groups alone; without a failure, nothing.
+ */
+export function failureTree(
+  result: FailuresResult | null,
+  grouping: FailuresGrouping,
+  options: { now?: number; live?: LiveRun | null } = {},
+): FailureNode[] {
+  const items = result?.items ?? [];
+  if (!items.length) return [];
+  const groups = grouped(items, grouping);
+  const run = result?.run;
+  const overlays = result?.overlays ?? [];
+  const baseline = baselineLine(result?.baseline?.label);
+  if (!run && !(baseline && overlays.length)) return groups;
+  const now = options.now ?? Date.now();
+  const runs: FailureNode[] = overlays.length
+    ? [
+        {
+          key: 'runs',
+          kind: 'runs',
+          label: run ? 'Your runs since' : 'Your runs',
+          description: plural(overlays.length, 'run'),
+          tooltip: run
+            ? `The runs of ${md(run.branch ?? 'the branch')} since run #${run.id}, laid over it test by test`
+            : 'Your runs of the branch, newest first, laid over one another test by test',
+          icon: 'history',
+          state: 'collapsed',
+          url: null,
+          children: overlays.map((o) => ({
+            key: `overlay:${o.id}`,
+            kind: 'overlay' as const,
+            label: [
+              `#${o.id}`,
+              o.own ? 'your run' : null,
+              relativeTime(o.startTime, now),
+              `${o.passedTests} passed, ${o.failedTests} failed`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            description: '',
+            tooltip: `Run #${o.id}, ${md(originLabel(o.origin, o.own))}: ${o.passedTests} passed, ${o.failedTests} failed of ${o.totalTests}`,
+            icon: o.failedTests ? 'error' : 'pass',
+            state: 'none' as const,
+            url: o.url,
+            children: [],
+          })),
+        },
+      ]
+    : [];
+  const live = options.live?.own ? options.live : null;
+  const running = live ? `Your run #${live.runId} is running: ${live.done}/${live.total}` : null;
+  if (!run) {
+    return [
+      {
+        key: 'run',
+        kind: 'run',
+        label: ['Your local runs', failureCounts(items)].join(' · '),
+        description: live ? `running ${live.done}/${live.total}` : 'no baseline',
+        tooltip: lines(md(baseline!), running),
+        icon: 'beaker',
+        state: 'expanded',
+        url: null,
+        children: [...runs, ...groups],
+      },
+    ];
+  }
+  const label = [`Run #${run.id}`, originLabel(run.origin, run.own), run.branch, failureCounts(items)]
+    .filter(Boolean)
+    .join(' · ');
+  return [
+    {
+      key: 'run',
+      kind: 'run',
+      label,
+      description: live ? `running ${live.done}/${live.total}` : relativeTime(run.startTime, now),
+      tooltip: lines(
+        baseline ? md(baseline) : null,
+        `Run #${run.id}${run.branch ? ` of ${md(run.branch)}` : ''}: ${run.passedTests} passed, ${run.failedTests} failed, ${run.flakyTests} flaky, ${run.skippedTests} skipped`,
+        running,
+      ),
+      icon: 'beaker',
+      state: 'expanded',
+      url: run.url,
+      children: [...runs, ...groups],
+    },
+  ];
+}
+
+/** An entry of **Compare with…**: a baseline, or `run-by-id`, which asks for the run's id first. */
+export interface BaselinePick {
+  label: string;
+  description: string;
+  detail: string;
+  choice: BaselineChoice | 'run-by-id';
+}
+
+function sameChoice(a: BaselineChoice, b: BaselineChoice): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * What **Compare with…** offers for a context: the ladder (`CI on the checked-out branch, else main (default)`), the
+ * default branch and each branch with runs, a run by its id, and the developer's own runs only; the choice in force is
+ * `current`.
+ */
+export function baselinePicks(run: RunStatus | undefined): BaselinePick[] {
+  const current: BaselineChoice = run?.baseline?.choice ?? { kind: 'ladder' };
+  const branches = [...(run?.branches ?? [])];
+  if (current.kind === 'branch' && !branches.includes(current.branch)) branches.push(current.branch);
+  const mark = (choice: BaselineChoice, also = '') =>
+    [also, sameChoice(choice, current) ? 'current' : ''].filter(Boolean).join(' · ');
+  const ladder: BaselineChoice = { kind: 'ladder' };
+  const local: BaselineChoice = { kind: 'local' };
+  return [
+    {
+      label: `CI on the checked-out branch, else ${run?.branches?.[0] ?? 'the default branch'} (default)`,
+      description: mark(ladder),
+      detail: 'The latest complete run of the branch, a CI run first, with your runs since laid over it',
+      choice: ladder,
+    },
+    ...branches.map((branch, i) => {
+      const choice: BaselineChoice = { kind: 'branch', branch };
+      return {
+        label: branch,
+        description: mark(choice, i === 0 && run?.branches?.[0] === branch ? 'default branch' : ''),
+        detail: `The latest complete run of ${branch}, a CI run first`,
+        choice,
+      };
+    }),
+    {
+      label: 'A run by id…',
+      description: current.kind === 'run' ? `current: run #${current.runId}` : '',
+      detail: 'One run of the project, with the runs of its branch since',
+      choice: 'run-by-id',
+    },
+    {
+      label: 'My local runs only',
+      description: mark(local),
+      detail: 'Your runs on this machine, in the desktop app or an editor, without CI',
+      choice: local,
+    },
+  ];
+}
+
+/** The run id typed for **A run by id…** (`118` or `#118`); null when it is not one. */
+export function runIdOf(text: string): number | null {
+  const m = /^\s*#?(\d{1,15})\s*$/.exec(text);
+  const id = m ? Number(m[1]) : 0;
+  return id > 0 ? id : null;
+}
+
+/** The baselines kept per context root, with `choice` for `root`: the ladder is kept as no entry. */
+export function withBaseline(
+  kept: Record<string, BaselineChoice> | undefined,
+  root: string,
+  choice: BaselineChoice,
+): Record<string, BaselineChoice> {
+  const next = { ...kept };
+  if (choice.kind === 'ladder') delete next[root];
+  else next[root] = choice;
+  return next;
+}
+
+/**
+ * What **Re-run the failing tests** runs: every test still failing or edited since its run, from the file of the first;
+ * null when none fails.
+ */
+export function rerunFailingArgs(result: FailuresResult | null): RunTestsArgs | null {
+  const failing = (result?.items ?? []).filter(stillFails);
+  const testIds = [...new Set(failing.flatMap((f) => (f.testCaseId !== undefined ? [f.testCaseId] : [])))];
+  return failing.length && testIds.length ? { uri: failing[0]!.uri, testIds } : null;
 }
 
 /** A test's latest result, drawn on the test: a gutter icon, a hover, and a background while it fails. */
@@ -127,7 +585,7 @@ export interface TestDecoration {
   line: number;
   /** The last line of a failing test's background; null for any other result. */
   failingUntil: number | null;
-  /** The line a failing test failed at, when the latest run says; null otherwise. */
+  /** The line a failing test failed at, when the latest run says, edited since or not; null otherwise. */
   failingLine: number | null;
   hover: string;
   dashboardUrl: string | null;
@@ -143,7 +601,7 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
             line: l.line,
             failingUntil: l.status === 'failed' ? Math.max(l.line, l.endLine ?? l.line) : null,
             failingLine: l.failure?.line ?? null,
-            hover: testResultHover(l.status, l.title),
+            hover: testResultHover(l.status, l.title, l.failure?.state === 'edited'),
             dashboardUrl:
               l.command?.command === 'piwi.openInDashboard' && typeof l.command.arguments?.[0] === 'string'
                 ? (l.command.arguments[0] as string)
@@ -154,16 +612,68 @@ export function testDecorations(lines: SummaryLine[]): TestDecoration[] {
   );
 }
 
-/** A test's hover: its latest result, then its history as the service sums it up. */
-export function testResultHover(status: TestLineStatus, title: string): string {
+/**
+ * A test's hover: its latest result, whether the line it failed at changed since the run (`edited`), then its
+ * history as the service sums it up.
+ */
+export function testResultHover(status: TestLineStatus, title: string, edited = false): string {
   const result = {
     failed: 'failing',
     flaky: 'flaky',
     passed: 'passing',
     skipped: 'skipped',
+    running: 'running',
     unknown: 'no recent result',
   }[status];
-  return [`**Piwi**: ${result}`, title].filter(Boolean).join(' · ');
+  return [`**Piwi**: ${result}`, edited ? 'edited since the run' : '', title].filter(Boolean).join(' · ');
+}
+
+/** When a run the editor started says what it changed: `piwi.runNotifications`. */
+export type RunNotifications = 'always' | 'failures' | 'never';
+
+/** The actions a run's verdict offers. */
+export const VERDICT_ACTIONS = {
+  failures: 'Open the failures',
+  dashboard: 'Open in dashboard',
+  rerun: 'Re-run failing',
+} as const;
+
+/** Titles as a verdict lists them: the first ones, then how many more. */
+function titleList(titles: string[], count: number): string {
+  const more = count - titles.length;
+  return `(${titles.join(', ')}${more > 0 ? ` and ${more} more` : ''})`;
+}
+
+/**
+ * What a run the editor started changed, once it ended: `Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing
+ * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts. A warning when something
+ * fails, with **Re-run failing**; an information otherwise. Null when `setting` keeps it quiet.
+ */
+export function runVerdict(
+  ended: RunEnded,
+  setting: RunNotifications = 'always',
+): { severity: 'information' | 'warning'; text: string; actions: string[] } | null {
+  const still = ended.stillFailingCount ?? ended.stillFailing.length;
+  const added = ended.newFailureCount ?? ended.newFailures.length;
+  const parts: string[] = [];
+  if (ended.fixed || still) {
+    const fixed = `${ended.fixed} of ${ended.fixed + still} CI ${ended.fixed + still === 1 ? 'failure' : 'failures'} fixed`;
+    parts.push(still ? `${fixed}, ${still} still failing ${titleList(ended.stillFailing, still)}` : fixed);
+  }
+  if (added) parts.push(`${plural(added, 'new failure')} ${titleList(ended.newFailures, added)}`);
+  if (!parts.length) {
+    const counts = [`${ended.passed} passed`, `${ended.failed} failed`];
+    if (ended.flaky) counts.push(`${ended.flaky} flaky`);
+    if (ended.skipped) counts.push(`${ended.skipped} skipped`);
+    parts.push(counts.join(', '));
+  }
+  const failing = still + added > 0 || ended.failed > 0;
+  if (setting === 'never' || (setting === 'failures' && !failing)) return null;
+  return {
+    severity: failing ? 'warning' : 'information',
+    text: `Piwi: run #${ended.runId} · ${parts.join(' · ')}`,
+    actions: [VERDICT_ACTIONS.failures, VERDICT_ACTIONS.dashboard, ...(failing ? [VERDICT_ACTIONS.rerun] : [])],
+  };
 }
 
 /** Where the service found the instance: the settings come last. */

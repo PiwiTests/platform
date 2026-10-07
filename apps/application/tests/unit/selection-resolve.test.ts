@@ -9,6 +9,7 @@ delete process.env.PIWI_DATABASE_URL;
 const {
   resolveSelectionDefinition,
   listSelections,
+  listResolvedSelections,
   getSelection,
   createSelection,
   updateSelection,
@@ -359,6 +360,32 @@ describe('built-ins and CRUD', () => {
     const failed = await getSelection(db, 1, 'failed');
     const r = await resolveSelectionDefinition(db, 1, failed!.definition, { key: 'failed', version: 0 });
     expect(r.tests.map((t) => t.testCaseId)).toEqual([failing]);
+  });
+
+  test('the list resolves every selection as the resolve endpoint does', async () => {
+    const failing = await seedCase('failing', { tags: ['smoke'] });
+    await seedExecution(failing, 'failed', { line: 7 });
+    const passing = await seedCase('passing', { tags: ['smoke'] });
+    await seedExecution(passing, 'passed', { line: 12 });
+    await createSelection(db, 1, { key: 'smoke', name: 'Smoke', definition: { include: [{ tags: ['smoke'] }] } });
+
+    const listed = await listResolvedSelections(db, 1);
+    expect(listed.map((s) => s.key)).toEqual((await listSelections(db, 1)).map((s) => s.key));
+    for (const selection of listed) {
+      const one = await resolveSelectionDefinition(db, 1, selection.definition, {
+        key: selection.key,
+        version: selection.version,
+      });
+      expect(selection.resolved).toEqual({
+        testCaseIds: one.tests.map((t) => t.testCaseId),
+        resolvedHash: one.resolvedHash,
+        estimate: one.estimate,
+        warnings: one.warnings,
+        command: one.materialization.command,
+      });
+    }
+    expect(listed.find((s) => s.key === 'failed')!.resolved.testCaseIds).toEqual([failing]);
+    expect(listed.find((s) => s.key === 'smoke')!.resolved.testCaseIds.sort()).toEqual([failing, passing].sort());
   });
 
   test('create, get, update (version bump) and delete', async () => {

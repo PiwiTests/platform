@@ -13,6 +13,8 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.InputValidator
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.SimpleListCellRenderer
@@ -124,6 +126,74 @@ class OpenInDashboardAction : AnAction() {
     }
 }
 
+/** Piwi: Open the Latest Run in the Dashboard — the run the status bar shows. */
+class OpenLatestRunAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = service != null && Glue.statusView(service.status, service.runs).url != null
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>() ?: return
+        Glue.statusView(service.status, service.runs).url?.let { BrowserUtil.browse(it) }
+    }
+}
+
+/**
+ * Piwi: Compare With… — the baseline the failures are read against for the Playwright config of the file at hand (or
+ * the one connected): the ladder, a branch, a run by its id or your local runs only, kept on this machine.
+ */
+class CompareWithAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = service?.runs?.contexts.orEmpty().isNotEmpty()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val service = project.service<PiwiProjectService>()
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) }
+        val contexts = service.runs?.contexts.orEmpty()
+        val root = Glue.contextRootOf(service.status, uri)
+        val run = contexts.firstOrNull { it.root == root } ?: contexts.firstOrNull() ?: return
+        val target = run.root ?: return
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(Glue.baselineEntries(run))
+            .setRenderer(textRenderer<Glue.BaselineEntry> { if (it.current) "${it.label} · current" else it.label })
+            .setTitle("Compare With… (now: ${run.baseline?.label?.ifBlank { null } ?: "the latest run"})")
+            .setItemChosenCallback { entry ->
+                val choice = entry.choice ?: Messages.showInputDialog(
+                    project,
+                    "The id of the run to compare with (its page in the dashboard shows it):",
+                    "Compare With a Run",
+                    null,
+                    null,
+                    object : InputValidator {
+                        override fun checkInput(inputString: String?) = Glue.runIdOf(inputString) != null
+                        override fun canClose(inputString: String?) = checkInput(inputString)
+                    },
+                )?.let { typed -> Glue.runIdOf(typed)?.let { BaselineChoice("run", runId = it) } }
+                    ?: return@setItemChosenCallback
+                ApplicationManager.getApplication().executeOnPooledThread { service.setBaseline(target, choice) }
+            }
+            .createPopup()
+            .showCenteredInCurrentWindow(project)
+    }
+}
+
+/** Piwi: Re-run the Failing Tests — every test still failing, or edited since its run, in the Run tool window. */
+class RerunFailingAction : AnAction() {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        PiwiCommands.rerunFailing(e.project ?: return)
+    }
+}
+
 /** Piwi: Run selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -151,8 +221,9 @@ class RunSelectionAction : AnAction() {
                     .setTitle("Run which selection?")
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
-                            val command = server?.runSelection(RunSelectionParams(uri, picked.key))?.orNull()
-                            if (command?.cwd != null && command.command != null) PiwiCommands.run(project, command.cwd, command.command, command.env)
+                            val breakpoints = project.service<PiwiProjectService>().breakpoints().ifEmpty { null }
+                            val command = server?.runSelection(RunSelectionParams(uri, picked.key, breakpoints))?.orNull()
+                            if (command != null) PiwiCommands.startRun(project, command)
                         }
                     }
                     .createPopup()

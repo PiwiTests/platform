@@ -13,8 +13,12 @@ const recordRunHealth = vi.fn(
   (_db: unknown, _id: number): Promise<{ metadata: unknown; incident: unknown; flagged: boolean } | null> =>
     Promise.resolve(null),
 );
-const postRunPrFeedbackInBackground = vi.fn(() => Promise.resolve());
+/** What the run's analysis answers: its fixed clusters and its change coverage, both settled. */
+const analysis = { fixed: Promise.resolve([]), coverage: Promise.resolve(null) };
+const analyzeFinishedRunInBackground = vi.fn((_db: unknown, _id: number) => analysis);
+const postRunPrFeedbackInBackground = vi.fn((_db: unknown, _id: number, _analysis: unknown) => Promise.resolve());
 const maybeEnqueueHealActionInBackground = vi.fn();
+const inferRunOutcomes = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 const classifyRunFlakyTests = vi.fn((_db: unknown, _projectId: number, _runId: number) => Promise.resolve());
 
 vi.mock('../../server/utils/compute-regression-signals', () => ({ computeRegressionSignals }));
@@ -24,8 +28,12 @@ vi.mock('../../server/utils/notifications/run-notifications', () => ({
   emitIncidentNotification,
 }));
 vi.mock('#shared/handlers/run-health', () => ({ recordRunHealth }));
-vi.mock('../../server/utils/scm/pr-feedback', () => ({ postRunPrFeedbackInBackground }));
+vi.mock('../../server/utils/scm/pr-feedback', () => ({
+  analyzeFinishedRunInBackground,
+  postRunPrFeedbackInBackground,
+}));
 vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackground }));
+vi.mock('../../server/utils/outcome-inference', () => ({ inferRunOutcomes }));
 vi.mock('#shared/handlers/markers', () => ({ syncAutoMarkersForRun }));
 vi.mock('#shared/handlers/flaky-classify', () => ({ classifyRunFlakyTests }));
 const matchCiRerunRun = vi.fn(() => Promise.resolve(null));
@@ -42,6 +50,16 @@ const allEffects = [
   computeRegressionSignals,
   syncAutoMarkersForRun,
   classifyRunFlakyTests,
+  analyzeFinishedRunInBackground,
+  inferRunOutcomes,
+  autoDiagnoseRun,
+  emitRunNotifications,
+  postRunPrFeedbackInBackground,
+  maybeEnqueueHealActionInBackground,
+];
+
+/** What a run sends out once finished, beside the analysis every run gets. */
+const outbound = [
   autoDiagnoseRun,
   emitRunNotifications,
   postRunPrFeedbackInBackground,
@@ -66,10 +84,9 @@ describe('runFinalizeSideEffects', () => {
     for (const fn of [
       computeRegressionSignals,
       classifyRunFlakyTests,
-      autoDiagnoseRun,
-      emitRunNotifications,
-      postRunPrFeedbackInBackground,
-      maybeEnqueueHealActionInBackground,
+      analyzeFinishedRunInBackground,
+      inferRunOutcomes,
+      ...outbound,
     ]) {
       expect(fn).not.toHaveBeenCalled();
     }
@@ -107,6 +124,65 @@ describe('runFinalizeSideEffects', () => {
     await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
     expect(emitRunNotifications).toHaveBeenCalledTimes(1);
     expect(classifyRunFlakyTests).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['an editor run', 'editor', 1],
+    ['a partial editor run', 'editor', 0],
+    ['a partial local run', 'local', 0],
+    ['a partial desktop run', 'desktop', 0],
+  ])('%s gets its analysis and its outcomes, and sends nothing', async (_name, kind, isFullRun) => {
+    await runFinalizeSideEffects(db, 42, {
+      projectId: 1,
+      metadata: { piwiOrigin: { kind } },
+      isFullRun,
+      status: 'failed',
+    });
+    // Fix verification, change coverage and the scenario gaps, each under its own use.
+    expect(analyzeFinishedRunInBackground).toHaveBeenCalledWith(db, 42);
+    await vi.waitFor(() => expect(inferRunOutcomes).toHaveBeenCalledWith(db, 42));
+    expect(syncAutoMarkersForRun).toHaveBeenCalledTimes(1);
+    for (const fn of outbound) expect(fn).not.toHaveBeenCalled();
+  });
+
+  test('an editor run the classifier flags sends no incident event', async () => {
+    const incident = { rule: 'host-unreachable', reason: '1 of 1 tests failed', host: 'localhost' };
+    recordRunHealth.mockResolvedValueOnce({ metadata: { incident }, incident, flagged: true });
+    await runFinalizeSideEffects(db, 42, {
+      projectId: 1,
+      metadata: { piwiOrigin: { kind: 'editor' } },
+      isFullRun: 0,
+      status: 'failed',
+    });
+    expect(syncAutoMarkersForRun).toHaveBeenCalledTimes(1);
+    expect(emitIncidentNotification).not.toHaveBeenCalled();
+    expect(emitRunNotifications).not.toHaveBeenCalled();
+  });
+
+  test('an editor run flagged as an incident sends no incident event when the caller’s metadata lacks the origin', async () => {
+    const incident = { rule: 'host-unreachable', reason: '1 of 1 tests failed', host: 'localhost' };
+    recordRunHealth.mockResolvedValueOnce({
+      metadata: { piwiOrigin: { kind: 'editor' }, incident },
+      incident,
+      flagged: true,
+    });
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { scm: {} }, isFullRun: 1, status: 'failed' });
+    expect(syncAutoMarkersForRun).toHaveBeenCalledTimes(1);
+    expect(emitIncidentNotification).not.toHaveBeenCalled();
+    expect(emitRunNotifications).not.toHaveBeenCalled();
+  });
+
+  test.each(['local', 'desktop'])('the whole suite run from %s gets everything', async (kind) => {
+    runFinalizeSideEffects(db, 42, {
+      projectId: 1,
+      metadata: { piwiOrigin: { kind } },
+      isFullRun: 1,
+      status: 'failed',
+    });
+    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
+    for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+    // The comment is posted from the run's own analysis.
+    expect(postRunPrFeedbackInBackground).toHaveBeenCalledWith(db, 42, analysis);
   });
 
   test('the flaky root causes of the run are classified from its id and project', async () => {

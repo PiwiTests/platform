@@ -1,10 +1,23 @@
 import { describe, expect, test } from 'vitest';
-import type { DesktopJobUpdate, DesktopResult, RunStatusResult, StatusResult } from '@piwitests/editor/protocol';
+import type {
+  DesktopJobUpdate,
+  DesktopResult,
+  FailuresResult,
+  LiveRun,
+  RunEnded,
+  RunStatusResult,
+  StatusResult,
+} from '@piwitests/editor/protocol';
 import {
+  baselinePicks,
+  pickNotice,
   configTestDir,
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
+  failingCount,
+  failureRunNote,
+  failureTree,
   followBlock,
   importInsertion,
   recordInto,
@@ -14,10 +27,18 @@ import {
   recordedBlockText,
   recordingSummary,
   recordingView,
+  refreshingText,
+  relativeTime,
+  rerunFailingArgs,
+  runIdOf,
+  runsInFiles,
+  runVerdict,
   sourceLabel,
   statusBarView,
   testDecorations,
+  withBaseline,
   writeBlock,
+  type FailureNode,
   type RecordedBlock,
   type TextChange,
   type TextSpan,
@@ -63,6 +84,10 @@ const run = (over: Partial<NonNullable<RunStatusResult['contexts'][number]['run'
 });
 
 describe('statusBarView', () => {
+  const FROM = 'http://piwi, from the workspace .env';
+  const LINKS =
+    '[Open run #41](command:piwi.openRun) · [Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)';
+
   test('without a Playwright config, says so', () => {
     expect(statusBarView({ contexts: [] }, null)).toMatchObject({ text: '$(beaker) Piwi', action: 'none' });
   });
@@ -72,31 +97,148 @@ describe('statusBarView', () => {
       { contexts: [{ ...connected.contexts[0]!, connected: false, problem: 'No project chosen.' }] },
       null,
     );
-    expect(view).toMatchObject({ text: '$(plug) Piwi: connect', tooltip: 'No project chosen.', action: 'connect' });
+    expect(view).toMatchObject({
+      text: '$(plug) Piwi: connect',
+      tooltip: 'No project chosen.\n\n[Connect](command:piwi.connect)',
+      action: 'connect',
+    });
   });
 
-  test('a passing run, with its flaky tests', () => {
+  test('a passing run, with its flaky tests; a click reads it again', () => {
     expect(statusBarView(connected, run({}))).toEqual({
       text: '$(pass) Piwi: 118 passed · 2 flaky',
-      tooltip:
-        'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env',
-      action: 'open',
+      tooltip: `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\n${LINKS}`,
+      action: 'refresh',
       url: 'http://piwi/test-runs/41',
       error: false,
     });
   });
 
+  test('the tooltip names the reporter the project installs', () => {
+    const withReporter: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: '0.47.0' }] };
+    expect(statusBarView(connected, withReporter).tooltip).toBe(
+      `Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\n\n${FROM}\n\nreporter 0.47.0\n\n${LINKS}`,
+    );
+    const unknown: RunStatusResult = { contexts: [{ ...run({}).contexts[0]!, reporterVersion: null }] };
+    expect(statusBarView(connected, unknown).tooltip).not.toContain('reporter');
+  });
+
+  test('the tooltip says when the run was read, and whether the next one is pushed or polled', () => {
+    const now = Date.parse('2026-09-27T12:00:12.000Z');
+    const read = (stream?: 'live' | 'polling'): RunStatusResult => ({
+      contexts: [{ ...run({}).contexts[0]!, updatedAt: '2026-09-27T12:00:00.000Z', stream }],
+    });
+    expect(statusBarView(connected, read('live'), false, now).tooltip.split('\n\n')).toEqual([
+      'Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped',
+      'Updated 12 s ago · live',
+      FROM,
+      LINKS,
+    ]);
+    expect(statusBarView(connected, read('polling'), false, now).tooltip).toContain(
+      '\n\nUpdated 12 s ago · read every minute\n\n',
+    );
+    // From a service that does not say when.
+    expect(statusBarView(connected, run({}), false, now).tooltip).not.toContain('Updated');
+  });
+
+  test('the tooltip shows the names it holds as they are written', () => {
+    const named: StatusResult = { contexts: [{ ...connected.contexts[0]!, projectName: 'Shop_*Web*' }] };
+    expect(statusBarView(named, run({})).tooltip).toMatch(/^Run #41 of Shop\\_\\\*Web\\\* on feature\/pay: /);
+  });
+
   test('a failing run is an error', () => {
     expect(statusBarView(connected, run({ status: 'failed', failedTests: 3, passedTests: 115 }))).toMatchObject({
       text: '$(error) Piwi: 3 failing · 2 flaky',
+      action: 'refresh',
       error: true,
     });
+  });
+
+  test('counts the tests still failing after the local runs, and those they fixed', () => {
+    const local = (counts: { failingTests: number; resolved: number; overlays: number }): RunStatusResult => {
+      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115, flakyTests: 0 });
+      return { contexts: [{ ...runs.contexts[0]!, ...counts }] };
+    };
+    const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
+    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: true });
+    expect(view.tooltip).toBe(
+      `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally\n\n${FROM}\n\n${LINKS}`,
+    );
+    expect(statusBarView(connected, local({ failingTests: 0, resolved: 3, overlays: 1 }))).toMatchObject({
+      text: '$(pass) Piwi: 3 fixed locally',
+      error: false,
+    });
+    expect(statusBarView(connected, local({ failingTests: 1, resolved: 0, overlays: 1 }))).toMatchObject({
+      text: '$(error) Piwi: 1 failing',
+      tooltip: expect.stringContaining('\n\n1 local run since · 0 tests fixed locally\n\n'),
+    });
+    expect(statusBarView(connected, local({ failingTests: 3, resolved: 0, overlays: 0 })).tooltip).not.toContain(
+      'local run',
+    );
+  });
+
+  test('a run in progress, the editor’s own or one on the branch, in the item and beside the latest run', () => {
+    const inProgress: LiveRun = {
+      runId: 124,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T11:00:00.000Z',
+      own: true,
+    };
+    const live = (over: Partial<LiveRun> | null): RunStatusResult => {
+      const runs = run({ status: 'failed', failedTests: 3, passedTests: 115, flakyTests: 0 });
+      return { contexts: [{ ...runs.contexts[0]!, failingTests: 3, live: over && { ...inProgress, ...over } }] };
+    };
+    expect(statusBarView(connected, live({}))).toMatchObject({
+      text: '$(sync~spin) Piwi: 4/9 · 1 failing · your run',
+      tooltip: `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\nYour run #124 is running: 4/9 · 1 failing\n\n${FROM}\n\n${LINKS}`,
+      action: 'refresh',
+      error: false,
+    });
+    expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
+      text: '$(sync~spin) Piwi: 4/9',
+      tooltip: expect.stringContaining('\n\nRun #124 is running: 4/9\n\n'),
+    });
+    // Once it ended, the latest run again.
+    expect(statusBarView(connected, live(null)).text).toBe('$(error) Piwi: 3 failing');
+    // On a branch without a run yet.
+    const first: RunStatusResult = {
+      contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0, live: { ...inProgress, done: 0, failed: 0 } }],
+    };
+    expect(statusBarView(connected, first)).toMatchObject({
+      text: '$(sync~spin) Piwi: 0/9 · your run',
+      tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0/9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
+      action: 'refresh',
+    });
+  });
+
+  test('the files are drawn again when the latest run changes, not while a run in progress moves', () => {
+    const latest = run({ status: 'failed', failedTests: 1 });
+    const moving: RunStatusResult = {
+      contexts: [
+        {
+          ...latest.contexts[0]!,
+          live: { runId: 124, status: 'running', done: 1, total: 9, failed: 0, startedAt: '', own: true },
+          stream: 'live',
+          updatedAt: '2026-09-27T11:00:00.000Z',
+        },
+      ],
+    };
+    expect(runsInFiles(moving)).toBe(runsInFiles(latest));
+    expect(runsInFiles(run({}))).not.toBe(runsInFiles(latest));
+    // A test of the run in progress that begins or ends is drawn at once.
+    const testing = {
+      contexts: [{ ...moving.contexts[0]!, liveTests: [{ testCaseId: 1, status: 'running' as const }] }],
+    };
+    expect(runsInFiles(testing)).not.toBe(runsInFiles(moving));
   });
 
   test('a running run shows its progress', () => {
     expect(
       statusBarView(connected, run({ status: 'running', passedTests: 40, failedTests: 1, flakyTests: 0 })),
-    ).toMatchObject({ text: '$(sync~spin) Piwi: 41/120 · 1 failing', action: 'open' });
+    ).toMatchObject({ text: '$(sync~spin) Piwi: 41/120 · 1 failing', action: 'refresh' });
   });
 
   test('an interrupted run names its status', () => {
@@ -107,8 +249,30 @@ describe('statusBarView', () => {
     const view = statusBarView(connected, { contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0 }] });
     expect(view).toMatchObject({
       text: '$(beaker) Piwi: no run',
-      tooltip: 'No run of Acme on wip yet\nhttp://piwi, from the workspace .env',
+      tooltip: `No run of Acme on wip yet\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith) · [Connect](command:piwi.connect)`,
+      action: 'refresh',
     });
+  });
+
+  test('while a click reads the run again, the item’s icon spins', () => {
+    expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(sync~spin) Piwi: 2 failing');
+    expect(refreshingText('Piwi')).toBe('$(sync~spin) Piwi');
+  });
+});
+
+describe('relativeTime', () => {
+  test('in seconds, minutes, hours, then days', () => {
+    const at = '2026-09-27T12:00:00.000Z';
+    const ago = (ms: number) => relativeTime(at, Date.parse(at) + ms);
+    expect(ago(400)).toBe('just now');
+    expect(ago(-5_000)).toBe('just now');
+    expect(ago(12_000)).toBe('12 s ago');
+    expect(ago(59_999)).toBe('59 s ago');
+    expect(ago(60_000)).toBe('1 min ago');
+    expect(ago(4 * 60_000 + 30_000)).toBe('4 min ago');
+    expect(ago(2 * 3_600_000)).toBe('2 h ago');
+    expect(ago(3 * 86_400_000 + 5)).toBe('3 d ago');
+    expect(relativeTime('not a time', 0)).toBe('just now');
   });
 });
 
@@ -251,6 +415,44 @@ describe('the tests of a file', () => {
     ]);
   });
 
+  test('a test the run in progress runs shows it, without a tint', () => {
+    expect(testDecorations([{ line: 2, title: 'passed 4/4', status: 'running', endLine: 4 }])).toEqual([
+      {
+        status: 'running',
+        line: 2,
+        failingUntil: null,
+        failingLine: null,
+        hover: '**Piwi**: running · passed 4/4',
+        dashboardUrl: null,
+      },
+    ]);
+  });
+
+  test('a failing test whose failing line changed since the run keeps its tint, and its hover says so', () => {
+    const failure = {
+      line: 5,
+      headline: 'not found',
+      message: null,
+      executionId: 90,
+      url: 'http://piwi/test-run-cases/90',
+    };
+    const [edited] = testDecorations([
+      { line: 3, title: 'passed 1/4 · failed', status: 'failed', endLine: 6, failure: { ...failure, state: 'edited' } },
+    ]);
+    expect(edited).toMatchObject({ status: 'failed', failingUntil: 6, failingLine: 5 });
+    expect(edited!.hover).toBe('**Piwi**: failing · edited since the run · passed 1/4 · failed');
+    const [failing] = testDecorations([
+      {
+        line: 3,
+        title: 'passed 1/4 · failed',
+        status: 'failed',
+        endLine: 6,
+        failure: { ...failure, state: 'failing' },
+      },
+    ]);
+    expect(failing!.hover).toBe('**Piwi**: failing · passed 1/4 · failed');
+  });
+
   test('the status bar says when the checked-out branch has no run yet', () => {
     const onMain: RunStatusResult = {
       contexts: [{ ...run({}).contexts[0]!, branch: 'main', checkedOut: 'feature/cart' }],
@@ -259,6 +461,116 @@ describe('the tests of a file', () => {
       /^Run #41 of Acme on main \(feature\/cart has no run yet\)/,
     );
     expect(statusBarView(connected, run({})).tooltip).not.toMatch(/no run yet/);
+  });
+});
+
+describe('Compare with…', () => {
+  const at = (baseline: NonNullable<RunStatusResult['contexts'][number]['baseline']>): RunStatusResult => ({
+    contexts: [{ ...run({}).contexts[0]!, branch: 'main', checkedOut: 'feature/cart', baseline }],
+  });
+
+  test('offers the ladder, the default branch and the branches with runs, a run by id and the local runs', () => {
+    const picks = baselinePicks({ ...run({}).contexts[0]!, branches: ['main', 'feature/x'] });
+    expect(picks.map((p) => [p.label, p.description])).toEqual([
+      ['CI on the checked-out branch, else main (default)', 'current'],
+      ['main', 'default branch'],
+      ['feature/x', ''],
+      ['A run by id…', ''],
+      ['My local runs only', ''],
+    ]);
+    expect(picks.map((p) => p.choice)).toEqual([
+      { kind: 'ladder' },
+      { kind: 'branch', branch: 'main' },
+      { kind: 'branch', branch: 'feature/x' },
+      'run-by-id',
+      { kind: 'local' },
+    ]);
+  });
+
+  test('marks the choice in force, and keeps a chosen branch the list no longer names', () => {
+    const picks = baselinePicks({
+      ...run({}).contexts[0]!,
+      branches: ['main'],
+      baseline: { choice: { kind: 'branch', branch: 'release' }, label: 'release (no run)' },
+    });
+    expect(picks.map((p) => [p.label, p.description])).toEqual([
+      ['CI on the checked-out branch, else main (default)', ''],
+      ['main', 'default branch'],
+      ['release', 'current'],
+      ['A run by id…', ''],
+      ['My local runs only', ''],
+    ]);
+    const byId = baselinePicks({
+      ...run({}).contexts[0]!,
+      baseline: { choice: { kind: 'run', runId: 118 }, label: 'CI run #118 on main' },
+    });
+    expect(byId[0]!.label).toBe('CI on the checked-out branch, else the default branch (default)');
+    expect(byId.find((p) => p.choice === 'run-by-id')!.description).toBe('current: run #118');
+  });
+
+  test('reads a run id, with or without its #', () => {
+    expect([runIdOf('118'), runIdOf(' #118 '), runIdOf('0'), runIdOf('run 118'), runIdOf('')]).toEqual([
+      118,
+      118,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  test('keeps a choice per root, the ladder as none', () => {
+    const kept = withBaseline({ '/a': { kind: 'local' } }, '/b', { kind: 'run', runId: 118 });
+    expect(kept).toEqual({ '/a': { kind: 'local' }, '/b': { kind: 'run', runId: 118 } });
+    expect(withBaseline(kept, '/a', { kind: 'ladder' })).toEqual({ '/b': { kind: 'run', runId: 118 } });
+  });
+
+  test('the tooltip names the baseline, and a chosen branch is not a fallback', () => {
+    const view = statusBarView(
+      connected,
+      at({ choice: { kind: 'branch', branch: 'main' }, label: 'CI run #41 on main' }),
+    );
+    expect(view.tooltip).toMatch(/^Run #41 of Acme on main: 118 passed.*\n\nBaseline: CI run #41 on main\n\n/);
+    expect(view.tooltip).not.toMatch(/no run yet/);
+    expect(view.tooltip).toContain('[Compare with…](command:piwi.compareWith)');
+  });
+
+  test('a choice with no run says so', () => {
+    const none: RunStatusResult = {
+      contexts: [
+        {
+          root: '/w',
+          branch: 'release',
+          failures: 0,
+          run: null,
+          baseline: { choice: { kind: 'branch', branch: 'release' }, label: 'release (no run)' },
+        },
+      ],
+    };
+    expect(statusBarView(connected, none)).toMatchObject({
+      text: '$(beaker) Piwi: no run',
+      tooltip: expect.stringContaining('No run of Acme on release yet\n\nBaseline: release (no run)'),
+    });
+  });
+
+  test('the local runs alone count their failures', () => {
+    const local: RunStatusResult = {
+      contexts: [
+        {
+          root: '/w',
+          branch: 'main',
+          failures: 2,
+          failingTests: 1,
+          overlays: 2,
+          run: null,
+          baseline: { choice: { kind: 'local' }, label: 'your local runs only' },
+        },
+      ],
+    };
+    expect(statusBarView(connected, local)).toMatchObject({
+      text: '$(error) Piwi: 1 failing',
+      tooltip: expect.stringMatching(/^2 local runs of Acme on main, 1 test failing\n\nBaseline: your local runs only/),
+      error: true,
+    });
   });
 });
 
@@ -609,5 +921,283 @@ describe('a new test file', () => {
     expect(newTestFileName('/w/playwright.config.mjs')).toBe('recorded.spec.js');
     expect(newTestFileName('/w/playwright.config.ts')).toBe('recorded.spec.ts');
     expect(newTestFileName(null)).toBe('recorded.spec.ts');
+  });
+});
+
+describe('the failures view', () => {
+  const now = Date.parse('2026-09-27T10:04:00.000Z');
+  const base = { url: 'http://piwi/test-run-cases/1', hasTrace: false, headline: 'Failed', isNew: false } as const;
+  const result: FailuresResult = {
+    items: [
+      {
+        ...base,
+        uri: 'file:///w/tests/login.spec.ts',
+        line: 41,
+        title: 'logs in',
+        headline: "getByRole('button') was not visible",
+        executionId: 1,
+        runId: 120,
+        hasTrace: true,
+        source: 'ci',
+        state: 'failing',
+        browserName: 'chromium',
+        file: 'tests/login.spec.ts',
+        testCaseId: 7,
+        clusterId: 3,
+        clusterTitle: 'Login button hidden',
+        owner: '@team-auth',
+        isNew: true,
+        hasScreenshot: true,
+      },
+      {
+        ...base,
+        uri: 'file:///w/tests/login.spec.ts',
+        line: 41,
+        title: 'logs in',
+        executionId: 2,
+        runId: 120,
+        source: 'ci',
+        state: 'failing',
+        browserName: 'firefox',
+        file: 'tests/login.spec.ts',
+        testCaseId: 7,
+        clusterId: 3,
+        clusterTitle: 'Login button hidden',
+        owner: '@team-auth',
+      },
+      {
+        ...base,
+        uri: 'file:///w/tests/pages/checkout.page.ts',
+        line: 4,
+        title: 'pays',
+        executionId: 3,
+        runId: 124,
+        source: 'own',
+        state: 'edited',
+        browserName: 'chromium',
+        file: 'tests/checkout.spec.ts',
+        testCaseId: 8,
+        clusterId: null,
+        owner: null,
+      },
+      {
+        ...base,
+        uri: 'file:///w/tests/checkout.spec.ts',
+        line: 9,
+        title: 'removes a row',
+        headline: null,
+        executionId: 4,
+        runId: 124,
+        source: 'own',
+        state: 'fixed-locally',
+        browserName: 'chromium',
+        file: 'tests/checkout.spec.ts',
+        testCaseId: 9,
+      },
+    ],
+    run: {
+      id: 120,
+      branch: 'feature/x',
+      status: 'failed',
+      startTime: '2026-09-27T10:00:00.000Z',
+      totalTests: 9,
+      passedTests: 6,
+      failedTests: 3,
+      flakyTests: 0,
+      skippedTests: 0,
+      url: 'http://piwi/test-runs/120',
+      origin: 'ci',
+      own: false,
+    },
+    overlays: [
+      {
+        id: 124,
+        origin: 'editor',
+        startTime: '2026-09-27T10:02:00.000Z',
+        status: 'failed',
+        totalTests: 2,
+        passedTests: 1,
+        failedTests: 1,
+        url: 'http://piwi/test-runs/124',
+        own: true,
+      },
+    ],
+  };
+  const labels = (nodes: FailureNode[]): unknown =>
+    nodes.map((n) => (n.children.length ? [`${n.label} (${n.description})`, labels(n.children)] : n.label));
+
+  test('show the run, the runs since, and the failures by file, failing first', () => {
+    const [root] = failureTree(result, 'file', { now });
+    expect(root).toMatchObject({
+      kind: 'run',
+      label: 'Run #120 · CI · feature/x · 2 failing · 1 fixed locally',
+      description: '4 min ago',
+      state: 'expanded',
+      url: 'http://piwi/test-runs/120',
+    });
+    expect(labels(root!.children)).toEqual([
+      ['Your runs since (1 run)', ['#124 · your run · 2 min ago · 1 passed, 1 failed']],
+      ['tests/checkout.spec.ts (1 failing · 1 fixed locally)', ['pays', 'removes a row']],
+      ['tests/login.spec.ts (1 failing)', ['logs in', 'logs in']],
+    ]);
+    expect(root!.children[0]).toMatchObject({ state: 'collapsed' });
+    expect(root!.children[0]!.children[0]).toMatchObject({ kind: 'overlay', url: 'http://piwi/test-runs/124' });
+  });
+
+  test('the run names the baseline chosen; the local runs alone are the root without one', () => {
+    const label = 'CI run #120 on feature/x';
+    const [root] = failureTree({ ...result, baseline: { choice: { kind: 'ladder' }, label } }, 'file', { now });
+    expect(root!.tooltip).toMatch(/^Baseline: CI run #120 on feature\/x\n\nRun #120 of feature\/x: 6 passed/);
+    const local = { choice: { kind: 'local' as const }, label: 'your local runs only' };
+    const [alone] = failureTree({ ...result, run: null, baseline: local }, 'file', { now });
+    expect(alone).toMatchObject({
+      kind: 'run',
+      label: 'Your local runs · 2 failing · 1 fixed locally',
+      description: 'no baseline',
+      tooltip: 'Baseline: your local runs only',
+      url: null,
+    });
+    expect(alone!.children.map((n) => n.label)).toEqual(['Your runs', 'tests/checkout.spec.ts', 'tests/login.spec.ts']);
+  });
+
+  test('a failure says where, on which project, and whether it is new, with its run in the tooltip', () => {
+    const [root] = failureTree(result, 'flat', { now });
+    const [first, second, edited, fixed] = root!.children.slice(1);
+    expect(first).toMatchObject({
+      kind: 'failure',
+      label: 'logs in',
+      description: 'tests/login.spec.ts:42 · chromium · new',
+      icon: 'error',
+      url: 'http://piwi/test-run-cases/1',
+    });
+    expect(first!.tooltip).toBe(
+      "**logs in**\n\ngetByRole('button') was not visible\n\nrun #120\n\nCluster: Login button hidden\n\nOwner: @team-auth",
+    );
+    expect(second!.description).toBe('tests/login.spec.ts:42 · firefox');
+    // It shows in the page object its stack goes through.
+    expect(edited).toMatchObject({ icon: 'edit', description: 'checkout.page.ts:5 · chromium' });
+    expect(edited!.tooltip).toContain('edited since your run #124');
+    expect(fixed).toMatchObject({ icon: 'check' });
+    expect(fixed!.tooltip).toContain('fixed locally in your run #124');
+  });
+
+  test('groups by cluster or owner, the failures without one last', () => {
+    const [byCluster] = failureTree(result, 'cluster', { now });
+    expect(byCluster!.children.slice(1).map((g) => [g.label, g.description])).toEqual([
+      ['Login button hidden', '1 failing'],
+      ['Ungrouped', '1 failing · 1 fixed locally'],
+    ]);
+    const [byOwner] = failureTree(result, 'owner', { now });
+    expect(byOwner!.children.slice(1).map((g) => g.label)).toEqual(['@team-auth', 'Unowned']);
+  });
+
+  test('while the editor’s own run is live, the run counts it', () => {
+    const live: LiveRun = {
+      runId: 125,
+      status: 'running',
+      done: 4,
+      total: 9,
+      failed: 1,
+      startedAt: '2026-09-27T10:03:00.000Z',
+      own: true,
+    };
+    expect(failureTree(result, 'file', { now, live })[0]!.description).toBe('running 4/9');
+    expect(failureTree(result, 'file', { now, live: { ...live, own: false } })[0]!.description).toBe('4 min ago');
+  });
+
+  test('without a failure, nothing; from an older service, the groups alone', () => {
+    expect(failureTree({ items: [], run: result.run }, 'file', { now })).toEqual([]);
+    expect(failureTree(null, 'file')).toEqual([]);
+    const older = failureTree({ items: [{ ...result.items[0]!, file: undefined, testCaseId: undefined }] }, 'file');
+    expect(older.map((n) => n.label)).toEqual(['login.spec.ts']);
+  });
+
+  test('counts the failing tests, and re-runs them from the file of the first', () => {
+    expect(failingCount(result)).toBe(2);
+    expect(rerunFailingArgs(result)).toEqual({ uri: 'file:///w/tests/login.spec.ts', testIds: [7, 8] });
+    expect(rerunFailingArgs({ items: [result.items[3]!] })).toBeNull();
+    expect(rerunFailingArgs(null)).toBeNull();
+  });
+
+  test('a failure names its run', () => {
+    const f = result.items[0]!;
+    expect(failureRunNote(f)).toBe('run #120');
+    expect(failureRunNote({ ...f, source: 'local', runId: 124 })).toBe('local run #124');
+    expect(failureRunNote({ ...f, source: 'ci', state: 'fixed-locally', runId: 125 })).toBe('fixed in run #125');
+    expect(failureRunNote({ ...f, source: 'local', state: 'fixed-locally', runId: 124 })).toBe(
+      'fixed locally in run #124',
+    );
+  });
+});
+
+describe('the verdict of a run started from the editor', () => {
+  const ended: RunEnded = {
+    root: '/w',
+    runId: 124,
+    url: 'http://piwi/test-runs/124',
+    passed: 1,
+    failed: 2,
+    flaky: 0,
+    skipped: 0,
+    fixed: 1,
+    stillFailing: ['login.spec.ts › logs in', 'checkout.spec.ts › pays'],
+    newFailures: [],
+    stillFailingCount: 2,
+    newFailureCount: 0,
+  };
+
+  test('says how many CI failures it fixed and names those still failing, with Re-run failing', () => {
+    expect(runVerdict(ended)).toEqual({
+      severity: 'warning',
+      text: 'Piwi: run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)',
+      actions: ['Open the failures', 'Open in dashboard', 'Re-run failing'],
+    });
+  });
+
+  test('names its new failures, and how many more past the first five', () => {
+    const titles = ['a.spec.ts › 1', 'a.spec.ts › 2', 'a.spec.ts › 3', 'a.spec.ts › 4', 'a.spec.ts › 5'];
+    const verdict = runVerdict({
+      ...ended,
+      fixed: 0,
+      stillFailing: [],
+      stillFailingCount: 0,
+      newFailures: titles,
+      newFailureCount: 7,
+    });
+    expect(verdict?.text).toBe(`Piwi: run #124 · 7 new failures (${titles.join(', ')} and 2 more)`);
+  });
+
+  test('a run that fixed everything it ran is an information, without Re-run failing', () => {
+    expect(runVerdict({ ...ended, failed: 0, passed: 3, stillFailing: [], stillFailingCount: 0 })).toEqual({
+      severity: 'information',
+      text: 'Piwi: run #124 · 1 of 1 CI failure fixed',
+      actions: ['Open the failures', 'Open in dashboard'],
+    });
+  });
+
+  test('a run that touched no failure gives its counts', () => {
+    const quiet = { ...ended, fixed: 0, stillFailing: [], stillFailingCount: 0, passed: 4, failed: 0, flaky: 1 };
+    expect(runVerdict(quiet)?.text).toBe('Piwi: run #124 · 4 passed, 0 failed, 1 flaky');
+  });
+
+  test('the setting keeps it quiet: always, only when something fails, or never', () => {
+    const passing = { ...ended, failed: 0, stillFailing: [], stillFailingCount: 0 };
+    expect(runVerdict(passing, 'failures')).toBeNull();
+    expect(runVerdict(ended, 'failures')).not.toBeNull();
+    expect(runVerdict(ended, 'never')).toBeNull();
+  });
+});
+
+describe('a locator picked at a breakpoint', () => {
+  const at = { file: 'tests/login.spec.ts', line: 42 };
+
+  test('says where it went', () => {
+    expect(pickNotice(at, 'replaced')).toBe('Piwi: the picked locator replaced the one at line 42 of login.spec.ts.');
+    expect(pickNotice(at, 'no-locator')).toBe(
+      'Piwi: the picked locator was inserted at the cursor: line 42 of login.spec.ts holds no locator anymore.',
+    );
+    expect(pickNotice(at, 'no-file')).toBe(
+      'Piwi: the picked locator was inserted at the cursor: tests/login.spec.ts is not in this workspace.',
+    );
   });
 });

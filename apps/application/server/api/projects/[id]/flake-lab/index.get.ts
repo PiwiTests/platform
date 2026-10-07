@@ -1,5 +1,6 @@
 import { parseProjectRunScope } from '#shared/project-run-scope';
 import { FLAKE_EXPERIMENTS_MAX, getProjectFlakeLab } from '#shared/handlers/flake-lab';
+import { cachedFlakeProfileSummaries } from '../../../../utils/flake-profile-cache';
 import { TOP_SUSPECTS_MAX_TESTS } from '#shared/handlers/flake-profile';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { optionalIntQuery } from '../../../../utils/query-params';
@@ -65,6 +66,7 @@ export default eventHandler(async (event) => {
       scope: parseProjectRunScope(query),
       limit: optionalIntQuery(event, 'limit', { default: 20, min: 1, max: FLAKE_EXPERIMENTS_MAX }),
       suspects: query.suspects === 'true' || query.suspects === '1',
+      profiles: (testCaseIds) => cachedFlakeProfileSummaries(db, projectId, testCaseIds),
     });
   } catch (e: any) {
     if (e?.message === 'Project not found') throw apiError({ statusCode: 404, message: 'Project not found' });

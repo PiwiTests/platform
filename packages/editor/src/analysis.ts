@@ -5,7 +5,7 @@
  * unsaved changes break. Pure: the language server turns these into
  * diagnostics, quick fixes, hovers and summary lines.
  */
-import { extractDiffAnchors, type DiffAnchor, type DiffFile } from '@piwitests/core/diff-anchors';
+import { extractDiffAnchors, type DiffAnchor, type DiffFile, type DiffHunk } from '@piwitests/core/diff-anchors';
 import {
   predictLocatorBreaks,
   reachOfIndex,
@@ -21,6 +21,7 @@ import { recommendLocatorFix } from '@piwitests/core/locator-fix';
 import type { LocatorIndex, LocatorIndexEntry, LocatorIndexTest, LocatorIndexUse } from '@piwitests/core/locator-index';
 import { assessLocatorChain, stabilityLabels, type LocatorStability } from '@piwitests/core/locator-stability';
 import {
+  LOCATING_METHODS,
   parseLeafLocatorCall,
   renderLocatorChain,
   scanLocatorChain,
@@ -28,6 +29,7 @@ import {
 } from '@piwitests/core/locator-chain';
 import type { RankedLocator } from '@piwitests/core/locator-healing-types';
 import type { CallSiteAlternatives, CodeIndex, FlakeLabEntry } from './piwi-client.js';
+import { relativeTo } from './workspace.js';
 
 /** A locator the index knows at one line of a file. */
 export interface LineLocator {
@@ -172,6 +174,74 @@ export function replaceLocatorOnLine(lineText: string, locator: string, replacem
   }
   const method = parseLeafLocatorCall(locator)?.method;
   return buildLocatorEdit(lineText, method, replacement)?.new ?? null;
+}
+
+/** The start of a locating call on a source line: `getByRole(`, `.locator(`, never `myLocator(`. */
+const LOCATING_CALL = new RegExp(`(?<![\\w$])(?:${[...LOCATING_METHODS].join('|')})\\s*\\(`, 'g');
+
+/** The first locator chain a source line holds: its columns and its source; null when it holds none. */
+export function locatorChainOnLine(lineText: string): { start: number; end: number; locator: string } | null {
+  for (const m of lineText.matchAll(LOCATING_CALL)) {
+    const scanned = scanLocatorChain(lineText.slice(m.index));
+    if (scanned) return { start: m.index, end: m.index + scanned.end, locator: renderLocatorChain(scanned.chain) };
+  }
+  return null;
+}
+
+/**
+ * The edit that puts `picked` in place of the locator chain a source line holds, the chain `replaceLocatorOnLine`
+ * replaces (`page.` and the action after it stay), as the columns it replaces and their new text; null when the line
+ * holds no locator.
+ */
+export function pickEditOnLine(
+  lineText: string,
+  picked: string,
+): { start: number; end: number; newText: string } | null {
+  const held = locatorChainOnLine(lineText);
+  return held ? { start: held.start, end: held.end, newText: picked } : null;
+}
+
+/**
+ * `PIWI_PAUSE_AT` for the breakpoints (0-based lines) of the files under a Playwright config's folder: each file
+ * relative to that folder, with forward slashes, and its 1-based line, separated by semicolons
+ * (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`). Null when none is under it.
+ */
+export function pauseAtValue(root: string, breakpoints: Array<{ file: string; line: number }>): string | null {
+  const entries = new Set<string>();
+  for (const b of breakpoints) {
+    if (!Number.isInteger(b.line) || b.line < 0) continue;
+    const rel = relativeTo(root, b.file);
+    if (rel) entries.add(`${rel}:${b.line + 1}`);
+  }
+  return entries.size ? [...entries].join(';') : null;
+}
+
+/** A Playwright command line that runs headed: `--headed` appended unless it carries `--headed`, `--ui` or `--debug`. */
+export function headedCommand(command: string, args: string[]): { command: string; args: string[] } {
+  const shows = /(?:^|\s)["']?--(?:headed|ui|debug)(?:[=\s"']|$)/;
+  if (shows.test(command) || args.some((a) => /^--(?:headed|ui|debug)(?:=|$)/.test(a))) return { command, args };
+  return { command: `${command} --headed`, args: [...args, '--headed'] };
+}
+
+/** The first `@piwitests/reporter` that pauses at the editor's breakpoints. */
+export const PAUSE_REPORTER_VERSION = '0.48.0';
+
+/**
+ * Why breakpoints do nothing with the project's reporter: a sentence when its version (major.minor.patch) is older
+ * than `PAUSE_REPORTER_VERSION`; null when it is as new, or unknown.
+ */
+export function breakpointsNotice(reporterVersion: string | null): string | null {
+  const parse = (v: string) => /^(\d+)\.(\d+)\.(\d+)/.exec(v.trim())?.slice(1).map(Number) ?? null;
+  const have = reporterVersion ? parse(reporterVersion) : null;
+  const need = parse(PAUSE_REPORTER_VERSION)!;
+  if (!have) return null;
+  for (let i = 0; i < 3; i++) {
+    if (have[i]! > need[i]!) return null;
+    if (have[i]! < need[i]!) {
+      return `Breakpoints need @piwitests/reporter ${PAUSE_REPORTER_VERSION} or later; this project has ${reporterVersion!.trim()}.`;
+    }
+  }
+  return null;
 }
 
 /** Which files each test reaches, from the code index; undefined when it holds no client reach. Built once per index. */
@@ -587,6 +657,48 @@ export function callEndLine(lines: string[], line: number, column: number, maxLi
     }
   }
   return null;
+}
+
+/**
+ * Where a line of a failure stands in its file as edited since the run: `same` and `moved` hold its text (on its own
+ * line or on another), `edited` changed it, `gone` took its test out of the file.
+ */
+export type LineState = 'same' | 'moved' | 'edited' | 'gone';
+
+/**
+ * Where a line (1-based) of `before` is in `after`, through the hunks of `diffLines(path, before, after)`. A line
+ * outside every hunk shifts by the net size of the hunks above it: `same` when its number holds, `moved` when it
+ * changes. A line a hunk removed is `moved` to the line of that hunk's added block that holds its text (whitespace
+ * trimmed), the nearest to where it stood when several do; with none, it is `edited`, on the hunk's first added line,
+ * or on the line before the hunk when the hunk only removes. The hunks never make a line `gone`: whether its test is
+ * still in the file is read from the file's text.
+ */
+export function placeLine(line: number, hunks: DiffHunk[]): { line: number; state: LineState } {
+  let shift = 0;
+  for (const hunk of hunks) {
+    if (!hunk.removed.length) {
+      // Lines inserted after `oldStart`.
+      if (line <= hunk.oldStart) break;
+      shift += hunk.added.length;
+      continue;
+    }
+    const first = hunk.removed[0]!.line;
+    const last = hunk.removed[hunk.removed.length - 1]!.line;
+    if (line < first) break;
+    if (line > last) {
+      shift += hunk.added.length - hunk.removed.length;
+      continue;
+    }
+    const text = hunk.removed[line - first]?.text.trim() ?? '';
+    const kept = text ? hunk.added.filter((a) => a.text.trim() === text) : [];
+    if (kept.length) {
+      const near = hunk.newStart + (line - first);
+      const nearest = kept.reduce((best, a) => (Math.abs(a.line - near) < Math.abs(best.line - near) ? a : best));
+      return { line: nearest.line, state: 'moved' };
+    }
+    return { line: hunk.added[0]?.line ?? Math.max(1, hunk.newStart), state: 'edited' };
+  }
+  return { line: line + shift, state: shift ? 'moved' : 'same' };
 }
 
 /** The Flake Lab states whose next step verifies a fix. */

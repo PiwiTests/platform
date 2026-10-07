@@ -1,7 +1,7 @@
 /**
- * The flake profiles the flaky list reads (the summary view), kept per test
- * until a run of its project ends: a profile reads every run its test ran in
- * over its window, and the list asks for up to 50 at a time. Lab runs stay out
+ * The flake profiles the flaky list and the lab's suspects read (the summary
+ * view), kept per test until a run of its project ends: a profile reads every
+ * run its test ran in over its window, and each asks for up to 50 at a time. Lab runs stay out
  * of profiles, so a lab experiment never makes one stale; the lab results the
  * list shows beside them are read on each request. A deleted run is not
  * announced, so an entry also expires after ten minutes.

@@ -1,6 +1,6 @@
 ---
 title: Editor extensions
-description: "Piwi in VS Code and the JetBrains IDEs: tests recorded at the cursor, the latest CI failures at their failing lines with the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
+description: "Piwi in VS Code and the JetBrains IDEs: tests recorded at the cursor, the latest CI failures at their failing lines with your local runs laid over them and the heal as a quick fix, the tests behind each locator and file, brittle locators, and the locators an unsaved change breaks."
 lang: en-US
 ---
 
@@ -28,31 +28,29 @@ your files locally.
 
 The failures of the latest complete [CI run](/reference/test-metadata#run-origin) on the checked-out branch, else the
 default branch, are errors in the Problems panel, at the line that failed: the call in the error's stack when that file
-is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. The run is read every
-minute.
+is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. Your local runs
+since are laid over it, and the editor reads it again as soon as a run ends: [Runs from the editor](./editor-runs)
+covers running tests, the failures view, the status bar, and what a run changes. Each failure follows your edits until a run covers its
+test again: [Failures follow your edits](./editor-runs#failures-follow-your-edits).
 
 On a failure, the quick fixes are:
 
 - **Heal: use …** — when [locator healing](/features/locator-healing) has a recommendation for the failing locator,
   the same edit an [auto-heal pull request](/features/auto-heal) would make, applied in place.
+- **Run this test** — runs the failing test from the editor; first once you rewrote the line it failed at.
 - **Open the trace** — opens it with `npx playwright show-trace`.
-- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app** and, when the test has an
-  untested [flake suspect](./flake-lab), **Run Flake Lab on its untested suspects in the desktop app** — on a team
-  instance's failure, while the [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records
-  the first bad commit or lab results.
+- **Reproduce in the desktop app**, **Find the breaking commit in the desktop app**, and **Run Flake Lab on its
+  untested suspects in the desktop app** for a test with an untested [flake suspect](./flake-lab) — on a team
+  instance's failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs; **Share on …** records
+  the result.
 - **Apply the fix plan, then run its verification** — when the failure's [cluster](/features/failure-clusters) has a
-  [fix plan](/features/fix-plans) whose patch applies to your files (or locator rewrites whose lines still read as
-  captured): VS Code previews the edit, then runs the plan's verify command in a terminal.
+  [fix plan](/features/fix-plans) whose patch applies to your files: VS Code previews the edit, then runs the plan's
+  verify command in a terminal.
 - **Copy context for agent** — the failure, its healing and fix plan, for a coding agent.
 - **Open the failure in the dashboard** — the execution page, with its [evidence](/features/evidence).
 
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to the failure's
 cluster or test. Without one, **File an issue** opens the cluster in the dashboard.
-
-## The status bar
-
-The latest complete run on the branch: how many tests passed, failed and were flaky. Click it to open the run. When
-the extension is not connected, the item says why and runs **Piwi: Connect**.
 
 ## The tests behind each line
 
@@ -111,20 +109,15 @@ clipboard. It holds your API key: paste it into your user settings, not into the
 |---|---|
 | Piwi: Connect, Disconnect | See [Editor connection](./editor-connection) |
 | Piwi: Refresh | Fetch the indexes and the latest run again |
+| Piwi: Refresh the latest run | Read the latest run and its failures again, as a click on the status bar does |
 | Piwi: Run the tests that reach this file | Run them in a terminal, with the arguments `piwi run` would use |
 | Piwi: Open in dashboard | Open this file's test, or the latest run |
 | Piwi: Run selection… | Run one of the project's saved [selections](/features/test-selection) |
 | Piwi: Open the latest run | Open the run the status bar shows |
-| Piwi: Copy the MCP server configuration | For editors without the MCP provider API |
+| Piwi: Compare with… | Choose the run the failures are read against: [Compare with another run](./editor-runs#compare-with-another-run) |
 | Piwi: Pair with Piwi Picker | Copy the address [Piwi Picker sends to](./editor-recording#send-from-piwi-picker) |
-| Piwi: Record here, Record a new test file | Record in a browser, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
+| Piwi: Record here, Record a new test file | Record in a browser opened through your project's own Playwright, at the cursor or into a new spec: [Record tests from the editor](./editor-recording) |
 | Piwi: Stop recording, Pause recording, Resume recording | Control the recording in progress |
-
-## Record a test
-
-**Piwi: Record here** opens a browser through your project's own Playwright and writes what you do there at the cursor,
-as you do it. A locator picked or a flow recorded with [Piwi Picker](./extension) can be sent to the cursor too. Both
-are in [Record tests from the editor](./editor-recording).
 
 ## JetBrains IDEs
 
@@ -133,12 +126,12 @@ interpreter (**Settings → Languages & Frameworks → Node.js**) once it finds 
 the project's (in Rider, the solution's) or of its Git root; **Tools → Piwi → Refresh** looks again. The IDE's LSP
 client shows warnings, quick fixes and hover in open files; the rest is native:
 
-- **The Piwi tool window** names the connection, has Connect and Refresh in its toolbar, and lists the latest run's
-  failures, since the IDE highlights open files only. Double-click
-  one to open its failing line, where the highlight carries **Heal**, **Open the trace** and the dashboard link.
+- **The Piwi tool window** names the connection and holds the latest run's failures as a tree, since the IDE
+  highlights open files only: [the failures view](./editor-runs#the-failures-view).
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter.
-- **The status bar** shows the latest run; the actions are under **Tools → Piwi**, and **Run the tests that reach this
-  file** is also in the editor's context menu.
+- **The status bar** shows the latest run, or the run in progress, and reads it again on a click
+  ([the status bar](./editor-runs#the-status-bar)); the actions are under **Tools → Piwi**, and **Run the tests that
+  reach this file** is also in the editor's context menu.
 - **MCP**: **Copy the MCP server configuration** puts an `mcpServers` entry on the clipboard for **Settings → Tools → AI
   Assistant → Model Context Protocol**. It runs the server through `mcp-remote`, with the key in its
   environment.

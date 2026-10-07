@@ -127,6 +127,17 @@ as a `piwi-user-pick` attachment and annotation in the Playwright report, and in
 the replacement. The picker blocks the page's own click handlers while active, so picking can't navigate away. The
 same picker ships as the [Piwi Picker browser extension](/features/extension), for any live page with no test run.
 
+## Pause at a breakpoint (local runs)
+
+With `PIWI_PAUSE_AT=tests/login.spec.ts:42` (semicolon-separated `file:line`, relative to the working directory or
+absolute: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`; an entry without a line is skipped, and the output
+says so), a locator action or assertion on a listed line waits before it runs: its element is highlighted and a bar at
+the top of the page offers **Resume**, **Step** (pause at the next action), **Pick a locator** (the picker above) and
+**Finish** (no more pauses in this test); <kbd>Esc</kbd> resumes. A pick is recorded and printed like the failure-time
+one, and posted to `PIWI_EDITOR_SEND`, an editor's pairing address, with its line. Headed and never under CI, like the
+options above; every attempt pauses. The editor extensions set both from your
+[breakpoints](./editor-breakpoints).
+
 ## Limits
 
 - Healing runs only when the locator **never resolved**, matched nothing, or matched several elements. When it resolved

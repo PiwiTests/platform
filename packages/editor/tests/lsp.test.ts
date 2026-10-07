@@ -18,15 +18,20 @@ import type { LocatorIndex } from '@piwitests/core/locator-index';
 import { buildSession, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { startServer } from '../src/server';
+import { committedTextAt } from '../src/workspace';
 import type {
+  AgentContextResult,
+  ApplyPickResult,
   FailuresResult,
   FileSummary,
   McpServersResult,
+  Notice,
   PageCandidatesResult,
   RecordResult,
   RecordingUpdate,
   RenderStepsResult,
   RunCommand,
+  RunEnded,
   RunStatusResult,
   ScreenshotResult,
   StatusResult,
@@ -104,12 +109,104 @@ const FAILING_SPEC = [
 
 const COMPONENT = '<template>\n  <button class="pay">\n    Pay now\n  </button>\n</template>\n';
 
+/** The latest complete run on main: a CI run. */
+const MAIN_RUN = {
+  id: 41,
+  status: 'failed',
+  branch: 'main',
+  startTime: '2026-09-27T10:00:00.000Z',
+  totalTests: 3,
+  passedTests: 1,
+  failedTests: 1,
+  flakyTests: 1,
+  skippedTests: 0,
+};
+
+/** Its failure: through `checkout.row()` in the spec, into the page object. */
+const ROW_FAILURE = {
+  executionId: 900,
+  testCaseId: 3,
+  clusterId: 77,
+  title: 'removes a row',
+  file: 'tests/rows.spec.ts',
+  line: 4,
+  status: 'failed',
+  headline: "locator('.cart-row').nth(2) was not found",
+  location: '/ci/work/tests/pages/checkout.page.ts:5:21',
+  message: "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
+  frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
+  traces: ['traces/900.zip'],
+  screenshot: 'shots/900.png',
+};
+
+/** What the instance answers with the runs laid over run #41, once a test sets it; with none laid over it otherwise. */
+let laidOver: unknown = null;
+
+/** The fixture repository's one commit, which run #41 ran at: the files the failures are followed from. */
+let fixtureCommit = '';
+
+/**
+ * The API key of the service the tests of runs as they happen start: the stub streams the instance's events to that
+ * key only, and is an instance without the route for every other.
+ */
+const RUNS_KEY = 'pd_runs';
+/** The instance's event streams open with that key, which a test pushes events into. */
+const instanceStreams = new Set<http.ServerResponse>();
+/** One run's event streams, by run. */
+const runStreams = new Map<number, Set<http.ServerResponse>>();
+/** Runs as `GET /api/test-runs/:id` answers them. */
+const runDetails = new Map<number, Record<string, unknown>>();
+/** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
+const goneRunStreams = new Map<number, number>();
+/** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
+const refRuns = new Map<string, { id: number; status: string }>();
+/** The `latest-run` lookups of each ref. */
+const refLookups = new Map<string, number>();
+/** What the instance answers that service with the runs laid over run #41, once a test sets it. */
+let runsLaidOver: unknown = null;
+/** The `branch-failures` reads of that service. */
+let runsReads = 0;
+/** The API key of the service the tests of the baseline start: the stub answers its chosen baselines. */
+const BASELINE_KEY = 'pd_baseline';
+/** The query of each `branch-failures` read of that service. */
+const baselineReads: URLSearchParams[] = [];
+/**
+ * The API key of the service the tests of a slow instance start: the stub answers it as an instance from before the
+ * catalog's search values and the selections resolved together, and holds its flake-lab and selections reads until a
+ * test lets them through.
+ */
+const SLOW_KEY = 'pd_slow';
+/** Lets the reads that service's stub holds through; null once called. */
+let releaseSlow: (() => void) | null = null;
+const slowReleased = new Promise<void>((resolve) => (releaseSlow = resolve));
+/** The reads that service's stub held. */
+let slowHeld = 0;
+
+function openEvents(res: http.ServerResponse): void {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+  res.write(': connected\n\n');
+}
+
+const sendEvent = (res: http.ServerResponse, data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+/** An event on the instance's stream. */
+function pushInstanceEvent(event: { type: string; runId: number; projectId: number; status?: string }): void {
+  for (const res of instanceStreams) sendEvent(res, event);
+}
+
+/** An event on one run's stream. */
+function pushRunEvent(runId: number, type: string, data: Record<string, unknown>): void {
+  for (const res of runStreams.get(runId) ?? []) sendEvent(res, { type, data, seq: 1, timestamp: Date.now() });
+}
+
 let dir = '';
 let server: http.Server;
 let url = '';
 let client: MessageConnection;
 let stop: () => void;
 const runStatuses: RunStatusResult[] = [];
+/** The `piwi/failuresChanged` notifications of the first service, in order. */
+const failuresChanges: FailuresResult[] = [];
 const diagnostics = new Map<
   string,
   Array<{ message: string; code?: string; severity?: number; range: unknown; data?: unknown; source?: string }>
@@ -138,8 +235,57 @@ beforeAll(async () => {
   server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const u = req.url ?? '';
+    const runsKey = req.headers['x-api-key'] === RUNS_KEY;
+    const slowKey = req.headers['x-api-key'] === SLOW_KEY;
+    if (slowKey && releaseSlow && /^\/api\/projects\/7\/(flake-lab|selections)\b/.test(u)) {
+      slowHeld++;
+      void slowReleased.then(() => server.emit('request', req, res));
+      return;
+    }
+    if (u === '/api/stream' && runsKey) {
+      openEvents(res);
+      instanceStreams.add(res);
+      res.on('close', () => instanceStreams.delete(res));
+      return;
+    }
+    const runStream = /^\/api\/test-runs\/(\d+)\/stream$/.exec(u);
+    if (runStream && goneRunStreams.has(Number(runStream[1]))) {
+      const id = Number(runStream[1]);
+      goneRunStreams.set(id, goneRunStreams.get(id)! + 1);
+      res.statusCode = 404;
+      return res.end('{}');
+    }
+    const streamed = runStream ? runDetails.get(Number(runStream[1])) : undefined;
+    if (runStream && streamed) {
+      const id = Number(runStream[1]);
+      openEvents(res);
+      const { status, totalTests, passedTests, failedTests, skippedTests } = streamed;
+      sendEvent(res, {
+        type: 'init',
+        data: { id, status, totalTests, passedTests, failedTests, skippedTests },
+        seq: 0,
+      });
+      const open = runStreams.get(id) ?? new Set();
+      runStreams.set(id, open.add(res));
+      res.on('close', () => open.delete(res));
+      return;
+    }
+    const details = /^\/api\/test-runs\/(\d+)$/.exec(u);
+    if (details && runDetails.has(Number(details[1])))
+      return res.end(JSON.stringify(runDetails.get(Number(details[1]))));
+    if (u.startsWith('/api/projects/7/latest-run?')) {
+      const query = new URL(u, url).searchParams;
+      const ref = query.get('ref') ?? '';
+      refLookups.set(ref, (refLookups.get(ref) ?? 0) + 1);
+      const found = query.get('origin') === 'editor' ? refRuns.get(ref) : undefined;
+      return res.end(JSON.stringify(found ?? null));
+    }
     if (u === '/api/projects/menu') return res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
-    if (u.startsWith('/api/projects/7/locator-index')) return res.end(JSON.stringify(INDEX));
+    const baselineKey = req.headers['x-api-key'] === BASELINE_KEY;
+    if (u.startsWith('/api/projects/7/locator-index')) {
+      const branches = [{ name: 'feature/x', lastSeenAt: '2026-09-27T00:00:00Z', tests: 3 }];
+      return res.end(JSON.stringify(baselineKey ? { ...INDEX, branches } : INDEX));
+    }
     if (u.startsWith('/api/projects/7/code-index')) {
       return res.end(
         JSON.stringify({
@@ -151,7 +297,24 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/test-cases?limit=1000') {
+    if (u === '/api/projects/7/test-cases/facets') {
+      if (slowKey) {
+        res.statusCode = 404;
+        return res.end('{}');
+      }
+      return res.end(
+        JSON.stringify({
+          values: {
+            tag: [
+              { value: 'smoke', count: 2 },
+              { value: 'checkout', count: 1 },
+            ],
+            feature: [{ value: 'Payments', count: 1 }],
+          },
+        }),
+      );
+    }
+    if (u === '/api/projects/7/test-cases?limit=1000' && slowKey) {
       return res.end(JSON.stringify({ items: [{ tags: ['smoke', 'checkout'], feature: 'Payments' }] }));
     }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Frows.spec.ts') {
@@ -204,43 +367,60 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/branch-failures?branch=feature%2Fnew-cart') {
-      return res.end(JSON.stringify({ run: null, failures: [] }));
+    if (u.startsWith('/api/projects/7/branch-failures?') && baselineKey) {
+      const query = new URL(u, url).searchParams;
+      baselineReads.push(query);
+      const answer = (run: Record<string, unknown> | null, failures: unknown[] = [], overlays: unknown[] = []) =>
+        res.end(JSON.stringify({ run, overlays, failures, resolved: [] }));
+      const ci = { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit };
+      if (query.get('run') === '119') {
+        // A run on a developer's machine, chosen as the baseline.
+        const local = { ...MAIN_RUN, id: 119, origin: 'local', commit: null };
+        const failure = { ...ROW_FAILURE, executionId: 1190, source: 'baseline', runId: 119, screenshot: null };
+        return answer(local, [failure]);
+      }
+      if (query.get('run')) {
+        if (query.get('run') !== '118') {
+          res.statusCode = 404;
+          return res.end('{}');
+        }
+        const failure = { ...ROW_FAILURE, executionId: 1180, source: 'baseline', runId: 118 };
+        return answer({ ...ci, id: 118, branch: 'feature/x' }, [failure]);
+      }
+      if (query.get('origin') === 'local') {
+        if (query.get('branch') !== 'main') return answer(null);
+        const overlay = {
+          id: 60,
+          status: 'failed',
+          origin: 'local',
+          isFullRun: false,
+          startTime: '2026-09-27T11:00:00.000Z',
+          commit: null,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          flakyTests: 0,
+          skippedTests: 0,
+        };
+        const failure = { ...ROW_FAILURE, executionId: 600, source: 'overlay', runId: 60, isNew: true };
+        return answer(null, [failure], [overlay]);
+      }
+      if (query.get('branch') === 'feature/x') return answer({ ...ci, id: 120, branch: 'feature/x' });
+      if (query.get('branch') === 'main') return answer(ci, [ROW_FAILURE]);
+      return answer(null);
     }
-    if (u === '/api/projects/7/branch-failures?branch=main') {
-      return res.end(
-        JSON.stringify({
-          run: {
-            id: 41,
-            status: 'failed',
-            branch: 'main',
-            startTime: '2026-09-27T10:00:00.000Z',
-            totalTests: 3,
-            passedTests: 1,
-            failedTests: 1,
-            flakyTests: 1,
-            skippedTests: 0,
-          },
-          failures: [
-            {
-              executionId: 900,
-              testCaseId: 3,
-              clusterId: 77,
-              title: 'removes a row',
-              file: 'tests/rows.spec.ts',
-              line: 4,
-              status: 'failed',
-              headline: "locator('.cart-row').nth(2) was not found",
-              location: '/ci/work/tests/pages/checkout.page.ts:5:21',
-              message:
-                "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
-              frames: ['/ci/work/tests/pages/checkout.page.ts:5:21', '/ci/work/tests/rows.spec.ts:7:18'],
-              traces: ['traces/900.zip'],
-              screenshot: 'shots/900.png',
-            },
-          ],
-        }),
-      );
+    if (u.startsWith('/api/projects/7/branch-failures?')) {
+      const query = new URL(u, url).searchParams;
+      const laid = query.get('overlays') === '1';
+      if (runsKey) runsReads++;
+      if (query.get('branch') !== 'main') {
+        return res.end(
+          JSON.stringify(laid ? { run: null, overlays: [], failures: [], resolved: [] } : { run: null, failures: [] }),
+        );
+      }
+      const latest = { run: { ...MAIN_RUN, commit: fixtureCommit }, failures: [ROW_FAILURE] };
+      const over = runsKey ? runsLaidOver : laidOver;
+      return res.end(JSON.stringify(laid ? (over ?? { ...latest, overlays: [], resolved: [] }) : latest));
     }
     if (u === '/api/failure-clusters/77/fix-plan') {
       return res.end(
@@ -309,17 +489,19 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/selections') {
-      return res.end(
-        JSON.stringify({
-          items: [
-            { key: 'smoke', name: 'Smoke' },
-            { key: 'failed', name: null },
-          ],
-        }),
-      );
+    if (u === '/api/projects/7/selections?resolve=true') {
+      const items = [
+        {
+          key: 'smoke',
+          name: 'Smoke',
+          resolved: { testCaseIds: [1], command: 'npx playwright test tests/checkout.spec.ts:3' },
+        },
+        { key: 'failed', name: null, resolved: { testCaseIds: [3], command: 'npx playwright test --grep x' } },
+      ];
+      // An instance that does not read `resolve` lists the selections alone.
+      return res.end(JSON.stringify({ items: slowKey ? items.map(({ resolved: _, ...s }) => s) : items }));
     }
-    if (u === '/api/projects/7/selections/smoke/resolve') {
+    if (u === '/api/projects/7/selections/smoke/resolve' && slowKey) {
       return res.end(
         JSON.stringify({
           tests: [{ testCaseId: 1 }],
@@ -330,7 +512,7 @@ beforeAll(async () => {
         }),
       );
     }
-    if (u === '/api/projects/7/selections/failed/resolve') {
+    if (u === '/api/projects/7/selections/failed/resolve' && slowKey) {
       return res.end(
         JSON.stringify({
           tests: [{ testCaseId: 3 }],
@@ -448,6 +630,7 @@ beforeAll(async () => {
   write('app/pages/checkout.vue', '<template><div /></template>\n');
   git('add', '.');
   git('commit', '-q', '-m', 'init');
+  fixtureCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf-8' }).trim();
 
   const toServer = new PassThrough();
   const toClient = new PassThrough();
@@ -461,6 +644,9 @@ beforeAll(async () => {
   });
   client.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
     runStatuses.push(p);
+  });
+  client.onNotification('piwi/failuresChanged', (p: FailuresResult) => {
+    failuresChanges.push(p);
   });
   client.listen();
   const init = await client.sendRequest('initialize', {
@@ -486,6 +672,7 @@ afterAll(async () => {
   clearInterval(pollStatus);
   stop?.();
   client?.dispose();
+  server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -494,6 +681,14 @@ function open(file: string, text: string, version = 1) {
   diagnostics.delete(uri(file));
   return client.sendNotification('textDocument/didOpen', {
     textDocument: { uri: uri(file), languageId: file.endsWith('.vue') ? 'vue' : 'typescript', version, text },
+  });
+}
+
+/** An edit of an open document, sent as its whole new text. */
+function change(file: string, text: string, version: number) {
+  return client.sendNotification('textDocument/didChange', {
+    textDocument: { uri: uri(file), version },
+    contentChanges: [{ text }],
   });
 }
 
@@ -602,12 +797,18 @@ describe('the Piwi language server', () => {
     }>;
     expect(actions.map((a) => a.title)).toEqual([
       "Heal: use getByRole('row', { name: /Mug/ })",
+      'Run this test',
       'Open the trace',
       'Apply the fix plan (1 file), then run its verification',
       'Copy context for agent',
       'Open the failure in the dashboard',
     ]);
-    const apply = actions[2] as unknown as {
+    expect(actions[1]!.command).toEqual({
+      title: 'Run this test',
+      command: 'piwi.runTests',
+      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), testIds: [3] }],
+    });
+    const apply = actions[3] as unknown as {
       edit: { changes: Record<string, Array<{ newText: string }>> };
       command: { command: string; arguments: unknown[] };
     };
@@ -621,7 +822,7 @@ describe('the Piwi language server', () => {
         { cwd: dir, command: 'npx playwright test tests/checkout.spec.ts:3', env: { PIWI_ORIGIN: 'editor' } },
       ],
     });
-    const context = (actions[3]!.command!.arguments[0] as string).split('\n');
+    const context = (actions[4]!.command!.arguments[0] as string).split('\n');
     expect(context.slice(0, 3)).toEqual([
       '# Failing test: removes a row',
       '',
@@ -632,13 +833,13 @@ describe('the Piwi language server', () => {
     expect(actions[0]!.edit!.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
       "  row = () => this.page.getByRole('row', { name: /Mug/ });",
     );
-    expect(actions[1]!.command).toEqual({
+    expect(actions[2]!.command).toEqual({
       title: 'Open the trace',
       command: 'piwi.openTrace',
       arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
     });
     // A client that previews annotated edits gets the plan as a confirmed change; this one does not.
-    expect(JSON.stringify(actions[2])).not.toContain('annotationId');
+    expect(JSON.stringify(actions[3])).not.toContain('annotationId');
 
     const hover = (await client.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
@@ -669,25 +870,79 @@ describe('the Piwi language server', () => {
         checkedOut: 'main',
         run: expect.objectContaining({ id: 41, status: 'failed', failedTests: 1, url: `${url}/test-runs/41` }),
         failures: 1,
+        failingTests: 1,
+        resolved: 0,
+        overlays: 0,
+        live: null,
+        // This instance has no event stream: the run is read every minute.
+        stream: 'polling',
+        updatedAt: expect.any(String),
+        // The fixture installs no reporter.
+        reporterVersion: null,
+        // An instance that does not say what launched the run.
+        baseline: { choice: { kind: 'ladder' }, label: 'run #41 on main' },
+        branches: ['main'],
       },
     ]);
     expect(runStatuses[runStatuses.length - 1]).toEqual(status);
   });
 
-  test('lists the failures where they show, for clients that list them natively', async () => {
+  test('lists the failures where they show, with their run, for clients that list them natively', async () => {
     const failures = (await client.sendRequest('piwi/failures')) as FailuresResult;
-    expect(failures.items).toEqual([
-      {
-        uri: uri('tests/pages/checkout.page.ts'),
-        line: 4,
-        title: 'removes a row',
-        headline: "locator('.cart-row').nth(2) was not found",
-        executionId: 900,
-        runId: 41,
-        url: `${url}/test-run-cases/900`,
-        hasTrace: true,
+    expect(failures).toEqual({
+      items: [
+        {
+          uri: uri('tests/pages/checkout.page.ts'),
+          line: 4,
+          title: 'removes a row',
+          headline: "locator('.cart-row').nth(2) was not found",
+          executionId: 900,
+          runId: 41,
+          url: `${url}/test-run-cases/900`,
+          hasTrace: true,
+          source: 'ci',
+          state: 'failing',
+          browserName: null,
+          file: 'tests/rows.spec.ts',
+          status: 'failed',
+          testCaseId: 3,
+          clusterId: 77,
+          clusterTitle: null,
+          owner: null,
+          isNew: false,
+          duration: null,
+          hasScreenshot: true,
+        },
+      ],
+      run: {
+        id: 41,
+        branch: 'main',
+        status: 'failed',
+        startTime: '2026-09-27T10:00:00.000Z',
+        totalTests: 3,
+        passedTests: 1,
+        failedTests: 1,
+        flakyTests: 1,
+        skippedTests: 0,
+        url: `${url}/test-runs/41`,
+        own: false,
       },
-    ]);
+      overlays: [],
+      baseline: { choice: { kind: 'ladder' }, label: 'run #41 on main' },
+      updatedAt: expect.any(String),
+    });
+  });
+
+  test('gives a failure’s context for an agent', async () => {
+    const answer = (await client.sendRequest('piwi/agentContext', {
+      uri: uri('tests/rows.spec.ts'),
+      executionId: 900,
+    })) as AgentContextResult;
+    expect(answer.text).toMatch(/^# Failing test: removes a row\n\nlocator\('\.cart-row'\)\.nth\(2\) was not found/);
+    expect(answer.text).toContain("Replace the failing locator with `getByRole('row', { name: /Mug/ })`");
+    expect(
+      await client.sendRequest('piwi/agentContext', { uri: uri('tests/rows.spec.ts'), executionId: 1 }),
+    ).toBeNull();
   });
 
   test('renders a flow recorded in Piwi Picker as the body of a test', async () => {
@@ -815,14 +1070,17 @@ describe('the Piwi language server', () => {
       { key: 'smoke', name: 'Smoke', count: 1, includesFile: true },
       { key: 'failed', name: 'failed', count: 1, includesFile: false },
     ]);
-    expect(await client.sendRequest('piwi/runSelection', { uri: uri('tests/checkout.spec.ts'), key: 'smoke' })).toEqual(
-      {
-        cwd: dir,
-        command: 'npx playwright test tests/checkout.spec.ts:3',
-        args: [],
-        env: { PIWI_ORIGIN: 'editor' },
-      },
-    );
+    const selection = (await client.sendRequest('piwi/runSelection', {
+      uri: uri('tests/checkout.spec.ts'),
+      key: 'smoke',
+    })) as RunCommand;
+    expect(selection).toEqual({
+      cwd: dir,
+      command: 'npx playwright test tests/checkout.spec.ts:3',
+      args: [],
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: selection.ref },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+    });
   });
 
   test('summarizes a page object, a spec and an application file', async () => {
@@ -902,6 +1160,7 @@ describe('the Piwi language server', () => {
             "Error: locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.cart-row').nth(2)",
           executionId: 900,
           url: `${url}/test-run-cases/900`,
+          state: 'failing',
         },
       }),
       {
@@ -911,6 +1170,15 @@ describe('the Piwi language server', () => {
           title: 'Open the failure in the dashboard',
           command: 'piwi.openInDashboard',
           arguments: [`${url}/test-run-cases/900`],
+        },
+      },
+      {
+        line: 6,
+        title: 'Run this test',
+        command: {
+          title: 'Run this test',
+          command: 'piwi.runTests',
+          arguments: [{ uri: uri('tests/rows.spec.ts'), testIds: [3] }],
         },
       },
       {
@@ -964,8 +1232,934 @@ describe('the Piwi language server', () => {
       cwd: dir,
       args: ['tests/checkout.spec.ts:3'],
       command: 'npx playwright test tests/checkout.spec.ts:3',
-      env: { PIWI_ORIGIN: 'editor' },
+      env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
     });
+  });
+});
+
+describe('breakpoints', () => {
+  const breakpoints = () => [
+    { uri: uri('tests/checkout.spec.ts'), line: 2 },
+    { uri: uri('tests/pages/checkout.page.ts'), line: 3 },
+    { uri: pathToFileURL(path.join(os.tmpdir(), 'elsewhere.spec.ts')).href, line: 0 },
+  ];
+  const reporterManifest = 'node_modules/@piwitests/reporter/package.json';
+
+  afterAll(async () => {
+    fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+    await client.sendRequest('piwi/refresh');
+  });
+
+  test('pause a run at their lines, headed, and say when the reporter is too old for them', async () => {
+    write(reporterManifest, JSON.stringify({ name: '@piwitests/reporter', version: '0.46.0' }));
+    await client.sendRequest('piwi/refresh');
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      breakpoints: breakpoints(),
+    })) as RunCommand;
+    expect(command).toEqual({
+      cwd: dir,
+      args: ['tests/checkout.spec.ts:3', '--headed'],
+      command: 'npx playwright test tests/checkout.spec.ts:3 --headed',
+      env: {
+        PIWI_ORIGIN: 'editor',
+        PIWI_ORIGIN_REF: command.ref,
+        PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4',
+      },
+      ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
+      notice: 'Breakpoints need @piwitests/reporter 0.48.0 or later; this project has 0.46.0.',
+    });
+    const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
+    expect(status.contexts[0]!.reporterVersion).toBe('0.46.0');
+
+    const selection = (await client.sendRequest('piwi/runSelection', {
+      uri: uri('tests/checkout.spec.ts'),
+      key: 'smoke',
+      breakpoints: breakpoints(),
+    })) as RunCommand;
+    expect(selection.command).toBe('npx playwright test tests/checkout.spec.ts:3 --headed');
+    expect(selection.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4');
+  });
+
+  test('need nothing more of a reporter that pauses, and change nothing without one in the folder', async () => {
+    write(reporterManifest, JSON.stringify({ name: '@piwitests/reporter', version: '0.48.0' }));
+    await client.sendRequest('piwi/refresh');
+    const command = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      breakpoints: breakpoints(),
+    })) as RunCommand;
+    expect(command.notice).toBeUndefined();
+    expect(command.env?.PIWI_PAUSE_AT).toBe('tests/checkout.spec.ts:3;tests/pages/checkout.page.ts:4');
+
+    const outside = (await client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/checkout.spec.ts'),
+      testIds: [1],
+      breakpoints: breakpoints().slice(2),
+    })) as RunCommand;
+    expect(outside.command).toBe('npx playwright test tests/checkout.spec.ts:3');
+    expect(outside.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: outside.ref });
+  });
+
+  test('a pick replaces the locator its line holds, or says the line holds none', async () => {
+    const replaced = (await client.sendRequest('piwi/applyPick', {
+      file: 'tests/pages/checkout.page.ts',
+      line: 4,
+      locator: "getByRole('row', { name: /Mug/ })",
+    })) as ApplyPickResult;
+    expect(replaced).toEqual({
+      uri: uri('tests/pages/checkout.page.ts'),
+      edit: {
+        range: { start: { line: 4, character: 24 }, end: { line: 4, character: 51 } },
+        newText: "getByRole('row', { name: /Mug/ })",
+      },
+    });
+    expect(PAGE_OBJECT.split('\n')[4]!.slice(24, 51)).toBe("locator('.cart-row').nth(2)");
+
+    const none = (await client.sendRequest('piwi/applyPick', {
+      uri: uri('tests/rows.spec.ts'),
+      line: 6,
+      locator: "getByRole('row', { name: /Mug/ })",
+    })) as ApplyPickResult;
+    expect(none).toEqual({ uri: uri('tests/rows.spec.ts'), edit: null });
+
+    for (const file of ['../outside.ts', 'tests/missing.spec.ts']) {
+      expect(await client.sendRequest('piwi/applyPick', { file, line: 0, locator: 'getByText("x")' })).toEqual({
+        uri: null,
+        edit: null,
+      });
+    }
+  });
+});
+
+describe('local runs over the latest CI run', () => {
+  test('a test re-run from the editor clears the failure it fixed, and one it broke shows as a local failure', async () => {
+    const overlay = {
+      id: 42,
+      status: 'failed',
+      origin: 'editor',
+      isFullRun: false,
+      startTime: '2026-09-27T10:30:00.000Z',
+      commit: 'a1b2c3d',
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 1,
+      flakyTests: 0,
+      skippedTests: 0,
+    };
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci', commit: 'a1b2c3d' },
+      overlays: [overlay],
+      failures: [
+        {
+          executionId: 950,
+          testCaseId: 1,
+          clusterId: null,
+          title: 'pays',
+          file: 'tests/checkout.spec.ts',
+          line: 3,
+          status: 'failed',
+          headline: "getByRole('button', { name: 'Pay now' }) was not visible",
+          location: '/home/dev/shop/tests/pages/checkout.page.ts:4:21',
+          message: "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Pay now' })",
+          frames: ['/home/dev/shop/tests/pages/checkout.page.ts:4:21'],
+          traces: [],
+          screenshot: null,
+          source: 'overlay',
+          runId: 42,
+          browserName: 'chromium',
+          duration: 1200,
+          isNew: true,
+          clusterTitle: null,
+          owner: null,
+        },
+      ],
+      resolved: [
+        {
+          testCaseId: 3,
+          title: 'removes a row',
+          file: 'tests/rows.spec.ts',
+          line: 4,
+          browserName: 'chromium',
+          runId: 42,
+          executionId: 951,
+          baselineExecutionId: 900,
+        },
+      ],
+    };
+    try {
+      const pushed = runStatuses.length;
+      await client.sendRequest('piwi/refresh');
+      const onPage = await waitFor(() => {
+        const all = diagnostics.get(uri('tests/pages/checkout.page.ts')) ?? [];
+        return all.some((d) => d.message.includes('local run #42')) ? all : undefined;
+      });
+      const failures = onPage.filter((d) => d.code === 'ci-failure');
+      expect(failures).toEqual([
+        expect.objectContaining({
+          message: "getByRole('button', { name: 'Pay now' }) was not visible (pays, local run #42)",
+          range: expect.objectContaining({ start: { line: 3, character: 2 } }),
+          codeDescription: { href: `${url}/test-run-cases/950` },
+        }),
+      ]);
+
+      const hover = (await client.sendRequest('textDocument/hover', {
+        textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+        position: { line: 3, character: 30 },
+      })) as { contents: { value: string } };
+      expect(hover.contents.value).toContain(`**Local failure** · [pays](${url}/test-run-cases/950) · local run #42`);
+
+      const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
+      const fixed = rows.lines.find((l) => l.status !== undefined)!;
+      expect(fixed).toMatchObject({ line: 3, status: 'passed' });
+      expect(fixed.title).toMatch(/^passed 6\/9 · fixed locally in run #42 \(failing in run #41\)/);
+      expect(fixed.failure).toBeUndefined();
+      expect(rows.lines.filter((l) => l.title.startsWith('✗'))).toEqual([]);
+
+      const listed = (await client.sendRequest('piwi/failures')) as FailuresResult;
+      expect(listed.items).toEqual([
+        expect.objectContaining({
+          uri: uri('tests/pages/checkout.page.ts'),
+          line: 3,
+          title: 'pays',
+          executionId: 950,
+          runId: 42,
+          source: 'local',
+          state: 'failing',
+          browserName: 'chromium',
+        }),
+        {
+          uri: uri('tests/rows.spec.ts'),
+          line: 3,
+          title: 'removes a row',
+          headline: null,
+          executionId: 951,
+          runId: 42,
+          url: `${url}/test-run-cases/951`,
+          hasTrace: false,
+          source: 'local',
+          state: 'fixed-locally',
+          browserName: 'chromium',
+          file: 'tests/rows.spec.ts',
+          testCaseId: 3,
+          clusterId: null,
+          clusterTitle: null,
+          owner: null,
+          isNew: false,
+          duration: null,
+          hasScreenshot: false,
+        },
+      ]);
+      expect(listed.items[0]).toMatchObject({ file: 'tests/checkout.spec.ts', isNew: true, duration: 1200 });
+      expect(listed.run).toMatchObject({ id: 41, origin: 'ci', own: false });
+      expect(listed.overlays).toEqual([
+        {
+          id: 42,
+          origin: 'editor',
+          startTime: '2026-09-27T10:30:00.000Z',
+          status: 'failed',
+          totalTests: 2,
+          passedTests: 1,
+          failedTests: 1,
+          url: `${url}/test-runs/42`,
+          own: false,
+        },
+      ]);
+
+      const status = (await client.sendRequest('piwi/runStatus')) as RunStatusResult;
+      expect(status.contexts[0]).toMatchObject({
+        run: { id: 41 },
+        failures: 1,
+        failingTests: 1,
+        resolved: 1,
+        overlays: 1,
+      });
+      expect(runStatuses.length).toBeGreaterThan(pushed);
+      expect(runStatuses[runStatuses.length - 1]).toEqual(status);
+    } finally {
+      laidOver = null;
+      await client.sendRequest('piwi/refresh');
+    }
+    const restored = await waitFor(() =>
+      diagnostics
+        .get(uri('tests/pages/checkout.page.ts'))
+        ?.find((d) => d.code === 'ci-failure' && d.message.includes('run #41')),
+    );
+    expect(restored.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, run #41)");
+  });
+});
+
+describe('failures follow the edits', () => {
+  const page = 'tests/pages/checkout.page.ts';
+  const rows = 'tests/rows.spec.ts';
+  /** The failure published on the page object that matches. */
+  const onPage = (match: (d: { message: string; severity?: number; range: unknown; data?: unknown }) => boolean) =>
+    diagnostics.get(uri(page))?.find((d) => d.code === 'ci-failure' && match(d));
+  const lineOf = (d: { range: unknown }) => (d.range as { start: { line: number } }).start.line;
+  let version = 100;
+
+  afterAll(async () => {
+    laidOver = null;
+    await change(page, PAGE_OBJECT, ++version);
+    await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri(rows) } });
+    await client.sendRequest('piwi/refreshRun');
+  });
+
+  test('an edit above the failing line moves its error, its reason and its item, and says so', async () => {
+    const seen = failuresChanges.length;
+    await change(page, `// The cart.\n${PAGE_OBJECT}`, ++version);
+    const moved = await waitFor(() => onPage((d) => lineOf(d) === 5));
+    expect(moved).toMatchObject({
+      severity: 1,
+      message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+      range: { start: { line: 5, character: 2 } },
+    });
+    const pushed = await waitFor(() => failuresChanges.slice(seen).find((f) => f.items[0]?.line === 5));
+    expect(pushed.items).toEqual([
+      expect.objectContaining({ uri: uri(page), line: 5, executionId: 900, state: 'failing' }),
+    ]);
+    expect(((await client.sendRequest('piwi/failures')) as FailuresResult).items).toEqual(pushed.items);
+
+    // In the spec, the reason stays above the line that calls the page object.
+    await open(rows, `// Rows.\n\n${FAILING_SPEC}`);
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
+    expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
+      [5, 'passed 6/9'],
+      [8, "✗ locator('.cart-row').nth(2) was not found"],
+      [8, 'Run this test'],
+      [8, 'Screenshot'],
+      [8, 'Trace'],
+    ]);
+    expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { line: 8, state: 'failing' } });
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri(rows) },
+      position: { line: 8, character: 10 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(
+      `Called from [checkout.page.ts:6](${uri(page)}#L6) ← [rows.spec.ts:9](${uri(rows)}#L9)`,
+    );
+  });
+
+  test('rewriting the failing line turns its error into an information, with Run this test first', async () => {
+    const seen = failuresChanges.length;
+    const rewritten = PAGE_OBJECT.replace("this.page.locator('.cart-row').nth(2)", "this.page.getByRole('row').nth(2)");
+    await change(page, rewritten, ++version);
+    const edited = await waitFor(() => onPage((d) => d.severity === 3));
+    expect(edited).toMatchObject({
+      message: "Edited since run #41: locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+      range: { start: { line: 4, character: 2 } },
+      data: { root: dir, executionId: 900, edited: true },
+    });
+    const actions = (await client.sendRequest('textDocument/codeAction', {
+      textDocument: { uri: uri(page) },
+      range: edited.range,
+      context: { diagnostics: [edited] },
+    })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
+    expect(actions[0]).toMatchObject({
+      title: 'Run this test',
+      command: { command: 'piwi.runTests', arguments: [{ uri: uri(page), testIds: [3] }] },
+    });
+    // The healing replaces a line the buffer does not hold.
+    expect(actions.map((a) => a.title).filter((t) => t.startsWith('Heal'))).toEqual([]);
+    const pushed = await waitFor(() => failuresChanges.slice(seen).find((f) => f.items[0]?.state === 'edited'));
+    expect(pushed.items[0]).toMatchObject({ uri: uri(page), line: 4, executionId: 900 });
+
+    // The test still failed: its lens says so, and that the line it failed at changed since.
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri(rows) })) as FileSummary;
+    expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { state: 'edited' } });
+    expect(spec.lines.map((l) => l.title)).toContain(
+      "✎ edited since run #41 · locator('.cart-row').nth(2) was not found",
+    );
+    const hover = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri(page) },
+      position: { line: 4, character: 30 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(
+      `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
+    );
+  });
+
+  test('deleting the test takes its failure away, and putting it back brings it back', async () => {
+    const withoutTest = FAILING_SPEC.split('\n').slice(0, 3).join('\n');
+    await change(rows, withoutTest, ++version);
+    await waitFor(() => (diagnostics.get(uri(page)) && !onPage(() => true) ? true : undefined));
+    expect(((await client.sendRequest('piwi/failures')) as FailuresResult).items).toEqual([]);
+    expect(failuresChanges[failuresChanges.length - 1]!.items).toEqual([]);
+
+    await change(rows, FAILING_SPEC, ++version);
+    expect(await waitFor(() => onPage(() => true))).toMatchObject({ severity: 3 });
+  });
+
+  test('a run without a commit is followed from its file as saved when its failure was first placed', async () => {
+    await change(page, PAGE_OBJECT, ++version);
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci' },
+      overlays: [],
+      failures: [{ ...ROW_FAILURE, executionId: 901 }],
+      resolved: [],
+    };
+    await client.sendRequest('piwi/refreshRun');
+    const placed = await waitFor(() => onPage((d) => d.message.includes('run #41')));
+    expect(lineOf(placed)).toBe(4);
+    await change(page, `// The cart.\n${PAGE_OBJECT}`, ++version);
+    const moved = await waitFor(() => onPage((d) => lineOf(d) === 5));
+    expect(moved).toMatchObject({ severity: 1, codeDescription: { href: `${url}/test-run-cases/901` } });
+  });
+
+  test('a CI run is followed from its commit: lines saved above its failure since move it', async () => {
+    const saved = PAGE_OBJECT.replace('export class', '// The cart.\n// Its rows.\nexport class');
+    const file = path.join(dir, page);
+    fs.writeFileSync(file, saved);
+    await change(page, saved, ++version);
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit },
+      overlays: [],
+      failures: [{ ...ROW_FAILURE, executionId: 903 }],
+      resolved: [],
+    };
+    try {
+      await client.sendRequest('piwi/refreshRun');
+      const placed = await waitFor(() => onPage((d) => (d.data as { executionId: number }).executionId === 903));
+      expect(placed).toMatchObject({
+        severity: 1,
+        message: "locator('.cart-row').nth(2) was not found (removes a row, run #41)",
+        range: { start: { line: 6, character: 2 } },
+      });
+    } finally {
+      fs.writeFileSync(file, PAGE_OBJECT);
+    }
+  });
+
+  test('a file is read at a commit by its object name only', async () => {
+    expect(await committedTextAt(dir, fixtureCommit, page)).toBe(PAGE_OBJECT);
+    expect(await committedTextAt(dir, fixtureCommit.slice(0, 7), page)).toBe(PAGE_OBJECT);
+    expect(await committedTextAt(dir, 'a1b2c3d', page)).toBeNull();
+    const written = path.join(dir, 'from-git');
+    expect(await committedTextAt(dir, `--output=${written}`, page)).toBeNull();
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith('from-git'))).toEqual([]);
+  });
+
+  test('a run on this machine is followed from its files as saved, not from its commit', async () => {
+    // Two lines above the row's locator, saved but not committed, ran with the run, which failed there.
+    const saved = PAGE_OBJECT.replace('export class', '// The cart.\n// Its rows.\nexport class');
+    const file = path.join(dir, page);
+    fs.writeFileSync(file, saved);
+    await change(page, saved, ++version);
+    laidOver = {
+      run: { ...MAIN_RUN, origin: 'ci', commit: fixtureCommit },
+      overlays: [
+        {
+          id: 42,
+          status: 'failed',
+          origin: 'editor',
+          isFullRun: false,
+          startTime: '2026-09-27T10:30:00.000Z',
+          commit: fixtureCommit,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          flakyTests: 0,
+          skippedTests: 0,
+        },
+      ],
+      failures: [
+        {
+          ...ROW_FAILURE,
+          executionId: 952,
+          location: '/home/dev/shop/tests/pages/checkout.page.ts:7:21',
+          frames: ['/home/dev/shop/tests/pages/checkout.page.ts:7:21', '/home/dev/shop/tests/rows.spec.ts:7:18'],
+          source: 'overlay',
+          runId: 42,
+        },
+      ],
+      resolved: [],
+    };
+    try {
+      await client.sendRequest('piwi/refreshRun');
+      const local = await waitFor(() => onPage((d) => d.message.includes('local run #42')));
+      expect(local).toMatchObject({
+        severity: 1,
+        message: "locator('.cart-row').nth(2) was not found (removes a row, local run #42)",
+        range: { start: { line: 6, character: 2 } },
+      });
+    } finally {
+      fs.writeFileSync(file, PAGE_OBJECT);
+    }
+  });
+});
+
+describe('runs as they happen', () => {
+  let runsClient: MessageConnection;
+  let stopRuns: () => void;
+  const statuses: RunStatusResult[] = [];
+  const notices: Notice[] = [];
+  const verdicts: RunEnded[] = [];
+  const published = new Map<string, Array<{ message: string; code?: string }>>();
+
+  beforeAll(async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopRuns = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: RUNS_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      // Not within a test: what the service reads again, it reads on an event.
+      runPollMs: 60 * 60_000,
+      ownRunPollMs: 200,
+      commandEndWaitMs: 300,
+    });
+    runsClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    runsClient.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
+      statuses.push(p);
+    });
+    runsClient.onNotification('piwi/notice', (n: Notice) => {
+      notices.push(n);
+    });
+    runsClient.onNotification('piwi/runEnded', (v: RunEnded) => {
+      verdicts.push(v);
+    });
+    runsClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      published.set(p.uri, p.diagnostics);
+    });
+    runsClient.listen();
+    await runsClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+    });
+    await runsClient.sendNotification('initialized', {});
+    await waitFor(async () => {
+      const s = (await runsClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+      return s.contexts[0]?.run && s.contexts[0].stream === 'live' ? s : undefined;
+    });
+  });
+
+  afterAll(() => {
+    stopRuns?.();
+    runsClient?.dispose();
+    runsLaidOver = null;
+  });
+
+  test('a run that ends is read within a second, without waiting for the next read', async () => {
+    const before = runsReads;
+    pushInstanceEvent({ type: 'run-finished', runId: 50, projectId: 8, status: 'passed' });
+    const at = Date.now();
+    pushInstanceEvent({ type: 'run-finished', runId: 51, projectId: 7, status: 'passed' });
+    await waitFor(() => (runsReads > before ? true : undefined), 1_000);
+    expect(Date.now() - at).toBeLessThan(1_000);
+    expect(statuses[statuses.length - 1]?.contexts[0]).toMatchObject({ stream: 'live', live: null });
+  });
+
+  /** A run of a command built here with `ref`, as `GET /api/test-runs/:id` answers it: on another branch than main. */
+  const editorRun = (id: number, ref: string | undefined, status: string, startTime: string) => ({
+    id,
+    status,
+    branch: 'feature/other',
+    startTime,
+    metadata: { piwiOrigin: { kind: 'editor', ref } },
+    totalTests: 2,
+    passedTests: status === 'running' ? 0 : 1,
+    failedTests: status === 'failed' ? 1 : 0,
+    skippedTests: 0,
+    didNotRunTests: 0,
+  });
+
+  /** What the instance answers once run `id` is laid over run #41, `pays` failing in it. */
+  const laidOverBy = (id: number, startTime: string) => ({
+    run: { ...MAIN_RUN, origin: 'ci' },
+    overlays: [
+      {
+        id,
+        status: 'failed',
+        origin: 'editor',
+        isFullRun: false,
+        startTime,
+        commit: null,
+        totalTests: 2,
+        passedTests: 1,
+        failedTests: 1,
+        flakyTests: 0,
+        skippedTests: 0,
+      },
+    ],
+    failures: [
+      ROW_FAILURE,
+      {
+        executionId: 900 + id,
+        testCaseId: 1,
+        clusterId: null,
+        title: 'pays',
+        file: 'tests/checkout.spec.ts',
+        line: 3,
+        status: 'failed',
+        headline: "getByRole('button', { name: 'Pay now' }) was not visible",
+        location: '/home/dev/shop/tests/pages/checkout.page.ts:4:21',
+        message: null,
+        frames: ['/home/dev/shop/tests/pages/checkout.page.ts:4:21'],
+        traces: [],
+        screenshot: null,
+        source: 'overlay',
+        runId: id,
+        browserName: 'chromium',
+      },
+    ],
+    resolved: [],
+  });
+
+  /** The run ends, `pays` failing in it: the failure on the page object names it. */
+  async function endRun(id: number, startTime: string) {
+    runDetails.set(id, { ...runDetails.get(id), status: 'failed', passedTests: 1, failedTests: 1 });
+    runsLaidOver = laidOverBy(id, startTime);
+    const seen = statuses.length;
+    pushRunEvent(id, 'run-finished', { status: 'failed', totalTests: 2, passedTests: 1, failedTests: 1 });
+    pushInstanceEvent({ type: 'run-finished', runId: id, projectId: 7, status: 'failed' });
+    const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
+    const onPage = await waitFor(() =>
+      published.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.message.includes(`your run #${id}`)),
+    );
+    return { ended, message: onPage.message };
+  }
+
+  const runTests = async () =>
+    (await runsClient.sendRequest('piwi/runArgs', { uri: uri('tests/checkout.spec.ts'), testIds: [1] })) as RunCommand;
+
+  test('the run of a test started here is followed live as its own, and its failures read your run', async () => {
+    const command = await runTests();
+    expect(command.ref).toMatch(/^ed-[0-9a-f]{8}$/);
+    expect(command.env).toEqual({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command.ref });
+
+    // It runs on another branch than the one read: the editor's own run is followed wherever it runs.
+    const startTime = '2026-09-27T11:00:00.000Z';
+    runDetails.set(42, editorRun(42, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 42, status: 'running' });
+    const started = await waitFor(() => statuses.find((s) => s.contexts[0]?.live)?.contexts[0]?.live ?? undefined);
+    expect(started).toEqual({
+      runId: 42,
+      status: 'running',
+      done: 0,
+      total: 2,
+      failed: 0,
+      startedAt: startTime,
+      own: true,
+    });
+
+    // A test's end, then the counts of its batch.
+    await waitFor(() => (runStreams.get(42)?.size ? true : undefined));
+    pushRunEvent(42, 'test-completed', { title: 'pays', status: 'failed', testCaseId: 1 });
+    pushRunEvent(42, 'run-progress', { totalTests: 2, passedTests: 0, failedTests: 1, skippedTests: 0 });
+    const progress = await waitFor(
+      () => statuses.find((s) => s.contexts[0]?.live?.done === 1)?.contexts[0]?.live ?? undefined,
+    );
+    expect(progress).toMatchObject({ runId: 42, done: 1, total: 2, failed: 1, own: true });
+
+    // It ends: the instance lays it over run #41.
+    const { ended, message } = await endRun(42, startTime);
+    // The live run leaves in the notification that brings the failures read once it ended.
+    expect(ended.contexts[0]).toMatchObject({ live: null, overlays: 1, failingTests: 2 });
+    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #42)");
+    const listed = (await runsClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(listed.items.find((i) => i.runId === 42)).toMatchObject({ source: 'own', state: 'failing' });
+  });
+
+  test('a rerun of a command started here, with the same ref, is its own once the stream announces it', async () => {
+    const command = await runTests();
+    const ref = command.ref!;
+    const noticed = notices.length;
+    // The command's run, found on the instance.
+    runDetails.set(45, editorRun(45, ref, 'passed', '2026-09-27T12:30:00.000Z'));
+    refRuns.set(ref, { id: 45, status: 'passed' });
+    let reads = runsReads;
+    await waitFor(() => (runsReads > reads ? true : undefined));
+
+    /** A run of the same command, with the same ref, that the stream announces: the editor's own. */
+    const rerun = async (id: number, startTime: string) => {
+      runDetails.set(id, editorRun(id, ref, 'running', startTime));
+      const seen = statuses.length;
+      pushInstanceEvent({ type: 'run-started', runId: id, projectId: 7 });
+      const live = await waitFor(
+        () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === id)?.contexts[0]?.live ?? undefined,
+      );
+      expect(live).toMatchObject({ runId: id, status: 'running', own: true });
+      const { message } = await endRun(id, startTime);
+      expect(message).toBe(`getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #${id})`);
+    };
+    // Before the command's end is heard of, as in a terminal reused without shell integration.
+    await rerun(46, '2026-09-27T12:40:00.000Z');
+    // After it, as the Run tool window's Rerun does.
+    reads = runsReads;
+    await runsClient.sendNotification('piwi/commandEnded', { ref, exitCode: 1 });
+    await waitFor(() => (runsReads > reads ? true : undefined));
+    await rerun(47, '2026-09-27T12:50:00.000Z');
+    expect(notices.length).toBe(noticed);
+  });
+
+  test('a command sent to a terminal of another ref is not looked for, and its run is its own by that ref', async () => {
+    // A terminal opened for a first command, then reused for a second one: its runs carry the first ref.
+    const first = await runTests();
+    await runsClient.sendNotification('piwi/commandStarted', { ref: first.ref });
+    const second = await runTests();
+    await runsClient.sendNotification('piwi/commandStarted', { ref: second.ref, terminalRef: first.ref });
+    const startTime = '2026-09-27T13:00:00.000Z';
+    runDetails.set(48, editorRun(48, first.ref, 'running', startTime));
+    const seen = statuses.length;
+    pushInstanceEvent({ type: 'run-started', runId: 48, projectId: 7 });
+    const live = await waitFor(
+      () => statuses.slice(seen).find((s) => s.contexts[0]?.live?.runId === 48)?.contexts[0]?.live ?? undefined,
+    );
+    expect(live).toMatchObject({ runId: 48, status: 'running', own: true });
+    const { message } = await endRun(48, startTime);
+    expect(message).toBe("getByRole('button', { name: 'Pay now' }) was not visible (pays, your run #48)");
+    // The instance was never asked for the ref the second command was built with.
+    expect(refLookups.get(second.ref!)).toBeUndefined();
+  });
+
+  test('a command whose run never reached the instance is said once it ends, and is looked for no more', async () => {
+    const reached = await runTests();
+    const lost = await runTests();
+    runDetails.set(43, editorRun(43, reached.ref, 'passed', '2026-09-27T12:00:00.000Z'));
+    refRuns.set(reached.ref!, { id: 43, status: 'passed' });
+    await runsClient.sendNotification('piwi/commandEnded', { ref: reached.ref, exitCode: 0 });
+    await runsClient.sendNotification('piwi/commandEnded', { ref: lost.ref, exitCode: 1 });
+    await waitFor(() => notices[0]);
+    expect(notices).toEqual([
+      {
+        root: dir,
+        severity: 'warning',
+        message: `The run ended (exit code 1) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
+      },
+    ]);
+    // Once the wait is over, the instance is not asked for either command's run again.
+    const asked = [refLookups.get(reached.ref!), refLookups.get(lost.ref!)];
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect([refLookups.get(reached.ref!), refLookups.get(lost.ref!)]).toEqual(asked);
+    expect(asked[1]).toBeGreaterThan(0);
+  });
+
+  /** A test of `pays`'s spec failing in run `runId`, laid over run #41. */
+  const paysFailure = (executionId: number, testCaseId: number, title: string, runId: number, isNew: boolean) => ({
+    executionId,
+    testCaseId,
+    clusterId: null,
+    title,
+    file: 'tests/checkout.spec.ts',
+    line: 3,
+    status: 'failed',
+    headline: 'Failed',
+    location: null,
+    message: null,
+    frames: [],
+    traces: [],
+    screenshot: null,
+    source: runId === 41 ? 'baseline' : 'overlay',
+    runId,
+    browserName: 'chromium',
+    isNew,
+  });
+
+  test('the tests of the editor’s own run show as running, then with their result, until the run is read', async () => {
+    const command = await runTests();
+    const startTime = '2026-09-27T14:00:00.000Z';
+    runDetails.set(60, editorRun(60, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 60, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 60));
+    await waitFor(() => (runStreams.get(60)?.size ? true : undefined));
+    const testLine = async () => {
+      const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+        uri: uri('tests/checkout.spec.ts'),
+      })) as FileSummary;
+      return summary.lines.find((l) => l.status !== undefined);
+    };
+
+    // A test begins, named by its title in its spec.
+    const before = statuses.length;
+    pushRunEvent(60, 'test-begin', { title: 'pays', filePath: 'tests/checkout.spec.ts', browser: 'chromium' });
+    const began = await waitFor(
+      () => statuses.slice(before).find((s) => s.contexts[0]?.liveTests?.length)?.contexts[0],
+    );
+    expect(began.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
+    expect(await testLine()).toMatchObject({ line: 2, status: 'running' });
+
+    // It passes on its second attempt: flaky.
+    pushRunEvent(60, 'test-completed', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+      retries: 1,
+      browser: 'chromium',
+    });
+    await waitFor(() =>
+      statuses[statuses.length - 1]?.contexts[0]?.liveTests?.[0]?.status === 'flaky' ? true : undefined,
+    );
+    expect(await testLine()).toMatchObject({ status: 'flaky' });
+
+    // The run ends and is read: the test shows the latest run's result again.
+    runDetails.set(60, { ...runDetails.get(60), status: 'passed', passedTests: 2 });
+    const seen = statuses.length;
+    pushRunEvent(60, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
+    expect(ended.contexts[0]!.liveTests).toBeUndefined();
+    expect((await testLine())?.status).not.toBe('flaky');
+  });
+
+  test('a run started here says what it changed once it ended and was read', async () => {
+    // Before it: run #41 fails `removes a row` and `pays`.
+    runsLaidOver = {
+      run: { ...MAIN_RUN, origin: 'ci' },
+      overlays: [],
+      failures: [ROW_FAILURE, paysFailure(960, 1, 'pays', 41, false)],
+      resolved: [],
+    };
+    await runsClient.sendRequest('piwi/refreshRun');
+    const command = await runTests();
+    const startTime = '2026-09-27T15:00:00.000Z';
+    runDetails.set(61, editorRun(61, command.ref, 'running', startTime));
+    refRuns.set(command.ref!, { id: 61, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 61));
+
+    // It passes `removes a row`, fails `pays` again, and fails `pays by card`, which passed in run #41.
+    runDetails.set(61, { ...runDetails.get(61), status: 'failed', passedTests: 1, failedTests: 2 });
+    runsLaidOver = {
+      run: { ...MAIN_RUN, origin: 'ci' },
+      overlays: [
+        {
+          id: 61,
+          status: 'failed',
+          origin: 'editor',
+          isFullRun: false,
+          startTime,
+          commit: null,
+          totalTests: 3,
+          passedTests: 1,
+          failedTests: 2,
+          flakyTests: 0,
+          skippedTests: 0,
+        },
+      ],
+      failures: [paysFailure(1061, 1, 'pays', 61, false), paysFailure(1062, 2, 'pays by card', 61, true)],
+      resolved: [
+        {
+          testCaseId: 3,
+          title: 'removes a row',
+          file: 'tests/rows.spec.ts',
+          line: 4,
+          browserName: 'chromium',
+          runId: 61,
+          executionId: 1063,
+          baselineExecutionId: 900,
+        },
+      ],
+    };
+    pushInstanceEvent({ type: 'run-finished', runId: 61, projectId: 7, status: 'failed' });
+    const verdict = await waitFor(() => verdicts.find((v) => v.runId === 61));
+    expect(verdict).toEqual({
+      root: dir,
+      runId: 61,
+      url: `${url}/test-runs/61`,
+      passed: 1,
+      failed: 2,
+      flaky: 0,
+      skipped: 0,
+      fixed: 1,
+      stillFailing: ['checkout.spec.ts › pays'],
+      newFailures: ['checkout.spec.ts › pays by card'],
+      stillFailingCount: 1,
+      newFailureCount: 1,
+    });
+    // Said once, whatever else reads the run again.
+    await runsClient.sendRequest('piwi/refreshRun');
+    pushInstanceEvent({ type: 'run-finished', runId: 61, projectId: 7, status: 'failed' });
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(verdicts.filter((v) => v.runId === 61)).toHaveLength(1);
+  });
+
+  test('piwi/refreshRun reads the latest run again and answers the status', async () => {
+    const before = (await runsClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const reads = runsReads;
+    const after = (await runsClient.sendRequest('piwi/refreshRun')) as RunStatusResult;
+    expect(runsReads).toBeGreaterThan(reads);
+    expect(after.contexts[0]).toMatchObject({ run: { id: 41 }, stream: 'live', live: null });
+    expect(Date.parse(after.contexts[0]!.updatedAt!)).toBeGreaterThan(Date.parse(before.contexts[0]!.updatedAt!));
+    expect(await runsClient.sendRequest('piwi/runStatus')).toEqual(after);
+  });
+});
+
+describe('a live run whose stream closed', () => {
+  test('is read again within the active interval while the instance’s stream is connected', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopLive = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: RUNS_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      // A run in progress is read every 100 ms; with the stream connected, the latest run every 2 s.
+      runPollMs: 400,
+    });
+    const liveClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    const statuses: RunStatusResult[] = [];
+    liveClient.onNotification('piwi/runStatusChanged', (p: RunStatusResult) => {
+      statuses.push(p);
+    });
+    liveClient.listen();
+    try {
+      await liveClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await liveClient.sendNotification('initialized', {});
+      await waitFor(async () => {
+        const s = (await liveClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+        return s.contexts[0]?.run && s.contexts[0].stream === 'live' ? s : undefined;
+      });
+
+      // A run on the branch starts; its own stream answers 404, and is not opened again.
+      const run = {
+        id: 70,
+        status: 'running',
+        branch: 'main',
+        startTime: '2026-09-27T13:00:00.000Z',
+        metadata: {},
+        totalTests: 2,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        didNotRunTests: 0,
+      };
+      goneRunStreams.set(70, 0);
+      runDetails.set(70, run);
+      pushInstanceEvent({ type: 'run-started', runId: 70, projectId: 7 });
+      await waitFor(() => (statuses.some((s) => s.contexts[0]?.live?.runId === 70) ? true : undefined));
+      await waitFor(() => (goneRunStreams.get(70) ? true : undefined));
+
+      // It ends without a word from either stream, just after a read.
+      const reads = runsReads;
+      await waitFor(() => (runsReads > reads ? true : undefined), 3_000);
+      const seen = statuses.length;
+      runDetails.set(70, { ...run, status: 'passed', passedTests: 2 });
+      const at = Date.now();
+      const ended = await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null), 3_000);
+      expect(Date.now() - at).toBeLessThan(1_000);
+      expect(ended.contexts[0]).toMatchObject({ stream: 'live', live: null });
+    } finally {
+      stopLive();
+      liveClient.dispose();
+      goneRunStreams.delete(70);
+      runDetails.delete(70);
+    }
   });
 });
 
@@ -1012,6 +2206,265 @@ describe('the desktop app', () => {
       stopDesktop();
       desktopClient.dispose();
     }
+  });
+});
+
+describe('the folder a command runs in', () => {
+  test('is the config folder as the file system spells it, whatever spelling the editor gave', async () => {
+    // A link stands for another spelling of the same folder, as `c:\…` for `C:\…` on Windows.
+    const linked = path.join(os.tmpdir(), `piwi-linked-${process.pid}`);
+    fs.rmSync(linked, { force: true });
+    fs.symlinkSync(dir, linked, 'dir');
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopLinked = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    const linkedClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    linkedClient.listen();
+    try {
+      await linkedClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(linked).href, name: 'shop' }],
+      });
+      await linkedClient.sendNotification('initialized', {});
+      await waitFor(async () => {
+        const s = (await linkedClient.sendRequest('piwi/status')) as StatusResult;
+        return s.contexts[0]?.connected ? s : undefined;
+      });
+      const spec = pathToFileURL(path.join(linked, 'tests/checkout.spec.ts')).href;
+      const command = (await linkedClient.sendRequest('piwi/runArgs', {
+        uri: spec,
+        testIds: [1],
+        breakpoints: [{ uri: spec, line: 2 }],
+      })) as RunCommand;
+      expect(command.cwd).toBe(fs.realpathSync.native(dir));
+      expect(command.env).toMatchObject({ PIWI_PAUSE_AT: 'tests/checkout.spec.ts:3' });
+    } finally {
+      stopLinked();
+      linkedClient.dispose();
+      fs.rmSync(linked, { force: true });
+    }
+  });
+});
+
+describe('the baseline chosen in the editor', () => {
+  let baselineClient: MessageConnection;
+  let stopBaseline: () => void;
+  const baselinePublished = new Map<string, Array<{ message: string }>>();
+
+  /** The status once its baseline reads `label`. */
+  const statusWith = (label: string) =>
+    waitFor(async () => {
+      const s = (await baselineClient.sendRequest('piwi/runStatus')) as RunStatusResult;
+      return s.contexts[0]?.baseline?.label === label ? s.contexts[0] : undefined;
+    });
+
+  /** Choose a baseline, and the status once it reads `label`, with the queries read meanwhile. */
+  const choose = async (choice: unknown, label: string) => {
+    const from = baselineReads.length;
+    await baselineClient.sendNotification('piwi/setBaseline', { root: dir, choice });
+    const status = await statusWith(label);
+    return { status, reads: baselineReads.slice(from).map((q) => Object.fromEntries(q)) };
+  };
+
+  beforeAll(async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopBaseline = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: BASELINE_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    baselineClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    baselineClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      baselinePublished.set(p.uri, p.diagnostics);
+    });
+    baselineClient.listen();
+    // A service started again: the client sends the choice it keeps with the credentials.
+    await baselineClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      initializationOptions: { credentials: { baselines: { [dir]: { kind: 'run', runId: 118 } } } },
+    });
+    await baselineClient.sendNotification('initialized', {});
+  });
+
+  afterAll(() => {
+    stopBaseline?.();
+    baselineClient?.dispose();
+  });
+
+  test('a run chosen by its id, kept by the client, is read from the start, with the branches to choose from', async () => {
+    const status = await statusWith('CI run #118 on feature/x');
+    expect(status).toMatchObject({
+      branch: 'feature/x',
+      run: { id: 118 },
+      baseline: { choice: { kind: 'run', runId: 118 } },
+      branches: ['main', 'feature/x'],
+    });
+    const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.items.map((f) => f.executionId)).toEqual([1180]);
+    expect(failures.baseline).toEqual({ choice: { kind: 'run', runId: 118 }, label: 'CI run #118 on feature/x' });
+  });
+
+  test('a run on a developer’s machine chosen as the baseline lists its failures as local ones', async () => {
+    await choose({ kind: 'run', runId: 119 }, 'local run #119 on main');
+    const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.items).toMatchObject([{ executionId: 1190, runId: 119, source: 'local' }]);
+    const onPage = await waitFor(() =>
+      baselinePublished.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.message.includes('#119')),
+    );
+    expect(onPage.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, local run #119)");
+    const hover = (await baselineClient.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      position: { line: 4, character: 30 },
+    })) as { contents: { value: string } };
+    expect(hover.contents.value).toContain(
+      `**Local failure** · [removes a row](${url}/test-run-cases/1190) · local run #119`,
+    );
+  });
+
+  test('the ladder reads the checked-out branch, as without a choice', async () => {
+    const { status, reads } = await choose({ kind: 'ladder' }, 'CI run #41 on main');
+    expect(status).toMatchObject({ branch: 'main', checkedOut: 'main', run: { id: 41 } });
+    expect(reads).toEqual([{ branch: 'main', overlays: '1' }]);
+  });
+
+  test('a branch reads its latest run, and one with no run says so and reads nothing else', async () => {
+    const chosen = await choose({ kind: 'branch', branch: 'feature/x' }, 'CI run #120 on feature/x');
+    expect(chosen.status).toMatchObject({ branch: 'feature/x', checkedOut: 'main', run: { id: 120 }, failures: 0 });
+    expect(chosen.reads).toEqual([{ branch: 'feature/x', overlays: '1' }]);
+
+    const none = await choose({ kind: 'branch', branch: 'release' }, 'release (no run)');
+    expect(none.status).toMatchObject({ branch: 'release', run: null, failures: 0 });
+    expect(none.reads).toEqual([{ branch: 'release', overlays: '1' }]);
+  });
+
+  test('a run the instance does not hold says so', async () => {
+    const { status, reads } = await choose({ kind: 'run', runId: 999 }, 'run #999 (no run)');
+    expect(status).toMatchObject({ run: null, failures: 0 });
+    expect(reads).toEqual([{ overlays: '1', run: '999' }]);
+  });
+
+  test("a developer's own runs only: the overlays alone, as local failures, with no baseline", async () => {
+    const { status, reads } = await choose({ kind: 'local' }, 'your local runs only');
+    expect(status).toMatchObject({ branch: 'main', run: null, failures: 1, overlays: 1 });
+    expect(reads).toEqual([{ branch: 'main', overlays: '1', origin: 'local' }]);
+    const failures = (await baselineClient.sendRequest('piwi/failures')) as FailuresResult;
+    expect(failures.run).toBeNull();
+    expect(failures.overlays?.map((o) => o.id)).toEqual([60]);
+    expect(failures.items).toMatchObject([{ executionId: 600, runId: 60, source: 'local', isNew: true }]);
+    expect(failures.baseline?.label).toBe('your local runs only');
+  });
+
+  test('the choice survives credentials that carry it, and credentials that name none bring the ladder back', async () => {
+    await choose({ kind: 'branch', branch: 'feature/x' }, 'CI run #120 on feature/x');
+    const from = baselineReads.length;
+    await baselineClient.sendNotification('piwi/setCredentials', {
+      baselines: { [dir]: { kind: 'branch', branch: 'feature/x' } },
+    });
+    await waitFor(() => (baselineReads.length > from ? true : undefined));
+    expect((await statusWith('CI run #120 on feature/x')).run?.id).toBe(120);
+    expect(baselineReads.slice(from).map((q) => q.get('branch'))).toEqual(['feature/x']);
+
+    await baselineClient.sendNotification('piwi/setCredentials', {});
+    await waitFor(() => (baselineReads.length > from + 1 ? true : undefined));
+    expect((await statusWith('CI run #120 on feature/x')).baseline?.choice).toEqual({
+      kind: 'branch',
+      branch: 'feature/x',
+    });
+
+    await baselineClient.sendNotification('piwi/setCredentials', { baselines: {} });
+    expect((await statusWith('CI run #41 on main')).baseline?.choice).toEqual({ kind: 'ladder' });
+  });
+});
+
+describe('an instance slow to answer the indexes', () => {
+  let slowClient: MessageConnection;
+  let stopSlow: () => void;
+  const slowPublished = new Map<string, Array<{ message: string; code?: string }>>();
+  const selectionsOf = async () =>
+    ((await slowClient.sendRequest('piwi/selections', { uri: uri('tests/checkout.spec.ts') })) as { items: unknown[] })
+      .items;
+
+  beforeAll(async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    stopSlow = startServer(createConnection(toServer, toClient), {
+      env: {
+        PIWI_DASHBOARD_URL: url,
+        PIWI_PROJECT_NAME: 'Acme Mugs',
+        PIWI_API_KEY: SLOW_KEY,
+        PIWI_DESKTOP_CONFIG: '/nonexistent',
+      },
+      debounceMs: 10,
+      runPollMs: 60 * 60_000,
+    });
+    slowClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    slowClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      slowPublished.set(p.uri, p.diagnostics);
+    });
+    slowClient.listen();
+    await slowClient.sendRequest('initialize', {
+      processId: null,
+      rootUri: null,
+      capabilities: {},
+      workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+    });
+    await slowClient.sendNotification('initialized', {});
+  });
+
+  afterAll(() => {
+    releaseSlow?.();
+    stopSlow?.();
+    slowClient?.dispose();
+  });
+
+  test('the latest run’s failures show while the indexes read after it are still on their way', async () => {
+    const failure = await waitFor(() =>
+      [...slowPublished.values()].flat().find((d) => d.code === 'ci-failure' && d.message.includes('#41')),
+    );
+    expect(failure.message).toBe("locator('.cart-row').nth(2) was not found (removes a row, run #41)");
+    // The flake-lab and selections reads are still held.
+    await waitFor(() => (slowHeld >= 2 ? true : undefined));
+    expect(releaseSlow).not.toBeNull();
+    const status = (await slowClient.sendRequest('piwi/status')) as StatusResult;
+    expect(status.contexts[0]).toMatchObject({ connected: true, projectName: 'Acme Mugs', problem: null });
+    expect(await selectionsOf()).toEqual([]);
+  });
+
+  test('an instance that neither resolves the selections together nor lists search values is read as before', async () => {
+    releaseSlow!();
+    releaseSlow = null;
+    const items = await waitFor(async () => {
+      const listed = await selectionsOf();
+      return listed.length ? listed : undefined;
+    });
+    expect(items).toEqual([
+      { key: 'smoke', name: 'Smoke', count: 1, includesFile: true },
+      { key: 'failed', name: 'failed', count: 1, includesFile: false },
+    ]);
+    const text =
+      "import { test } from '@playwright/test';\n\ntest('pays', { tag: ['@sm'] }, async ({ page }) => {});\n";
+    await slowClient.sendNotification('textDocument/didOpen', {
+      textDocument: { uri: uri('tests/checkout.spec.ts'), languageId: 'typescript', version: 1, text },
+    });
+    const tags = (await slowClient.sendRequest('textDocument/completion', {
+      textDocument: { uri: uri('tests/checkout.spec.ts') },
+      position: { line: 2, character: text.split('\n')[2]!.indexOf("'@sm'") + 4 },
+    })) as Array<{ label: string }>;
+    expect(tags.map((i) => i.label)).toEqual(['@checkout', '@smoke']);
   });
 });
 

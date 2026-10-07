@@ -27,14 +27,40 @@ import {
   type QuarantinedTest,
 } from './piwi-client.js';
 import type { TimeoutAdvice } from './analysis.js';
-import type { ConnectionSource, EditorCredentials } from './protocol.js';
-import { committedText, currentBranch, headCommit, repositoryRoot, translationValues } from './workspace.js';
+import type { BaselineChoice, ConnectionSource, EditorCredentials, LiveRun, LiveTestStatus } from './protocol.js';
+import {
+  committedText,
+  committedTextAt,
+  currentBranch,
+  headCommit,
+  reporterVersion,
+  repositoryRoot,
+  translationValues,
+} from './workspace.js';
 
 /** Selections resolved at each refresh, at most. */
 const MAX_SELECTIONS = 20;
 
 /** How long per-file answers (catalog, alternatives) are reused. */
 const FILE_CACHE_MS = 5 * 60_000;
+
+/** How many files a context keeps as the commits of its runs hold them: the latest read. */
+const MAX_COMMIT_TEXTS = 100;
+
+/** The origins of CI runs, as `branch-failures` names them. */
+export const CI_ORIGINS = new Set(['ci', 'ci-rerun']);
+
+/** The origins of a developer's own runs: their machine, the desktop app, an editor. */
+const LOCAL_ORIGINS = new Set(['local', 'desktop', 'editor']);
+
+/** The answer of a baseline that found no run. */
+const noRun = (): BranchFailures => ({ run: null, overlays: [], failures: [], resolved: [] });
+
+/** A file as a commit holds it: its text once read (null when the repository has none), and the read. */
+interface CommitText {
+  text: string | null | undefined;
+  read: Promise<string | null>;
+}
 
 function readJson(file: string): unknown {
   try {
@@ -98,6 +124,46 @@ function linkedProject(desktop: DesktopDiscovery | null, root: string): string {
 }
 
 type ContextConnection = PiwiConnection & { source: ConnectionSource };
+
+/** A baseline choice as a client sent it; null when it is not one. */
+export function parseBaselineChoice(value: unknown): BaselineChoice | null {
+  const choice = value as { kind?: unknown; branch?: unknown; runId?: unknown } | null;
+  if (!choice || typeof choice !== 'object') return null;
+  if (choice.kind === 'ladder' || choice.kind === 'local') return { kind: choice.kind };
+  if (choice.kind === 'branch' && typeof choice.branch === 'string' && choice.branch.trim()) {
+    return { kind: 'branch', branch: choice.branch.trim() };
+  }
+  if (choice.kind === 'run' && Number.isInteger(choice.runId) && (choice.runId as number) > 0) {
+    return { kind: 'run', runId: choice.runId as number };
+  }
+  return null;
+}
+
+/**
+ * A baseline in a few words: the run it found (`CI run #120 on feature/x`, `local run #110 on feature/x`, `run #118`
+ * from an instance that does not say what launched it), `your local runs only` for a developer's own runs, and the
+ * choice followed by `(no run)` when it found none. `branch` is the branch read.
+ */
+export function baselineLabel(choice: BaselineChoice, answer: BranchFailures | null, branch: string | null): string {
+  const run = answer?.run;
+  const name = run
+    ? `${!run.origin ? '' : CI_ORIGINS.has(run.origin) ? 'CI ' : 'local '}run #${run.id}${run.branch ? ` on ${run.branch}` : ''}`
+    : null;
+  switch (choice.kind) {
+    case 'branch':
+      return name ?? `${choice.branch} (no run)`;
+    case 'run':
+      return name ?? `run #${choice.runId} (no run)`;
+    case 'local':
+      if (name) return `your local runs only: ${name}`;
+      return answer?.overlays?.length
+        ? 'your local runs only'
+        : `your local runs only${branch ? ` on ${branch}` : ''} (no run)`;
+    default:
+      if (!name) return 'the newest run of any branch (no run)';
+      return branch ? name : `${name}, the newest run of any branch`;
+  }
+}
 
 /**
  * The instance the environment, the workspace `.env` (the config's directory,
@@ -220,13 +286,22 @@ export class PiwiContext {
   codeIndex: CodeIndex | null = null;
   /** Why the context has no data, in one sentence; null when it has. */
   problem: string | null = null;
+  /** The version of `@piwitests/reporter` the project installs, read at each refresh; null when none is found. */
+  reporterVersion: string | null = null;
   /**
-   * The branch whose latest run is read: the checked-out one, else, while it has no run, the
-   * project's default branch, else null for the newest run of any branch.
+   * The branch whose latest run is read. On the ladder: the checked-out one, else, while it has no run, the project's
+   * default branch, else null for the newest run of any branch. Otherwise the chosen branch, the chosen run's, or for a
+   * developer's own runs the checked-out one.
    */
   runBranch: string | null = null;
   /** The branch checked out in the workspace; null on a detached head. */
   checkedOutBranch: string | null = null;
+  /** The run the workspace is compared with, chosen in the editor (`piwi/setBaseline`); the ladder until then. */
+  baseline: BaselineChoice = { kind: 'ladder' };
+  /** What `baseline` found at the latest read, in a few words (`baselineLabel`); empty before the first. */
+  baselineLabel = '';
+  /** The branches a baseline can be chosen from: the default branch, then those with runs the locator index knows. */
+  branches: string[] = [];
   /** Quarantined tests by test case id, and the passing streak that releases one. */
   quarantined = new Map<number, QuarantinedTest>();
   releaseAfter = 0;
@@ -238,8 +313,25 @@ export class PiwiContext {
   flaky = new Map<number, FlakyTest>();
   /** The project's Flake Lab tests on that branch, with their top suspect, by test case id. */
   flakeLab = new Map<number, FlakeLabEntry>();
-  /** The latest run on `runBranch` and its failures; null before the first answer. */
+  /** The baseline on `runBranch` and its failures; null before the first answer. */
   failures: BranchFailures | null = null;
+  /** When `failures` was last read (ms since the epoch); null before the first answer. */
+  runReadAt: number | null = null;
+  /** The run in progress the context follows: the editor's own, else one on its branch; null while none runs. */
+  live: LiveRun | null = null;
+  /**
+   * The tests of `live` that began or ended, by test case id, until the latest run is read once it ended: what the
+   * gutter shows over the latest run's results meanwhile.
+   */
+  liveTests = new Map<number, LiveTestStatus>();
+  /** The runs the editor started on this instance (`piwi/runArgs`, `piwi/runSelection`), for the service's life. */
+  readonly ownRuns = new Set<number>();
+  /**
+   * The text of each file a failure goes through as saved when the service first placed the failure, by execution and
+   * file: where its lines are followed from when its run's commit does not give the file (a run on a developer's
+   * machine, a commit the repository lacks). Kept while the latest run stays the same and the failure is listed.
+   */
+  readonly failureAnchors = new Map<number, Map<string, string>>();
   private functions: { at: number; items: TestFunctionEntry[] } | null = null;
   private words: { at: number; value: { tags: string[]; features: string[] } } | null = null;
   private readonly issues = new Map<number, Promise<EntityLink[]>>();
@@ -250,6 +342,7 @@ export class PiwiContext {
   private readonly catalog = new Map<string, { at: number; items: CatalogCase[] }>();
   private readonly alternatives = new Map<string, { at: number; items: CallSiteAlternatives[] }>();
   private committedFiles = new Map<string, string | null>();
+  private readonly commitTexts = new Map<string, CommitText>();
   private translations: { head: string | null; old?: Map<string, string>; new?: Map<string, string> } = { head: null };
   private head: string | null = null;
 
@@ -261,11 +354,13 @@ export class PiwiContext {
   }
 
   /**
-   * Resolve the connection and project, then fetch the indexes. Never throws:
-   * a failure is kept in `problem`, and cached data stays.
+   * Resolve the connection and project, read the latest run (then `onRun` is called, so its failures show before the
+   * rest arrives), then fetch the other indexes side by side. Never throws: a failure is kept in `problem`, and cached
+   * data stays.
    */
-  async refresh(env: Record<string, string | undefined>, editor: EditorCredentials): Promise<void> {
+  async refresh(env: Record<string, string | undefined>, editor: EditorCredentials, onRun?: () => void): Promise<void> {
     this.repoRoot = await repositoryRoot(this.root);
+    this.reporterVersion = reporterVersion(this.root, this.repoRoot);
     const head = await headCommit(this.repoRoot);
     if (head !== this.head) {
       this.head = head;
@@ -301,6 +396,9 @@ export class PiwiContext {
         }
       }
       const index = await this.client.locatorIndex(this.project.id, null);
+      this.branches = [
+        ...new Set([index.defaultBranch, ...index.branches.map((b) => b.name)].filter((b): b is string => !!b)),
+      ];
       // The checked-out branch when the index has uses of its own for it, else the default branch.
       const checkedOut = await currentBranch(this.repoRoot);
       this.branch =
@@ -308,46 +406,56 @@ export class PiwiContext {
           ? checkedOut
           : null;
       this.index = this.branch ? await this.client.locatorIndex(this.project.id, this.branch) : index;
-      this.codeIndex = await this.client.codeIndex(this.project.id, this.branch).catch(() => null);
-      const flaky = await this.client.flakyTests(this.project.id, this.branch).catch(() => null);
-      if (flaky) this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]));
-      const flakeLab = await this.client.flakeLab(this.project.id, this.branch).catch(() => null);
-      if (flakeLab) this.flakeLab = new Map(flakeLab.map((t) => [t.testCaseId, t]));
-      const quarantine = await this.client.quarantine(this.project.id).catch(() => null);
-      if (quarantine) {
-        this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
-        this.releaseAfter = quarantine.releaseAfter;
-      }
-      const selections = await this.client.selections(this.project.id).catch(() => null);
-      if (selections) {
-        const project = this.project;
-        const client = this.client;
-        this.selections = (
-          await Promise.all(
-            selections.slice(0, MAX_SELECTIONS).map(async (s) => {
-              const resolved = await client.resolveSelection(project.id, s.key).catch(() => null);
-              return resolved
-                ? {
-                    key: s.key,
-                    name: s.name,
-                    tests: new Set(resolved.tests.map((t) => t.testCaseId)),
-                    command: resolved.materialization.command,
-                  }
-                : null;
-            }),
-          )
-        ).filter((s): s is NonNullable<typeof s> => !!s);
-      }
-      const timeouts = await this.client.timeoutOpportunities(this.project.id).catch(() => null);
-      if (timeouts) this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]));
+      // The failures first: what the other indexes add to them comes once they answer.
+      this.problem = null;
+      await this.refreshRun();
+      onRun?.();
+      const client = this.client;
+      const projectId = this.project.id;
       this.catalog.clear();
       this.alternatives.clear();
       this.functions = null;
       this.words = null;
-      // Completion reads these: fetched here, so no keystroke waits on them.
-      await Promise.all([this.functionCatalog(), this.vocabulary()]);
-      this.problem = null;
-      await this.refreshRun();
+      await Promise.all([
+        client
+          .codeIndex(projectId, this.branch)
+          .catch(() => null)
+          .then((codeIndex) => (this.codeIndex = codeIndex)),
+        client
+          .flakyTests(projectId, this.branch)
+          .then((flaky) => (this.flaky = new Map(flaky.map((f) => [f.testCaseId, f]))))
+          .catch(() => {}),
+        client
+          .flakeLab(projectId, this.branch)
+          .then((flakeLab) => (this.flakeLab = new Map(flakeLab.map((t) => [t.testCaseId, t]))))
+          .catch(() => {}),
+        client
+          .quarantine(projectId)
+          .then((quarantine) => {
+            this.quarantined = new Map(quarantine.entries.map((q) => [q.testCaseId, q]));
+            this.releaseAfter = quarantine.releaseAfter;
+          })
+          .catch(() => {}),
+        client
+          .resolvedSelections(projectId, MAX_SELECTIONS)
+          .then(
+            (selections) =>
+              (this.selections = selections.map((s) => ({
+                key: s.key,
+                name: s.name,
+                tests: new Set(s.testCaseIds),
+                command: s.command,
+              }))),
+          )
+          .catch(() => {}),
+        client
+          .timeoutOpportunities(projectId)
+          .then((timeouts) => (this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]))))
+          .catch(() => {}),
+        // Completion reads these: fetched here, so no keystroke waits on them.
+        this.functionCatalog(),
+        this.vocabulary(),
+      ]);
     } catch (e) {
       const refused = e instanceof PiwiHttpError && (e.status === 401 || e.status === 403);
       this.problem = refused
@@ -358,7 +466,10 @@ export class PiwiContext {
     }
   }
 
-  /** Drop everything read from the instance: the project, its indexes, the latest run and the per-file answers. */
+  /**
+   * Drop everything read from the instance: the project, its indexes, the latest run, the runs followed and the
+   * per-file answers.
+   */
   private forget(): void {
     this.project = null;
     this.branch = null;
@@ -371,8 +482,16 @@ export class PiwiContext {
     this.flaky = new Map();
     this.flakeLab = new Map();
     this.failures = null;
+    this.runReadAt = null;
+    this.live = null;
+    this.liveTests = new Map();
+    this.ownRuns.clear();
+    this.failureAnchors.clear();
+    this.commitTexts.clear();
     this.runBranch = null;
     this.checkedOutBranch = null;
+    this.baselineLabel = '';
+    this.branches = [];
     this.functions = null;
     this.words = null;
     for (const cache of [
@@ -388,38 +507,70 @@ export class PiwiContext {
   }
 
   /**
-   * Fetch the latest run on the checked-out branch (the default branch on a
-   * detached head); while that branch has no run, the default branch's, else the
-   * newest of any branch. Returns whether the run or its failures changed.
+   * Fetch the baseline the editor chose and the runs laid over it. The ladder reads the latest run on the checked-out
+   * branch (the default branch on a detached head); while that branch has no run, the default branch's, else the
+   * newest of any branch. A branch, a run or a developer's own runs are read once: when they hold no run, nothing else
+   * is read. Returns whether the run, its failures or the baseline changed.
    */
   async refreshRun(): Promise<boolean> {
     if (!this.client || !this.project) return false;
+    const client = this.client;
+    const projectId = this.project.id;
     const checkedOut = await currentBranch(this.repoRoot);
-    // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
-    const branches = [
-      ...new Set([checkedOut ?? this.index?.defaultBranch ?? null, this.index?.defaultBranch ?? null, null]),
-    ];
+    const defaultBranch = this.index?.defaultBranch ?? null;
+    const choice = this.baseline;
     try {
-      let branch: string | null = branches[0] ?? null;
-      let next = await this.client.branchFailures(this.project.id, branch);
-      for (const other of branches.slice(1)) {
-        if (next.run) break;
-        branch = other;
-        next = await this.client.branchFailures(this.project.id, other);
+      let branch: string | null;
+      let next: BranchFailures;
+      if (choice.kind === 'branch') {
+        branch = choice.branch;
+        next = await client.branchFailures(projectId, branch);
+      } else if (choice.kind === 'run') {
+        next = await client.branchFailures(projectId, null, { run: choice.runId }).catch((e: unknown) => {
+          // A run the instance does not hold, or another project's.
+          if (e instanceof PiwiHttpError && (e.status === 400 || e.status === 404)) return noRun();
+          throw e;
+        });
+        // An instance that does not read `run` answers another run.
+        if (next.run && next.run.id !== choice.runId) next = noRun();
+        branch = next.run?.branch ?? null;
+      } else if (choice.kind === 'local') {
+        branch = checkedOut ?? defaultBranch;
+        next = await client.branchFailures(projectId, branch, { origin: 'local' });
+        // An instance that does not read `origin` answers a CI run.
+        if (next.run && !LOCAL_ORIGINS.has(next.run.origin ?? '')) next = noRun();
+      } else {
+        // A branch that never ran shows the run it grew from: the default branch's, else the newest of any branch.
+        const ladder = [...new Set([checkedOut ?? defaultBranch, defaultBranch, null])];
+        branch = ladder[0] ?? null;
+        next = await client.branchFailures(projectId, branch);
+        for (const other of ladder.slice(1)) {
+          if (next.run) break;
+          branch = other;
+          next = await client.branchFailures(projectId, other);
+        }
       }
+      const label = baselineLabel(choice, next, branch);
       const changed =
         branch !== this.runBranch ||
         checkedOut !== this.checkedOutBranch ||
+        label !== this.baselineLabel ||
         JSON.stringify(next) !== JSON.stringify(this.failures);
       if (next.run?.id !== this.failures?.run?.id) {
         this.healings.clear();
         this.issues.clear();
         this.fixPlans.clear();
         this.fixPlanTexts.clear();
+        this.failureAnchors.clear();
+        this.commitTexts.clear();
       }
+      const listed = new Set([...next.failures, ...(next.resolved ?? [])].map((f) => f.executionId));
+      for (const id of this.failureAnchors.keys()) if (!listed.has(id)) this.failureAnchors.delete(id);
       this.runBranch = branch;
       this.checkedOutBranch = checkedOut;
+      this.baselineLabel = label;
       this.failures = next;
+      this.runReadAt = Date.now();
       return changed;
     } catch {
       return false;
@@ -541,6 +692,28 @@ export class PiwiContext {
     const items = await this.client.locatorAlternatives(this.project.id, relativeFile).catch(() => []);
     this.alternatives.set(relativeFile, { at: Date.now(), items });
     return items;
+  }
+
+  /**
+   * A file (repository-relative) as `commit` holds it: null when the local repository lacks the commit or the path,
+   * undefined until read. The first call starts the read, which `read` settles with; the text is kept while the latest
+   * run stays the same, for the {@link MAX_COMMIT_TEXTS} files read last.
+   */
+  textAtCommit(commit: string, repoRelative: string): CommitText {
+    const key = `${commit}\n${repoRelative}`;
+    const known = this.commitTexts.get(key);
+    if (known) return known;
+    const read = committedTextAt(this.repoRoot, commit, repoRelative);
+    const entry: CommitText = { text: undefined, read };
+    void read.then((text) => {
+      entry.text = text;
+    });
+    this.commitTexts.set(key, entry);
+    for (const oldest of this.commitTexts.keys()) {
+      if (this.commitTexts.size <= MAX_COMMIT_TEXTS) break;
+      this.commitTexts.delete(oldest);
+    }
+    return entry;
   }
 
   /** A file as `HEAD` holds it (repository-relative), cached until `HEAD` moves. */

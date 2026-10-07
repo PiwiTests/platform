@@ -157,43 +157,31 @@ async function cleanupPicker(page: Page): Promise<void> {
   }
 }
 
-/**
- * Drive the full pick flow on the failing page: element pick (snap +
- * tree-walk), optional stable-parent anchoring with live match counts, ranked
- * candidates (standard generation merged with anchor-scoped chains), and a
- * final confirmation. The test timeout is lifted while waiting. Returns null
- * when skipped or when anything breaks — the picker must never mask the
- * test's own failure.
- */
-export async function runLocatorPicker(
-  page: Page,
-  testInfo: TestInfo,
-  failed: FailedLocatorInfo | null,
-  probe: PickerProbe,
-): Promise<UserPickResult | null> {
-  try {
-    testInfo.setTimeout(0);
-    const rendered = failed ? renderFailing(failed) : null;
-    console.log(
-      `\n[piwi] "${testInfo.title}" ${testInfo.status} — ${rendered ? 'locator picker' : 'inspector'} open in the ` +
-        `browser: ${
-          rendered
-            ? `click the element that should replace ${rendered}`
-            : 'click any element to generate ' + 'locators for it'
-        } (↑/↓ to select a parent/child, Esc to skip).`,
-    );
+/** What the element → anchors → confirm flow yields: the confirmed locator, its alternatives and the element. */
+export type PickedLocator = Omit<UserPickResult, 'failing'>;
 
-    const overlayArg: PickerOverlayArg = { transport: 'global', failing: rendered };
+/**
+ * Run the element → anchors → confirm flow on a live page: element pick (snap
+ * + tree-walk), optional stable-parent anchoring with live match counts, ranked
+ * candidates (standard generation merged with anchor-scoped chains), and a
+ * final confirmation. `failing` is the locator the pick replaces, rendered, for
+ * the overlay's headings; null to pick any element. Returns null when the
+ * human skips or no locator could be generated; throws when the page breaks.
+ */
+export async function pickLocator(
+  page: Page,
+  probe: PickerProbe,
+  failing: string | null,
+): Promise<PickedLocator | null> {
+  try {
+    const overlayArg: PickerOverlayArg = { transport: 'global', failing };
     await page.evaluate(installPickerOverlay, overlayArg);
     await page.waitForFunction(() => (globalThis as any).__piwiPickState !== undefined, undefined, {
       timeout: 0,
       polling: 250,
     });
     const state = (await page.evaluate(() => (globalThis as any).__piwiPickState)) as string;
-    if (state !== 'picked') {
-      await cleanupPicker(page);
-      return null;
-    }
+    if (state !== 'picked') return null;
 
     const handle = await page.evaluateHandle(() => (globalThis as any).__piwiPickedElement);
     const attrs = (await (handle as any).evaluate(probe.fn, probe.arg)) as ProbedAttrs;
@@ -237,12 +225,11 @@ export async function runLocatorPicker(
     );
     if (ranked.length === 0) {
       console.log('[piwi] No stable locator could be generated for the picked element — nothing recorded.');
-      await cleanupPicker(page);
       return null;
     }
 
     await page.evaluate(showPickerChoices, {
-      failing: rendered,
+      failing,
       choices: ranked.map((r) => ({ locator: r.locator, score: r.score })),
     });
     await page.waitForFunction(() => (globalThis as any).__piwiPickChoice !== undefined, undefined, {
@@ -250,33 +237,63 @@ export async function runLocatorPicker(
       polling: 250,
     });
     const choice = (await page.evaluate(() => (globalThis as any).__piwiPickChoice)) as number;
-    await cleanupPicker(page);
     if (typeof choice !== 'number' || choice < 0 || choice >= ranked.length) return null;
 
     const picked: RankedLocator = { ...ranked[choice]!, pickedByUser: true };
-    const alternatives = [picked, ...ranked.filter((_, i) => i !== choice)];
-    const element: UserPickResult['element'] = {
-      tagName: attrs.tagName,
-      attributes: attrs.attributes,
-      textContent: attrs.textContent,
-      accessibleName,
-      center: attrs.center,
-      ...(attrs.rolePosition ? { rolePosition: attrs.rolePosition } : {}),
-      ...(attrs.ancestors && attrs.ancestors.length > 0 ? { ancestors: attrs.ancestors } : {}),
+    return {
+      picked,
+      alternatives: [picked, ...ranked.filter((_, i) => i !== choice)],
+      element: {
+        tagName: attrs.tagName,
+        attributes: attrs.attributes,
+        textContent: attrs.textContent,
+        accessibleName,
+        center: attrs.center,
+        ...(attrs.rolePosition ? { rolePosition: attrs.rolePosition } : {}),
+        ...(attrs.ancestors && attrs.ancestors.length > 0 ? { ancestors: attrs.ancestors } : {}),
+      },
+      ...(anchors.length > 0 ? { anchors } : {}),
     };
+  } finally {
+    await cleanupPicker(page);
+  }
+}
+
+/**
+ * Drive the full pick flow on the failing page (`pickLocator`), the test
+ * timeout lifted while waiting. Returns null when skipped or when anything
+ * breaks — the picker must never mask the test's own failure.
+ */
+export async function runLocatorPicker(
+  page: Page,
+  testInfo: TestInfo,
+  failed: FailedLocatorInfo | null,
+  probe: PickerProbe,
+): Promise<UserPickResult | null> {
+  try {
+    testInfo.setTimeout(0);
+    const rendered = failed ? renderFailing(failed) : null;
+    console.log(
+      `\n[piwi] "${testInfo.title}" ${testInfo.status} — ${rendered ? 'locator picker' : 'inspector'} open in the ` +
+        `browser: ${
+          rendered
+            ? `click the element that should replace ${rendered}`
+            : 'click any element to generate ' + 'locators for it'
+        } (↑/↓ to select a parent/child, Esc to skip).`,
+    );
+
+    const pick = await pickLocator(page, probe, rendered);
+    if (!pick) return null;
 
     const location = failed?.location ?? null;
     console.log(
       failed
-        ? `[piwi] Replacement picked for ${rendered}${location ? ` at ${location}` : ''}:\n[piwi]   ${picked.locator}`
-        : `[piwi] Locator picked while inspecting:\n[piwi]   ${picked.locator}`,
+        ? `[piwi] Replacement picked for ${rendered}${location ? ` at ${location}` : ''}:\n[piwi]   ${pick.picked.locator}`
+        : `[piwi] Locator picked while inspecting:\n[piwi]   ${pick.picked.locator}`,
     );
     return {
       failing: failed ? { method: failed.method, args: failed.args, rendered: rendered!, location } : null,
-      picked,
-      alternatives,
-      element,
-      ...(anchors.length > 0 ? { anchors } : {}),
+      ...pick,
     };
   } catch {
     return null;

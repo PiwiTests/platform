@@ -1,7 +1,7 @@
 /**
  * The workspace as the editor service sees it: the Playwright configs it
  * holds (each one a context: call sites resolve against its directory), the
- * git repository around them, and the committed version of a file.
+ * git repository around them, and a file as `HEAD` or a run's commit holds it.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -81,6 +81,40 @@ export async function headCommit(repoRoot: string): Promise<string | null> {
 /** A file as `HEAD` holds it; null when it is new or outside a repository. */
 export async function committedText(repoRoot: string, relativePath: string): Promise<string | null> {
   return git(repoRoot, ['show', `HEAD:${relativePath.split(path.sep).join('/')}`]);
+}
+
+/** A commit's object name as git prints it, full or abbreviated: anything else is never passed to git. */
+const COMMIT = /^[0-9a-f]{4,64}$/i;
+
+/**
+ * A file as `commit` holds it, by its path relative to the repository; null when the local repository lacks the
+ * commit or the path, or when `commit` is not an object name.
+ */
+export async function committedTextAt(repoRoot: string, commit: string, relativePath: string): Promise<string | null> {
+  if (!COMMIT.test(commit)) return null;
+  return git(repoRoot, ['show', `${commit}:${relativePath.split(path.sep).join('/')}`]);
+}
+
+/**
+ * The version of `@piwitests/reporter` a Playwright config's folder installs: its `node_modules`, else that of a
+ * folder above it, up to the repository root, as Node resolves it. Null when none is found or its `package.json` has
+ * no version.
+ */
+export function reporterVersion(dir: string, repoRoot: string): string | null {
+  let current = path.resolve(dir);
+  const stop = path.resolve(repoRoot);
+  for (;;) {
+    try {
+      const manifest = path.join(current, 'node_modules', '@piwitests', 'reporter', 'package.json');
+      const version = (JSON.parse(fs.readFileSync(manifest, 'utf-8')) as { version?: unknown }).version;
+      if (typeof version === 'string' && version) return version;
+    } catch {
+      // Not installed here: look above.
+    }
+    const parent = path.dirname(current);
+    if (current === stop || parent === current || relativeTo(stop, current) === null) return null;
+    current = parent;
+  }
 }
 
 /** A path relative to `root`, with forward slashes; null when it is outside. */

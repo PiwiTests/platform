@@ -3,7 +3,12 @@
 Your Playwright suite's history where you change the code, from a [Piwi](https://piwitests.dev) instance.
 
 - **CI failures in the Problems panel.** The failures of the latest run on the checked-out branch, at their failing
-  line, with one line on why each failed.
+  line, with one line on why each failed. Your own runs since are laid over it within a second of their end: a test
+  you fixed and re-ran leaves the panel, one your run broke joins it, and a notification says what your run changed.
+- **The failures view.** The Piwi panel's **Failures** view lists them as a tree under the run, grouped by spec,
+  failure cluster or owner, with your runs since; each test runs again, opens its trace or its page in one click, and
+  **Re-run the failing tests** runs them all. A run started there pauses at your breakpoints in the browser, where a
+  locator you pick replaces the one on that line.
 - **Heal in place.** On a failing locator, the replacement Piwi recommends is a quick fix: the same edit an auto-heal
   pull request makes. **Open the trace** downloads it and opens Playwright's trace viewer; the failure screenshot is in
   the hover.
@@ -16,7 +21,9 @@ Your Playwright suite's history where you change the code, from a [Piwi](https:/
 - **Record a test.** **Piwi: Record here** opens a browser through your project's own Playwright and writes what you
   do there at the cursor, as you do it: steps inside a test, or a new test between tests. **Piwi: Record a new test
   file** records a whole spec. It needs no instance.
-- **The status bar.** The latest run on the branch, live while it runs.
+- **The status bar.** The latest run on the branch, with what your local runs fixed since (`2 failing · 1 fixed
+  locally`), and the run you started from the editor, live while it runs; a click reads it again. **Piwi: Compare
+  with…** compares with another branch, a run by its id, or your local runs only.
 - **Piwi's MCP server for the agent**, with the connection the extension already has.
 
 ## Connect

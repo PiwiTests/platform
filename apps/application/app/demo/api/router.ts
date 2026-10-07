@@ -70,7 +70,7 @@ import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
-import { getBranchFailures } from '~~/server/utils/branch-failures';
+import { branchFailuresOrError } from '~~/server/utils/branch-failures';
 import { getLocatorHealing, saveLocatorPick } from '~~/server/utils/locator-healing';
 import {
   backfillLocatorUsages,
@@ -169,6 +169,7 @@ import {
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
   listSelections,
+  listResolvedSelections,
   getSelection,
   createSelection,
   updateSelection,
@@ -2095,9 +2096,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/branch-failures$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const branch = q?.get('branch')?.trim() ?? '';
-      if (branch.length > 255) throw demoHttpError(400, 'branch is at most 255 characters');
-      return getBranchFailures(await getDemoDb(), +m[1]!, branch || null);
+      return branchFailuresOrError(await getDemoDb(), +m[1]!, Object.fromEntries(q ?? []), demoHttpError);
     },
   },
   {
@@ -2285,9 +2284,16 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/selections$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      return { items: await listSelections(await getDemoDb(), +m[1]!) };
+      const resolve = query?.get('resolve');
+      const db = await getDemoDb();
+      return {
+        items:
+          resolve === 'true' || resolve === '1'
+            ? await listResolvedSelections(db, +m[1]!)
+            : await listSelections(db, +m[1]!),
+      };
     },
   },
   {

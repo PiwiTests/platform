@@ -186,6 +186,64 @@ const tests = {
     assert.equal(inClass.default, 'this.page');
   },
 
+  async 'the failures view lists the latest run’s failure under the run and its spec'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const roots = await waitFor(async () => {
+      const found = await api.failureChildren();
+      return found.length ? found : null;
+    }, 'the failures view');
+    assert.equal(roots.length, 1);
+    assert.equal(roots[0].label, 'Run #41 · CI · main · 1 failing');
+    const groups = await api.failureChildren(roots[0]);
+    assert.deepEqual(
+      groups.map((g) => [g.label, g.description]),
+      [['tests/checkout.spec.ts', '1 failing']],
+    );
+    const [leaf] = await api.failureChildren(groups[0]);
+    assert.equal(leaf.label, 'removes a row');
+    assert.equal(leaf.description, 'checkout.page.ts:5');
+    assert.equal(leaf.icon, 'error');
+    assert.equal(leaf.failure.testCaseId, 3);
+    assert.equal(leaf.failure.uri, pageObject.toString());
+  },
+
+  async 'Re-run the failing tests runs them'() {
+    await vscode.commands.executeCommand('piwi.rerunFailing');
+    await vscode.commands.executeCommand('piwi.runTest', { uri: pageObject.toString(), testIds: [3] });
+  },
+
+  async 'a breakpoint pauses the run it starts, and a pick there replaces the locator of its line'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+    vscode.debug.addBreakpoints([breakpoint]);
+    try {
+      await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1] });
+      const run = api.lastRun();
+      assert.equal(run.env.PIWI_PAUSE_AT, 'tests/checkout.spec.ts:3');
+      assert.equal(run.command, 'echo tests/checkout.spec.ts:3 --headed');
+      assert.match(run.env.PIWI_EDITOR_SEND, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send#[\w-]{16,}$/);
+
+      const [url, token] = run.env.PIWI_EDITOR_SEND.split('#');
+      const picked = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'locator',
+          text: "getByTestId('cart-row')",
+          at: { file: 'tests/pages/checkout.page.ts', line: 5 },
+        }),
+      });
+      assert.equal(picked.status, 200, await picked.clone().text());
+      const document = await vscode.workspace.openTextDocument(pageObject);
+      assert.equal(document.lineAt(4).text, "  row = () => this.page.getByTestId('cart-row');");
+    } finally {
+      vscode.debug.removeBreakpoints([breakpoint]);
+      await vscode.window.showTextDocument(pageObject);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+  },
+
   async 'the commands are registered'() {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
@@ -193,11 +251,18 @@ const tests = {
       'piwi.disconnect',
       'piwi.openSettings',
       'piwi.refresh',
+      'piwi.refreshRun',
       'piwi.runTestsForFile',
       'piwi.openInDashboard',
       'piwi.openRun',
       'piwi.openTrace',
       'piwi.runTests',
+      'piwi.runTest',
+      'piwi.rerunFailing',
+      'piwi.groupFailuresBy',
+      'piwi.compareWith',
+      'piwi.toggleFollowEditor',
+      'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',
       'piwi.runCommand',
@@ -212,6 +277,7 @@ const tests = {
       assert.ok(commands.includes(id), id);
     }
     await vscode.commands.executeCommand('piwi.refresh');
+    await vscode.commands.executeCommand('piwi.refreshRun');
   },
 };
 

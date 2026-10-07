@@ -6,18 +6,22 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.COLUMNS_LARGE
+import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import javax.swing.JEditorPane
+import javax.swing.JList
 
 /**
  * **Settings → Tools → Piwi**: the desktop app and whether this machine reads it first, the
- * instance and project saved for this project, whether a key is saved for that instance, and
- * the connection the service actually uses.
+ * instance and project saved for this project, whether a key is saved for that instance, when
+ * a run started from the IDE says what it changed, whether the runs it starts pause at the IDE's
+ * breakpoints, and the connection the service actually uses.
  */
 class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi") {
     private val service get() = project.service<PiwiProjectService>()
@@ -79,6 +83,24 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
                     button("Disconnect") { disconnect() }
                 }
             }
+            group("Runs") {
+                row("When a run started here ends:") {
+                    comboBox(Glue.RUN_NOTIFICATIONS, RunNotificationRenderer())
+                        .bindItem({ local.runNotifications }, { local.runNotifications = it ?: "always" })
+                        .comment(
+                            "A balloon says what the run changed: the failures it fixed, those still failing, its new ones. " +
+                                "Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+                row {
+                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, in the browser, with the picker")
+                        .bindSelected({ local.breakpoints }, { local.breakpoints = it })
+                        .comment(
+                            "A run with a breakpoint in a test or page object runs headed and pauses before the action on " +
+                                "that line. Needs @piwitests/reporter 0.48.0 or later. Kept for you only, in .idea/workspace.xml",
+                        )
+                }
+            }
             group("In use") {
                 row {
                     inUse = text("", maxLineLength = 90).align(AlignX.FILL).component
@@ -130,5 +152,16 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi")
 
     private fun disconnect() {
         if (PiwiConnectFlow.disconnect(project)) reset()
+    }
+}
+
+/** A choice of `PiwiLocalSettings.runNotifications`, in words. */
+private class RunNotificationRenderer : SimpleListCellRenderer<String>() {
+    override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+        text = when (value) {
+            "failures" -> "Say what it changed when something fails"
+            "never" -> "Say nothing"
+            else -> "Say what it changed"
+        }
     }
 }

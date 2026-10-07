@@ -517,6 +517,46 @@ export async function listSelections(db: DrizzleDB, projectId: number): Promise<
   return [...builtins, ...rows.map(rowToSelection)];
 }
 
+/** A listed selection with what it resolves to now: its tests' ids and the command that runs them. */
+export interface ListedResolvedSelection extends Selection {
+  resolved: Pick<ResolvedSelection, 'resolvedHash' | 'estimate' | 'warnings'> & {
+    testCaseIds: number[];
+    /** The `args` materialization's command, as the resolve endpoint's default gives it. */
+    command: string;
+  };
+}
+
+/**
+ * Every selection of {@link listSelections}, each resolved against one catalog
+ * load (with fail ranks when a definition needs them), so resolving them all
+ * costs one read of the run history, not one per selection.
+ */
+export async function listResolvedSelections(db: DrizzleDB, projectId: number): Promise<ListedResolvedSelection[]> {
+  const selections = await listSelections(db, projectId);
+  const catalog = await loadSelectionCatalog(db, projectId, {
+    withFailRanks: selections.some((s) => definitionNeedsFailRanks(s.definition)),
+  });
+  const out: ListedResolvedSelection[] = [];
+  for (const selection of selections) {
+    const resolved = await resolveSelectionDefinition(db, projectId, selection.definition, {
+      key: selection.key,
+      version: selection.version,
+      catalog,
+    });
+    out.push({
+      ...selection,
+      resolved: {
+        testCaseIds: resolved.tests.map((t) => t.testCaseId),
+        resolvedHash: resolved.resolvedHash,
+        estimate: resolved.estimate,
+        warnings: resolved.warnings,
+        command: resolved.materialization.command,
+      },
+    });
+  }
+  return out;
+}
+
 /** One selection by key — a stored row, else a built-in, else null. */
 export async function getSelection(db: DrizzleDB, projectId: number, key: string): Promise<Selection | null> {
   const [row] = await db

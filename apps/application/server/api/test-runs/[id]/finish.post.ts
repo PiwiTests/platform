@@ -225,7 +225,12 @@ export default eventHandler(async (event) => {
         status: finalStatus,
       });
 
-      await runFinalizeSideEffects(db, id, testRun);
+      await runFinalizeSideEffects(db, id, {
+        projectId: testRun.projectId,
+        metadata: testRun.metadata,
+        isFullRun: updatedRun.isFullRun,
+        status: finalStatus,
+      });
 
       runEventBus.cleanup(id);
     } else {
@@ -359,7 +364,12 @@ export default eventHandler(async (event) => {
 
     runEventBus.publishGlobal({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
 
-    await runFinalizeSideEffects(db, id, testRun);
+    await runFinalizeSideEffects(db, id, {
+      projectId: testRun.projectId,
+      metadata: testRun.metadata,
+      isFullRun: body.isFullRun === undefined ? testRun.isFullRun : body.isFullRun !== false ? 1 : 0,
+      status,
+    });
 
     runEventBus.cleanup(id);
   }

@@ -32,6 +32,37 @@ describe('parseSendPayload', () => {
     expect(parseSendPayload({ kind: 'steps', steps: { v: 1 } })).toEqual({ kind: 'steps', steps: { v: 1 } });
   });
 
+  test('reads the line a picked locator belongs to', () => {
+    const at = { file: 'tests/login.spec.ts', line: 42 };
+    expect(parseSendPayload({ kind: 'locator', text: "getByRole('button')", at })).toEqual({
+      kind: 'locator',
+      text: "getByRole('button')",
+      at,
+    });
+    expect(parseSendPayload({ kind: 'locator', text: "getByRole('button')", at: null })).toEqual({
+      kind: 'locator',
+      text: "getByRole('button')",
+    });
+  });
+
+  test('refuses a place outside the run or on no line', () => {
+    const refusedFile = { error: 'at.file must be a path relative to the run, without ..' };
+    const refusedLine = { error: 'at.line must be a positive integer' };
+    const send = (at: unknown) => parseSendPayload({ kind: 'locator', text: 'getByText("x")', at });
+    expect(send({ file: '../secrets.ts', line: 1 })).toEqual(refusedFile);
+    expect(send({ file: 'tests/../../x.ts', line: 1 })).toEqual(refusedFile);
+    expect(send({ file: '/etc/passwd', line: 1 })).toEqual(refusedFile);
+    expect(send({ file: 'C:\\work\\a.ts', line: 1 })).toEqual(refusedFile);
+    expect(send({ file: '', line: 1 })).toEqual(refusedFile);
+    expect(send('tests/a.ts:1')).toEqual(refusedFile);
+    expect(send({ file: 'tests/a.ts', line: 0 })).toEqual(refusedLine);
+    expect(send({ file: 'tests/a.ts', line: 1.5 })).toEqual(refusedLine);
+    expect(send({ file: 'tests/a.ts', line: '3' })).toEqual(refusedLine);
+    expect(parseSendPayload({ kind: 'locator', text: 'x'.repeat(4001), at: { file: 'a.ts', line: 1 } })).toEqual({
+      error: 'text is at most 4000 characters',
+    });
+  });
+
   test('says why a body is refused', () => {
     expect(parseSendPayload(null)).toEqual({ error: 'the body must be a JSON object' });
     expect(parseSendPayload({ kind: 'locator', text: ' ' })).toEqual({ error: 'text must be a non-empty string' });

@@ -3,11 +3,24 @@
  * editor on the same machine, which inserts it at the cursor. The editor
  * listens on the loopback interface and hands the user a pairing address
  * (`<endpoint URL>#<token>`) to paste in the extension's options once; every
- * request carries the token as a bearer credential.
+ * request carries the token as a bearer credential. A test run the editor
+ * starts gets the same address, and a locator picked while it is paused at a
+ * breakpoint names that line (`at`), for the editor to replace the locator there.
  */
 
-/** A request body: a locator line as the Picker renders it, or a steps document for the editor to render. */
-export type EditorSendPayload = { kind: 'locator'; text: string } | { kind: 'steps'; steps: unknown };
+/** Where a picked locator belongs: a file relative to the run's working directory, and its 1-based line. */
+export interface EditorSendPlace {
+  file: string;
+  line: number;
+}
+
+/**
+ * A request body: a locator line as the Picker renders it, with the line it replaces the locator of when the run
+ * names one, or a steps document for the editor to render.
+ */
+export type EditorSendPayload =
+  | { kind: 'locator'; text: string; at?: EditorSendPlace }
+  | { kind: 'steps'; steps: unknown };
 
 export interface EditorPairing {
   /** The editor's endpoint, `http://127.0.0.1:<port>/…` or `http://localhost:<port>/…`. */
@@ -45,6 +58,13 @@ export function parsePairing(text: string): EditorPairing | null {
   return { url: `${parsed.origin}${parsed.pathname}`, token };
 }
 
+/** Whether `file` is a relative path that stays inside the directory it is relative to. */
+export function isInsidePath(file: string): boolean {
+  if (!file || file.length > 1000 || file.includes('\0')) return false;
+  if (file.startsWith('/') || file.startsWith('\\') || /^[A-Za-z]:/.test(file)) return false;
+  return file.split(/[\\/]/).every((part) => part !== '..');
+}
+
 /** Validate a request body; returns the payload or why it is refused. */
 export function parseSendPayload(body: unknown): EditorSendPayload | { error: string } {
   if (!body || typeof body !== 'object') return { error: 'the body must be a JSON object' };
@@ -52,7 +72,15 @@ export function parseSendPayload(body: unknown): EditorSendPayload | { error: st
   if (b.kind === 'locator') {
     if (typeof b.text !== 'string' || !b.text.trim()) return { error: 'text must be a non-empty string' };
     if (b.text.length > MAX_SEND_TEXT) return { error: `text is at most ${MAX_SEND_TEXT} characters` };
-    return { kind: 'locator', text: b.text };
+    if (b.at === undefined || b.at === null) return { kind: 'locator', text: b.text };
+    const at = b.at as Record<string, unknown>;
+    if (typeof at !== 'object' || typeof at.file !== 'string' || !isInsidePath(at.file)) {
+      return { error: 'at.file must be a path relative to the run, without ..' };
+    }
+    if (typeof at.line !== 'number' || !Number.isInteger(at.line) || at.line < 1) {
+      return { error: 'at.line must be a positive integer' };
+    }
+    return { kind: 'locator', text: b.text, at: { file: at.file, line: at.line } };
   }
   if (b.kind === 'steps') {
     if (!b.steps || typeof b.steps !== 'object') return { error: 'steps must be a steps document' };

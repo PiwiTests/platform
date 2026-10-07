@@ -37,6 +37,8 @@ export interface CatalogCase {
   id: number;
   title: string;
   filePath: string;
+  /** Its `describe` blocks, outermost first, joined by `\x1f` (`Auth\x1fLogin`); empty outside any. */
+  suitePath?: string | null;
   /** `passed`, `failed`, `flaky`, `skipped`, `didnotrun` or `never-run`, from the latest executions. */
   status?: string | null;
   totalRuns?: number;
@@ -54,19 +56,42 @@ export interface CallSiteAlternatives {
   lastSeenAt: string;
 }
 
-/** The latest run on a branch and its failed executions (`GET /api/projects/:id/branch-failures`). */
+/**
+ * The latest complete run on a branch, the later runs of the branch laid over it, its failed executions as they stand
+ * after them, and the failures they passed (`GET /api/projects/:id/branch-failures?overlays=1`). The fields an instance
+ * older than the overlays does not send are optional.
+ */
 export interface BranchFailures {
   run: {
     id: number;
     status: string;
     branch: string | null;
     startTime: string;
+    /** What launched it: `ci`, `ci-rerun`, `local`, `desktop`, `editor`… */
+    origin?: string;
+    /** The commit it ran at; null when the reporter recorded none. */
+    commit?: string | null;
     totalTests: number;
     passedTests: number;
     failedTests: number;
     flakyTests: number;
     skippedTests: number;
   } | null;
+  /** The finished runs of the branch started after `run`, whole or partial, newest first. */
+  overlays?: Array<{
+    id: number;
+    status: string;
+    /** What launched it: `ci`, `ci-rerun`, `local`, `desktop`, `editor`… */
+    origin: string;
+    isFullRun: boolean;
+    startTime: string;
+    commit: string | null;
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    flakyTests: number;
+    skippedTests: number;
+  }>;
   failures: Array<{
     executionId: number;
     testCaseId: number;
@@ -83,10 +108,56 @@ export interface BranchFailures {
     frames?: string[];
     traces: string[];
     screenshot: string | null;
+    /** `baseline` for an execution of `run`, `overlay` for one of `overlays`. */
+    source?: 'baseline' | 'overlay';
+    /** The run the execution belongs to. */
+    runId?: number;
+    /** The Playwright project; null when unknown. */
+    browserName?: string | null;
+    /** In milliseconds; null when not recorded. */
+    duration?: number | null;
+    /** A new regression in `run`, or, from an overlay, a test that did not fail on this project in `run`. */
+    isNew?: boolean;
+    clusterTitle?: string | null;
+    owner?: string | null;
+    /** What an overlay says about the test on another project: `passed on chromium in run #124`. */
+    note?: string;
+  }>;
+  /** The failures of `run` an overlay passed since, on the same Playwright project. */
+  resolved?: Array<{
+    testCaseId: number;
+    title: string;
+    /** The spec file and the line of the `test(…)` call, as the passing run reported them. */
+    file: string;
+    line: number | null;
+    browserName: string | null;
+    /** The overlay that passed it, and its passing execution. */
+    runId: number;
+    executionId: number;
+    /** The execution that failed in `run`. */
+    baselineExecutionId: number;
   }>;
 }
 
 export type BranchFailure = BranchFailures['failures'][number];
+export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
+
+/** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
+export interface RunDetails {
+  id: number;
+  /** `running`, `initializing`, `finalizing`, or the final status. */
+  status: string;
+  branch: string | null;
+  startTime: string;
+  /** Holds what launched it, under `piwiOrigin`. */
+  metadata?: Record<string, unknown> | null;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  didNotRunTests?: number;
+  flakyTests?: number;
+}
 
 /** A flaky test as the flaky list ranks it (`GET /api/projects/:id/flaky-tests`). */
 export interface FlakyTest {
@@ -268,10 +339,52 @@ export class PiwiClient {
     return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '' };
   }
 
-  branchFailures(projectId: number, branch: string | null): Promise<BranchFailures> {
-    return this.get(
-      `/api/projects/${projectId}/branch-failures${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
-    );
+  /**
+   * The latest complete run on `branch` (any branch when null), with the later runs of its branch laid over it; with
+   * `run`, that run instead; with `origin: 'local'`, a developer's own runs only, laid over none when no complete one
+   * exists. An instance older than these answers as if they were absent.
+   */
+  branchFailures(
+    projectId: number,
+    branch: string | null,
+    baseline: { run?: number; origin?: 'local' } = {},
+  ): Promise<BranchFailures> {
+    const query = new URLSearchParams(branch ? { branch, overlays: '1' } : { overlays: '1' });
+    if (baseline.run !== undefined) query.set('run', String(baseline.run));
+    if (baseline.origin) query.set('origin', baseline.origin);
+    return this.get(`/api/projects/${projectId}/branch-failures?${query}`);
+  }
+
+  /** A run's details, with what launched it in its metadata. */
+  runDetails(runId: number): Promise<RunDetails> {
+    return this.get(`/api/test-runs/${runId}`);
+  }
+
+  /** The newest run of the project whose launcher stamped this origin and ref (`PIWI_ORIGIN_REF`); null when none. */
+  latestRunByRef(projectId: number, origin: string, ref: string): Promise<{ id: number; status: string } | null> {
+    const query = new URLSearchParams({ origin, ref });
+    return this.get(`/api/projects/${projectId}/latest-run?${query}`);
+  }
+
+  /** The instance's run events (`GET /api/stream`): a response whose body is a server-sent events stream. */
+  events(signal: AbortSignal): Promise<Response> {
+    return this.stream('/api/stream', signal);
+  }
+
+  /** One run's events (`GET /api/test-runs/:id/stream`), until it ends. */
+  runEvents(runId: number, signal: AbortSignal): Promise<Response> {
+    return this.stream(`/api/test-runs/${runId}/stream`, signal);
+  }
+
+  /** A server-sent events stream, open until it ends or `signal` aborts. */
+  private stream(path: string, signal: AbortSignal): Promise<Response> {
+    return fetch(`${this.connection.serverUrl}${path}`, {
+      headers: {
+        Accept: 'text/event-stream',
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      signal,
+    });
   }
 
   locatorHealing(executionId: number): Promise<LocatorHealingResult> {
@@ -324,36 +437,72 @@ export class PiwiClient {
     return { entries: body.entries ?? [], releaseAfter: body.releaseAfterConsecutivePasses ?? 0 };
   }
 
-  /** The tags and features the project's tests declare, and the Test Map's features. */
+  /**
+   * The tags and features the project's tests declare, and the Test Map's features. The catalog's search values hold
+   * them for every test; an instance without them is read for its first thousand tests instead.
+   */
   async vocabulary(projectId: number): Promise<{ tags: string[]; features: string[] }> {
-    const [catalog, map] = await Promise.all([
-      this.get<{ items?: Array<{ tags?: string[] | null; feature?: string | null }> }>(
-        `/api/projects/${projectId}/test-cases?limit=1000`,
-      ).catch(() => ({ items: [] })),
+    const [declared, map] = await Promise.all([
+      this.get<{ values?: { tag?: Array<{ value: string }>; feature?: Array<{ value: string }> } }>(
+        `/api/projects/${projectId}/test-cases/facets`,
+      )
+        .then((body) => ({
+          tags: (body.values?.tag ?? []).map((t) => t.value),
+          features: (body.values?.feature ?? []).map((f) => f.value),
+        }))
+        .catch(async (e: unknown) => {
+          if (!(e instanceof PiwiHttpError && e.status === 404)) throw e;
+          const catalog = await this.get<{ items?: Array<{ tags?: string[] | null; feature?: string | null }> }>(
+            `/api/projects/${projectId}/test-cases?limit=1000`,
+          );
+          const items = catalog.items ?? [];
+          return {
+            tags: items.flatMap((item) => item.tags ?? []),
+            features: items.flatMap((item) => (item.feature ? [item.feature] : [])),
+          };
+        })
+        .catch(() => ({ tags: [], features: [] })),
       this.get<{ features?: Array<{ key: string }> }>(`/api/projects/${projectId}/feature-map`).catch(() => ({
         features: [],
       })),
     ]);
-    const tags = new Set<string>();
-    const features = new Set<string>();
-    for (const item of catalog.items ?? []) {
-      for (const tag of item.tags ?? []) tags.add(tag);
-      if (item.feature) features.add(item.feature);
-    }
-    for (const f of map.features ?? []) features.add(f.key);
-    return { tags: [...tags].sort(), features: [...features].sort() };
+    const features = [...declared.features, ...(map.features ?? []).map((f) => f.key)];
+    return { tags: [...new Set(declared.tags)].sort(), features: [...new Set(features)].sort() };
   }
 
-  /** The project's saved and built-in selections. */
-  async selections(projectId: number): Promise<Array<{ key: string; name: string }>> {
-    const body = await this.get<{ items?: Array<{ key: string; name?: string | null }> }>(
-      `/api/projects/${projectId}/selections`,
+  /**
+   * The project's saved and built-in selections, the first `max` of them, each resolved now: its tests and the command
+   * that runs them. One request resolves them all; an instance that lists them without resolving them is asked for
+   * each in turn, and one it cannot resolve is left out.
+   */
+  async resolvedSelections(
+    projectId: number,
+    max: number,
+  ): Promise<Array<{ key: string; name: string; testCaseIds: number[]; command: string }>> {
+    const body = await this.get<{
+      items?: Array<{
+        key: string;
+        name?: string | null;
+        resolved?: { testCaseIds?: number[]; command?: string };
+      }>;
+    }>(`/api/projects/${projectId}/selections?resolve=true`);
+    const found = await Promise.all(
+      (body.items ?? []).slice(0, max).map(async (s) => {
+        const name = s.name || s.key;
+        if (s.resolved) {
+          return { key: s.key, name, testCaseIds: s.resolved.testCaseIds ?? [], command: s.resolved.command ?? '' };
+        }
+        const one = await this.resolveSelection(projectId, s.key).catch(() => null);
+        return one
+          ? { key: s.key, name, testCaseIds: one.tests.map((t) => t.testCaseId), command: one.materialization.command }
+          : null;
+      }),
     );
-    return (body.items ?? []).map((s) => ({ key: s.key, name: s.name || s.key }));
+    return found.filter((s): s is NonNullable<typeof s> => !!s);
   }
 
   /** A selection resolved now: its tests and the command that runs them. */
-  resolveSelection(
+  private resolveSelection(
     projectId: number,
     key: string,
   ): Promise<{ tests: Array<{ testCaseId: number }>; materialization: { args: string[]; command: string } }> {

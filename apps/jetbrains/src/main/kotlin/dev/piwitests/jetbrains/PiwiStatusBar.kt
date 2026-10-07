@@ -1,6 +1,5 @@
 package dev.piwitests.jetbrains
 
-import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.components.service
@@ -14,7 +13,10 @@ import com.intellij.util.Consumer
 import java.awt.Component
 import java.awt.event.MouseEvent
 
-/** The latest run on the checked-out branch, in the status bar; while a recording runs, its state and step count. */
+/**
+ * The latest run on the checked-out branch, or the run in progress, in the status bar: a click reads it again. While a
+ * recording runs, its state and step count.
+ */
 class PiwiStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId() = ID
 
@@ -55,7 +57,8 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
 
     private fun recording() = project.getServiceIfCreated(PiwiRecordings::class.java)?.current()
 
-    override fun getText(): String = recording()?.let { Glue.recordingStatus(it.state, it.steps, it.edited, it.stopping) } ?: view().text
+    override fun getText(): String = recording()?.let { Glue.recordingStatus(it.state, it.steps, it.edited, it.stopping) }
+        ?: if (project.service<PiwiProjectService>().refreshing) Glue.REFRESHING else view().text
 
     override fun getAlignment(): Float = Component.LEFT_ALIGNMENT
 
@@ -69,8 +72,9 @@ class PiwiStatusBarWidget(private val project: Project) : StatusBarWidget, Statu
         }
         val view = view()
         val action = when (view.action) {
-            Glue.StatusAction.OPEN -> {
-                view.url?.let { BrowserUtil.browse(it) }
+            Glue.StatusAction.REFRESH -> {
+                project.service<PiwiProjectService>().refreshRun()
+                statusBar?.updateWidget(ID())
                 null
             }
             Glue.StatusAction.CONNECT -> "Piwi.Connect"

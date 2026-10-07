@@ -487,6 +487,22 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editors',
       },
       {
+        title: 'Runs from the editor',
+        summary:
+          "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
+        needs: [],
+        where: 'Piwi: Run the tests that reach this file, Piwi: Run selection…; the status bar',
+        doc: 'features/editor-runs',
+      },
+      {
+        title: 'Breakpoints in the browser',
+        summary:
+          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
+        needs: ['fixtures'],
+        where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
+        doc: 'features/editor-breakpoints',
+      },
+      {
         title: 'Record tests from the editor',
         summary:
           "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",

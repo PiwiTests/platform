@@ -10,6 +10,10 @@
  * Every step is best-effort. The run is already stored by the time this runs;
  * a missing token, a closed pull request or an SCM outage must never turn into
  * an ingest error, so failures are logged and swallowed.
+ *
+ * The analysis the comment reads (the scenario gaps, change coverage and fix
+ * verification) runs for every finished run, posted or not
+ * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { bugReports, failureClusters, projects, testCases, testRuns, testRunsCases } from '../../database/schema';
@@ -42,7 +46,7 @@ import {
   type PrFeedbackSettings,
   type PrSummaryInput,
 } from '#shared/pr-feedback';
-import { computeRunChangeCoverage } from './change-coverage';
+import { computeRunChangeCoverage, type RunChangeCoverage } from './change-coverage';
 import { recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
@@ -458,16 +462,21 @@ async function readNewLeaks(db: DbClient, runId: number): Promise<PrSummaryInput
   };
 }
 
+/** A finished run's analysis, as the pull-request feedback reads it: each part settles on its own and never rejects. */
+export interface FinishedRunAnalysis {
+  /** The clusters the run verified as fixed; empty when the verification failed. */
+  fixed: Promise<VerifiedFix[]>;
+  /** The run's change coverage once stored; null when there is none, or it failed. */
+  coverage: Promise<RunChangeCoverage | null>;
+}
+
 /**
- * Fire-and-forget wrapper for the run-finalize paths. Returns once change
- * coverage is stored, with the run's locator breaks that locator healing
- * reads; the comment is posted after that, in the background.
- *
- * Fix verification runs first and its result is handed to the comment, so the
- * two stay in one order rather than racing: a comment that omitted the cluster
- * this run just closed would be reporting the wrong news.
+ * Start a finished run's analysis in the background, whether or not its
+ * verdict is posted: the project's scenario gaps, the run's change coverage
+ * and the verification of the clusters it fixed, each under its own use. Each
+ * step logs its own failure.
  */
-export function postRunPrFeedbackInBackground(db: DbClient, runId: number): Promise<void> {
+export function analyzeFinishedRunInBackground(db: DbClient, runId: number): FinishedRunAnalysis {
   // Recompute the project-wide scenario gaps off the request path, so success-
   // only, single-covering-test and surface-drift gaps and their self-closing
   // stay live on every finished run — not only from the manual recompute.
@@ -480,13 +489,29 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): Prom
     console.error('[change-coverage] computeRunChangeCoverage failed', e);
     return null;
   });
-  Promise.all([
-    verifyClusterFixes(db, runId).catch((e) => {
-      console.error('[fix-verification] verifyClusterFixes failed', e);
-      return [] as VerifiedFix[];
-    }),
-    coverage,
-  ])
+  const fixed = verifyClusterFixes(db, runId).catch((e) => {
+    console.error('[fix-verification] verifyClusterFixes failed', e);
+    return [] as VerifiedFix[];
+  });
+  return { fixed, coverage };
+}
+
+/**
+ * Fire-and-forget posting for the run-finalize paths, from the run's
+ * analysis. Returns once change coverage is stored, with the run's locator
+ * breaks that locator healing reads; the comment is posted after that, in the
+ * background.
+ *
+ * Fix verification runs first and its result is handed to the comment, so the
+ * two stay in one order rather than racing: a comment that omitted the cluster
+ * this run just closed would be reporting the wrong news.
+ */
+export function postRunPrFeedbackInBackground(
+  db: DbClient,
+  runId: number,
+  analysis: FinishedRunAnalysis,
+): Promise<void> {
+  Promise.all([analysis.fixed, analysis.coverage])
     .then(([fixed, change]) => postRunPrFeedback(db, runId, fixed, change?.pr ?? null, change?.locatorBreaks ?? null))
     .then((result) => {
       if (!result.posted && result.reason && result.reason !== 'disabled') {
@@ -494,7 +519,7 @@ export function postRunPrFeedbackInBackground(db: DbClient, runId: number): Prom
       }
     })
     .catch((e) => console.error('[pr-feedback] postRunPrFeedback failed', e));
-  return coverage.then(() => undefined);
+  return analysis.coverage.then(() => undefined);
 }
 
 /**

@@ -36,6 +36,7 @@ import {
   FLAKE_PROFILE_MAX_ATTEMPTS,
   FLAKE_PROFILE_WINDOW_DAYS,
   getFlakeProfile,
+  getFlakeProfileSummaries,
   getTopFlakeSuspects,
   TOP_SUSPECTS_MAX_TESTS,
   type FlakeCondition as ProfileCondition,
@@ -1062,6 +1063,8 @@ export async function getProjectFlakeLab(
     suspects?: boolean;
     /** With `suspects`: read them for at most this many tests. */
     suspectLimit?: number;
+    /** With `suspects`: reads the tests' profiles in the summary view (the server keeps them between runs); else {@link getFlakeProfileSummaries}. */
+    profiles?: (testCaseIds: number[]) => Promise<FlakeProfile[]>;
     now?: Date;
   } = {},
 ): Promise<ProjectFlakeLab> {
@@ -1145,7 +1148,7 @@ export async function getProjectFlakeLab(
       a.testCaseId - b.testCaseId,
   );
 
-  if (opts.suspects) await addTopSuspects(db, tests, opts.now, opts.suspectLimit);
+  if (opts.suspects) await addTopSuspects(db, tests, opts);
 
   const newest = await db
     .select()
@@ -1176,24 +1179,29 @@ export async function getProjectFlakeLab(
 
 /**
  * Set `suspect` and `untestedSuspects` on the first {@link TOP_SUSPECTS_MAX_TESTS}
- * tests that need a step, a few at a time, each profile in the summary view.
+ * tests that need a step, their profiles in the summary view read by `profiles` when given.
  */
 async function addTopSuspects(
   db: DrizzleDB,
   tests: FlakeLabTest[],
-  now?: Date,
-  limit = TOP_SUSPECTS_MAX_TESTS,
+  opts: { now?: Date; suspectLimit?: number; profiles?: (testCaseIds: number[]) => Promise<FlakeProfile[]> },
 ): Promise<void> {
-  const wanted = tests.filter((t) => t.nextCommand).slice(0, Math.min(limit, TOP_SUSPECTS_MAX_TESTS));
+  const wanted = tests
+    .filter((t) => t.nextCommand)
+    .slice(0, Math.min(opts.suspectLimit ?? TOP_SUSPECTS_MAX_TESTS, TOP_SUSPECTS_MAX_TESTS));
+  const ids = wanted.map((t) => t.testCaseId);
+  const profiles = new Map(
+    (await (opts.profiles?.(ids) ?? getFlakeProfileSummaries(db, ids, { now: opts.now }))).map((p) => [
+      p.testCaseId,
+      p,
+    ]),
+  );
   const BATCH = 5;
   for (let i = 0; i < wanted.length; i += BATCH) {
     await Promise.all(
       wanted.slice(i, i + BATCH).map(async (test) => {
-        const [profile, results] = await Promise.all([
-          getFlakeProfile(db, test.testCaseId, { now, summary: true }),
-          getFlakeSuspectResults(db, test.testCaseId),
-        ]);
-        const suspects = profile?.suspects ?? [];
+        const results = await getFlakeSuspectResults(db, test.testCaseId);
+        const suspects = profiles.get(test.testCaseId)?.suspects ?? [];
         test.untestedSuspects = suspects.filter((sus) => !results.has(sus.id)).length;
         const top = topFlakeSuspect(suspects, results);
         const result = top ? results.get(top.id) : undefined;

@@ -9,10 +9,12 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.IdeFocusManager
 import io.netty.buffer.Unpooled
 import io.netty.channel.ChannelFutureListener
@@ -28,6 +30,8 @@ import io.netty.handler.codec.http.QueryStringDecoder
 import org.jetbrains.ide.BuiltInServerManager
 import org.jetbrains.ide.HttpRequestHandler
 import java.awt.datatransfer.StringSelection
+import java.net.URI
+import java.nio.file.Path
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
@@ -51,7 +55,9 @@ object PiwiSendToken {
 
 /**
  * `POST /api/piwi/send` on the IDE's built-in server: what Piwi Picker sends,
- * inserted at the caret of the focused project's editor.
+ * inserted at the caret of the focused project's editor. A locator picked while
+ * a run was paused at a breakpoint replaces the locator of its line instead
+ * (`piwi/applyPick`), and goes to the caret when the line holds none.
  */
 class PiwiSendHandler : HttpRequestHandler() {
     override fun isSupported(request: FullHttpRequest): Boolean =
@@ -97,6 +103,28 @@ class PiwiSendHandler : HttpRequestHandler() {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val project = targetProject() ?: throw IllegalStateException("no project is open")
+                var notice: String? = null
+                val picked = payload as? Glue.SendPayload.Locator
+                val at = picked?.at
+                if (picked != null && at != null) {
+                    val server = project.service<PiwiProjectService>().server()
+                    val answer = server?.applyPick(ApplyPickParams(file = at.file, line = at.line - 1, locator = picked.text))?.orNull()
+                    val uri = answer?.uri
+                    val edit = answer?.edit
+                    if (uri != null && edit != null) {
+                        val done = CompletableFuture<String?>()
+                        ApplicationManager.getApplication().invokeLater {
+                            done.complete(runCatching { replaceOnLine(project, uri, edit) }.getOrNull())
+                        }
+                        val file = done.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                        if (file != null) {
+                            PiwiCommands.notify(project, Glue.pickNotice(at, Glue.PickOutcome.REPLACED))
+                            result.complete(file)
+                            return@executeOnPooledThread
+                        }
+                    }
+                    notice = Glue.pickNotice(at, if (uri != null) Glue.PickOutcome.NO_LOCATOR else Glue.PickOutcome.NO_FILE)
+                }
                 val caret = caretOf(project)
                 var imports = emptyList<String>()
                 val text = when (payload) {
@@ -114,7 +142,7 @@ class PiwiSendHandler : HttpRequestHandler() {
                 }
                 ApplicationManager.getApplication().invokeLater {
                     try {
-                        result.complete(insertAtCaret(project, text, imports, payload is Glue.SendPayload.Locator))
+                        result.complete(insertAtCaret(project, text, imports, payload is Glue.SendPayload.Locator, notice))
                     } catch (e: Exception) {
                         result.completeExceptionally(e)
                     }
@@ -149,8 +177,34 @@ class PiwiSendHandler : HttpRequestHandler() {
         return future.get(10, java.util.concurrent.TimeUnit.SECONDS)
     }
 
+    /**
+     * Replaces the range of `edit`, on one line of the file at `uri`, with its text, as one command; the file's path, or
+     * null when the file or the line is not there.
+     */
+    private fun replaceOnLine(project: Project, uri: String, edit: PickEdit): String? {
+        val range = edit.range ?: return null
+        val start = range.start ?: return null
+        val end = range.end ?: return null
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(URI(uri))) ?: return null
+        val document = FileDocumentManager.getInstance().getDocument(file) ?: return null
+        if (start.line != end.line || start.line >= document.lineCount) return null
+        val lineStart = document.getLineStartOffset(start.line)
+        val lineEnd = document.getLineEndOffset(start.line)
+        if (start.character > end.character || lineStart + end.character > lineEnd) return null
+        WriteCommandAction.runWriteCommandAction(project, "Replace with the Locator Picked in Piwi", null, {
+            document.replaceString(lineStart + start.character, lineStart + end.character, edit.newText ?: "")
+        })
+        return file.path
+    }
+
     /** Inserts `text` at the caret, and the `imports` the file lacks after its imports, as one command. */
-    private fun insertAtCaret(project: Project, text: String, imports: List<String>, locator: Boolean): String? {
+    private fun insertAtCaret(
+        project: Project,
+        text: String,
+        imports: List<String>,
+        locator: Boolean,
+        notice: String? = null,
+    ): String? {
         val editor = FileEditorManager.getInstance(project).selectedTextEditor
             ?: throw IllegalStateException("no editor is open in ${project.name}")
         val document = editor.document
@@ -164,7 +218,10 @@ class PiwiSendHandler : HttpRequestHandler() {
             caret.moveToOffset(start + block.length)
             Glue.importInsertion(document.immutableCharSequence, imports)?.let { document.insertString(it.offset, it.text) }
         })
-        PiwiCommands.notify(project, if (locator) "Inserted the locator from Piwi Picker." else "Inserted the recorded steps from Piwi Picker.")
+        PiwiCommands.notify(
+            project,
+            notice ?: if (locator) "Inserted the locator from Piwi Picker." else "Inserted the recorded steps from Piwi Picker.",
+        )
         return editor.virtualFile?.path
     }
 

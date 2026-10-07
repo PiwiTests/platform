@@ -25,7 +25,7 @@ export const test = extendPiwiFixtures(base)
 export { expect } from '@playwright/test'
 ```
 
-Then import `test` from your fixtures file **in every spec**. A spec that imports `test` from `@playwright/test` directly still runs and reports fine — it just isn't captured:
+Then import `test` from your fixtures file **in every spec**. A spec importing `test` from `@playwright/test` still runs and reports, uncaptured:
 
 ```typescript
 import { test, expect } from './fixtures'
@@ -52,7 +52,7 @@ That's the entire setup: nothing to start, wrap, or await inside your tests.
 | **Code reach** (opt-in): executed files | teardown | [Code reach](/features/code-reach) |
 
 ::: tip Test source is captured without any fixture
-On a failure the reporter also reads the **call stack's in-project source**: the line that threw plus the helpers and page objects above it, as line-numbered snippets. Read from the stack trace and local files, it needs no fixture, and renders as the **Test source** call stack on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages.
+On a failure the reporter also reads the **call stack's in-project source**: the line that threw plus the helpers and page objects above it, as line-numbered snippets. It needs no fixture, and renders as the **Test source** call stack on the [execution](/features/evidence#one-execution-diagnosis-first) and cluster pages.
 :::
 
 ## With and without the fixtures
@@ -84,7 +84,7 @@ The fixtures wire capture at the **browser** level, so it works however your tes
 
 Semantics worth knowing:
 
-- **`beforeAll` / `afterAll` activity is intentionally not captured** — only what happens inside a test is attributed to that test.
+- **`beforeAll` / `afterAll` activity is not captured**: only a test's own activity is attributed to it.
 - **Multi-page tests** attribute Web Vitals and the failure ARIA snapshot to the most recently active page.
 - **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per call site per test. If a probe fails, the next run of that line tries again.
 - **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
@@ -126,7 +126,9 @@ Capture is designed to never fail or noticeably slow down a test:
 snapshots and pages, and `capturePageState: false` only the test-end app state (URL, storage key names, cookie flags, never
 values). Two opt-in aids for headed local runs, `inspectOnFailure` and `pickLocatorOnFailure`, open
 [the failing page for inspection](/features/locator-healing#inspect-the-failing-page-live-local-runs) or
-[let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs).
+[let you pick a replacement locator](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs);
+a third, `PIWI_PAUSE_AT` (semicolon-separated `file:line`: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`),
+is set by an editor on a run it starts, to [pause at its breakpoints](/features/editor-breakpoints).
 Set all but `collectPerformanceMetrics` through [`wrapConfig`](./reporter#installing-via-wrapconfig) or their `PIWI_*`
 variable: the test workers never see a plain reporter entry's options.
 

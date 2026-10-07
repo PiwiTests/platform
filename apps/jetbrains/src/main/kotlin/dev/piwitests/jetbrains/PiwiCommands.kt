@@ -6,6 +6,8 @@ import com.intellij.execution.ExecutionException
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.process.KillableColoredProcessHandler
+import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
@@ -20,8 +22,11 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.wm.ToolWindowManager
+import org.jetbrains.ide.BuiltInServerManager
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The client commands the editor service names in summary lines and code
@@ -95,15 +100,89 @@ object PiwiCommands {
         }
     }
 
+    /** Run every test still failing or edited since its run, as `piwi/failures` lists them. */
+    fun rerunFailing(project: Project) {
+        background(project, "Piwi: resolving the failing tests") {
+            val failures = project.service<PiwiProjectService>().server()?.failures()?.orNull()
+            val args = Glue.rerunFailingArgs(failures)
+            if (args == null) notify(project, "No failing test to re-run.") else runTests(project, args)
+        }
+    }
+
+    /** Copy one block about a failure for a coding agent: the failure, its healing and its cluster's fix plan. */
+    fun copyAgentContext(project: Project, params: TraceParams) {
+        background(project, "Piwi: gathering the failure's context") {
+            val text = project.service<PiwiProjectService>().server()?.agentContext(params)?.orNull()?.text
+            if (text == null) {
+                notify(project, "This failure is no longer in the latest run.", NotificationType.WARNING)
+            } else {
+                CopyPasteManager.getInstance().setContents(StringSelection(text))
+                notify(project, "Copied. Paste it to your agent.")
+            }
+        }
+    }
+
+    /**
+     * Say what a run started from the IDE changed, as **Settings → Tools → Piwi** allows, with the failures, the run's
+     * page and **Re-run Failing** one click away.
+     */
+    fun runEnded(project: Project, ended: RunEnded) {
+        val setting = project.service<PiwiProjectService>().local().runNotifications
+        val verdict = Glue.runVerdict(ended, setting) ?: return
+        val notification = NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(verdict.text, if (verdict.warning) NotificationType.WARNING else NotificationType.INFORMATION)
+        for (label in verdict.actions) {
+            notification.addAction(
+                NotificationAction.createSimpleExpiring(label) {
+                    when (label) {
+                        Glue.OPEN_FAILURES -> ToolWindowManager.getInstance(project)
+                            .getToolWindow(PiwiFailuresToolWindowFactory.ID)?.activate(null)
+                        Glue.OPEN_IN_DASHBOARD -> ended.url?.let { BrowserUtil.browse(it) }
+                        Glue.RERUN_FAILING -> rerunFailing(project)
+                    }
+                },
+            )
+        }
+        notification.notify(project)
+    }
+
+    /** Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. */
     fun runTests(project: Project, args: RunTestsArgs) {
         background(project, "Piwi: resolving the tests") {
-            val command = project.service<PiwiProjectService>().server()?.runArgs(args)?.orNull()
+            val service = project.service<PiwiProjectService>()
+            val breakpoints = service.breakpoints()
+            val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints)
+            val command = service.server()?.runArgs(withBreakpoints)?.orNull()
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
                 notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
-                run(project, command.cwd, command.command!!, command.env)
+                startRun(project, command)
             }
         }
+    }
+
+    /** The notices of `RunCommand.notice` already shown: each is shown once. */
+    private val noticesShown: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Run a test command of the service: its notice shown once, and, with breakpoints (`PIWI_PAUSE_AT`), the Send to
+     * editor pairing a locator picked while paused is posted to (`PIWI_EDITOR_SEND`). Call it off the event thread.
+     */
+    fun startRun(project: Project, command: RunCommand) {
+        val cwd = command.cwd ?: return
+        val line = command.command?.takeIf { it.isNotBlank() } ?: return
+        command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
+        val base = command.env
+        val address = if (base != null && base.containsKey("PIWI_PAUSE_AT")) {
+            runCatching {
+                val port = BuiltInServerManager.getInstance().waitForStart().port
+                "http://127.0.0.1:$port${PiwiSendHandler.PATH}#${PiwiSendToken.ensure()}"
+            }.getOrNull()
+        } else {
+            null
+        }
+        val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
+        run(project, cwd, line, env, command.ref)
     }
 
     fun openTrace(project: Project, params: TraceParams) {
@@ -134,9 +213,10 @@ object PiwiCommands {
 
     /**
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
-     * the event thread.
+     * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
+     * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included.
      */
-    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null) {
+    fun run(project: Project, cwd: String, command: String, env: Map<String, String>? = null, ref: String? = null) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
         if (SystemInfo.isWindows && parts[0] in setOf("npx", "npm", "node")) {
@@ -151,9 +231,29 @@ object PiwiCommands {
                 notify(project, "Could not run ${parts[0]}: ${e.message}", NotificationType.ERROR)
                 return@executeOnPooledThread
             }
+            if (ref != null) {
+                handler.addProcessListener(object : ProcessListener {
+                    override fun processTerminated(event: ProcessEvent) {
+                        val ended = CommandEndedParams(ref, event.exitCode)
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            if (!project.isDisposed) project.service<PiwiProjectService>().server()?.commandEnded(ended)
+                        }
+                    }
+                })
+            }
             ApplicationManager.getApplication().invokeLater {
-                if (project.isDisposed) handler.destroyProcess()
-                else RunContentExecutor(project, handler).withTitle("Piwi").withActivateToolWindow(true).run()
+                if (project.isDisposed) {
+                    handler.destroyProcess()
+                } else {
+                    RunContentExecutor(project, handler)
+                        .withTitle("Piwi")
+                        .withActivateToolWindow(true)
+                        .withRerun {
+                            handler.destroyProcess()
+                            run(project, cwd, command, env, ref)
+                        }
+                        .run()
+                }
             }
         }
     }

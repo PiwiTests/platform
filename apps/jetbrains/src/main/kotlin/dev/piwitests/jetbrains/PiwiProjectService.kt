@@ -20,9 +20,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.xdebugger.XDebuggerManager
+import com.intellij.xdebugger.breakpoints.XLineBreakpoint
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -32,8 +35,8 @@ import java.util.concurrent.TimeoutException
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name
- * none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in
- * the password safe, per instance.
+ * none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in the
+ * password safe, per instance.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiSettings", storages = [Storage("piwi.xml")])
@@ -52,8 +55,12 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
 /**
  * What this machine keeps for the project, in `.idea/workspace.xml`, never in a file the
  * team shares: the desktop app chosen with Connect, its project, and whether it was offered;
- * and a recording's choices: the Playwright project, the start page, and the last page
- * expression typed that was not among those offered.
+ * a recording's choices: the Playwright project, the start page, and the last page
+ * expression typed that was not among those offered; how the failures tool window groups
+ * the failures (`file`, `cluster`, `owner` or `flat`); whether the runs Piwi starts pause
+ * at the IDE's breakpoints; when a run started from the IDE says what it changed (`always`,
+ * `failures`, `never`); and the baseline chosen with **Compare With…** for each Playwright
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry).
  */
 @Service(Service.Level.PROJECT)
 @State(name = "PiwiLocalSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -65,6 +72,10 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordProject: String = "",
         var recordStartUrl: String = "",
         var recordPage: String = "",
+        var failuresGrouping: String = "file",
+        var breakpoints: Boolean = true,
+        var runNotifications: String = "always",
+        var baselines: MutableMap<String, String> = mutableMapOf(),
     )
 
     private var state = State()
@@ -90,6 +101,14 @@ class PiwiProjectService(private val project: Project) : Disposable {
         private set
 
     @Volatile var failures: List<WorkspaceFailure> = emptyList()
+        private set
+
+    /** The last `piwi/failures` answer: the failures, with the run they belong to and the runs laid over it. */
+    @Volatile var failuresResult: FailuresResult? = null
+        private set
+
+    /** Whether a click on the status bar item is reading the latest run again. */
+    @Volatile var refreshing = false
         private set
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -160,6 +179,27 @@ class PiwiProjectService(private val project: Project) : Disposable {
     fun local(): PiwiLocalSettings.State = project.getService(PiwiLocalSettings::class.java).state
 
     /**
+     * The IDE's enabled line breakpoints in JavaScript or TypeScript files under a Playwright config's folder, which a
+     * run started from Piwi pauses at; none when **Settings → Tools → Piwi** turns them off. Reads the breakpoints in a
+     * read action: call it off the event thread.
+     */
+    fun breakpoints(): List<EditorBreakpoint> {
+        if (!local().breakpoints) return emptyList()
+        val roots = status?.contexts.orEmpty().mapNotNull { it.root }
+        if (roots.isEmpty()) return emptyList()
+        val found = ApplicationManager.getApplication().runReadAction(
+            Computable {
+                XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints.mapNotNull { breakpoint ->
+                    val line = breakpoint as? XLineBreakpoint<*> ?: return@mapNotNull null
+                    val url = line.fileUrl
+                    if (!line.isEnabled || !url.startsWith("file://")) null else Glue.BreakpointAt(VfsUtilCore.urlToPath(url), line.line)
+                }
+            },
+        )
+        return Glue.runBreakpoints(found, roots)
+    }
+
+    /**
      * The connection saved in the IDE: this project's instance and project, that instance's key,
      * and whether this machine reads the desktop app first.
      */
@@ -174,7 +214,20 @@ class PiwiProjectService(private val project: Project) : Disposable {
             apiKey = url?.let { PasswordSafe.instance.getPassword(credentialAttributes(it)) },
             desktop = local.desktop,
             desktopProject = local.desktopProject.ifBlank { null },
+            baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
         )
+    }
+
+    /**
+     * Compare the context at `root` with `choice` (**Compare With…**): kept in `PiwiLocalSettings` and sent to the
+     * service (`piwi/setBaseline`), which reads it at once and says so in `piwi/runStatusChanged`. Sends over the
+     * network: never on the event thread.
+     */
+    fun setBaseline(root: String, choice: BaselineChoice) {
+        val baselines = local().baselines
+        val kept = Glue.encodeBaseline(choice)
+        if (kept == null) baselines.remove(root) else baselines[root] = kept
+        server()?.setBaseline(SetBaselineParams(root, choice))
     }
 
     /** Whether the password safe holds a key for the instance. */
@@ -270,6 +323,33 @@ class PiwiProjectService(private val project: Project) : Disposable {
         LspServerManager.getInstance(project).getServersForProvider(PiwiLspServerSupportProvider::class.java)
             .firstOrNull()?.piwiServer()
 
+    /**
+     * Read the latest run and its failures again, not the indexes **Refresh** fetches (`piwi/refreshRun`), then the
+     * status, on a pooled thread: the status bar item's click. `refreshing` is set meanwhile.
+     */
+    fun refreshRun() {
+        if (refreshing) return
+        refreshing = true
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                server()?.refreshRun()?.orNull()
+            } finally {
+                refreshing = false
+            }
+            refreshStatus()
+        }
+    }
+
+    /**
+     * The failures `piwi/failuresChanged` carries, such as a line an edit moved: the list alone, the status and the
+     * runs as they are, then the listeners.
+     */
+    fun failuresChanged(result: FailuresResult) {
+        failuresResult = result
+        failures = result.items.orEmpty()
+        ApplicationManager.getApplication().invokeLater({ listeners.forEach { it() } }, project.disposed)
+    }
+
     /** Read the status, the latest run and its failures again, then tell the listeners. */
     fun refreshStatus() {
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -277,11 +357,14 @@ class PiwiProjectService(private val project: Project) : Disposable {
             val before = runs
             status = server?.status()?.orNull()
             runs = server?.runStatus()?.orNull()
-            failures = server?.failures()?.orNull()?.items.orEmpty()
+            val read = server?.failures()?.orNull()
+            failuresResult = read
+            failures = read?.items.orEmpty()
             ApplicationManager.getApplication().invokeLater({
                 listeners.forEach { it() }
-                // Another run: the gutter, the backgrounds and Code Vision of the open files show it.
-                if (runs != before) DaemonCodeAnalyzer.getInstance(project).restart()
+                // Another run: the gutter, the backgrounds and Code Vision of the open files show it. A run in progress
+                // moves the status bar alone.
+                if (Glue.runsInFiles(runs) != Glue.runsInFiles(before)) DaemonCodeAnalyzer.getInstance(project).restart()
             }, project.disposed)
             offerDesktop(status)
         }

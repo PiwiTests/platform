@@ -37,6 +37,9 @@ Two **external contracts** beyond the npm API:
   `/proc/<pid>/clear_refs` of the processes it started at each test's start,
   which resets their peak RSS for the test (`internal/capture/worker-metrics.ts`),
   and in Chromium it opens a DevTools session on each page that outlives its test.
+  A headed local run with `PIWI_PAUSE_AT` (the editor's breakpoints) pauses with the
+  `__piwiPauseState` page global and posts a locator picked meanwhile to the editor's
+  `PIWI_EDITOR_SEND` address (`internal/capture/pause-at.ts`).
   The reporter's run sampler reads `/proc`, the cgroup filesystem or `ps` on an
   unref'd timer (`internal/collect/process-sampler.ts`).
 
@@ -121,6 +124,9 @@ src/
                 contexts each worker opens, and the census per test),
                 worker-metrics (what a test cost the worker and its browsers,
                 and CDP reads of pages that outlive their test)
+                inspect-on-failure, pick-on-failure (the failure-time overlay),
+                pause-at (the editor's breakpoints: PIWI_PAUSE_AT, the pause bar,
+                a pick posted to PIWI_EDITOR_SEND)
     config/     env (PIWI_* ↔ options, and the probe and flake-lab variables)
     probe/      probe mode: plan matching, faults, the shared route interception
                 (a matcher over route keys + an action), server-probe signing

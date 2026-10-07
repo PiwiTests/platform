@@ -100,16 +100,68 @@ object Glue {
 
     private val ACTIVE = setOf("running", "initializing", "finalizing")
 
-    /** What a click on the status bar item does. */
-    enum class StatusAction { OPEN, CONNECT, SETTINGS, NONE }
+    /** What a click on the status bar item does: `REFRESH` reads the latest run again (`piwi/refreshRun`). */
+    enum class StatusAction { REFRESH, CONNECT, SETTINGS, NONE }
 
     data class StatusView(val text: String, val tooltip: String, val url: String?, val action: StatusAction)
 
+    private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
+
+    /** A run in progress in the status bar: `Piwi: 4/9 · 1 failing`, and ` · your run` for the editor's own. */
+    private fun liveText(live: LiveRun): String {
+        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
+        return "Piwi: ${live.done}/${live.total}$failing" + if (live.own) " · your run" else ""
+    }
+
+    /** The tooltip's line on a run in progress: `Your run #124 is running: 4/9 · 1 failing`. */
+    private fun liveLine(live: LiveRun): String {
+        val failing = if (live.failed > 0) " · ${live.failed} failing" else ""
+        return "\n${if (live.own) "Your run" else "Run"} #${live.runId} is running: ${live.done}/${live.total}$failing"
+    }
+
+    /** The status bar text while a click reads the latest run again. */
+    const val REFRESHING = "Piwi: refreshing…"
+
     /**
-     * The status bar text: the latest run on the checked-out branch, or what keeps the service from reading it.
+     * How long before `now` (ms since the epoch) an ISO 8601 time is: `12 s ago`, `4 min ago`, `2 h ago`, `3 d ago`,
+     * or `just now`.
+     */
+    fun relativeTime(iso: String, now: Long): String {
+        val at = runCatching { java.time.Instant.parse(iso).toEpochMilli() }.getOrNull() ?: return "just now"
+        val seconds = (now - at) / 1000
+        return when {
+            seconds < 1 -> "just now"
+            seconds < 60 -> "$seconds s ago"
+            seconds < 3_600 -> "${seconds / 60} min ago"
+            seconds < 86_400 -> "${seconds / 3_600} h ago"
+            else -> "${seconds / 86_400} d ago"
+        }
+    }
+
+    /** The tooltip's line on when the latest run was read, and how the next one comes: `Updated 12 s ago · live`. */
+    private fun updatedLine(run: RunStatus?, now: Long): String {
+        val at = run?.updatedAt ?: return ""
+        val how = when (run.stream) {
+            "live" -> " · live"
+            "polling" -> " · read every minute"
+            else -> ""
+        }
+        return "\nUpdated ${relativeTime(at, now)}$how"
+    }
+
+    /**
+     * The status bar text: the latest run on the checked-out branch, with what the runs laid over it fixed or still
+     * fail, or what keeps the service from reading it. While a run is in progress, the editor's own or one on the
+     * branch, the text counts it, and the tooltip has both, with the baseline chosen and when the latest run was read. A
+     * click reads it again.
      * A null status means the service has not started: it starts with the first file of the project opened.
      */
-    fun statusView(status: StatusResult?, runs: RunStatusResult?, desktopChosen: Boolean = false): StatusView {
+    fun statusView(
+        status: StatusResult?,
+        runs: RunStatusResult?,
+        desktopChosen: Boolean = false,
+        now: Long = System.currentTimeMillis(),
+    ): StatusView {
         if (status == null) return StatusView("Piwi", "$NOT_STARTED Click for Piwi's settings.", null, StatusAction.SETTINGS)
         val contexts = status.contexts.orEmpty()
         if (contexts.isEmpty()) return StatusView("Piwi", "No Playwright config found", null, StatusAction.NONE)
@@ -118,30 +170,376 @@ object Glue {
             ?: return StatusView("Piwi: connect", (contexts.first().problem ?: "Not connected") + hint, null, StatusAction.CONNECT)
         val run = runs?.contexts?.firstOrNull { it.root == connected.root } ?: runs?.contexts?.firstOrNull()
         val where = (connected.projectName ?: "Piwi") + (run?.branch?.let { " on $it" } ?: "") + (if (run?.run != null) fallbackNote(run) else "")
-        val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + hint
-        val r = run?.run ?: return StatusView("Piwi: no run", "No run of $where yet$from", null, StatusAction.NONE)
+        val reporter = run?.reporterVersion?.let { "\nreporter $it" } ?: ""
+        val from = (connected.serverUrl?.let { url -> "\n$url, from ${sourceLabel(connected.source)}" } ?: "") + reporter + hint
+        val live = run?.live
+        val baseline = baselineLine(run?.baseline?.label)?.let { "\n$it" } ?: ""
+        val progress = (live?.let { liveLine(it) } ?: "") + updatedLine(run, now)
+        val overlays = run?.overlays ?: 0
+        val r = run?.run
+        if (r == null && overlays > 0) {
+            // A developer's own runs alone, with no baseline.
+            val failing = run?.failingTests ?: run?.failures ?: 0
+            val text = live?.let { liveText(it) } ?: if (failing > 0) "Piwi: $failing failing" else "Piwi: no failure"
+            val tooltip = "${plural(overlays, "local run")} of $where, ${plural(failing, "test")} failing$baseline$progress$from"
+            return StatusView(text, tooltip, null, StatusAction.REFRESH)
+        }
+        if (r == null) {
+            return StatusView(live?.let { liveText(it) } ?: "Piwi: no run", "No run of $where yet$baseline$progress$from", null, StatusAction.REFRESH)
+        }
+        // The tests still failing once the later runs are laid over the run; the run's own count from an older service.
+        val failing = run.failingTests ?: r.failedTests
+        val fixed = run.resolved ?: 0
+        val local = if (overlays > 0) "\n${plural(overlays, "local run")} since · ${plural(fixed, "test")} fixed locally" else ""
         val tooltip = "Run #${r.id} of $where: ${r.passedTests} passed, ${r.failedTests} failed, " +
-            "${r.flakyTests} flaky, ${r.skippedTests} skipped$from"
+            "${r.flakyTests} flaky, ${r.skippedTests} skipped$baseline$local$progress$from"
         val flaky = if (r.flakyTests > 0) " · ${r.flakyTests} flaky" else ""
-        val open = StatusAction.OPEN
+        val refresh = StatusAction.REFRESH
         return when {
+            live != null -> StatusView(liveText(live), tooltip, r.url, refresh)
             r.status in ACTIVE -> {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
-                val failing = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
-                StatusView("Piwi: $done/${r.totalTests}$failing", tooltip, r.url, open)
+                val failed = if (r.failedTests > 0) " · ${r.failedTests} failing" else ""
+                StatusView("Piwi: $done/${r.totalTests}$failed", tooltip, r.url, refresh)
             }
-            r.failedTests > 0 -> StatusView("Piwi: ${r.failedTests} failing$flaky", tooltip, r.url, open)
-            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, open)
-            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, open)
+            failing > 0 -> {
+                val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
+                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh)
+            }
+            r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.status}", tooltip, r.url, refresh)
+            fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh)
+            else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh)
         }
     }
 
     const val NOT_STARTED = "Piwi starts when you open a file of this project."
 
-    /** When the checked-out branch has no run yet and another branch's is shown: which one, and why. */
+    /** Whether a `piwi/failures` item is a failure of the latest run that a later run passed. */
+    fun isFixedLocally(failure: WorkspaceFailure) = failure.state == "fixed-locally"
+
+    /** Whether a `piwi/failures` item is a failure whose line changed since its run. */
+    fun isEdited(failure: WorkspaceFailure) = failure.state == "edited"
+
+    /**
+     * What a `piwi/failures` item says about its run, beside its title: `fixed locally in run #124` for a failure a
+     * later run passed (`fixed in run #124` when that run is a CI run, `fixed locally in your run #124` when the editor
+     * started it), `edited since run #120` for a failure whose line changed since its run (`edited since your run
+     * #124`, `edited since local run #124`), `your run #124` for a failure of a run the editor started, `local run
+     * #124` for a failure of another run that did not run in CI; null otherwise, and from an older service.
+     */
+    fun failureRunNote(failure: WorkspaceFailure): String? {
+        val run = when (failure.source) {
+            "own" -> "your run #${failure.runId}"
+            "local" -> "local run #${failure.runId}"
+            else -> null
+        }
+        return when {
+            isFixedLocally(failure) -> when (failure.source) {
+                "ci" -> "fixed in run #${failure.runId}"
+                "own" -> "fixed locally in your run #${failure.runId}"
+                else -> "fixed locally in run #${failure.runId}"
+            }
+            isEdited(failure) -> "edited since ${run ?: "run #${failure.runId}"}"
+            else -> run
+        }
+    }
+
+    /** How the failures tool window groups the failures under the run: `file`, `cluster`, `owner` or `flat`. */
+    val FAILURE_GROUPINGS = listOf("file", "cluster", "owner", "flat")
+
+    /**
+     * A node of the failures tree. `kind` is `run`, `runs` (the runs laid over it), `overlay`, `group` or `failure`;
+     * `key` stays the same across refreshes, so the tree keeps a node's expansion and selection by it; `icon` is
+     * `error`, `edited` or `fixed` for a failure, `folder` for a group, `run` and `history` for the runs; `expanded`
+     * is whether a node with children opens expanded; `url` is the page a run opens, a failure's execution page.
+     */
+    data class FailureNode(
+        val key: String,
+        val kind: String,
+        val label: String,
+        val description: String,
+        val icon: String,
+        val expanded: Boolean,
+        val url: String?,
+        val failure: WorkspaceFailure? = null,
+        val children: List<FailureNode> = emptyList(),
+    )
+
+    private val STATE_ORDER = mapOf("failing" to 0, "edited" to 1, "fixed-locally" to 2)
+
+    /** What launched a run, in a few words: `CI`, `your run`, `local`, `desktop app`, `editor`. */
+    private fun originLabel(origin: String?, own: Boolean?): String = when {
+        own == true -> "your run"
+        origin == null || origin == "ci" || origin == "ci-rerun" -> "CI"
+        origin == "desktop" -> "desktop app"
+        else -> origin
+    }
+
+    /** The test a failure stands for: its id, else its title in its file. */
+    private fun testKey(f: WorkspaceFailure): String = f.testCaseId?.toString() ?: "${f.file ?: f.uri}\n${f.title}"
+
+    /** `3 failing · 1 fixed locally`, counting tests: a test failing on several projects counts once. */
+    private fun failureCounts(items: List<WorkspaceFailure>): String {
+        val failing = items.filterNot { isFixedLocally(it) }.map { testKey(it) }.toSet().size
+        val fixed = items.filter { isFixedLocally(it) }.map { testKey(it) }.toSet().size
+        return listOfNotNull(
+            if (failing > 0 || fixed == 0) "$failing failing" else null,
+            if (fixed > 0) "$fixed fixed locally" else null,
+        ).joinToString(" · ")
+    }
+
+    /** How many tests still fail, edited since their run or not: the tool window's title counts them. */
+    fun failingCount(result: FailuresResult?): Int =
+        result?.items.orEmpty().filterNot { isFixedLocally(it) }.map { testKey(it) }.toSet().size
+
+    private fun fileName(uri: String?): String =
+        java.net.URLDecoder.decode((uri ?: "").substringAfterLast('/').replace("+", "%2B"), Charsets.UTF_8)
+
+    /** Where a failure shows, at its line: the spec's path when it shows in the spec, else the file's name. */
+    fun failurePlace(f: WorkspaceFailure): String {
+        val decoded = java.net.URLDecoder.decode((f.uri ?: "").replace("+", "%2B"), Charsets.UTF_8)
+        val shown = f.file?.takeIf { decoded.endsWith("/$it") } ?: fileName(f.uri)
+        return "$shown:${f.line + 1}"
+    }
+
+    private fun failureLeaf(f: WorkspaceFailure): FailureNode = FailureNode(
+        key = "failure:${f.executionId}",
+        kind = "failure",
+        label = f.title ?: "Failed",
+        description = listOfNotNull(
+            failurePlace(f),
+            f.browserName,
+            if (f.isNew == true && !isFixedLocally(f)) "new" else null,
+        ).joinToString(" · "),
+        icon = when {
+            isFixedLocally(f) -> "fixed"
+            isEdited(f) -> "edited"
+            else -> "error"
+        },
+        expanded = false,
+        url = f.url,
+        failure = f,
+    )
+
+    private fun sortFailures(items: List<WorkspaceFailure>): List<WorkspaceFailure> = items.sortedWith(
+        compareBy<WorkspaceFailure>({ STATE_ORDER[it.state ?: "failing"] ?: 0 }, { it.file ?: it.uri ?: "" }, { it.line }, { it.title ?: "" }),
+    )
+
+    /** The group a failure goes in: its key, which ends with `:` for the failures without a value, and its label. */
+    private fun groupOf(f: WorkspaceFailure, grouping: String): Pair<String, String> = when (grouping) {
+        "cluster" -> f.clusterId?.let { "cluster:$it" to (f.clusterTitle?.ifBlank { null } ?: "Cluster #$it") }
+            ?: ("cluster:" to "Ungrouped")
+        "owner" -> f.owner?.ifBlank { null }?.let { "owner:$it" to it } ?: ("owner:" to "Unowned")
+        else -> (f.file ?: fileName(f.uri)).let { "file:$it" to it }
+    }
+
+    private fun grouped(items: List<WorkspaceFailure>, grouping: String): List<FailureNode> {
+        if (grouping == "flat") return sortFailures(items).map { failureLeaf(it) }
+        return items.groupBy { groupOf(it, grouping) }.entries
+            .sortedWith(compareBy({ it.key.first.endsWith(":") }, { it.key.second }))
+            .map { (group, members) ->
+                FailureNode(
+                    key = "group:${group.first}",
+                    kind = "group",
+                    label = group.second,
+                    description = failureCounts(members),
+                    icon = "folder",
+                    expanded = true,
+                    url = null,
+                    children = sortFailures(members).map { failureLeaf(it) },
+                )
+            }
+    }
+
+    /**
+     * The failures tree, as VS Code's view draws it: the latest complete run (`Run #120 · CI · feature/x · 3 failing ·
+     * 1 fixed locally`, its age, or the editor's own run in progress, as its description), the runs laid over it under
+     * `Your runs since`, and its failures grouped by `file`, `cluster` or `owner`, or `flat`, failing first, then
+     * edited, then fixed locally. With a developer's own runs alone, the root is `Your local runs`. Without a run (an
+     * older service), the groups alone; without a failure, nothing.
+     */
+    fun failureTree(result: FailuresResult?, grouping: String, now: Long = System.currentTimeMillis(), live: LiveRun? = null): List<FailureNode> {
+        val items = result?.items.orEmpty()
+        if (items.isEmpty()) return emptyList()
+        val groups = grouped(items, grouping)
+        val run = result?.run
+        val overlays = result?.overlays.orEmpty()
+        val baseline = baselineLine(result?.baseline?.label)
+        if (run == null && (baseline == null || overlays.isEmpty())) return groups
+        val runs = if (overlays.isEmpty()) emptyList() else listOf(
+            FailureNode(
+                key = "runs",
+                kind = "runs",
+                label = if (run != null) "Your runs since" else "Your runs",
+                description = plural(overlays.size, "run"),
+                icon = "history",
+                expanded = false,
+                url = null,
+                children = overlays.map { o ->
+                    FailureNode(
+                        key = "overlay:${o.id}",
+                        kind = "overlay",
+                        label = listOfNotNull(
+                            "#${o.id}",
+                            if (o.own == true) "your run" else null,
+                            o.startTime?.let { relativeTime(it, now) },
+                            "${o.passedTests} passed, ${o.failedTests} failed",
+                        ).joinToString(" · "),
+                        description = "",
+                        icon = if (o.failedTests > 0) "error" else "fixed",
+                        expanded = false,
+                        url = o.url,
+                    )
+                },
+            ),
+        )
+        val running = live?.takeIf { it.own }
+        if (run == null) {
+            return listOf(
+                FailureNode(
+                    key = "run",
+                    kind = "run",
+                    label = "Your local runs · ${failureCounts(items)}",
+                    description = running?.let { "running ${it.done}/${it.total}" } ?: "no baseline",
+                    icon = "run",
+                    expanded = true,
+                    url = null,
+                    children = runs + groups,
+                ),
+            )
+        }
+        return listOf(
+            FailureNode(
+                key = "run",
+                kind = "run",
+                label = listOfNotNull("Run #${run.id}", originLabel(run.origin, run.own), run.branch, failureCounts(items))
+                    .joinToString(" · "),
+                description = running?.let { "running ${it.done}/${it.total}" } ?: run.startTime?.let { relativeTime(it, now) } ?: "",
+                icon = "run",
+                expanded = true,
+                url = run.url,
+                children = runs + groups,
+            ),
+        )
+    }
+
+    /**
+     * The tool window's line on the run and the baseline: `Run #120 · CI · feature/x · 3 failing · 1 fixed locally · 4 min
+     * ago · Baseline: CI run #120 on feature/x`; `Your local runs · 1 failing · Baseline: your local runs only` with a
+     * developer's own runs alone; the baseline alone when it found no run.
+     */
+    fun runHeader(result: FailuresResult?, now: Long = System.currentTimeMillis()): String? {
+        val baseline = baselineLine(result?.baseline?.label)
+        val run = result?.run
+        val items = result?.items.orEmpty()
+        val parts = when {
+            run != null -> listOfNotNull(
+                "Run #${run.id}",
+                originLabel(run.origin, run.own),
+                run.branch,
+                failureCounts(items),
+                run.startTime?.let { relativeTime(it, now) },
+            )
+            !result?.overlays.isNullOrEmpty() -> listOf("Your local runs", failureCounts(items))
+            else -> emptyList()
+        }
+        return (parts + listOfNotNull(baseline)).ifEmpty { null }?.joinToString(" · ")
+    }
+
+    /** The baseline a context compares with, as the tooltip and the tool window name it: `Baseline: CI run #120 on main`. */
+    fun baselineLine(label: String?): String? = label?.ifBlank { null }?.let { "Baseline: $it" }
+
+    /** An entry of **Compare With…**: a baseline, or, with a null `choice`, a run by its id, asked for first. */
+    data class BaselineEntry(val label: String, val detail: String, val current: Boolean, val choice: BaselineChoice?)
+
+    /**
+     * What **Compare With…** offers for a context, as VS Code's Compare with… does: the ladder (`CI on the checked-out
+     * branch, else main (default)`), the default branch and each branch with runs, a run by its id, and the developer's
+     * own runs only; `current` marks the choice in force.
+     */
+    fun baselineEntries(run: RunStatus?): List<BaselineEntry> {
+        val current = run?.baseline?.choice ?: BaselineChoice("ladder")
+        val known = run?.branches.orEmpty()
+        val branches = if (current.kind == "branch" && current.branch != null && current.branch !in known) known + current.branch else known
+        val ladder = BaselineChoice("ladder")
+        val local = BaselineChoice("local")
+        fun same(choice: BaselineChoice) = choice.kind == current.kind && choice.branch == current.branch && choice.runId == current.runId
+        return listOf(
+            BaselineEntry(
+                "CI on the checked-out branch, else ${known.firstOrNull() ?: "the default branch"} (default)",
+                "The latest complete run of the branch, a CI run first, with your runs since laid over it",
+                same(ladder),
+                ladder,
+            ),
+        ) + branches.mapIndexed { i, branch ->
+            val choice = BaselineChoice("branch", branch = branch)
+            val default = if (i == 0 && known.firstOrNull() == branch) "The default branch: its" else "The"
+            BaselineEntry(branch, "$default latest complete run, a CI run first", same(choice), choice)
+        } + listOf(
+            BaselineEntry(
+                if (current.kind == "run") "A run by id… (now run #${current.runId})" else "A run by id…",
+                "One run of the project, with the runs of its branch since",
+                current.kind == "run",
+                null,
+            ),
+            BaselineEntry("My local runs only", "Your runs on this machine, in the desktop app or an editor, without CI", same(local), local),
+        )
+    }
+
+    /** The run id typed for **A run by id…** (`118` or `#118`); null when it is not one. */
+    fun runIdOf(text: String?): Int? =
+        Regex("^\\s*#?(\\d{1,9})\\s*$").find(text.orEmpty())?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it > 0 }
+
+    /** A baseline as `PiwiLocalSettings` keeps it per root: `local`, `branch:<name>`, `run:<id>`; the ladder is none. */
+    fun encodeBaseline(choice: BaselineChoice): String? = when (choice.kind) {
+        "local" -> "local"
+        "branch" -> choice.branch?.let { "branch:$it" }
+        "run" -> choice.runId?.let { "run:$it" }
+        else -> null
+    }
+
+    /** A baseline `PiwiLocalSettings` keeps; null for the ladder or a value it cannot read. */
+    fun decodeBaseline(text: String?): BaselineChoice? = when {
+        text == "local" -> BaselineChoice("local")
+        text?.startsWith("branch:") == true -> text.removePrefix("branch:").ifBlank { null }?.let { BaselineChoice("branch", branch = it) }
+        text?.startsWith("run:") == true -> text.removePrefix("run:").toIntOrNull()?.takeIf { it > 0 }?.let { BaselineChoice("run", runId = it) }
+        else -> null
+    }
+
+    /**
+     * What **Re-run the Failing Tests** runs: every test still failing or edited since its run, from the file of the
+     * first; null when none fails.
+     */
+    fun rerunFailingArgs(result: FailuresResult?): RunTestsArgs? {
+        val failing = result?.items.orEmpty().filterNot { isFixedLocally(it) }
+        val ids = failing.mapNotNull { it.testCaseId }.distinct()
+        val uri = failing.firstOrNull()?.uri ?: return null
+        return if (ids.isEmpty()) null else RunTestsArgs(uri, ids)
+    }
+
+    /**
+     * The Playwright config folder a file (a `file:` URI) belongs to among the status's contexts: the deepest that holds
+     * it, else the connected one.
+     */
+    fun contextRootOf(status: StatusResult?, uri: String?): String? {
+        val contexts = status?.contexts.orEmpty()
+        val path = uri?.let { runCatching { java.nio.file.Path.of(java.net.URI(it)) }.getOrNull() }
+        val holding = contexts.mapNotNull { c -> c.root?.takeIf { root -> path != null && path.startsWith(java.nio.file.Path.of(root)) } }
+        return holding.maxByOrNull { it.length } ?: contexts.firstOrNull { it.connected }?.root
+    }
+
+    /**
+     * The runs as the files show them: without the run in progress, the stream and the time of the last read, which
+     * move while the latest run and its failures stay. The files are drawn again when it changes.
+     */
+    fun runsInFiles(runs: RunStatusResult?): RunStatusResult? =
+        runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
+
+    /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {
         val checkedOut = run?.checkedOut ?: return ""
         if (run.branch == checkedOut) return ""
+        if (run.baseline?.choice?.kind.let { it != null && it != "ladder" }) return ""
         return " ($checkedOut has no run yet)"
     }
 
@@ -152,17 +550,71 @@ object Glue {
             "flaky" -> "flaky"
             "passed" -> "passing"
             "skipped" -> "skipped"
+            "running" -> "running"
             else -> "no recent result"
         }
         return listOfNotNull("Piwi: $result", title?.ifBlank { null }).joinToString(" · ")
     }
 
-    /** The tooltip of a test's failing line: why it failed, and the error without its stack. */
-    fun failureTooltip(headline: String?, message: String?): String {
+    /**
+     * The tooltip of a test's failing line: why it failed, and the error without its stack; with `edited`, that the
+     * line changed since the run.
+     */
+    fun failureTooltip(headline: String?, message: String?, edited: Boolean = false): String {
         val escape = { text: String -> text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") }
         val why = headline?.ifBlank { null } ?: "Failed"
         val details = message?.trim()?.ifBlank { null }?.takeIf { it != why }?.let { "<pre>${escape(it)}</pre>" } ?: ""
-        return "<html><b>Piwi: failed here</b><br>${escape(why)}$details</html>"
+        val title = if (edited) "Piwi: failed here, edited since the run" else "Piwi: failed here"
+        return "<html><b>$title</b><br>${escape(why)}$details</html>"
+    }
+
+    /** When a run the editor started says what it changed: `always`, `failures` (only when something fails), `never`. */
+    val RUN_NOTIFICATIONS = listOf("always", "failures", "never")
+
+    const val OPEN_FAILURES = "Open the Failures"
+    const val OPEN_IN_DASHBOARD = "Open in Dashboard"
+    const val RERUN_FAILING = "Re-run Failing"
+
+    /** A run's verdict: a warning when something fails, its sentence, and the actions it offers. */
+    data class RunVerdict(val warning: Boolean, val text: String, val actions: List<String>)
+
+    private fun titleList(titles: List<String>, count: Int): String {
+        val more = count - titles.size
+        return "(${titles.joinToString(", ")}${if (more > 0) " and $more more" else ""})"
+    }
+
+    /**
+     * What a run the editor started changed, once it ended: `run #124 · 1 of 3 CI failures fixed, 2 still failing
+     * (login.spec.ts › logs in, checkout.spec.ts › pays)`, then its new failures, else its counts; a warning with
+     * **Re-run Failing** when something fails. Null when `setting` keeps it quiet.
+     */
+    fun runVerdict(ended: RunEnded, setting: String = "always"): RunVerdict? {
+        val stillTitles = ended.stillFailing.orEmpty()
+        val newTitles = ended.newFailures.orEmpty()
+        val still = ended.stillFailingCount ?: stillTitles.size
+        val added = ended.newFailureCount ?: newTitles.size
+        val parts = mutableListOf<String>()
+        if (ended.fixed > 0 || still > 0) {
+            val total = ended.fixed + still
+            val fixed = "${ended.fixed} of $total CI ${if (total == 1) "failure" else "failures"} fixed"
+            parts += if (still > 0) "$fixed, $still still failing ${titleList(stillTitles, still)}" else fixed
+        }
+        if (added > 0) parts += "${plural(added, "new failure")} ${titleList(newTitles, added)}"
+        if (parts.isEmpty()) {
+            parts += listOfNotNull(
+                "${ended.passed} passed",
+                "${ended.failed} failed",
+                if (ended.flaky > 0) "${ended.flaky} flaky" else null,
+                if (ended.skipped > 0) "${ended.skipped} skipped" else null,
+            ).joinToString(", ")
+        }
+        val failing = still + added > 0 || ended.failed > 0
+        if (setting == "never" || (setting == "failures" && !failing)) return null
+        return RunVerdict(
+            failing,
+            "Run #${ended.runId} · ${parts.joinToString(" · ")}",
+            listOfNotNull(OPEN_FAILURES, OPEN_IN_DASHBOARD, if (failing) RERUN_FAILING else null),
+        )
     }
 
     /** Where the service found the instance, in the words of the settings page. */
@@ -345,15 +797,38 @@ object Glue {
         return out
     }
 
-    /** What Piwi Picker sends: a locator line, or a steps document for the editor service to render. */
+    /**
+     * What Piwi Picker sends: a locator line, or a steps document for the editor service to render. A locator picked
+     * while a run was paused at a breakpoint names its place (`at`): a file relative to the run, and its 1-based line.
+     */
     sealed class SendPayload {
-        data class Locator(val text: String) : SendPayload()
+        data class Locator(val text: String, val at: SendPlace? = null) : SendPayload()
         data class Steps(val steps: com.google.gson.JsonObject) : SendPayload()
         data class Refused(val error: String) : SendPayload()
     }
 
+    data class SendPlace(val file: String, val line: Int)
+
     const val MAX_SEND_TEXT = 4000
     const val MAX_SEND_BYTES = 2_000_000
+
+    /** Whether `file` is a relative path that stays inside the directory it is relative to. */
+    private fun isInsidePath(file: String): Boolean {
+        if (file.isEmpty() || file.length > 1000 || file.contains('\u0000')) return false
+        if (file.startsWith("/") || file.startsWith("\\") || Regex("^[A-Za-z]:").containsMatchIn(file)) return false
+        return file.split('/', '\\').none { it == ".." }
+    }
+
+    /** The place of a picked locator, as `parseSendPayload` in `@piwitests/core/editor-send` validates it. */
+    private fun parseSendPlace(at: com.google.gson.JsonElement?): Any? {
+        if (at == null || at.isJsonNull) return null
+        val obj = at.takeIf { it.isJsonObject }?.asJsonObject
+        val file = obj?.get("file")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        if (file == null || !isInsidePath(file)) return SendPayload.Refused("at.file must be a path relative to the run, without ..")
+        val line = obj.get("line")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble
+        if (line == null || line < 1 || line != Math.floor(line)) return SendPayload.Refused("at.line must be a positive integer")
+        return SendPlace(file, line.toInt())
+    }
 
     /** Validate a request body, as `parseSendPayload` in `@piwitests/core/editor-send` does. */
     fun parseSendPayload(body: String): SendPayload {
@@ -371,12 +846,48 @@ object Glue {
                 when {
                     text.isNullOrBlank() -> SendPayload.Refused("text must be a non-empty string")
                     text.length > MAX_SEND_TEXT -> SendPayload.Refused("text is at most $MAX_SEND_TEXT characters")
-                    else -> SendPayload.Locator(text)
+                    else -> when (val at = parseSendPlace(obj.get("at"))) {
+                        is SendPayload.Refused -> at
+                        is SendPlace -> SendPayload.Locator(text, at)
+                        else -> SendPayload.Locator(text)
+                    }
                 }
             }
             "steps" -> obj.get("steps")?.takeIf { it.isJsonObject }?.let { SendPayload.Steps(it.asJsonObject) }
                 ?: SendPayload.Refused("steps must be a steps document")
             else -> SendPayload.Refused("kind must be 'locator' or 'steps'")
+        }
+    }
+
+    /** Where a locator picked at a breakpoint went: on its line, or to the caret because the line or the file has none. */
+    enum class PickOutcome { REPLACED, NO_LOCATOR, NO_FILE }
+
+    /** What the notification says once a locator picked while a run was paused at a breakpoint reached the IDE. */
+    fun pickNotice(at: SendPlace, outcome: PickOutcome): String {
+        val name = at.file.substringAfterLast('/')
+        return when (outcome) {
+            PickOutcome.REPLACED -> "The picked locator replaced the one at line ${at.line} of $name."
+            PickOutcome.NO_LOCATOR -> "The picked locator was inserted at the caret: line ${at.line} of $name holds no locator anymore."
+            PickOutcome.NO_FILE -> "The picked locator was inserted at the caret: ${at.file} is not in this project."
+        }
+    }
+
+    /** A line breakpoint of the IDE: its file's path on disk and its 0-based line. */
+    data class BreakpointAt(val path: String, val line: Int)
+
+    private val SCRIPT_FILE = Regex("\\.[cm]?[jt]sx?$", RegexOption.IGNORE_CASE)
+
+    /**
+     * The breakpoints a run started from Piwi pauses at: those in JavaScript or TypeScript files under one of `roots`
+     * (the Playwright configs' folders), as the service takes them.
+     */
+    fun runBreakpoints(breakpoints: List<BreakpointAt>, roots: List<String>): List<EditorBreakpoint> {
+        val rootPaths = roots.mapNotNull { runCatching { Path.of(it).toAbsolutePath().normalize() }.getOrNull() }
+        return breakpoints.mapNotNull { b ->
+            val file = runCatching { Path.of(b.path).toAbsolutePath().normalize() }.getOrNull() ?: return@mapNotNull null
+            val under = rootPaths.any { root -> file != root && file.startsWith(root) }
+            if (b.line < 0 || !SCRIPT_FILE.containsMatchIn(file.fileName?.toString() ?: "") || !under) null
+            else EditorBreakpoint(file.toUri().toString(), b.line)
         }
     }
 

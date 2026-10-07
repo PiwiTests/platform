@@ -41,16 +41,55 @@ class GlueTest {
     }
 
     @Test
-    fun `a passing run, with its flaky tests`() {
+    fun `a passing run, with its flaky tests, which a click reads again`() {
         assertEquals(
             Glue.StatusView(
                 "Piwi: 118 passed · 2 flaky",
                 "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped\nhttp://piwi, from the workspace .env",
                 "http://piwi/test-runs/41",
-                Glue.StatusAction.OPEN,
+                Glue.StatusAction.REFRESH,
             ),
             Glue.statusView(connected, runs(passed)),
         )
+        assertEquals(Glue.StatusAction.REFRESH, Glue.statusView(connected, runs(null)).action)
+    }
+
+    @Test
+    fun `the tooltip says when the run was read, and whether the next one is pushed or polled`() {
+        val now = java.time.Instant.parse("2026-09-27T12:00:12Z").toEpochMilli()
+        fun read(stream: String?) = RunStatusResult(
+            listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, updatedAt = "2026-09-27T12:00:00.000Z", stream = stream)),
+        )
+        assertEquals(
+            listOf(
+                "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped",
+                "Updated 12 s ago · live",
+                "http://piwi, from the workspace .env",
+            ),
+            Glue.statusView(connected, read("live"), now = now).tooltip.lines(),
+        )
+        assertEquals(
+            true,
+            Glue.statusView(connected, read("polling"), now = now).tooltip.contains("\nUpdated 12 s ago · read every minute\n"),
+        )
+        // From a service that does not say when.
+        assertEquals(false, Glue.statusView(connected, runs(passed), now = now).tooltip.contains("Updated"))
+    }
+
+    @Test
+    fun `the time since a read, in seconds, minutes, hours, then days`() {
+        val at = "2026-09-27T12:00:00Z"
+        val base = java.time.Instant.parse(at).toEpochMilli()
+        fun ago(ms: Long) = Glue.relativeTime(at, base + ms)
+        assertEquals("just now", ago(400))
+        assertEquals("just now", ago(-5_000))
+        assertEquals("12 s ago", ago(12_000))
+        assertEquals("59 s ago", ago(59_999))
+        assertEquals("1 min ago", ago(60_000))
+        assertEquals("4 min ago", ago(270_000))
+        assertEquals("2 h ago", ago(7_200_000))
+        assertEquals("3 d ago", ago(3 * 86_400_000L + 5))
+        assertEquals("just now", Glue.relativeTime("not a time", 0))
     }
 
     @Test
@@ -62,6 +101,96 @@ class GlueTest {
         )
         assertEquals("Piwi: interrupted", Glue.statusView(connected, runs(passed.copy(status = "interrupted"))).text)
         assertEquals("Piwi: no run", Glue.statusView(connected, runs(null)).text)
+    }
+
+    @Test
+    fun `counts the tests still failing after the local runs, and those they fixed`() {
+        val failed = passed.copy(status = "failed", passedTests = 115, failedTests = 3, flakyTests = 0)
+        fun local(failing: Int, resolved: Int, overlays: Int) = RunStatusResult(
+            listOf(
+                RunStatus(
+                    root = "/w", branch = "feature/pay", run = failed,
+                    failingTests = failing, resolved = resolved, overlays = overlays,
+                ),
+            ),
+        )
+        val view = Glue.statusView(connected, local(2, 1, 2))
+        assertEquals("Piwi: 2 failing · 1 fixed locally", view.text)
+        assertEquals(
+            "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
+                "2 local runs since · 1 test fixed locally\nhttp://piwi, from the workspace .env",
+            view.tooltip,
+        )
+        assertEquals("Piwi: 3 fixed locally", Glue.statusView(connected, local(0, 3, 1)).text)
+        assertEquals("Piwi: 1 failing", Glue.statusView(connected, local(1, 0, 1)).text)
+        assertEquals(false, Glue.statusView(connected, local(3, 0, 0)).tooltip.contains("local run"))
+        // From a service without the counts, the run's own.
+        assertEquals("Piwi: 3 failing", Glue.statusView(connected, runs(failed)).text)
+    }
+
+    @Test
+    fun `a failure of a local run, and a failure fixed since, name their run`() {
+        val failing = WorkspaceFailure(title = "pays", runId = 124, source = "local", state = "failing")
+        assertEquals("local run #124", Glue.failureRunNote(failing))
+        assertEquals("your run #124", Glue.failureRunNote(failing.copy(source = "own")))
+        assertEquals(null, Glue.failureRunNote(failing.copy(source = "ci")))
+        assertEquals(null, Glue.failureRunNote(WorkspaceFailure(title = "pays", runId = 41)))
+        val fixed = failing.copy(state = "fixed-locally", headline = null)
+        assertEquals("fixed locally in run #124", Glue.failureRunNote(fixed))
+        assertEquals("fixed locally in your run #124", Glue.failureRunNote(fixed.copy(source = "own")))
+        assertEquals("fixed in run #124", Glue.failureRunNote(fixed.copy(source = "ci")))
+        assertEquals(true, Glue.isFixedLocally(fixed))
+        assertEquals(false, Glue.isFixedLocally(failing))
+    }
+
+    @Test
+    fun `a failure whose line changed since its run names that run`() {
+        val edited = WorkspaceFailure(title = "removes a row", runId = 41, source = "ci", state = "edited")
+        assertEquals("edited since run #41", Glue.failureRunNote(edited))
+        assertEquals("edited since your run #124", Glue.failureRunNote(edited.copy(runId = 124, source = "own")))
+        assertEquals("edited since local run #124", Glue.failureRunNote(edited.copy(runId = 124, source = "local")))
+        assertEquals(true, Glue.isEdited(edited))
+        assertEquals(false, Glue.isEdited(edited.copy(state = "failing")))
+        assertEquals(false, Glue.isFixedLocally(edited))
+    }
+
+    @Test
+    fun `a run in progress, the editor's own or one on the branch, in the text and beside the latest run`() {
+        val failed = passed.copy(status = "failed", passedTests = 115, failedTests = 3, flakyTests = 0)
+        val inProgress = LiveRun(runId = 124, status = "running", done = 4, total = 9, failed = 1, own = true)
+        fun live(run: RunInfo?, live: LiveRun?) =
+            RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = run, failingTests = 3, live = live)))
+        val own = Glue.statusView(connected, live(failed, inProgress))
+        assertEquals("Piwi: 4/9 · 1 failing · your run", own.text)
+        assertEquals(
+            "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
+                "Your run #124 is running: 4/9 · 1 failing\nhttp://piwi, from the workspace .env",
+            own.tooltip,
+        )
+        val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
+        assertEquals("Piwi: 4/9", other.text)
+        assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4/9\n"))
+        // Once it ended, the latest run again.
+        assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
+        // On a branch without a run yet.
+        val first = Glue.statusView(connected, live(null, inProgress.copy(done = 0, failed = 0)))
+        assertEquals("Piwi: 0/9 · your run", first.text)
+        assertEquals(
+            "No run of Acme on feature/pay yet\nYour run #124 is running: 0/9\nhttp://piwi, from the workspace .env",
+            first.tooltip,
+        )
+    }
+
+    @Test
+    fun `the files are drawn again when the latest run changes, not while a run in progress moves`() {
+        val latest = runs(passed.copy(status = "failed", failedTests = 1))
+        val moving = RunStatusResult(
+            latest.contexts!!.map {
+                it.copy(live = LiveRun(runId = 124, status = "running", own = true), stream = "live", updatedAt = "2026-09-27T11:00:00.000Z")
+            },
+        )
+        assertEquals(Glue.runsInFiles(latest), Glue.runsInFiles(moving))
+        assertEquals(false, Glue.runsInFiles(runs(passed)) == Glue.runsInFiles(latest))
     }
 
     @Test
@@ -112,6 +241,76 @@ class GlueTest {
             Glue.splitCommand("npx playwright show-trace \"/tmp/a b/trace.zip\""),
         )
         assertEquals(listOf("npx", "playwright", "test", "tests/a.spec.ts:3"), Glue.splitCommand("npx  playwright test tests/a.spec.ts:3"))
+    }
+
+    @Test
+    fun `a locator picked at a breakpoint names its place, inside the run`() {
+        val at = Glue.SendPlace("tests/login.spec.ts", 42)
+        assertEquals(
+            Glue.SendPayload.Locator("getByRole('button')", at),
+            Glue.parseSendPayload("""{"kind":"locator","text":"getByRole('button')","at":{"file":"tests/login.spec.ts","line":42}}"""),
+        )
+        assertEquals(
+            Glue.SendPayload.Locator("getByRole('button')"),
+            Glue.parseSendPayload("""{"kind":"locator","text":"getByRole('button')","at":null}"""),
+        )
+        val refusedFile = Glue.SendPayload.Refused("at.file must be a path relative to the run, without ..")
+        val refusedLine = Glue.SendPayload.Refused("at.line must be a positive integer")
+        fun send(at: String) = Glue.parseSendPayload("""{"kind":"locator","text":"getByText('x')","at":$at}""")
+        assertEquals(refusedFile, send("""{"file":"../secrets.ts","line":1}"""))
+        assertEquals(refusedFile, send("""{"file":"/etc/passwd","line":1}"""))
+        assertEquals(refusedFile, send("""{"file":"C:\\\\work\\\\a.ts","line":1}"""))
+        assertEquals(refusedFile, send("\"tests/a.ts:1\""))
+        assertEquals(refusedLine, send("""{"file":"tests/a.ts","line":0}"""))
+        assertEquals(refusedLine, send("""{"file":"tests/a.ts","line":1.5}"""))
+        assertEquals(refusedLine, send("""{"file":"tests/a.ts","line":"3"}"""))
+    }
+
+    @Test
+    fun `a picked locator says where it went`() {
+        val at = Glue.SendPlace("tests/login.spec.ts", 42)
+        assertEquals("The picked locator replaced the one at line 42 of login.spec.ts.", Glue.pickNotice(at, Glue.PickOutcome.REPLACED))
+        assertEquals(
+            "The picked locator was inserted at the caret: line 42 of login.spec.ts holds no locator anymore.",
+            Glue.pickNotice(at, Glue.PickOutcome.NO_LOCATOR),
+        )
+        assertEquals(
+            "The picked locator was inserted at the caret: tests/login.spec.ts is not in this project.",
+            Glue.pickNotice(at, Glue.PickOutcome.NO_FILE),
+        )
+    }
+
+    @Test
+    fun `the breakpoints a run pauses at are those in script files under a Playwright config`() {
+        val root = Files.createTempDirectory("piwi-breakpoints").toRealPath()
+        val spec = root.resolve("tests/login.spec.ts")
+        val page = root.resolve("tests/pages/checkout.page.mjs")
+        val found = Glue.runBreakpoints(
+            listOf(
+                Glue.BreakpointAt(spec.toString(), 41),
+                Glue.BreakpointAt(page.toString(), 8),
+                Glue.BreakpointAt(root.resolve("README.md").toString(), 3),
+                Glue.BreakpointAt(root.resolveSibling("other").resolve("a.spec.ts").toString(), 1),
+                Glue.BreakpointAt(spec.toString(), -1),
+            ),
+            listOf(root.toString()),
+        )
+        assertEquals(listOf(EditorBreakpoint(spec.toUri().toString(), 41), EditorBreakpoint(page.toUri().toString(), 8)), found)
+        assertEquals(emptyList<EditorBreakpoint>(), Glue.runBreakpoints(listOf(Glue.BreakpointAt(spec.toString(), 1)), emptyList()))
+    }
+
+    @Test
+    fun `the tooltip names the reporter the project installs`() {
+        val withReporter = RunStatusResult(listOf(RunStatus(root = "/w", branch = "feature/pay", run = passed, reporterVersion = "0.47.0")))
+        assertEquals(
+            listOf(
+                "Run #41 of Acme on feature/pay: 118 passed, 0 failed, 2 flaky, 0 skipped",
+                "http://piwi, from the workspace .env",
+                "reporter 0.47.0",
+            ),
+            Glue.statusView(connected, withReporter).tooltip.lines(),
+        )
+        assertEquals(false, Glue.statusView(connected, runs(passed)).tooltip.contains("reporter"))
     }
 
     @Test
@@ -293,6 +492,10 @@ class GlueTest {
         )
         assertEquals("<html><b>Piwi: failed here</b><br>Failed</html>", Glue.failureTooltip(null, " "))
         assertEquals("<html><b>Piwi: failed here</b><br>boom</html>", Glue.failureTooltip("boom", "boom"))
+        assertEquals(
+            "<html><b>Piwi: failed here, edited since the run</b><br>boom</html>",
+            Glue.failureTooltip("boom", null, edited = true),
+        )
     }
 
     @Test
@@ -533,5 +736,264 @@ class GlueTest {
         assertEquals(null, Glue.specFileName("e2e/checkout"))
         assertEquals(null, Glue.specFileName("..\\checkout"))
         assertEquals(null, Glue.specFileName(".."))
+    }
+
+    private val treeNow = java.time.Instant.parse("2026-09-27T10:04:00Z").toEpochMilli()
+
+    private val treeFailures = FailuresResult(
+        items = listOf(
+            WorkspaceFailure(
+                uri = "file:///w/tests/login.spec.ts", line = 41, title = "logs in", headline = "not visible", executionId = 1,
+                runId = 120, url = "http://piwi/test-run-cases/1", hasTrace = true, source = "ci", state = "failing",
+                browserName = "chromium", file = "tests/login.spec.ts", testCaseId = 7, clusterId = 3,
+                clusterTitle = "Login button hidden", owner = "@team-auth", isNew = true, hasScreenshot = true,
+            ),
+            WorkspaceFailure(
+                uri = "file:///w/tests/login.spec.ts", line = 41, title = "logs in", executionId = 2, runId = 120,
+                source = "ci", state = "failing", browserName = "firefox", file = "tests/login.spec.ts", testCaseId = 7,
+                clusterId = 3, clusterTitle = "Login button hidden", owner = "@team-auth",
+            ),
+            WorkspaceFailure(
+                uri = "file:///w/tests/pages/checkout.page.ts", line = 4, title = "pays", executionId = 3, runId = 124,
+                source = "own", state = "edited", browserName = "chromium", file = "tests/checkout.spec.ts", testCaseId = 8,
+            ),
+            WorkspaceFailure(
+                uri = "file:///w/tests/checkout.spec.ts", line = 9, title = "removes a row", executionId = 4, runId = 124,
+                source = "own", state = "fixed-locally", browserName = "chromium", file = "tests/checkout.spec.ts",
+                testCaseId = 9,
+            ),
+        ),
+        run = FailuresRun(
+            id = 120, branch = "feature/x", status = "failed", startTime = "2026-09-27T10:00:00Z", totalTests = 9,
+            passedTests = 6, failedTests = 3, url = "http://piwi/test-runs/120", origin = "ci", own = false,
+        ),
+        overlays = listOf(
+            FailuresOverlay(
+                id = 124, origin = "editor", startTime = "2026-09-27T10:02:00Z", status = "failed", totalTests = 2,
+                passedTests = 1, failedTests = 1, url = "http://piwi/test-runs/124", own = true,
+            ),
+        ),
+    )
+
+    private fun labels(nodes: List<Glue.FailureNode>): List<Any> =
+        nodes.map { if (it.children.isEmpty()) it.label else listOf("${it.label} (${it.description})", labels(it.children)) }
+
+    @Test
+    fun `the failures tree shows the run, the runs since and the failures by file, failing first`() {
+        val root = Glue.failureTree(treeFailures, "file", treeNow).single()
+        assertEquals("Run #120 · CI · feature/x · 2 failing · 1 fixed locally", root.label)
+        assertEquals("4 min ago", root.description)
+        assertEquals("http://piwi/test-runs/120", root.url)
+        assertEquals(
+            listOf(
+                listOf("Your runs since (1 run)", listOf("#124 · your run · 2 min ago · 1 passed, 1 failed")),
+                listOf("tests/checkout.spec.ts (1 failing · 1 fixed locally)", listOf("pays", "removes a row")),
+                listOf("tests/login.spec.ts (1 failing)", listOf("logs in", "logs in")),
+            ),
+            labels(root.children),
+        )
+        assertEquals(false, root.children[0].expanded)
+        assertEquals("http://piwi/test-runs/124", root.children[0].children[0].url)
+    }
+
+    @Test
+    fun `a failure says where, on which project, and whether it is new`() {
+        val leaves = Glue.failureTree(treeFailures, "flat", treeNow).single().children.drop(1)
+        assertEquals(
+            listOf(
+                "tests/login.spec.ts:42 · chromium · new" to "error",
+                "tests/login.spec.ts:42 · firefox" to "error",
+                "checkout.page.ts:5 · chromium" to "edited",
+                "tests/checkout.spec.ts:10 · chromium" to "fixed",
+            ),
+            leaves.map { it.description to it.icon },
+        )
+        assertEquals("edited since your run #124", Glue.failureRunNote(leaves[2].failure!!))
+    }
+
+    @Test
+    fun `the failures group by cluster or owner, those without one last`() {
+        val byCluster = Glue.failureTree(treeFailures, "cluster", treeNow).single().children.drop(1)
+        assertEquals(
+            listOf("Login button hidden" to "1 failing", "Ungrouped" to "1 failing · 1 fixed locally"),
+            byCluster.map { it.label to it.description },
+        )
+        val byOwner = Glue.failureTree(treeFailures, "owner", treeNow).single().children.drop(1)
+        assertEquals(listOf("@team-auth", "Unowned"), byOwner.map { it.label })
+    }
+
+    @Test
+    fun `while the editor's own run is live, the run counts it`() {
+        val live = LiveRun(runId = 125, status = "running", done = 4, total = 9, own = true)
+        assertEquals("running 4/9", Glue.failureTree(treeFailures, "file", treeNow, live).single().description)
+        assertEquals("4 min ago", Glue.failureTree(treeFailures, "file", treeNow, live.copy(own = false)).single().description)
+    }
+
+    @Test
+    fun `without a failure the tree is empty, and from an older service it holds the groups alone`() {
+        assertEquals(emptyList<Glue.FailureNode>(), Glue.failureTree(FailuresResult(emptyList(), treeFailures.run), "file"))
+        assertEquals(emptyList<Glue.FailureNode>(), Glue.failureTree(null, "file"))
+        val older = Glue.failureTree(FailuresResult(listOf(treeFailures.items!![0].copy(file = null))), "file")
+        assertEquals(listOf("login.spec.ts"), older.map { it.label })
+    }
+
+    @Test
+    fun `the header names the run, the failing tests are counted and re-run from the file of the first`() {
+        assertEquals("Run #120 · CI · feature/x · 2 failing · 1 fixed locally · 4 min ago", Glue.runHeader(treeFailures, treeNow))
+        assertEquals(null, Glue.runHeader(FailuresResult(emptyList())))
+        assertEquals(2, Glue.failingCount(treeFailures))
+        assertEquals(RunTestsArgs("file:///w/tests/login.spec.ts", listOf(7, 8)), Glue.rerunFailingArgs(treeFailures))
+        assertEquals(null, Glue.rerunFailingArgs(FailuresResult(listOf(treeFailures.items!![3]))))
+    }
+
+    @Test
+    fun `Compare With offers the ladder, the branches with runs, a run by id and the local runs`() {
+        val run = RunStatus(root = "/w", branch = "main", run = passed, branches = listOf("main", "feature/x"))
+        val entries = Glue.baselineEntries(run)
+        assertEquals(
+            listOf(
+                "CI on the checked-out branch, else main (default)" to true,
+                "main" to false,
+                "feature/x" to false,
+                "A run by id…" to false,
+                "My local runs only" to false,
+            ),
+            entries.map { it.label to it.current },
+        )
+        assertEquals(
+            listOf(
+                BaselineChoice("ladder"),
+                BaselineChoice("branch", branch = "main"),
+                BaselineChoice("branch", branch = "feature/x"),
+                null,
+                BaselineChoice("local"),
+            ),
+            entries.map { it.choice },
+        )
+        val chosen = Glue.baselineEntries(
+            run.copy(baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)")),
+        )
+        assertEquals(listOf("release"), chosen.filter { it.current }.map { it.label })
+        val byId = Glue.baselineEntries(RunStatus(baseline = Baseline(BaselineChoice("run", runId = 118), "CI run #118 on main")))
+        assertEquals("CI on the checked-out branch, else the default branch (default)", byId[0].label)
+        assertEquals("A run by id… (now run #118)" to true, byId[1].label to byId[1].current)
+    }
+
+    @Test
+    fun `a run id is read with or without its hash, and a choice is kept per root as text`() {
+        assertEquals(listOf(118, 118, null, null, null), listOf("118", " #118 ", "0", "run 118", "").map { Glue.runIdOf(it) })
+        for (choice in listOf(BaselineChoice("local"), BaselineChoice("branch", branch = "feature/x"), BaselineChoice("run", runId = 118))) {
+            assertEquals(choice, Glue.decodeBaseline(Glue.encodeBaseline(choice)))
+        }
+        assertEquals(null, Glue.encodeBaseline(BaselineChoice("ladder")))
+        assertEquals(null, Glue.decodeBaseline("run:abc"))
+    }
+
+    @Test
+    fun `the tooltip and the header name the baseline, and a chosen branch is not a fallback`() {
+        val chosen = RunStatusResult(
+            listOf(
+                RunStatus(
+                    root = "/w", branch = "main", checkedOut = "feature/cart", run = passed,
+                    baseline = Baseline(BaselineChoice("branch", branch = "main"), "CI run #41 on main"),
+                ),
+            ),
+        )
+        val tooltip = Glue.statusView(connected, chosen).tooltip
+        assertEquals(true, tooltip.startsWith("Run #41 of Acme on main: 118 passed, 0 failed, 2 flaky, 0 skipped\nBaseline: CI run #41 on main"))
+        val ladder = chosen.copy(contexts = chosen.contexts!!.map { it.copy(baseline = it.baseline!!.copy(choice = BaselineChoice("ladder"))) })
+        assertEquals(true, Glue.statusView(connected, ladder).tooltip.startsWith("Run #41 of Acme on main (feature/cart has no run yet)"))
+        val label = "CI run #120 on feature/x"
+        assertEquals(
+            "Run #120 · CI · feature/x · 2 failing · 1 fixed locally · 4 min ago · Baseline: $label",
+            Glue.runHeader(treeFailures.copy(baseline = Baseline(BaselineChoice("ladder"), label)), treeNow),
+        )
+        assertEquals(
+            "Baseline: release (no run)",
+            Glue.runHeader(FailuresResult(emptyList(), baseline = Baseline(BaselineChoice("branch", branch = "release"), "release (no run)"))),
+        )
+    }
+
+    @Test
+    fun `the local runs alone count their failures, under a root of their own`() {
+        val local = Baseline(BaselineChoice("local"), "your local runs only")
+        val runs = RunStatusResult(
+            listOf(RunStatus(root = "/w", branch = "main", failures = 2, failingTests = 1, overlays = 2, baseline = local)),
+        )
+        val view = Glue.statusView(connected, runs)
+        assertEquals("Piwi: 1 failing", view.text)
+        assertEquals(true, view.tooltip.startsWith("2 local runs of Acme on main, 1 test failing\nBaseline: your local runs only"))
+        val alone = treeFailures.copy(run = null, baseline = local)
+        val root = Glue.failureTree(alone, "file", treeNow).single()
+        assertEquals("Your local runs · 2 failing · 1 fixed locally" to "no baseline", root.label to root.description)
+        assertEquals(listOf("Your runs", "tests/checkout.spec.ts", "tests/login.spec.ts"), root.children.map { it.label })
+        assertEquals("Your local runs · 2 failing · 1 fixed locally · Baseline: your local runs only", Glue.runHeader(alone, treeNow))
+    }
+
+    @Test
+    fun `a failure's context is the deepest Playwright config folder that holds it`() {
+        val status = StatusResult(
+            listOf(ContextStatus(root = "/w", connected = true), ContextStatus(root = "/w/e2e", connected = true)),
+        )
+        assertEquals("/w/e2e", Glue.contextRootOf(status, "file:///w/e2e/tests/a.spec.ts"))
+        assertEquals("/w", Glue.contextRootOf(status, "file:///w/tests/a.spec.ts"))
+        assertEquals("/w", Glue.contextRootOf(status, "file:///elsewhere/a.spec.ts"))
+    }
+
+    private val ended = RunEnded(
+        root = "/w", runId = 124, url = "http://piwi/test-runs/124", passed = 1, failed = 2, fixed = 1,
+        stillFailing = listOf("login.spec.ts › logs in", "checkout.spec.ts › pays"), newFailures = emptyList(),
+        stillFailingCount = 2, newFailureCount = 0,
+    )
+
+    @Test
+    fun `a run's verdict counts the CI failures it fixed and names those still failing, with Re-run Failing`() {
+        assertEquals(
+            Glue.RunVerdict(
+                true,
+                "Run #124 · 1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
+                listOf("Open the Failures", "Open in Dashboard", "Re-run Failing"),
+            ),
+            Glue.runVerdict(ended),
+        )
+    }
+
+    @Test
+    fun `a run's verdict names its new failures, and how many more past the first five`() {
+        val titles = (1..5).map { "a.spec.ts › $it" }
+        val verdict = Glue.runVerdict(
+            ended.copy(fixed = 0, stillFailing = emptyList(), stillFailingCount = 0, newFailures = titles, newFailureCount = 7),
+        )
+        assertEquals("Run #124 · 7 new failures (${titles.joinToString(", ")} and 2 more)", verdict?.text)
+    }
+
+    @Test
+    fun `a run that fails nothing is an information, and one that touched no failure gives its counts`() {
+        val passing = ended.copy(failed = 0, stillFailing = emptyList(), stillFailingCount = 0)
+        assertEquals(
+            Glue.RunVerdict(false, "Run #124 · 1 of 1 CI failure fixed", listOf("Open the Failures", "Open in Dashboard")),
+            Glue.runVerdict(passing),
+        )
+        assertEquals("Run #124 · 4 passed, 0 failed, 1 flaky", Glue.runVerdict(passing.copy(fixed = 0, passed = 4, flaky = 1))?.text)
+        // From an older service, without the counts: the titles count.
+        assertEquals(ended.copy(stillFailingCount = null).let { Glue.runVerdict(it)?.text }, Glue.runVerdict(ended)?.text)
+    }
+
+    @Test
+    fun `the setting keeps a run's verdict quiet`() {
+        val passing = ended.copy(failed = 0, stillFailing = emptyList(), stillFailingCount = 0)
+        assertEquals(null, Glue.runVerdict(passing, "failures"))
+        assertEquals(true, Glue.runVerdict(ended, "failures")?.warning)
+        assertEquals(null, Glue.runVerdict(ended, "never"))
+    }
+
+    @Test
+    fun `a test of the run in progress says it runs, and its files are drawn again when it begins or ends`() {
+        assertEquals("Piwi: running · passed 4/4", Glue.testResultTooltip("running", "passed 4/4"))
+        val latest = RunStatusResult(listOf(RunStatus(root = "/w", run = passed)))
+        val moving = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, live = LiveRun(runId = 124, done = 1))))
+        val testing = RunStatusResult(listOf(RunStatus(root = "/w", run = passed, liveTests = listOf(LiveTest(1, "running")))))
+        assertEquals(Glue.runsInFiles(latest), Glue.runsInFiles(moving))
+        assertEquals(false, Glue.runsInFiles(testing) == Glue.runsInFiles(latest))
     }
 }
