@@ -33,6 +33,7 @@ describe('MCP tool modules', () => {
     const expected: Record<string, string> = {
       get_cluster_diagnosis: 'ai',
       run_cluster_diagnosis: 'ai',
+      run_execution_diagnosis: 'ai',
       submit_diagnosis_feedback: 'ai',
       record_diagnosis: 'agent-diagnoses',
       get_locator_healing: 'locator-healing',
@@ -40,7 +41,9 @@ describe('MCP tool modules', () => {
       create_issue: 'integrations',
       list_links: 'integrations',
       link_issue: 'integrations',
+      unlink_issue: 'integrations',
       dismiss_quarantine_proposal: 'quarantine',
+      set_test_quarantine: 'quarantine',
       get_repo_commits: 'scm',
       rerun_cluster_in_ci: 'scm',
       get_repo_diff: 'scm',

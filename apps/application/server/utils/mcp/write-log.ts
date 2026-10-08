@@ -23,6 +23,7 @@ import {
   resolveDiagnosisProjectId,
   resolveRunProjectId,
   resolveCaseProjectId,
+  resolveTestRunCaseProjectId,
 } from '../project-access';
 import type { DbClient } from '../../database';
 import type { McpContext } from './tools';
@@ -34,6 +35,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const PROJECT_OF: Partial<Record<McpCallSubjectType, (db: DbClient, id: number) => Promise<number | null>>> = {
   cluster: resolveClusterProjectId,
+  execution: resolveTestRunCaseProjectId,
   'bug-report': resolveBugReportProjectId,
   run: resolveRunProjectId,
   'test-case': resolveCaseProjectId,

@@ -66,12 +66,20 @@ export const agentDiagnosisSchema = z
   })
   .strict();
 
-/** The body `record_diagnosis` and `POST /api/failure-clusters/:id/agent-diagnosis` take. */
+/**
+ * The body `record_diagnosis`, `POST /api/failure-clusters/:id/agent-diagnosis` and
+ * `POST /api/test-run-cases/:id/agent-diagnosis` take.
+ */
 export const recordAgentDiagnosisSchema = z.object({
   model: text(200).trim().min(1),
   diagnosis: agentDiagnosisSchema,
   channel: z.enum(REST_REPORT_CHANNELS).optional(),
 });
+
+/** What an agent's diagnosis is about: a failure cluster, or one failing execution (a failure). */
+export type AgentDiagnosisTarget =
+  | { scope: 'cluster'; clusterId: number }
+  | { scope: 'execution'; executionId: number };
 
 export interface AgentDiagnosisInput {
   model: string;
@@ -105,11 +113,18 @@ export function parseAgentDiagnosis(
   };
 }
 
-/** The message each refusal of recording an agent's diagnosis carries. */
+/** The message each refusal of recording an agent's diagnosis carries, by what the diagnosis is about. */
 export const AGENT_DIAGNOSIS_ERRORS = {
-  'not-found': 'Failure cluster not found',
-  declined: 'Agent diagnoses are declined for this project',
-  running: 'A diagnosis is already running for this cluster',
+  cluster: {
+    'not-found': 'Failure cluster not found',
+    declined: 'Agent diagnoses are declined for this project',
+    running: 'A diagnosis is already running for this cluster',
+  },
+  execution: {
+    'not-found': 'Test run case not found',
+    declined: 'Agent diagnoses are declined for this project',
+    running: 'A diagnosis is already running for this failure',
+  },
 } as const;
 
 /** The HTTP status of each refusal. */

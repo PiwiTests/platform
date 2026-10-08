@@ -213,6 +213,81 @@ describe('record_diagnosis', () => {
   });
 });
 
+describe('record_diagnosis on a failure', () => {
+  test('stores the diagnosis on the execution, apart from its cluster, and get_execution_diagnosis reads it', async () => {
+    const result = (await tool('record_diagnosis')(
+      db as never,
+      { executionId: 1, model: 'claude-opus-5-5', diagnosis: DIAGNOSIS },
+      maintainer,
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ executionId: 1, category: 'app-bug', confidence: 'high' });
+    expect(result).not.toHaveProperty('clusterId');
+    expect((result.patchValidation as { status: string }).status).toBe('applies');
+
+    const rows = await db.select().from(schema.failureDiagnoses);
+    expect(rows).toEqual([
+      expect.objectContaining({ scope: 'execution', testRunsCaseId: 1, clusterId: null, provider: 'agent' }),
+    ]);
+    // The execution is in cluster 1, which the notification points at.
+    expect(emitted).toEqual(['diagnosis.completed']);
+
+    expect(await tool('get_execution_diagnosis')(db as never, { executionId: 1 }, viewer)).toMatchObject({
+      executionId: 1,
+      diagnosisId: rows[0]!.id,
+      provider: 'agent',
+      model: 'claude-opus-5-5',
+      summary: DIAGNOSIS.summary,
+      severity: 'high',
+    });
+    expect(await tool('get_cluster_diagnosis')(db as never, { clusterId: 1 }, viewer)).toBeNull();
+  });
+
+  test('diagnoses a failure in no cluster, which sends no notification', async () => {
+    await insertRun(2, 'failed', 'bbb2222');
+    const [execution] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 2, testCaseId: 1, status: 'failed' })
+      .returning({ id: schema.testRunsCases.id });
+    const result = await tool('record_diagnosis')(
+      db as never,
+      { executionId: execution!.id, model: 'm', diagnosis: DIAGNOSIS },
+      maintainer,
+    );
+    expect(result).toMatchObject({ executionId: execution!.id });
+    expect(emitted).toEqual([]);
+  });
+
+  test('snapshots the previous diagnosis of the execution before replacing it', async () => {
+    await tool('record_diagnosis')(db as never, { executionId: 1, model: 'model-a', diagnosis: DIAGNOSIS }, maintainer);
+    const second = (await tool('record_diagnosis')(
+      db as never,
+      { executionId: 1, model: 'model-b', diagnosis: DIAGNOSIS },
+      maintainer,
+    )) as Record<string, unknown>;
+    expect(second.replacedPrevious).toBe(true);
+    const versions = await db.select().from(schema.failureDiagnosisVersions);
+    expect(versions).toEqual([expect.objectContaining({ scope: 'execution', testRunsCaseId: 1, model: 'model-a' })]);
+  });
+
+  test('takes a clusterId or an executionId, one of them', async () => {
+    for (const target of [{}, { clusterId: 1, executionId: 1 }]) {
+      await expect(
+        tool('record_diagnosis')(db as never, { ...target, model: 'm', diagnosis: DIAGNOSIS }, maintainer),
+      ).rejects.toThrow('Pass clusterId or executionId (one of them)');
+    }
+  });
+
+  test('refuses a read-only key, and returns null for an execution that does not exist', async () => {
+    await expect(
+      tool('record_diagnosis')(db as never, { executionId: 1, model: 'm', diagnosis: DIAGNOSIS }, viewer),
+    ).rejects.toThrow(refused('ai:run'));
+    expect(
+      await tool('record_diagnosis')(db as never, { executionId: 99, model: 'm', diagnosis: DIAGNOSIS }, maintainer),
+    ).toBeNull();
+    expect(await tool('get_execution_diagnosis')(db as never, { executionId: 1 }, viewer)).toBeNull();
+  });
+});
+
 describe('report_fix_attempt', () => {
   test('records the attempt as applied over MCP, once', async () => {
     const first = (await tool('report_fix_attempt')(
@@ -405,6 +480,24 @@ describe('the write log', () => {
 
     const activity = await getClusterActivity(db as never, 1);
     expect(activity.map((a) => a.text)).toEqual(['An agent triaged the cluster', 'An agent changed the status']);
+  });
+
+  test('logs a call about a failure on the execution and its project', async () => {
+    await logMcpToolCall(db as never, maintainer, 'record_diagnosis', { executionId: 1 }, 'ok');
+    await logMcpToolCall(
+      db as never,
+      maintainer,
+      'unlink_issue',
+      { entityType: 'test_runs_case', entityId: 1, url: 'https://example.com/1' },
+      'ok',
+    );
+    await logMcpToolCall(db as never, maintainer, 'set_test_quarantine', { testCaseId: 1, quarantined: true }, 'ok');
+    const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
+    expect(rows.map((r) => [r.tool, r.subjectType, r.subjectId, r.projectId])).toEqual([
+      ['record_diagnosis', 'execution', 1, 1],
+      ['unlink_issue', 'execution', 1, 1],
+      ['set_test_quarantine', 'test-case', 1, 1],
+    ]);
   });
 
   test('writes nothing when the instance declined it', async () => {

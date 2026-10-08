@@ -265,6 +265,19 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'get_execution_diagnosis',
+    module: 'agents',
+    description:
+      "Get the stored diagnosis of one failing execution (a failure), written by Piwi's AI (run_execution_diagnosis) or by an agent (record_diagnosis with executionId), in the shape get_cluster_diagnosis returns. Returns null when the execution has none; a failure in a cluster usually shares the cluster's diagnosis (get_cluster_diagnosis).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        executionId: { type: 'number', description: 'Test run case ID (executionId)' },
+      },
+      required: ['executionId'],
+    },
+  },
+  {
     name: 'get_test_case_context',
     module: 'core',
     description:
@@ -896,6 +909,24 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'run_execution_diagnosis',
+    module: 'agents',
+    capability: 'ai',
+    permission: 'ai:run',
+    description:
+      "Trigger an AI diagnosis for one failing execution (a failure), as the failure page's Diagnose does, and return the result (category, confidence, root cause, suggested fix). The execution's cluster, when it has one, grounds the diagnosis in the cluster's evidence; use run_cluster_diagnosis for the root cause a whole cluster shares. Returns the existing completed diagnosis unless force is set. Requires `ai:run` (Maintainer and above on the project) and a configured AI provider.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        executionId: { type: 'number', description: 'Test run case ID (executionId)' },
+        force: { type: 'boolean', description: 'Re-run even if a completed diagnosis exists (default false)' },
+        additionalContext: { type: 'string', description: 'What you know that the evidence does not show' },
+        baseCommit: { type: 'string', description: 'Optional baseline commit SHA for SCM-diff context' },
+      },
+      required: ['executionId'],
+    },
+  },
+  {
     name: 'triage_cluster',
     module: 'core',
     permission: ['triage:write', 'quarantine:write'],
@@ -980,6 +1011,22 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'move_tests_to_new_cluster',
+    module: 'core',
+    permission: 'triage:write',
+    description:
+      "Move some tests out of a failure cluster into a new cluster, as the cluster page's Move to a new cluster does: for a cluster that groups failures with different root causes. The tests' executions in the cluster move to the new cluster, which gets your optional triage note; their later failures with the same error join the new cluster, and the two clusters are never merged automatically. The source cluster's triage note gains a line naming the move. Pass the testCaseIds of get_cluster's affectedTestCases. Returns the new clusterId, absent when none of the tests failed in the cluster. Requires `triage:write` (Maintainer and above on the project).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        clusterId: { type: 'number', description: 'The cluster to move the tests out of' },
+        testCaseIds: { type: 'array', items: { type: 'number' }, description: 'The tests to move (testCaseId)' },
+        triageNote: { type: 'string', description: 'Triage note of the new cluster, e.g. what sets it apart' },
+      },
+      required: ['clusterId', 'testCaseIds'],
+    },
+  },
+  {
     name: 'dismiss_quarantine_proposal',
     module: 'workflow',
     capability: 'quarantine',
@@ -999,6 +1046,23 @@ export const MCP_TOOL_DEFS = [
         reason: { type: 'string', description: 'Why you dismiss it (up to 500 characters)' },
       },
       required: ['projectId', 'testCaseId', 'proposal'],
+    },
+  },
+  {
+    name: 'set_test_quarantine',
+    module: 'workflow',
+    capability: 'quarantine',
+    permission: 'quarantine:write',
+    description:
+      "Quarantine one test, or release it from quarantine, as the dashboard's Quarantine and Release do. A quarantined test keeps running and reporting: quarantine only removes it from the CI gate's verdict, so its passing streak can earn it a release. Pass `quarantined: true` with an optional `reason`, or `quarantined: false` to release it (the quarantine is kept in its history). Quarantining a test already in quarantine changes nothing and keeps its streak; releasing a test not in quarantine fails. Use triage_cluster to quarantine every test of a cluster. Requires `quarantine:write` (Maintainer and above on the project).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        testCaseId: { type: 'number', description: 'The test (testCaseId)' },
+        quarantined: { type: 'boolean', description: 'true quarantines the test; false releases it' },
+        reason: { type: 'string', description: 'Why (up to 500 characters), kept on the test' },
+      },
+      required: ['testCaseId', 'quarantined'],
     },
   },
   {
@@ -1054,18 +1118,19 @@ export const MCP_TOOL_DEFS = [
     capability: 'agent-diagnoses',
     permission: 'ai:run',
     description:
-      "Record the diagnosis you wrote for a failure cluster as its current diagnosis, written by an agent: pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for (summary; confidenceScore 0-100; severity blocker|high|medium|low; affectedArea or null; hypotheses, ranked, each with category app-bug|test-bug|flaky-test|infrastructure|environment|unknown, rootCause, likelihood 0-100 and evidence; suggestedFix with description, file, code and patch, each null when unknown; investigationSteps; preventionTips). The previous diagnosis is kept in the cluster's history. Your patch (a unified diff) is validated against the source the cluster failed at when source control is connected; the answer says whether it applies. Works without an AI provider on this instance. Returns the diagnosisId to pass to report_fix_attempt. Requires `ai:run` (Maintainer and above on the project).",
+      'Record the diagnosis you wrote as the current diagnosis of a failure cluster (`clusterId`) or of one failing execution (`executionId`, a failure: use it when the failure is in no cluster, or when its cause is its own), written by an agent: pass the `model` you run on and the `diagnosis` in the JSON schema Piwi asks a model for (summary; confidenceScore 0-100; severity blocker|high|medium|low; affectedArea or null; hypotheses, ranked, each with category app-bug|test-bug|flaky-test|infrastructure|environment|unknown, rootCause, likelihood 0-100 and evidence; suggestedFix with description, file, code and patch, each null when unknown; investigationSteps; preventionTips). The previous diagnosis is kept in the history. Your patch (a unified diff) is validated against the source at the commit the failure happened at when source control is connected; the answer says whether it applies. Works without an AI provider on this instance. Returns the diagnosisId to pass to report_fix_attempt. Requires `ai:run` (Maintainer and above on the project).',
     inputSchema: {
       type: 'object',
       properties: {
-        clusterId: { type: 'number', description: 'Cluster ID' },
+        clusterId: { type: 'number', description: 'Cluster ID (pass this or executionId)' },
+        executionId: { type: 'number', description: 'Test run case ID of one failure (pass this or clusterId)' },
         model: { type: 'string', description: 'The model you run on, e.g. claude-opus-5-5' },
         diagnosis: {
           type: 'object',
           description: 'The diagnosis, in the schema Piwi asks a model for (see the description)',
         },
       },
-      required: ['clusterId', 'model', 'diagnosis'],
+      required: ['model', 'diagnosis'],
     },
   },
   {
@@ -1134,6 +1199,27 @@ export const MCP_TOOL_DEFS = [
         entityId: { type: 'number', description: 'The entity ID matching entityType' },
         url: { type: 'string', description: 'The ticket or pull request URL (http or https)' },
         title: { type: 'string', description: 'Optional title (at most 200 characters)' },
+      },
+      required: ['entityType', 'entityId', 'url'],
+    },
+  },
+  {
+    name: 'unlink_issue',
+    module: 'workflow',
+    capability: 'integrations',
+    permission: 'link:write',
+    description:
+      'Remove a ticket or pull request link from a failure cluster, an execution, a test case, a run or a bug report, as the Links panel does: pass the entity and the URL link_issue took (list_links shows them). Every link of that entity to that URL is removed; the ticket itself is untouched. Fails when the entity has no link to the URL. Returns how many links were removed. Requires `link:write` (Contributor and above on the project).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entityType: {
+          type: 'string',
+          enum: ['failure_cluster', 'test_runs_case', 'test_case', 'test_run', 'bug_report'],
+          description: 'Which entity the link is on',
+        },
+        entityId: { type: 'number', description: 'The entity ID matching entityType' },
+        url: { type: 'string', description: 'The linked URL, as list_links returns it' },
       },
       required: ['entityType', 'entityId', 'url'],
     },

@@ -101,7 +101,7 @@ Detecting a flaky test doesn't stop it blocking merges. Quarantine does — with
 The usual approach is `--grep-invert @quarantine`: the test stops running, nothing ever proves it's fixed, and the
 list only grows.
 
-**A quarantined test in Piwi keeps running and keeps reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
+**A quarantined test in Piwi keeps running and reporting.** It is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s
 `--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and the
 [commit status](./pr-feedback#what-gets-posted), nothing else. That makes the exit possible:
 
@@ -118,7 +118,8 @@ list only grows.
   been in, and how many still have no passing streak at all.
 
 **Dismiss** turns down either proposal, with an optional reason, and changes nothing else; a dismissed candidate
-returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal).
+returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)
+and [`set_test_quarantine`](/reference/mcp-tools#set_test_quarantine).
 
 The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be
 worthless — and `--max-quarantined` sets a ceiling so the list can't grow unbounded.

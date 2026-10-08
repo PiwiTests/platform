@@ -429,3 +429,133 @@ describe('link_issue', () => {
     expect(await db.select().from(schema.entityLinks)).toHaveLength(0);
   });
 });
+
+describe('unlink_issue', () => {
+  const url = 'https://acme.atlassian.net/browse/SHOP-12';
+
+  test("removes an entity's links to a URL, and only those", async () => {
+    await tool('link_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, maintainer);
+    await tool('link_issue')(db as never, { entityType: 'failure_cluster', entityId: 2, url }, maintainer);
+    expect(
+      await tool('unlink_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, maintainer),
+    ).toEqual({ entityType: 'failure_cluster', entityId: 1, url, removed: 1 });
+    const links = await db.select().from(schema.entityLinks);
+    expect(links.map((l) => l.failureClusterId)).toEqual([2]);
+  });
+
+  test('fails when the entity has no link to the URL', async () => {
+    await expect(
+      tool('unlink_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, maintainer),
+    ).rejects.toThrow(`failure_cluster 1 has no link to ${url}`);
+  });
+
+  test('refuses a read-only key, and returns null for an entity that does not exist', async () => {
+    await tool('link_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, maintainer);
+    await expect(
+      tool('unlink_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, viewer),
+    ).rejects.toThrow(refused('link:write'));
+    expect(
+      await tool('unlink_issue')(db as never, { entityType: 'failure_cluster', entityId: 99, url }, maintainer),
+    ).toBeNull();
+    expect(await db.select().from(schema.entityLinks)).toHaveLength(1);
+  });
+});
+
+describe('set_test_quarantine', () => {
+  test('quarantines a test once, then releases it with a reason', async () => {
+    expect(
+      await tool('set_test_quarantine')(
+        db as never,
+        { testCaseId: 1, quarantined: true, reason: 'Flaky on CI' },
+        maintainer,
+      ),
+    ).toEqual({ testCaseId: 1, quarantined: true, changed: true, reason: 'Flaky on CI' });
+    expect(await tool('set_test_quarantine')(db as never, { testCaseId: 1, quarantined: true }, maintainer)).toEqual({
+      testCaseId: 1,
+      quarantined: true,
+      changed: false,
+    });
+    const quarantined = await db.select().from(schema.quarantinedTests);
+    expect(quarantined).toEqual([
+      expect.objectContaining({ testCaseId: 1, reason: 'Flaky on CI', createdBy: 2, releasedAt: null }),
+    ]);
+
+    expect(
+      await tool('set_test_quarantine')(
+        db as never,
+        { testCaseId: 1, quarantined: false, reason: 'Fixed' },
+        maintainer,
+      ),
+    ).toEqual({ testCaseId: 1, quarantined: false, changed: true, reason: 'Fixed' });
+    const [released] = await db.select().from(schema.quarantinedTests);
+    expect(released!.releasedAt).not.toBeNull();
+    expect(released!.releasedReason).toBe('Fixed');
+  });
+
+  test('fails to release a test that is not in quarantine', async () => {
+    await expect(
+      tool('set_test_quarantine')(db as never, { testCaseId: 2, quarantined: false }, maintainer),
+    ).rejects.toThrow('Test 2 is not in quarantine');
+  });
+
+  test('refuses a read-only key, a test out of scope and a missing flag; null for a test that does not exist', async () => {
+    await db.insert(schema.testCases).values({ id: 3, projectId: 2, filePath: 'tests/other.spec.ts', title: 'other' });
+    await expect(
+      tool('set_test_quarantine')(db as never, { testCaseId: 1, quarantined: true }, viewer),
+    ).rejects.toThrow(refused('quarantine:write'));
+    await expect(
+      tool('set_test_quarantine')(db as never, { testCaseId: 3, quarantined: true }, maintainer),
+    ).rejects.toThrow('No access to project 2');
+    await expect(tool('set_test_quarantine')(db as never, { testCaseId: 1 }, maintainer)).rejects.toThrow(
+      'quarantined must be true or false',
+    );
+    expect(
+      await tool('set_test_quarantine')(db as never, { testCaseId: 99, quarantined: true }, maintainer),
+    ).toBeNull();
+    expect(await db.select().from(schema.quarantinedTests)).toHaveLength(0);
+  });
+});
+
+describe('move_tests_to_new_cluster', () => {
+  beforeEach(async () => {
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'failed', failureClusterId: 1 });
+    await db.update(schema.failureClusters).set({ occurrences: 2 }).where(eq(schema.failureClusters.id, 1));
+  });
+
+  test('moves a test out of a cluster into a new one, which gets the triage note', async () => {
+    const result = (await tool('move_tests_to_new_cluster')(
+      db as never,
+      { clusterId: 1, testCaseIds: [2], triageNote: 'Removing an item is its own bug' },
+      maintainer,
+    )) as Record<string, number>;
+    expect(result).toMatchObject({ sourceClusterId: 1, movedTests: 1, remainingOccurrences: 1 });
+    const [created] = await db
+      .select()
+      .from(schema.failureClusters)
+      .where(eq(schema.failureClusters.id, result.clusterId!));
+    expect(created).toMatchObject({ projectId: 1, triageNote: 'Removing an item is its own bug', occurrences: 1 });
+    const [source] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, 1));
+    expect(source!.triageNote).toBe(`Moved 1 test to cluster #${result.clusterId}.`);
+  });
+
+  test('creates no cluster when none of the tests failed in the cluster', async () => {
+    expect(
+      await tool('move_tests_to_new_cluster')(db as never, { clusterId: 2, testCaseIds: [1] }, maintainer),
+    ).toEqual({ sourceClusterId: 2, movedTests: 0, remainingOccurrences: 1 });
+  });
+
+  test('refuses a read-only key and an empty test list; null for a cluster that does not exist', async () => {
+    await expect(
+      tool('move_tests_to_new_cluster')(db as never, { clusterId: 1, testCaseIds: [2] }, viewer),
+    ).rejects.toThrow(refused('triage:write'));
+    await expect(
+      tool('move_tests_to_new_cluster')(db as never, { clusterId: 1, testCaseIds: [] }, maintainer),
+    ).rejects.toThrow('testCaseIds');
+    expect(
+      await tool('move_tests_to_new_cluster')(db as never, { clusterId: 99, testCaseIds: [2] }, maintainer),
+    ).toBeNull();
+    expect(await db.select().from(schema.failureClusters)).toHaveLength(3);
+  });
+});

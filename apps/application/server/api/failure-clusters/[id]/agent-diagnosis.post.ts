@@ -3,7 +3,7 @@
 // names. The MCP tool `record_diagnosis` calls the same handler.
 import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
-import { recordAgentDiagnosisOnCluster } from '../../../utils/agent-diagnosis';
+import { recordAgentDiagnosisOn } from '../../../utils/agent-diagnosis';
 
 defineRouteMeta({
   openAPI: {
@@ -38,13 +38,16 @@ export default eventHandler(async (event) => {
   const parsed = parseAgentDiagnosis(await readBody(event));
   if (!parsed.ok) throw apiError({ statusCode: 400, message: parsed.message });
 
-  const result = await recordAgentDiagnosisOnCluster(db, id, parsed.value, {
+  const result = await recordAgentDiagnosisOn(db, { scope: 'cluster', clusterId: id }, parsed.value, {
     channel: parsed.value.channel ?? 'ui',
     userId: user.id,
     apiKeyId: (event.context.apiKeyId as number | undefined) ?? null,
   });
   if (!result.ok) {
-    throw apiError({ statusCode: AGENT_DIAGNOSIS_STATUS[result.error], message: AGENT_DIAGNOSIS_ERRORS[result.error] });
+    throw apiError({
+      statusCode: AGENT_DIAGNOSIS_STATUS[result.error],
+      message: AGENT_DIAGNOSIS_ERRORS.cluster[result.error],
+    });
   }
   return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
 });
