@@ -657,7 +657,8 @@ beforeAll(async () => {
   });
   expect(init).toMatchObject({ capabilities: { hoverProvider: true } });
   await client.sendNotification('initialized', {});
-  // The indexes are fetched in the background: wait until the status says so.
+  // The locator index is fetched in the background: wait until the status says so. The code index comes after the
+  // latest run: the tests that read it wait for it (`codeIndexRead`).
   await waitFor(() => (connected ? true : undefined));
 });
 
@@ -667,6 +668,13 @@ const pollStatus = setInterval(async () => {
   const status = (await client.sendRequest('piwi/status').catch(() => null)) as StatusResult | null;
   connected = !!status?.contexts[0]?.connected;
 }, 30);
+
+/** The first service's status once its code index is read, which a refresh reads after the latest run. */
+const codeIndexRead = () =>
+  waitFor(async () => {
+    const status = (await client.sendRequest('piwi/status')) as StatusResult;
+    return status.contexts[0]?.reachedFiles ? status : undefined;
+  });
 
 afterAll(async () => {
   clearInterval(pollStatus);
@@ -694,7 +702,7 @@ function change(file: string, text: string, version: number) {
 
 describe('the Piwi language server', () => {
   test('reports its context', async () => {
-    const status = (await client.sendRequest('piwi/status')) as StatusResult;
+    const status = await codeIndexRead();
     expect(status.contexts).toEqual([
       expect.objectContaining({
         root: dir,
@@ -1134,6 +1142,7 @@ describe('the Piwi language server', () => {
       },
     ]);
 
+    await codeIndexRead();
     const app = (await client.sendRequest('piwi/fileSummary', {
       uri: uri('src/components/CheckoutButton.vue'),
     })) as FileSummary;
@@ -1215,6 +1224,7 @@ describe('the Piwi language server', () => {
   });
 
   test('lists the tests of a file and the command that runs them', async () => {
+    await codeIndexRead();
     const reached = (await client.sendRequest('piwi/testsForFile', {
       uri: uri('src/components/CheckoutButton.vue'),
     })) as TestsForFile;
