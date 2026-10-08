@@ -24,3 +24,30 @@ export function issueLineForm(facts: IssueLineFacts): IssueLineForm {
   if (wantsTicket && (facts.canFile || facts.canLink)) return 'untracked';
   return null;
 }
+
+/** A sentence ends with a period unless it already ends in punctuation or a closing quote. */
+function endSentence(text: string): string {
+  return /[.!?”"]$/.test(text) ? text : `${text}.`;
+}
+
+/**
+ * The Issue line's sentence for a filing that failed for good, so filing again
+ * is not a blind retry. It quotes Jira's own explanation when Jira gave one (the
+ * error then reads "Jira request failed (400 Bad Request): <explanation>"), and
+ * gives the recorded reason otherwise.
+ */
+export function filingFailureSentence(error: string | null | undefined): string {
+  const text = error?.trim();
+  if (!text) return 'The last filing failed.';
+  const answered = /^Jira request failed \((\d{3}[^)]*)\)(?::\s*([\s\S]+))?$/.exec(text);
+  if (answered?.[2]) return `The last filing failed: Jira answered “${endSentence(answered[2].trim())}”`;
+  if (answered) return `The last filing failed: Jira answered ${answered[1]}.`;
+  return endSentence(`The last filing failed: ${text}`);
+}
+
+/** The issue key link's tooltip: the key, the issue's summary, and that the link opens the tracker. */
+export function issueKeyTitle(key: string, summary: string | null | undefined, tracker: string | null): string {
+  const opens = `Opens in ${tracker ?? 'the tracker'}.`;
+  const text = summary?.trim();
+  return text ? `${key}: ${endSentence(text)} ${opens}` : `${key}. ${opens}`;
+}

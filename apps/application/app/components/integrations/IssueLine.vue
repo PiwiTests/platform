@@ -3,16 +3,19 @@
  * "Issue" — the ticket a failure cluster is tracked in, as one line of the
  * situation block on the execution page and on the cluster page, so the ticket
  * sits in the same place on both. A tracked cluster names its issue, the key a
- * link to the tracker, and its status; an issue Done while the failure goes on
- * says so and offers a new one (once the failure stopped, the cluster page
- * offers to resolve the cluster instead). An untracked open cluster says it has none
- * and offers to file or link one; a filing the tracker has not answered yet
- * shows as queued. The page owns the create and link dialogs: this line emits.
- * The block that renders this line provides its label.
+ * link to the tracker whose tooltip gives the issue's summary, and its status;
+ * an issue Done while the failure goes on says so and offers a new one (once the
+ * failure stopped, the cluster page offers to resolve the cluster instead). An
+ * untracked open cluster says it has none and offers to file or link one; a
+ * filing the tracker has not answered yet shows as queued. Where filing is
+ * offered, a last filing that failed for good is named with its reason, so
+ * filing again is not a blind retry. The page owns the create and link dialogs:
+ * this line emits. The block that renders this line provides its label.
  */
+import type { IssueFilingFailure } from '#shared/handlers/known-issues';
 import { getProviderName, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
-import type { IssueLineForm } from '~/utils/issue-line';
+import { filingFailureSentence, issueKeyTitle, type IssueLineForm } from '~/utils/issue-line';
 
 const props = defineProps<{
   form: IssueLineForm;
@@ -25,9 +28,13 @@ const props = defineProps<{
     key: string;
     url: string;
     provider: string;
+    /** The issue's summary, for the key's tooltip. */
+    title?: string | null;
     status: string | null;
     statusCategory?: string | null;
   } | null;
+  /** The cluster's newest filing failed for good. */
+  filingFailure?: IssueFilingFailure | null;
 }>();
 
 const emit = defineEmits<{ create: []; link: [] }>();
@@ -40,12 +47,16 @@ const canLink = computed(() => can('link:write', props.projectId));
 const providerName = computed(() =>
   props.knownIssue ? getProviderName(props.knownIssue.provider as LinkProvider) : null,
 );
+const keyTitle = computed(() =>
+  props.knownIssue ? issueKeyTitle(props.knownIssue.key, props.knownIssue.title, providerName.value) : undefined,
+);
 const doneWhileFailing = computed(
   () =>
     props.knownIssue?.statusCategory === 'done' &&
     (props.clusterStatus ?? 'open') === 'open' &&
     props.failureGoesOn === true,
 );
+const failureSentence = computed(() => (props.filingFailure ? filingFailureSentence(props.filingFailure.error) : null));
 </script>
 
 <template>
@@ -57,15 +68,18 @@ const doneWhileFailing = computed(
           :href="safeHttpUrl(knownIssue.url) ?? undefined"
           target="_blank"
           rel="noopener noreferrer"
+          :title="keyTitle"
           :class="SENTENCE_LINK_CLASS"
           data-testid="issue-line-key"
           >{{ knownIssue.key }}</a
         ><template v-if="knownIssue.status"
           >, {{ knownIssue.status }}<template v-if="providerName"> in {{ providerName }}</template></template
-        >.
+        >.<template v-if="doneWhileFailing"> The issue is Done, but the failure goes on.</template>
       </p>
       <template v-if="doneWhileFailing">
-        <p class="text-xs text-muted">The issue is Done, but the failure goes on.</p>
+        <p v-if="failureSentence" class="text-xs text-muted" data-testid="issue-line-filing-failed">
+          {{ failureSentence }}
+        </p>
         <div v-if="canFile" class="flex flex-wrap items-center gap-2 pt-1">
           <UButton size="xs" color="neutral" variant="outline" @click="emit('create')">File a new issue</UButton>
         </div>
@@ -78,6 +92,9 @@ const doneWhileFailing = computed(
 
     <template v-else-if="form === 'untracked'">
       <p>No issue yet.</p>
+      <p v-if="failureSentence" class="text-xs text-muted" data-testid="issue-line-filing-failed">
+        {{ failureSentence }}
+      </p>
       <div class="flex flex-wrap items-center gap-2 pt-1">
         <UButton
           v-if="canFile"

@@ -23,6 +23,8 @@ import { withTypedValue } from '~/utils/text-format';
 const props = defineProps<{
   entityType: IssueEntityType;
   entityId: number;
+  /** The cluster's issue, when it has one: a new issue is filed next to it, and it stays linked. */
+  knownIssueKey?: string | null;
 }>();
 
 const open = defineModel<boolean>('open', { default: false });
@@ -136,11 +138,14 @@ const blockedReason = computed(() => {
 });
 
 // What the issue is filed for: a cluster's issue shows on the cluster page and on
-// every execution of it, whichever page it was filed from.
+// every execution of it, whichever page it was filed from. A cluster that has an
+// issue keeps it linked; the new one, its newest, becomes the issue it shows.
 const description = computed(() => {
   if (props.entityType === 'bug_report')
     return 'File a Jira issue from this bug report, with its steps, evidence and failing test.';
   const id = draft.value?.clusterId;
+  if (props.knownIssueKey)
+    return `Files a new issue for ${id ? `cluster #${id}` : 'the cluster'} next to ${props.knownIssueKey}, which stays linked. The new issue, with the fix plan as its body, becomes the cluster's issue on the cluster page and on each of its executions.`;
   return id
     ? `Files one issue for cluster #${id}, with its fix plan as the body. It shows on the cluster page and on each of its executions.`
     : 'File a Jira issue from this failure, with the fix plan as its body.';
@@ -358,7 +363,12 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
 </script>
 
 <template>
-  <UModal v-model:open="open" title="Create issue" :description="description" :ui="{ content: 'max-w-2xl' }">
+  <UModal
+    v-model:open="open"
+    :title="knownIssueKey && entityType !== 'bug_report' ? 'File a new issue' : 'Create issue'"
+    :description="description"
+    :ui="{ content: 'max-w-2xl' }"
+  >
     <template #body>
       <LoadingState v-if="loading" text="Preparing the draft…" />
 

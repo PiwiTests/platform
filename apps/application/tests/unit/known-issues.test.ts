@@ -15,9 +15,10 @@ import * as schema from '../../server/database/schema.sqlite';
 
 // The schema barrel picks PostgreSQL at import time when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
-const { clusterKnownIssues, isTrackerLink } = await import('#shared/handlers/known-issues');
+const { clusterIssueFilings, clusterKnownIssues, isTrackerLink } = await import('#shared/handlers/known-issues');
 const { getTestRunCase, getTestCase } = await import('#shared/handlers/test-cases');
 const { getFailureGroups } = await import('#shared/handlers/test-runs');
+const { getFailureCluster } = await import('#shared/handlers/failure-clusters');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -72,6 +73,7 @@ beforeAll(async () => {
       url: JIRA_URL,
       provider: 'jira',
       key: 'PIWI-12',
+      title: 'Card payment declined at checkout',
       statusText: 'In Progress',
       statusColor: 'warning',
       origin: 'created',
@@ -89,6 +91,7 @@ describe('clusterKnownIssues', () => {
       key: 'PIWI-12',
       url: JIRA_URL,
       provider: 'jira',
+      title: 'Card payment declined at checkout',
       status: 'In Progress',
       statusColor: 'warning',
       statusCategory: null,
@@ -166,5 +169,78 @@ describe('the surfaces around an execution carry its cluster issue', () => {
       await db.delete(schema.testRuns).where(inArray(schema.testRuns.id, [2, 3]));
       await db.update(schema.entityLinks).set({ metadata: null }).where(eq(schema.entityLinks.id, link!.id));
     }
+  });
+});
+
+describe('clusterIssueFilings', () => {
+  const ARCHIVED = 'Jira request failed (400 Bad Request): The issue could not be created: the project is archived.';
+  const action = (over: Partial<typeof schema.integrationActions.$inferInsert>) => ({
+    connectionId: 1,
+    projectId: 1,
+    kind: 'create-issue',
+    entityType: 'failure_cluster',
+    entityId: 2,
+    payload: {} as never,
+    dedupeKey: `create-issue:${over.id}`,
+    ...over,
+  });
+
+  test('the newest filing that failed for good is named with its reason, on both failure pages', async () => {
+    await db
+      .insert(schema.integrationConnections)
+      .values({ id: 1, provider: 'jira', name: 'Jira', baseUrl: 'https://acme.atlassian.net' });
+    const finishedAt = new Date('2026-09-01T11:00:00Z');
+    await db.insert(schema.integrationActions).values([
+      // Cluster 1 filed its issue; cluster 2's filing was refused.
+      action({ id: 100, entityId: 1, status: 'done' }),
+      action({ id: 101, status: 'failed', attempts: 1, error: ARCHIVED, finishedAt }),
+    ]);
+    try {
+      let filings = await clusterIssueFilings(db as never, [1, 2]);
+      expect(filings.queued.size).toBe(0);
+      expect(filings.failures.has(1)).toBe(false);
+      expect(filings.failures.get(2)).toEqual({ status: 'failed', error: ARCHIVED, at: finishedAt.toISOString() });
+
+      const execution = (await getTestRunCase(db as never, 11)) as {
+        failureCluster: { issueFilingFailure: { error: string } | null } | null;
+      } | null;
+      expect(execution?.failureCluster?.issueFilingFailure?.error).toBe(ARCHIVED);
+      const cluster = await getFailureCluster(db as never, 2);
+      expect(cluster?.issueFilingFailure?.error).toBe(ARCHIVED);
+
+      // Filing again replaces the refused action: it is queued, no longer failed.
+      await db
+        .update(schema.integrationActions)
+        .set({ status: 'pending', attempts: 0, error: null })
+        .where(eq(schema.integrationActions.id, 101));
+      filings = await clusterIssueFilings(db as never, [2]);
+      expect([...filings.queued]).toEqual([2]);
+      expect(filings.failures.has(2)).toBe(false);
+
+      // A newer filing asked from one of the cluster's executions decides for the cluster.
+      await db.update(schema.integrationActions).set({ status: 'done' }).where(eq(schema.integrationActions.id, 101));
+      await db.insert(schema.integrationActions).values(
+        action({
+          id: 102,
+          entityType: 'test_runs_case',
+          entityId: 11,
+          status: 'skipped',
+          error: 'connection has no usable credentials',
+        }),
+      );
+      filings = await clusterIssueFilings(db as never, [2]);
+      expect(filings.failures.get(2)).toMatchObject({
+        status: 'skipped',
+        error: 'connection has no usable credentials',
+      });
+    } finally {
+      await db.delete(schema.integrationActions);
+      await db.delete(schema.integrationConnections);
+    }
+  });
+
+  test('an empty id list asks nothing', async () => {
+    const filings = await clusterIssueFilings(db as never, []);
+    expect(filings.queued.size + filings.failures.size).toBe(0);
   });
 });

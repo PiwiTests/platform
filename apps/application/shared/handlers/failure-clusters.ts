@@ -17,7 +17,7 @@ import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
-import { clusterIssueFilingsQueued, clusterKnownIssues, isTrackerLink } from './known-issues';
+import { clusterIssueFilings, clusterKnownIssues, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
   getQuarantinedCaseIds,
@@ -165,11 +165,11 @@ export async function getFailureCluster(
   const quarantinedIds = await getQuarantinedCaseIds(db, cluster.projectId);
 
   // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.), and
-  // whether a filing for it is waiting on the tracker.
+  // whether a filing for it waits on the tracker or failed for good.
   // Newest first, so every reader that takes the first agrees with the known issue.
-  const [links, filingsQueued, knownIssues] = await Promise.all([
+  const [links, filings, knownIssues] = await Promise.all([
     db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId)).orderBy(desc(entityLinks.id)),
-    clusterIssueFilingsQueued(db, [clusterId]),
+    clusterIssueFilings(db, [clusterId]),
     clusterKnownIssues(db, [clusterId]),
   ]);
 
@@ -329,7 +329,8 @@ export async function getFailureCluster(
     })),
     links,
     knownIssue,
-    issueFilingQueued: filingsQueued.has(clusterId),
+    issueFilingQueued: filings.queued.has(clusterId),
+    issueFilingFailure: filings.failures.get(clusterId) ?? null,
     owner,
     clusterState,
     occurrenceSeries,

@@ -14,7 +14,7 @@ import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
 import type { Situation, SituationPart } from '#shared/situation';
-import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
 import { commitUrl } from '#shared/scm-urls';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
@@ -108,6 +108,8 @@ const failureCluster = computed(() => {
     /** Read when the issue is Done: the failure goes on in the latest finished run. */
     failureGoesOn?: boolean | null;
     issueFilingQueued?: boolean;
+    /** The cluster's newest issue filing failed for good. */
+    issueFilingFailure?: IssueFilingFailure | null;
   } | null;
 });
 
@@ -821,6 +823,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :cluster-status="failureCluster?.status"
               :failure-goes-on="failureCluster?.failureGoesOn === true"
               :known-issue="knownIssue"
+              :filing-failure="failureCluster?.issueFilingFailure ?? null"
               @create="issueModalOpen = true"
               @link="linkIssueOpen = true"
             />
@@ -1042,6 +1045,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
     v-if="failureCluster && canEditLinks"
     v-model:open="linkIssueOpen"
     :cluster-id="failureCluster.id"
+    :known-issue-key="knownIssue?.key ?? null"
     @linked="onIssueCreated"
   />
 
@@ -1050,6 +1054,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
     v-model:open="issueModalOpen"
     entity-type="test_runs_case"
     :entity-id="testCase.id"
+    :known-issue-key="knownIssue?.key ?? null"
     @created="onIssueCreated"
     @linked="onIssueCreated"
     @queued="onIssueCreated"

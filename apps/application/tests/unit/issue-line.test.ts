@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { issueLineForm, type IssueLineFacts } from '../../app/utils/issue-line';
+import { filingFailureSentence, issueKeyTitle, issueLineForm, type IssueLineFacts } from '../../app/utils/issue-line';
 
 const facts = (over: Partial<IssueLineFacts> = {}): IssueLineFacts => ({
   hasKnownIssue: false,
@@ -33,5 +33,40 @@ describe('issueLineForm', () => {
     expect(issueLineForm(facts({ clusterStatus: 'ignored' }))).toBeNull();
     expect(issueLineForm(facts({ clusterStatus: 'resolved' }))).toBeNull();
     expect(issueLineForm(facts({ snoozed: true }))).toBeNull();
+  });
+});
+
+describe('filingFailureSentence', () => {
+  test("quotes Jira's own explanation", () => {
+    expect(
+      filingFailureSentence(
+        'Jira request failed (400 Bad Request): The issue could not be created: the Checkout project is archived.',
+      ),
+    ).toBe('The last filing failed: Jira answered “The issue could not be created: the Checkout project is archived.”');
+    expect(filingFailureSentence('Jira request failed (403 Forbidden): You cannot create issues here')).toBe(
+      'The last filing failed: Jira answered “You cannot create issues here.”',
+    );
+  });
+
+  test('gives the status Jira answered with when it explained nothing', () => {
+    expect(filingFailureSentence('Jira request failed (404 Not Found)')).toBe(
+      'The last filing failed: Jira answered 404 Not Found.',
+    );
+  });
+
+  test('gives any other recorded reason as it is', () => {
+    expect(filingFailureSentence('connection has no usable credentials')).toBe(
+      'The last filing failed: connection has no usable credentials.',
+    );
+    expect(filingFailureSentence(null)).toBe('The last filing failed.');
+  });
+});
+
+describe('issueKeyTitle', () => {
+  test("names the issue's summary and that the link opens the tracker", () => {
+    expect(issueKeyTitle('CHK-7', 'Users table shows 50 rows instead of 25', 'Jira')).toBe(
+      'CHK-7: Users table shows 50 rows instead of 25. Opens in Jira.',
+    );
+    expect(issueKeyTitle('OPS-3', null, null)).toBe('OPS-3. Opens in the tracker.');
   });
 });

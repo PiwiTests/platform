@@ -3,12 +3,22 @@
  * Link an existing ticket to a failure cluster by its URL. The link becomes the
  * cluster's known issue when it is a tracker issue (a Jira key, or a link on a
  * connected tracker), so it shows on the cluster page and on every execution of
- * the cluster. A bare key is caught before the request with a hint, since the
- * link needs the issue's full URL.
+ * the cluster. On a cluster that already has an issue, the description says
+ * that issue stays linked and a tracker issue linked now takes its place. A bare
+ * key is caught before the request with a hint, since the link needs the
+ * issue's full URL.
  */
 const props = defineProps<{
   clusterId: number;
+  /** The cluster's issue, when it has one. */
+  knownIssueKey?: string | null;
 }>();
+
+const description = computed(() =>
+  props.knownIssueKey
+    ? `${props.knownIssueKey} stays linked. The cluster's issue is its newest linked Jira issue, or issue on a connected tracker: link one and it takes ${props.knownIssueKey}'s place on the cluster page and on each of its executions.`
+    : 'The issue then tracks every failure of the cluster: it shows on the cluster page and on each of its executions.',
+);
 
 const open = defineModel<boolean>('open', { default: false });
 
@@ -46,11 +56,7 @@ async function link() {
 </script>
 
 <template>
-  <UModal
-    v-model:open="open"
-    :title="`Link an issue to cluster #${clusterId}`"
-    description="The issue then tracks every failure of the cluster: it shows on the cluster page and on each of its executions."
-  >
+  <UModal v-model:open="open" :title="`Link an issue to cluster #${clusterId}`" :description="description">
     <template #body>
       <form class="space-y-2" @submit.prevent="link">
         <UFormField label="Issue URL">

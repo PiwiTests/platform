@@ -48,7 +48,7 @@ import type { FlatStep } from '@piwitests/core/step-analysis';
 import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
-import { clusterIssueFilingsQueued, clusterKnownIssues } from './known-issues';
+import { clusterIssueFilings, clusterKnownIssues } from './known-issues';
 
 /**
  * A test case with its header stats, recent executions and clusters. Executions
@@ -320,10 +320,16 @@ export async function getTestRunCase(
         .from(failureDiagnoses)
         .where(eq(failureDiagnoses.clusterId, cluster.id));
 
+      // The cluster's issue and where its filings stand.
+      const [knownIssues, filings] = await Promise.all([
+        clusterKnownIssues(db, [cluster.id]),
+        clusterIssueFilings(db, [cluster.id]),
+      ]);
+      const knownIssue = knownIssues.get(cluster.id) ?? null;
+
       // A Done issue on a failure that goes on (it failed in the project's latest
       // finished run, or in one since) calls for a new issue; the rule the
       // cluster state follows. Read only when the issue is Done.
-      const knownIssue = (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null;
       let failureGoesOn: boolean | null = null;
       if (knownIssue?.statusCategory === 'done') {
         const [latestFinished] = await db
@@ -362,7 +368,8 @@ export async function getTestRunCase(
         assignee: cluster.assignee ?? null,
         knownIssue,
         failureGoesOn,
-        issueFilingQueued: (await clusterIssueFilingsQueued(db, [cluster.id])).has(cluster.id),
+        issueFilingQueued: filings.queued.has(cluster.id),
+        issueFilingFailure: filings.failures.get(cluster.id) ?? null,
       };
     }
   }

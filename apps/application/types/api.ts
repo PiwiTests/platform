@@ -17,7 +17,7 @@ import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
-import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { AccessSummary, InstanceRole } from '#shared/permissions';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
@@ -1091,6 +1091,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   knownIssue: KnownIssueRef | null;
   /** An issue filing for this cluster waits on the tracker; the outbox retries it. */
   issueFilingQueued: boolean;
+  /** The cluster's newest issue filing failed for good, with the tracker's reason; filing again replaces it. */
+  issueFilingFailure: IssueFilingFailure | null;
   /** Effective owner of the cluster's tests: `piwi:owner` annotation or CODEOWNERS. */
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   /** Inbox triage: assignee (overrides the owner) and snooze state. */

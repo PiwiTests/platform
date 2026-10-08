@@ -12,6 +12,8 @@ export interface KnownIssueRef {
   key: string;
   url: string;
   provider: string;
+  /** The issue's summary as last synced from the tracker. */
+  title: string | null;
   /** The issue's status as last synced from the tracker, e.g. "In Progress". */
   status: string | null;
   /** The badge color token resolved from the status category. */
@@ -47,6 +49,7 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
       url: entityLinks.url,
       provider: entityLinks.provider,
       connectionId: entityLinks.connectionId,
+      title: entityLinks.title,
       statusText: entityLinks.statusText,
       statusColor: entityLinks.statusColor,
       metadata: entityLinks.metadata,
@@ -63,6 +66,7 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
       key: row.key!,
       url: row.url,
       provider: row.provider,
+      title: row.title ?? null,
       status: row.statusText ?? null,
       statusColor: row.statusColor ?? null,
       statusCategory: meta?.statusCategory ?? null,
@@ -74,33 +78,81 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
   return out;
 }
 
+/** An issue filing that ended for good: no retry is coming, and filing again replaces it. */
+export interface IssueFilingFailure {
+  /** `failed` when the tracker refused it or every retry failed, `skipped` when Piwi could not send it. */
+  status: 'failed' | 'skipped';
+  /** Why, as the tracker answered or as Piwi recorded it. */
+  error: string | null;
+  /** When its last attempt ended. */
+  at: string | null;
+}
+
+/** Where the issue filings of some clusters stand, by cluster id. */
+export interface ClusterIssueFilings {
+  /** A filing waits on the tracker: the outbox retries it, and filing again re-runs it at once. */
+  queued: Set<number>;
+  /** The newest filing failed for good, with its reason. */
+  failures: Map<number, IssueFilingFailure>;
+}
+
 /**
- * The clusters whose issue filing is queued: the tracker did not answer the
- * create yet and the outbox retries it. The pages show the queued filing; filing
- * again re-runs the same action at once.
+ * Where each cluster's issue filings stand, in two queries: the `create-issue`
+ * actions recorded for the cluster and for its executions, since a filing asked
+ * from an execution counts for its cluster. A cluster's filing is queued while
+ * one of them waits on the tracker, and failed while the newest of them failed
+ * or was skipped. The pages show both on the Issue line.
  */
-export async function clusterIssueFilingsQueued(db: DrizzleDB, clusterIds: number[]): Promise<Set<number>> {
+export async function clusterIssueFilings(db: DrizzleDB, clusterIds: number[]): Promise<ClusterIssueFilings> {
+  const out: ClusterIssueFilings = { queued: new Set(), failures: new Map() };
   const ids = [...new Set(clusterIds.filter((id): id is number => typeof id === 'number'))];
-  if (ids.length === 0) return new Set();
-  const queued = and(
-    eq(integrationActions.kind, 'create-issue'),
-    inArray(integrationActions.status, ['pending', 'processing']),
-  );
+  if (ids.length === 0) return out;
+  const columns = {
+    id: integrationActions.id,
+    status: integrationActions.status,
+    error: integrationActions.error,
+    createdAt: integrationActions.createdAt,
+    finishedAt: integrationActions.finishedAt,
+  };
+  const createIssue = eq(integrationActions.kind, 'create-issue');
   const [onCluster, onExecution] = await Promise.all([
     db
-      .select({ clusterId: integrationActions.entityId })
+      .select({ ...columns, clusterId: integrationActions.entityId })
       .from(integrationActions)
       .where(
-        and(queued, eq(integrationActions.entityType, 'failure_cluster'), inArray(integrationActions.entityId, ids)),
+        and(
+          createIssue,
+          eq(integrationActions.entityType, 'failure_cluster'),
+          inArray(integrationActions.entityId, ids),
+        ),
       ),
-    // A filing recorded against one of the cluster's executions counts for the cluster.
     db
-      .select({ clusterId: testRunsCases.failureClusterId })
+      .select({ ...columns, clusterId: testRunsCases.failureClusterId })
       .from(integrationActions)
       .innerJoin(testRunsCases, eq(testRunsCases.id, integrationActions.entityId))
       .where(
-        and(queued, eq(integrationActions.entityType, 'test_runs_case'), inArray(testRunsCases.failureClusterId, ids)),
+        and(
+          createIssue,
+          eq(integrationActions.entityType, 'test_runs_case'),
+          inArray(testRunsCases.failureClusterId, ids),
+        ),
       ),
   ]);
-  return new Set([...onCluster, ...onExecution].map((r) => r.clusterId).filter((id): id is number => id != null));
+  const newest = new Map<number, (typeof onExecution)[number]>();
+  for (const row of [...onCluster, ...onExecution]) {
+    if (row.clusterId == null) continue;
+    if (row.status === 'pending' || row.status === 'processing') out.queued.add(row.clusterId);
+    const seen = newest.get(row.clusterId);
+    if (!seen || row.id > seen.id) newest.set(row.clusterId, row);
+  }
+  for (const [clusterId, row] of newest) {
+    if (row.status !== 'failed' && row.status !== 'skipped') continue;
+    const at = row.finishedAt ?? row.createdAt;
+    out.failures.set(clusterId, {
+      status: row.status,
+      error: row.error ?? null,
+      at: at ? new Date(at as unknown as string | number | Date).toISOString() : null,
+    });
+  }
+  return out;
 }

@@ -12,8 +12,7 @@ Piwi already ends an investigation with everything a ticket needs: a headline, t
 diagnosis, a validated patch, the verify command. **Create issue** turns that into a Jira issue in one click: the body is the fix plan, the issue is linked back as the cluster's *known issue*, and from then on
 the key travels wherever the failure appears.
 
-It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**; with no connection,
-none of the entry points appear.
+It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
 <div class="doc-screenshot">
   <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
@@ -24,24 +23,25 @@ none of the entry points appear.
 - **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
   *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). On the cluster
   and execution pages, the **Issue** line offers *Create issue* and *Link an issue* until the cluster has a ticket, then
-  names it; the ⋮ menu offers *Open PROJ-123*.
+  names it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps) and *Links* back to Piwi. Every section
   degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer, so
   a JQL filter finds every Piwi-filed issue.
 - **Filing is deduped by cluster** — a second click, a duplicate event or a create from another of its executions
-  names the issue already filed; once that link is removed or the issue is Done, the next create files a new one. Before creating, the
-  modal surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before*
-  match) and leads with *link it instead*.
+  names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
+  Done issue stays linked. Before creating, the modal surfaces any issue that already tracks the failure (a pinned
+  link, a matching label, or a *fixed-before* match) and leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
   cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
-  write Piwi makes to the issue. A create Jira refuses outright, such as a missing or invalid field,
-  fails at once with Jira's reason at the top of the modal, and creating again replaces it.
+  write Piwi makes to the issue. A create Jira refuses outright (a missing or invalid field) fails at once, with
+  Jira's reason at the top of the modal and on the Issue line; creating again replaces it.
 
 ## The key travels
 
-A cluster's **known issue** is its most recently linked ticket. Its key follows the failure everywhere:
+A cluster's **known issue** is its most recently linked ticket; earlier ones stay among its links. Its key follows the
+failure everywhere:
 
 - the **Issue** line of the cluster and of a failing execution, the **inbox row** and the execution's row in the
   **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
@@ -92,7 +92,7 @@ reach that team's destination. The greyed-out **automatic-creation** fields are 
 
 ## Required Jira fields
 
-A Jira project can require fields on its create screen, such as a *Severity*, a *Team* or *Components*. Piwi reads
+A Jira project can require fields on its create screen, such as a *Severity* or a *Team*. Piwi reads
 the issue type's create screen and asks for every required field Jira does not fill:
 
 - The project binding's **Jira fields** block lists them. A value set there fills every issue filed from the project;
@@ -126,9 +126,8 @@ binding names a Jira project and issue type.
 
 ## Language
 
-A ticket is written for a team, so its language is a property of its **destination**. It resolves from the **project
-binding**'s language, else the **connection**'s default (a French Atlassian site can default every ticket to French),
-else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
+A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default
+(a French Atlassian site can default every ticket to French), else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
 `locale`. **English and French ship today.**
 
 Only the copy **Piwi authors** is translated: headings, fact labels, policy comments, dates and counts. Your data

@@ -678,6 +678,7 @@ const breadcrumbItems = computed(() => [
               :cluster-status="cluster.status"
               :failure-goes-on="clusterState?.kind !== 'ticket-done'"
               :known-issue="knownIssue"
+              :filing-failure="cluster.issueFilingFailure"
               @create="issueModalOpen = true"
               @link="linkIssueOpen = true"
             />
@@ -854,6 +855,7 @@ const breadcrumbItems = computed(() => [
     v-model:open="issueModalOpen"
     entity-type="failure_cluster"
     :entity-id="cluster.id"
+    :known-issue-key="knownIssue?.key ?? null"
     @created="onIssueChanged"
     @linked="onIssueChanged"
     @queued="onIssueChanged"
@@ -862,6 +864,7 @@ const breadcrumbItems = computed(() => [
     v-if="cluster && canLinkIssue"
     v-model:open="linkIssueOpen"
     :cluster-id="cluster.id"
+    :known-issue-key="knownIssue?.key ?? null"
     @linked="onIssueChanged"
   />
 
