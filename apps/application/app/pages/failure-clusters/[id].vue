@@ -378,14 +378,19 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
   onApplied: () => refresh(),
 });
 
-// The diagnosis panel exposes its context/prompt actions for the page's More menu.
-const diagnosisPanel = ref<{
+// The diagnosis panel exposes its context and re-diagnose actions for the page's
+// More menu and next step.
+interface DiagnosisPanelActions {
   openContext: () => void;
-  copyPrompt: () => void;
   openHistory: () => void;
   reDiagnose?: () => void;
-} | null>(null);
+}
+const diagnosisPanel = ref<DiagnosisPanelActions | null>(null);
 const { aiStatus } = useAiStatus();
+
+// The prompt a diagnosis would send, copied by the More menu and the next step.
+const diagnosisContextEndpoint = `/api/failure-clusters/${clusterId}/context`;
+const { copyPrompt: copyAiPrompt } = useCopyAiPrompt();
 
 const { copy: copyMarkdown, copied: markdownCopied } = useCopy();
 function copyFixPlanMarkdown() {
@@ -439,12 +444,12 @@ const moreMenuItems = computed(() => {
     items.push({
       label: 'Show context',
       icon: 'i-lucide-eye',
-      onSelect: () => diagnosisPanel.value?.openContext(),
+      onSelect: () => void onDiagnosisPanel((panel) => panel.openContext()),
     });
   items.push({
     label: 'Copy prompt',
     icon: 'i-lucide-clipboard-copy',
-    onSelect: () => diagnosisPanel.value?.copyPrompt(),
+    onSelect: () => void copyAiPrompt(diagnosisContextEndpoint),
   });
   if (canRerun.value && rerunInfo.value?.available)
     items.push({
@@ -478,7 +483,24 @@ const clusterLocatorPanel = ref<{
   openPicker: () => void;
   expandAlternatives: () => void;
 } | null>(null);
-const toolbox = ref<{ scrollToSection: (k: FixSectionKey) => void } | null>(null);
+const toolbox = ref<{
+  openSection: (k: FixSectionKey) => Promise<void>;
+  scrollToSection: (k: FixSectionKey) => Promise<void>;
+} | null>(null);
+
+// The Diagnosis section renders its panel only while open: open it (and scroll to
+// it with `scroll`), wait for the panel to mount, then act on it.
+const toast = useToast();
+async function onDiagnosisPanel(act: (panel: DiagnosisPanelActions) => void, scroll = false) {
+  await (scroll ? toolbox.value?.scrollToSection('diagnosis') : toolbox.value?.openSection('diagnosis'));
+  if (diagnosisPanel.value) act(diagnosisPanel.value);
+  else
+    toast.add({
+      title: 'Diagnosis not available',
+      description: 'This page has no Diagnosis section to act on.',
+      color: 'error',
+    });
+}
 
 function scrollToEl(el: HTMLElement | null) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -518,8 +540,9 @@ const { handle: handleNextStepAction } = useNextStepActions({
   ideProject: () => cluster.value?.project ?? null,
   locatorPanel: () => clusterLocatorPanel.value,
   reproRecipe: () => fixPlan.value?.reproduce ?? null,
-  diagnosisContextEndpoint: () => `/api/failure-clusters/${clusterId}/context`,
+  diagnosisContextEndpoint: () => diagnosisContextEndpoint,
   scrollToSection: (k) => toolbox.value?.scrollToSection(k),
+  openSection: (k) => toolbox.value?.openSection(k),
   selectAttemptsTab: () => evidenceTabs.value?.selectTab('attempts'),
   setClusterStatus,
   quarantine: async () => {
@@ -530,10 +553,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
   },
   rerunInCi: () => triggerRerun(),
   whatChanged: () => scrollToEl(scmEl.value ?? whatChangedLine.value?.$el ?? null),
-  reDiagnose: () => {
-    toolbox.value?.scrollToSection('diagnosis');
-    diagnosisPanel.value?.reDiagnose?.();
-  },
+  reDiagnose: () => onDiagnosisPanel((panel) => panel.reDiagnose?.(), true),
 });
 
 // Deep link from the execution page's fix-plan link — open the fix-plan section.

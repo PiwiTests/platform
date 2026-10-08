@@ -18,6 +18,9 @@ export interface LocatorPanelActions {
   expandAlternatives: () => void;
 }
 
+/** The toolbox sections a next-step action opens. */
+type ToolboxSectionKey = 'diagnosis' | 'reproduce' | 'locator-fix';
+
 export interface NextStepActionHandlers {
   /** The cluster whose fix plan / status the code-change actions target. */
   clusterId: () => number | null | undefined;
@@ -36,9 +39,12 @@ export interface NextStepActionHandlers {
   /**
    * Reveal and scroll to a toolbox section. The diagnosis, reproduce and
    * locator-fix actions all route through this one callback, so a page passes it
-   * once rather than three identical scroll callbacks.
+   * once rather than three identical scroll callbacks. Resolves once the
+   * section's body is mounted.
    */
-  scrollToSection: (key: 'diagnosis' | 'reproduce' | 'locator-fix') => void;
+  scrollToSection: (key: ToolboxSectionKey) => void | Promise<void>;
+  /** Open a toolbox section without scrolling; resolves once its body is mounted. */
+  openSection: (key: ToolboxSectionKey) => void | Promise<void>;
   /** Select the Attempts evidence tab. */
   selectAttemptsTab: () => void;
   /** Set the cluster's triage status. */
@@ -92,6 +98,24 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
   const { copyPrompt } = useCopyAiPrompt();
   const { copy: copyPlain } = useCopy();
   const { openInIde } = useOpenInIde();
+  const toast = useToast();
+
+  /**
+   * Run an action on the locator healing panel. A folded section renders no body,
+   * so the Locator fix section opens first (and scrolls into view with `scroll`);
+   * with no panel on the page, an error toast says so.
+   */
+  async function onLocatorPanel(act: (panel: LocatorPanelActions) => void, scroll: boolean) {
+    await (scroll ? handlers.scrollToSection('locator-fix') : handlers.openSection('locator-fix'));
+    const panel = handlers.locatorPanel();
+    if (panel) act(panel);
+    else
+      toast.add({
+        title: 'Locator fix not available',
+        description: 'This page has no Locator fix section to act on.',
+        color: 'error',
+      });
+  }
 
   async function handle(action: string, payload?: Record<string, unknown>) {
     switch (action) {
@@ -109,18 +133,16 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
         await handlers.setClusterStatus('open');
         break;
       case 'copy-patch':
-        handlers.locatorPanel()?.copyPatch();
+        await onLocatorPanel((panel) => panel.copyPatch(), false);
         break;
       case 'copy-locator':
-        handlers.locatorPanel()?.copyRecommendedLocator();
+        await onLocatorPanel((panel) => panel.copyRecommendedLocator(), false);
         break;
       case 'pick-from-snapshot':
-        handlers.scrollToSection('locator-fix');
-        handlers.locatorPanel()?.openPicker();
+        await onLocatorPanel((panel) => panel.openPicker(), true);
         break;
       case 'all-alternatives':
-        handlers.scrollToSection('locator-fix');
-        handlers.locatorPanel()?.expandAlternatives();
+        await onLocatorPanel((panel) => panel.expandAlternatives(), true);
         break;
       case 'copy-git-apply': {
         const patch = handlers.fixPlanPatch();
@@ -147,10 +169,10 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
       }
       case 'read-diagnosis':
       case 'diagnose':
-        handlers.scrollToSection('diagnosis');
+        await handlers.scrollToSection('diagnosis');
         break;
       case 'reproduce':
-        handlers.scrollToSection('reproduce');
+        await handlers.scrollToSection('reproduce');
         break;
       case 'attempts-tab':
         handlers.selectAttemptsTab();

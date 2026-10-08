@@ -95,22 +95,24 @@ const vTitleFromText = {
 
 const rootEl = ref<HTMLElement | null>(null);
 
-/** Open a section (a next-step action reveals then scrolls to it). */
-function openSection(key: FixSectionKey) {
+/**
+ * Open a section. Resolves once its body is mounted, so a caller can then act on
+ * a panel the section renders.
+ */
+async function openSection(key: FixSectionKey): Promise<void> {
   openKey.value = key;
+  await nextTick();
 }
 
-/** Open a section and scroll it into view — the target of a next-step action. */
-function scrollToSection(key: FixSectionKey) {
-  openSection(key);
-  nextTick(() => {
-    rootEl.value
-      ?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+/** Open a section and scroll it into view; resolves once its body is mounted. */
+async function scrollToSection(key: FixSectionKey): Promise<void> {
+  await openSection(key);
+  rootEl.value
+    ?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-defineExpose({ scrollToSection });
+defineExpose({ openSection, scrollToSection });
 </script>
 
 <template>

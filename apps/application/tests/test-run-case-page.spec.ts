@@ -454,6 +454,56 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.locator('[data-shot="fix-locator-fix"] [aria-expanded="true"]')).toBeVisible();
   });
 
+  test('the replace-locator actions open a folded Locator fix section before acting on its panel', async ({
+    page,
+    request,
+    context,
+  }) => {
+    // A seeded execution whose next step replaces the locator with a line edit;
+    // which id that is differs between databases, so probe.
+    let target: { id: number; diff: string } | null = null;
+    for (const id of [87, 533]) {
+      const res = await request.get(`/api/test-run-cases/${id}`);
+      if (!res.ok()) continue;
+      const detail = (await res.json()) as { nextStep?: { kind: string } | null };
+      if (detail.nextStep?.kind !== 'replace-locator') continue;
+      const healing = (await (await request.get(`/api/test-run-cases/${id}/locator-healing`)).json()) as {
+        edit?: { unifiedDiff?: string } | null;
+      };
+      if (healing.edit?.unifiedDiff) {
+        target = { id, diff: healing.edit.unifiedDiff };
+        break;
+      }
+    }
+    test.skip(target == null, 'no seeded replace-locator execution with an edit');
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(`/test-run-cases/${target!.id}`);
+    await waitForHydration(page);
+
+    // Folding the section unmounts the panel the actions drive.
+    const section = page.locator('[data-shot="fix-locator-fix"] button[aria-expanded]').first();
+    const fold = async () => {
+      if ((await section.getAttribute('aria-expanded')) === 'true') await section.click();
+      await expect(section).toHaveAttribute('aria-expanded', 'false');
+    };
+    const next = page.locator('[data-shot="next-step"]');
+
+    // Pick from snapshot opens the section, then the picker.
+    await fold();
+    await next.getByRole('button', { name: 'More next-step actions' }).click();
+    await page.getByRole('menuitem', { name: 'Pick from snapshot' }).click();
+    const picker = page.getByRole('dialog').filter({ hasText: 'Pick a locator from the DOM snapshot' });
+    await expect(picker).toBeVisible();
+    await expect(section).toHaveAttribute('aria-expanded', 'true');
+    await picker.getByRole('button', { name: 'Cancel' }).click();
+    await expect(picker).toHaveCount(0);
+
+    // Copy patch copies the healing edit's diff.
+    await fold();
+    await next.getByRole('button', { name: 'Copy patch' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(target!.diff);
+  });
+
   test('#682 proposes reproducing locally and opens the Reproduce section, run line first', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/test-run-cases/682')).ok()), 'no #682');
     await page.goto('/test-run-cases/682');

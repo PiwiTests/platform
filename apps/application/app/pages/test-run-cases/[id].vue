@@ -615,7 +615,10 @@ const evidenceTabs = ref<{
   revealSection: (id: string) => boolean;
   selectTab: (t: string) => void;
 } | null>(null);
-const toolbox = ref<{ scrollToSection: (k: FixSectionKey) => void } | null>(null);
+const toolbox = ref<{
+  openSection: (k: FixSectionKey) => Promise<void>;
+  scrollToSection: (k: FixSectionKey) => Promise<void>;
+} | null>(null);
 
 function scrollToEl(el: HTMLElement | null) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -651,6 +654,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
   reproRecipe: () => reproduceData.value?.reproduce ?? null,
   diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
   scrollToSection: (k) => toolbox.value?.scrollToSection(k),
+  openSection: (k) => toolbox.value?.openSection(k),
   selectAttemptsTab: () => {
     evidenceTabs.value?.selectTab('attempts');
     nextTick(() => scrollToEl(evidenceEl.value));

@@ -143,6 +143,22 @@ test.describe('Failure cluster page layout', () => {
     await expect(page.getByRole('heading', { name: 'What changed' })).toHaveCount(0);
   });
 
+  test('More actions › Copy prompt copies with the Diagnosis section folded', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    // A folded section renders no body, so its diagnosis panel is not mounted.
+    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Copy prompt' }).click();
+    await expect(page.getByText('AI prompt copied', { exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('REQUEST');
+  });
+
   test('selecting an affected test offers "Move to a new cluster"', async ({ page }) => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
