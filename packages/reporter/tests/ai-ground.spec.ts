@@ -25,7 +25,7 @@ beforeAll(async () => {
   } catch {
     browser = null;
   }
-});
+}, 60_000);
 
 afterAll(async () => {
   await browser?.close();
@@ -53,14 +53,20 @@ describe('chainToStructured', () => {
     });
   });
 
-  it('refuses positions, filters and regexes', () => {
+  it('refuses positions, filters, CSS selectors and regexes', () => {
     for (const expr of [
       "getByRole('button', { name: 'Save' }).first()",
+      "locator('#mui-1234').getByRole('button', { name: 'Save' })",
       "getByRole('listitem').filter({ hasText: 'Pears' }).getByRole('button')",
       'getByText(/save/i)',
     ]) {
       expect(chainToStructured(parseLocatorChain(expr).calls)).toBeNull();
     }
+  });
+
+  it('keeps a test id verbatim, even when it contains a param value', () => {
+    const chain = parseLocatorChain("getByTestId('nickname')");
+    expect(chainToStructured(chain.calls, { name: 'nick' })).toEqual({ method: 'getByTestId', args: ['nickname'] });
   });
 });
 
@@ -99,7 +105,11 @@ describe('groundElement', () => {
   it('masks a param value in the grounded locator', async (ctx) => {
     if (!browser) return ctx.skip();
     const { page, refs } = await pageWithRefs(/heading "Welcome, Ada"/);
-    const compiled = await groundElement(page, { role: 'heading', name: 'Welcome, {{name}}', ref: refs[0] }, { name: 'Ada' });
+    const compiled = await groundElement(
+      page,
+      { role: 'heading', name: 'Welcome, {{name}}', ref: refs[0] },
+      { name: 'Ada' },
+    );
     expect(JSON.stringify(compiled?.locator)).toContain('{{name}}');
     await page.close();
   });
@@ -111,6 +121,14 @@ describe('groundElement', () => {
     expect((await groundElement(page, { role: 'button', name: 'Remove', ref: 'e999' }, {}))?.locator).toEqual(byRole);
     expect((await groundElement(page, { role: 'button', name: 'Remove', ref: refs[1] }, {}))?.locator).toEqual(byRole);
     expect(await groundElement(page, { role: 'textbox', ref: 'e999' }, {})).toBeNull();
+    await page.close();
+  });
+
+  it('keeps the role + name locator when it does not match the referenced element at all', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const { page, refs } = await pageWithRefs(/button "Save"/);
+    const compiled = await groundElement(page, { role: 'button', name: 'Remove', ref: refs[1] }, {});
+    expect(compiled?.locator).toEqual({ method: 'getByRole', args: ['button', { name: 'Remove' }] });
     await page.close();
   });
 });

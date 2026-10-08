@@ -77,7 +77,7 @@ function wildcard(pattern: string): RegExp {
 /**
  * The projects the run selects, and, unless `--no-deps` is given, the projects
  * they depend on. The selection is Playwright's own `filteredProjects` when it
- * is given (Playwright 1.64+), matched by identity or by name. Otherwise it is
+ * is given (Playwright 1.64+), matched by identity or, for a named project, by name. Otherwise it is
  * read off the command line: the projects `--project` names (case-insensitive,
  * `*` as a wildcard), or every project when `--project` is absent.
  */
@@ -88,8 +88,8 @@ export function selectedProjects<T extends ProjectLike>(
 ): T[] {
   let chosen: Set<T>;
   if (Array.isArray(filtered)) {
-    const names = new Set(filtered.map((p) => p.name ?? ''));
-    chosen = new Set(projects.filter((p) => filtered.includes(p) || names.has(p.name ?? '')));
+    const names = new Set(filtered.map((p) => p.name).filter(Boolean));
+    chosen = new Set(projects.filter((p) => filtered.includes(p) || (!!p.name && names.has(p.name))));
   } else {
     const names = cliProjectNames(argv);
     if (!names || names.length === 0) return projects;

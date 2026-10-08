@@ -66,12 +66,17 @@ describe('which projects the run selects', () => {
     const chromium = { name: 'chromium', dependencies: ['setup'] };
     const slow = { name: 'slow' };
     const projects = [setup, chromium, slow];
-    const names = (argv: string[], filtered: object[]) =>
-      selectedProjects(projects, argv, filtered).map((p) => p.name);
+    const names = (argv: string[], filtered: object[]) => selectedProjects(projects, argv, filtered).map((p) => p.name);
     expect(names([...PW], [chromium])).toEqual(['setup', 'chromium']);
     expect(names([...PW, '--no-deps'], [chromium])).toEqual(['chromium']);
     expect(names([...PW, '--project=chromium'], [{ name: 'slow' }])).toEqual(['slow']);
     expect(names([...PW], [])).toEqual([]);
+  });
+
+  it('matches an unnamed project in filteredProjects by identity only', () => {
+    const selected = {};
+    const other = { default: false };
+    expect(selectedProjects([selected, other], PW, [selected])).toEqual([selected]);
   });
 });
 

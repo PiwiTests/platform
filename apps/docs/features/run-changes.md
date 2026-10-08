@@ -56,8 +56,8 @@ A test that fails only after another one depends on the order, and a suite run i
 same neighbor every time, which leaves the flaky test's [**Before** suspect](./flaky-tests#suspects) nothing to
 compare. Playwright 1.64's `--shuffle` schedules test files, and the tests of files in parallel mode, in a random
 order, and the run keeps its seed: the run's **Details** shows it as **Order**, and clicking the seed copies
-`--shuffle <seed>`, which runs the same tests on the same workers in the same order again. Against a baseline run in
-another order, the Changes tab lists the **Test order** under Environment changes.
+`--shuffle <seed>`, which runs the same tests on the same workers in the same order again. Against a baseline that was
+not shuffled, or the other way round, the Changes tab lists the **Test order** under Environment changes.
 
 ## Related
 

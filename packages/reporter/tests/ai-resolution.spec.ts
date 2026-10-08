@@ -49,7 +49,12 @@ function scripted(responses: StepResolutionResponse[]): { resolver: StepResolver
     resolver: {
       async resolveStep(request) {
         requests.push(request);
-        return responses[i++] ?? { done: true, postcondition: { assert: 'visible', element: { role: 'heading', name: 'x' } } };
+        return (
+          responses[i++] ?? {
+            done: true,
+            postcondition: { assert: 'visible', element: { role: 'heading', name: 'x' } },
+          }
+        );
       },
     },
   };
@@ -295,6 +300,13 @@ describe('readMaskedSnapshot', () => {
     const snapshot = await readMaskedSnapshot(page, { email: 'alice@example.com' });
     expect(snapshot).toBe('- textbox "{{email}}"');
   });
+
+  it('leaves the [ref=…] markers intact when a param value appears in one', async () => {
+    const page = {
+      locator: () => ({ ariaSnapshot: async () => '- button "Add 1" [ref=e12]' }),
+    } as unknown as Page;
+    expect(await readMaskedSnapshot(page, { qty: '1' })).toBe('- button "Add {{qty}}" [ref=e12]');
+  });
 });
 
 describe('ServerStepResolver', () => {
@@ -306,7 +318,13 @@ describe('ServerStepResolver', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       const resolver = new ServerStepResolver('https://dash.example/', 'pd_key');
-      const res = await resolver.resolveStep({ kind: 'locator', template: 'x', paramNames: [], ariaSnapshot: '', history: [] });
+      const res = await resolver.resolveStep({
+        kind: 'locator',
+        template: 'x',
+        paramNames: [],
+        ariaSnapshot: '',
+        history: [],
+      });
       expect(res.element).toEqual({ role: 'button', name: 'Go' });
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe('https://dash.example/api/ai/step-resolution');

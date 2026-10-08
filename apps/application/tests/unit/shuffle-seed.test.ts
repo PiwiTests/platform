@@ -14,9 +14,11 @@ test('no seed, so no copyable command, when the seed is not a plain token', () =
   expect(readShuffleSeed(shuffled('1; rm -rf ~'))).toBeNull();
   expect(readShuffleSeed(shuffled('$(id)'))).toBeNull();
   expect(readShuffleSeed(shuffled('x'.repeat(65)))).toBeNull();
+  expect(readShuffleSeed(shuffled('-42'))).toBeNull();
+  expect(readShuffleSeed(shuffled(Number.NaN))).toBeNull();
 });
 
-test('the test order shows in the environment diff only when it changed', () => {
+test('the test order shows in the environment diff only when one run was shuffled and the other not', () => {
   expect(describeTestOrder(shuffled('7'))).toBe('Shuffled, seed 7');
   expect(describeTestOrder({})).toBe('Declared order');
 
@@ -30,5 +32,6 @@ test('the test order shows in the environment diff only when it changed', () => 
     before: 'Declared order',
     after: 'Shuffled, seed 7',
   });
-  expect(order(shuffled('7'), shuffled('8'))?.after).toBe('Shuffled, seed 8');
+  expect(order(shuffled('7'), {})?.after).toBe('Declared order');
+  expect(order(shuffled('7'), shuffled('8'))).toBeUndefined();
 });

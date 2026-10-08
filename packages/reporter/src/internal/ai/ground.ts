@@ -3,10 +3,12 @@
  * role + name and copies its `[ref=…]` marker from the AI-mode ARIA snapshot;
  * the ref addresses the exact element it read (`page.getByRef`, Playwright 1.64+,
  * or the `aria-ref=` selector it wraps). The committed locator is the role + name
- * one when it matches that element alone, else Playwright's own `normalize()`
- * of the ref, when it is a chain of builder calls (`getByRole('dialog', { name:
- * 'Edit' }).getByRole('button', { name: 'Save' })`) that matches that element
- * alone. Without a ref that resolves, the role + name locator stands as compiled.
+ * one when it matches that element alone. When it matches that element among
+ * others, or the element has no name, the committed locator is Playwright's own
+ * `normalize()` of the ref, when that is a chain of semantic builder calls
+ * (`getByRole('dialog', { name: 'Edit' }).getByRole('button', { name: 'Save' })`)
+ * matching that element alone. Otherwise, and when the role + name does not match
+ * the referenced element at all, the role + name locator stands as compiled.
  */
 import type { Locator, Page } from '@playwright/test';
 import type { ElementFingerprint } from '@piwitests/core';
@@ -25,7 +27,8 @@ export interface GroundableElement {
   ref?: string;
 }
 
-const LOCATOR_METHOD_SET = new Set(LOCATOR_METHODS);
+/** The builders a grounded chain may use: every allowlisted one but the CSS/XPath `locator()`. */
+const GROUNDED_METHODS = new Set(LOCATOR_METHODS.filter((method) => method !== 'locator'));
 
 /** The element an aria ref names, or null when it names no single element on the page. */
 export async function refLocator(page: Page, ref: string): Promise<Locator | null> {
@@ -48,18 +51,30 @@ async function matchesOnly(candidate: Locator, target: Locator): Promise<boolean
   }
 }
 
-/** A parsed argument as artifact data, param values masked; undefined for a regex or a nested locator. */
-function plainArg(arg: ChainArg, params: ParamValues): LocatorArg | undefined {
+/** Whether `candidate` matches, among others or alone, the element `target` names. */
+async function includes(candidate: Locator, target: Locator): Promise<boolean> {
+  try {
+    return (await candidate.and(target).count()) === 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A parsed argument as artifact data, param values masked unless `mask` is
+ * false; undefined for a regex or a nested locator.
+ */
+function plainArg(arg: ChainArg, params: ParamValues, mask = true): LocatorArg | undefined {
   switch (arg.type) {
     case 'string':
-      return maskValues(arg.value, params);
+      return mask ? maskValues(arg.value, params) : arg.value;
     case 'number':
     case 'boolean':
       return arg.value;
     case 'object': {
       const out: Record<string, LocatorArg> = {};
       for (const [key, value] of arg.entries) {
-        const plain = plainArg(value, params);
+        const plain = plainArg(value, params, mask);
         if (plain === undefined) return undefined;
         out[key] = plain;
       }
@@ -72,16 +87,17 @@ function plainArg(arg: ChainArg, params: ParamValues): LocatorArg | undefined {
 
 /**
  * A parsed locator chain as a structured locator, or null when a call is not
- * an allowlisted builder (`first()`, `nth()`, `filter()`) or carries an
- * argument the artifact cannot hold.
+ * a semantic builder (`first()`, `nth()`, `filter()`, a CSS `locator()`) or
+ * carries an argument the artifact cannot hold. A test id is kept verbatim: it
+ * is an identifier, not text a param value shows up in.
  */
 export function chainToStructured(calls: LocatorCall[], params: ParamValues = {}): StructuredLocator | null {
   const links: StructuredLocator[] = [];
   for (const call of calls) {
-    if (!LOCATOR_METHOD_SET.has(call.method)) return null;
+    if (!GROUNDED_METHODS.has(call.method)) return null;
     const args: LocatorArg[] = [];
     for (const arg of call.args) {
-      const plain = plainArg(arg, params);
+      const plain = plainArg(arg, params, call.method !== 'getByTestId');
       if (plain === undefined) return null;
       args.push(plain);
     }
@@ -120,10 +136,15 @@ export async function groundElement(
   });
   const target = element.ref ? await refLocator(page, element.ref) : null;
   if (!target) return compiled;
-  if (compiled && (await matchesOnly(buildLocator(page, compiled.locator, params), target))) return compiled;
+  if (compiled) {
+    const byName = buildLocator(page, compiled.locator, params);
+    if (await matchesOnly(byName, target)) return compiled;
+    if (!(await includes(byName, target))) return compiled;
+  }
 
   const normalized = await normalizedLocator(target, params);
   if (!normalized || !(await matchesOnly(buildLocator(page, normalized, params), target))) return compiled;
   const fingerprint: ElementFingerprint = compiled?.fingerprint ?? { role: element.role, name: element.name ?? null };
+  if (!compiled && element.level != null) fingerprint.level = element.level;
   return { locator: normalized, fingerprint, score: compiled?.score ?? 0 };
 }

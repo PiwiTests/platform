@@ -134,9 +134,17 @@ async function buildPostcondition(
 /** How a resolution reads the page snapshot — injectable so tests need no browser. */
 export type SnapshotReader = (page: Page, params: ParamValues) => Promise<string>;
 
+/**
+ * Reads the AI-mode snapshot with param values masked out of everything but its
+ * `[ref=…]` markers, which name elements and must reach the model intact.
+ */
 export const readMaskedSnapshot: SnapshotReader = async (page, params) => {
   const raw = await ariaSnapshotBestEffort(page.locator('body'));
-  return raw ? maskValues(raw, params) : '';
+  if (!raw) return '';
+  return raw
+    .split(/(\[ref=\w+\])/)
+    .map((part, i) => (i % 2 === 1 ? part : maskValues(part, params)))
+    .join('');
 };
 
 /**
