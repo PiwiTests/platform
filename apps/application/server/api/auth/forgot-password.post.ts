@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
-import { users } from '../../database/schema';
+import { findUserByEmail } from '#shared/handlers/users';
 import { mintAccountToken } from '../../utils/account-tokens';
 import { isEmailConfigured, sendEmail, renderPasswordResetEmail } from '../../utils/email';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
@@ -32,8 +31,7 @@ export default eventHandler(async (event) => {
 
   const { email } = parsed.data;
   const db = await getDatabase();
-  const userRows = await db.select().from(users).where(eq(users.email, email));
-  const user = userRows[0];
+  const user = await findUserByEmail(db, email);
 
   // Silently no-op for: user not found, OAuth-only accounts, or email not configured
   if (!user || !user.password || !isEmailConfigured()) {

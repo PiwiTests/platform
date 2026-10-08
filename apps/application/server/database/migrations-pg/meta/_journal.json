@@ -778,6 +778,20 @@
       "when": 1791279620600,
       "tag": "0110_backfill_run_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791458168299,
+      "tag": "0111_check_email_case_duplicates",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791458209737,
+      "tag": "0112_users_email_ignore_case",
+      "breakpoints": true
     }
   ]
 }

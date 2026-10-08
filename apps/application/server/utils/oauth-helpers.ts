@@ -123,6 +123,11 @@ export interface OAuthProfile {
   avatar: string;
 }
 
+/** Email addresses are compared ignoring case, as the `idx_users_email` unique index does. */
+function sameEmailAddress(a: string | null, b: string | null): boolean {
+  return a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
+}
+
 export type ProvisioningAction =
   | { kind: 'refresh'; userId: number; set: Record<string, unknown> }
   | { kind: 'link'; userId: number; set: Record<string, unknown> }
@@ -158,7 +163,7 @@ export function resolveProvisioningAction(
   if (identityMatch) {
     // The verified flag belongs to an address: a changed address carries only
     // the provider's verdict, never the one earned by the previous address.
-    const sameEmail = !email || email === identityMatch.email;
+    const sameEmail = !email || sameEmailAddress(email, identityMatch.email);
     return {
       kind: 'refresh',
       userId: identityMatch.id,
@@ -220,16 +225,21 @@ export type LinkAction = { kind: 'conflict' } | { kind: 'link'; set: Record<stri
  * Decide how to link a provider to an already-signed-in user. Refuses when the
  * provider identity already belongs to a different account; otherwise backfills
  * only the profile fields the user is missing (never overwriting their values).
+ * `emailOwner` is the account that owns the provider's email address, if any:
+ * an address another account owns stays with it, and the provider is linked
+ * without it.
  */
 export function resolveLinkAction(
   currentUser: OAuthUserRow,
   profile: OAuthProfile,
   identityTakenBy?: OAuthUserRow,
+  emailOwner?: OAuthUserRow,
 ): LinkAction {
   if (identityTakenBy && identityTakenBy.id !== currentUser.id) {
     return { kind: 'conflict' };
   }
 
+  const adoptEmail = !currentUser.email && (!emailOwner || emailOwner.id === currentUser.id);
   return {
     kind: 'link',
     set: {
@@ -237,8 +247,8 @@ export function resolveLinkAction(
       oauthProviderId: profile.providerId,
       avatarUrl: currentUser.avatarUrl ?? (profile.avatar || null),
       name: currentUser.name ?? (profile.name || null),
-      email: currentUser.email ?? (profile.email || null),
-      emailVerified: currentUser.email ? currentUser.emailVerified : profile.emailVerified,
+      email: adoptEmail ? profile.email || null : currentUser.email,
+      emailVerified: adoptEmail ? profile.emailVerified : currentUser.emailVerified,
     },
   };
 }
