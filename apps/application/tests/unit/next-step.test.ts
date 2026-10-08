@@ -69,6 +69,15 @@ describe('computeNextStep — one row per rule', () => {
   test('12: otherwise reproduce locally', () => {
     expect(step({}).kind).toBe('reproduce');
   });
+
+  // The policy does not see the clues, so the fallback steps say nothing about them.
+  test('11 and 12 make no claim about what is known', () => {
+    for (const s of [step({ aiConfigured: true }), step({})]) {
+      expect(`${s.title} ${s.why}`).not.toMatch(/nothing|conclusive|deterministic/i);
+    }
+    expect(step({ aiConfigured: true }).title).toBe('Diagnose with AI');
+    expect(step({}).title).toBe('Reproduce locally');
+  });
 });
 
 describe('computeNextStep — precedence between rows', () => {

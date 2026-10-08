@@ -53,12 +53,25 @@ describe('buildSituation — clause by clause', () => {
     expect(text.match(/a1b2c3d/g)?.length).toBe(1);
   });
 
-  test('the cluster clause names the cluster, its status and unassigned', () => {
-    expect(buildSituation(base()).text).toContain('cluster #1 (open, unassigned)');
+  test('the cluster clause names the cluster and its status, and no missing assignee', () => {
+    const text = buildSituation(base()).text;
+    expect(text).toContain('cluster #1 (open).');
+    expect(text).not.toContain('unassigned');
   });
 
-  test('an assignee replaces "unassigned"', () => {
+  test('an assignee is named only when one is set', () => {
     expect(buildSituation(base({ assignee: 'Avery' })).text).toContain('cluster #1 (open, assigned to Avery)');
+    expect(buildSituation(base({ assignee: '  ' })).text).toContain('cluster #1 (open).');
+  });
+
+  test('an assignee and the fixed-before fact share the parenthesis', () => {
+    const input = base({
+      assignee: 'Avery',
+      since: since({ fixedBefore: { commit: 'demo001', commitShort: 'demo001', runId: 3, at: null } }),
+    });
+    expect(buildSituation(input).text).toContain(
+      'cluster #1 (open, assigned to Avery; fixed once before, the fix did not hold).',
+    );
   });
 
   test('the fixed-before fact rides inside the cluster parenthesis', () => {
@@ -99,8 +112,22 @@ describe('buildSituation — whole examples', () => {
     });
     expect(buildSituation(input).text).toBe(
       'New regression — first failed in this run (1 day ago) on a1b2c3d by Alice Chen. ' +
-        'Same failure in 1 other test → cluster #1 (open, unassigned; fixed once before, the fix did not hold). ' +
+        'Same failure in 1 other test → cluster #1 (open; fixed once before, the fix did not hold). ' +
         'Owner @checkout-team.',
+    );
+  });
+
+  test('a clustered failure with an assignee, owned through CODEOWNERS', () => {
+    const input = base({
+      why: null,
+      since: since({ isFirstFailure: false, firstFailingRunId: 4 }),
+      cluster: { id: 2, name: 'pay button', otherTestsInRun: 0 },
+      owner: { name: '@payments', source: 'codeowners' },
+      assignee: 'Avery',
+    });
+    expect(buildSituation(input).text).toBe(
+      'Failing since run #4 (1 day ago) on a1b2c3d by Alice Chen. ' +
+        'In cluster #2 (open, assigned to Avery). Owner @payments.',
     );
   });
 

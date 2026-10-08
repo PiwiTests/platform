@@ -60,7 +60,13 @@ export interface FailureVerdict extends FailureDescription {
     /** How many other tests in this run share the cluster. */
     otherTestsInRun: number;
   } | null;
-  owner: { name: string; source: 'annotation' | 'codeowners' } | null;
+  owner: VerdictOwner | null;
+}
+
+/** Who owns a failing test, and where that came from. */
+export interface VerdictOwner {
+  name: string;
+  source: 'annotation' | 'codeowners';
 }
 
 /**
@@ -103,8 +109,8 @@ export interface FailureVerdictInput {
         fixLandedAt?: string | Date | null;
       })
     | null;
-  /** The test's `piwi:owner` annotation; CODEOWNERS is layered on by the server route. */
-  owner?: string | null;
+  /** The test's `piwi:owner` annotation, or an owner resolved elsewhere with its source. */
+  owner?: string | VerdictOwner | null;
 }
 
 /** Cluster error kinds that point at the environment rather than the test or the app. */
@@ -171,6 +177,10 @@ export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict 
     cluster: cluster
       ? { id: cluster.id, name: describeCluster(cluster), otherTestsInRun: Math.max(0, cluster.sameRunCaseCount - 1) }
       : null,
-    owner: input.owner ? { name: input.owner, source: 'annotation' } : null,
+    owner: !input.owner
+      ? null
+      : typeof input.owner === 'string'
+        ? { name: input.owner, source: 'annotation' }
+        : input.owner,
   };
 }

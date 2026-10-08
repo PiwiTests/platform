@@ -216,9 +216,15 @@ export async function getTestRunCase(
   // Custom wasted-wait patterns; null = the defaults are in effect, so the
   // stored wasted_time_ms (computed at ingest) is authoritative.
   wastedPatterns: readonly string[] | null = null,
-  // Server-only signals the next-step policy reads; the demo and MCP callers
-  // omit them.
-  opts: { aiConfigured?: boolean; ciRerunAvailable?: boolean; flakeLabCiAvailable?: boolean; now?: Date } = {},
+  // Server-only signals the next-step policy reads, and the owner of a spec file
+  // the repository's CODEOWNERS names; the demo and MCP callers omit them.
+  opts: {
+    aiConfigured?: boolean;
+    ciRerunAvailable?: boolean;
+    flakeLabCiAvailable?: boolean;
+    resolveOwner?: (filePath: string) => Promise<string | null>;
+    now?: Date;
+  } = {},
 ) {
   const [trc] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!trc) return null;
@@ -318,7 +324,7 @@ export async function getTestRunCase(
           summary: failureDiagnoses.summary,
         })
         .from(failureDiagnoses)
-        .where(eq(failureDiagnoses.clusterId, cluster.id));
+        .where(and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster')));
 
       // The cluster's issue, where its filings stand, and its own links, newest
       // first as the cluster page lists them: the execution's Details shows them
@@ -478,14 +484,18 @@ export async function getTestRunCase(
   const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
-  // cluster and owner — built from what is already loaded above. The owner
-  // here is the test's own annotation; the server route layers CODEOWNERS on.
+  // cluster and owner — built from what is already loaded above. The owner is
+  // the test's own annotation, else the one `resolveOwner` finds for its spec file.
   const scm = ((testRun?.metadata as RunMetadata | null)?.scm ?? null) as {
     commit?: string | null;
     branch?: string | null;
     author?: string | null;
     commitMessage?: string | null;
   } | null;
+  const codeOwner =
+    trc.error?.trim() && !testCase?.owner && testCase?.filePath && opts.resolveOwner
+      ? await opts.resolveOwner(testCase.filePath)
+      : null;
   const verdict = buildFailureVerdict({
     error: trc.error,
     steps: trc.steps,
@@ -496,7 +506,7 @@ export async function getTestRunCase(
     runId: trc.testRunId,
     scm,
     cluster: failureCluster ? { ...failureCluster, sampleError: null, filePath: testCase?.filePath ?? null } : null,
-    owner: testCase?.owner ?? null,
+    owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
   });
 
   // The situation sentence and the single next step — built from the verdict and

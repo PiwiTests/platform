@@ -34,7 +34,7 @@ export interface SituationInput {
   owner: FailureVerdict['owner'];
   /** The cluster's human triage status (`open` / `resolved` / `ignored`). */
   clusterStatus?: string | null;
-  /** The cluster's assignee, when one is set — overrides "unassigned". */
+  /** The cluster's assignee, named in the cluster clause when one is set. */
   assignee?: string | null;
   /** Fixed for tests; defaults to now. */
   now?: Date;
@@ -82,7 +82,7 @@ export function buildSituation(input: SituationInput): Situation {
   }
   push('text', '. ');
 
-  // Cluster — its status, assignee-or-unassigned, and the fixed-before fact.
+  // Cluster — its status, its assignee when one is set, and the fixed-before fact.
   if (input.cluster) {
     const others = input.cluster.otherTestsInRun;
     if (others > 0) {
@@ -95,9 +95,9 @@ export function buildSituation(input: SituationInput): Situation {
       href: `/failure-clusters/${input.cluster.id}`,
     });
     const status = input.clusterStatus?.trim() || 'open';
-    const assigneeText = input.assignee?.trim() ? `assigned to ${input.assignee.trim()}` : 'unassigned';
+    const assignee = input.assignee?.trim() ? `, assigned to ${input.assignee.trim()}` : '';
     const fixedBefore = since.fixedBefore ? '; fixed once before, the fix did not hold' : '';
-    push('text', ` (${status}, ${assigneeText}${fixedBefore}). `);
+    push('text', ` (${status}${assignee}${fixedBefore}). `);
   }
 
   // Owner — closes the sentence.

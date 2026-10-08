@@ -207,7 +207,7 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     const rel = relativeTimeAgo(cluster.lastSeenAt, now);
     t(`Still failing — last seen${rel ? ` ${rel}` : ''} in `);
     run(cluster.lastSeenRunId);
-    t(', open, unassigned.');
+    t('.');
     flakeEvidence();
     return done('failing', null);
   }

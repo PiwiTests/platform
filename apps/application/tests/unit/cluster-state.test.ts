@@ -25,11 +25,11 @@ function cluster(overrides: Partial<ClusterStateCluster> = {}): ClusterStateClus
 }
 
 describe('computeClusterState — one row per kind', () => {
-  test('failing: last seen in the latest run, open, unassigned', () => {
+  test('failing: last seen in the latest run, with no word on a missing assignee', () => {
     const s = computeClusterState(cluster({ lastSeenRunId: 62 }), PROJECT);
     expect(s.kind).toBe('failing');
-    expect(s.sentence).toContain('Still failing');
-    expect(s.sentence).toContain('run #62');
+    expect(s.sentence).toBe('Still failing — last seen 9 hours ago in run #62.');
+    expect(s.sentence).not.toContain('unassigned');
     expect(s.action).toBeNull();
   });
 

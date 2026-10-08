@@ -267,12 +267,12 @@ export function computeNextStep(input: NextStepInput): NextStep {
     };
   }
 
-  // 11 — AI is configured but nothing deterministic explains this yet.
+  // 11 — AI is configured and the cluster has no diagnosis yet.
   if (input.aiConfigured && !input.diagnosisCompleted) {
     return {
       kind: 'diagnose',
-      title: 'Diagnose with AI — nothing deterministic explains this yet',
-      why: 'No clue or healing result is conclusive; an AI diagnosis is the next lead.',
+      title: 'Diagnose with AI',
+      why: 'A diagnosis reads the clues, the evidence and the recent commits together and proposes a fix.',
       primary: { label: 'Diagnose with AI', action: 'diagnose', payload: withCluster ?? withExecution },
       secondary: [{ label: 'Reproduce locally', action: 'reproduce', payload: withExecution }],
     };
@@ -282,7 +282,7 @@ export function computeNextStep(input: NextStepInput): NextStep {
   return {
     kind: 'reproduce',
     title: 'Reproduce locally',
-    why: 'Nothing conclusive is known yet; reproduce it to gather more.',
+    why: 'Run it on the recorded commit and browser to watch it fail.',
     primary: { label: 'Copy recipe', action: 'copy-recipe', payload: withExecution },
     secondary: [
       { label: 'Copy AI prompt', action: 'copy-ai-prompt', payload: withExecution },
