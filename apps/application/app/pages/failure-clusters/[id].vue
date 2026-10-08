@@ -313,17 +313,22 @@ function refresh() {
 // Diagnosis first, then the locator fix, the verify command and the fix plan.
 // The Locator fix section applies only to a locator-resolution failure — the same
 // gate the execution page uses; a count mismatch or a value assertion has none.
-const hasLocatorPanel = computed(() =>
-  Boolean(clusterVerdict.value?.isLocatorResolutionFailure && affectedCases.value[0]?.recentTestRunsCaseId),
-);
+// It reads the latest occurrence, the execution the next step checked.
+const locatorCaseId = latestExecId.value;
+const hasLocatorPanel = computed(() => Boolean(clusterVerdict.value?.isLocatorResolutionFailure && locatorCaseId));
 
 // Hoist the healing fetch (shared with the panel by key) so the Locator fix
 // section appears only when there is something to show, and never when healing
-// is hidden for this project.
-const locatorCaseId = affectedCases.value[0]?.recentTestRunsCaseId ?? null;
+// is hidden for this project. When the next step replaces the locator, the page
+// waits for the healing, so the section is in its first render.
+const healingLeads = nextStep.value?.kind === 'replace-locator';
 const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
   () => `/api/test-run-cases/${locatorCaseId}/locator-healing`,
-  { lazy: true, immediate: Boolean(locatorCaseId) && hasLocatorPanel.value, key: `locator-healing-${locatorCaseId}` },
+  {
+    lazy: !healingLeads,
+    immediate: Boolean(locatorCaseId) && (hasLocatorPanel.value || healingLeads),
+    key: `locator-healing-${locatorCaseId}`,
+  },
 );
 const clusterLocatorHasData = computed(() => {
   const h = clusterLocatorHealing.value;
@@ -799,7 +804,7 @@ const breadcrumbItems = computed(() => [
             <template #locator-fix>
               <LocatorHealingPanel
                 ref="clusterLocatorPanel"
-                :test-runs-case-id="affectedCases[0]!.recentTestRunsCaseId"
+                :test-runs-case-id="locatorCaseId!"
                 :affected-count="affectedCases.length"
                 :chrome="false"
               />
