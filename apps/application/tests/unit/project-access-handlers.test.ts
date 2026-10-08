@@ -370,6 +370,24 @@ describe('users', () => {
     expect((await listUserSummaries(db)).some((u) => u.username === 'kim')).toBe(false);
   });
 
+  test('an email another account uses, in any letter case, is a 409 that creates nobody', async () => {
+    await createUserAccount(
+      db,
+      { username: 'jordan', password: 'x', role: InstanceRole.MEMBER, email: 'jordan@example.com' },
+      1,
+    );
+    expect(
+      await refusal(
+        createUserAccount(
+          db,
+          { username: 'kim', password: 'x', role: InstanceRole.MEMBER, email: 'Jordan@Example.com' },
+          1,
+        ),
+      ),
+    ).toEqual({ statusCode: 409, message: 'Email already in use' });
+    expect((await listUserSummaries(db)).some((u) => u.username === 'kim')).toBe(false);
+  });
+
   describe('updateUserAccount', () => {
     const asAdmin = { userId: 1, access: ADMIN };
     const guard = { guardLastAdministrator: true };

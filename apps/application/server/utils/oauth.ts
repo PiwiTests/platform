@@ -2,9 +2,10 @@ import type { H3Event } from 'h3';
 import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
-import { eq, and, ne, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { InstanceRole } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { findUserByEmail } from '#shared/handlers/users';
 import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
@@ -412,7 +413,8 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  const emailMatch = await findEmailOwner(db, validEmailAddress(profile.email), identityMatch?.id);
+  const email = validEmailAddress(profile.email);
+  const emailMatch = email ? await findUserByEmail(db, email, identityMatch?.id) : undefined;
 
   const action = resolveProvisioningAction(profile, identityMatch, emailMatch);
 
@@ -469,29 +471,6 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB
   }
 }
 
-/**
- * The account, other than `exceptUserId`, whose email is `email` ignoring
- * case — the same rule `updateUserRecord` applies to keep one account per
- * address.
- */
-async function findEmailOwner(db: DrizzleDB, email: string, exceptUserId?: number): Promise<User | undefined> {
-  if (!email) {
-    return undefined;
-  }
-  const owners = await db
-    .select()
-    .from(users)
-    .where(
-      and(
-        sql`lower(${users.email}) = lower(${email})`,
-        exceptUserId === undefined ? undefined : ne(users.id, exceptUserId),
-      ),
-    )
-    .orderBy(users.id)
-    .limit(1);
-  return owners[0];
-}
-
 // ---------------------------------------------------------------------------
 // Link a provider identity to an already-signed-in user
 // ---------------------------------------------------------------------------
@@ -513,7 +492,8 @@ async function linkProviderToUser(userId: number, profile: OAuthProfile): Promis
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  const emailTakenBy = await findEmailOwner(db, validEmailAddress(profile.email), userId);
+  const email = validEmailAddress(profile.email);
+  const emailTakenBy = email ? await findUserByEmail(db, email, userId) : undefined;
 
   const action = resolveLinkAction(current, profile, identityTakenBy, emailTakenBy);
   if (action.kind === 'conflict') {

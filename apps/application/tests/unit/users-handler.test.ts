@@ -9,7 +9,8 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler module (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
-const { updateUserRecord, deleteUserRecord } = await import('../../shared/handlers/users');
+const { createUserRecord, deleteUserRecord, findUserByEmail, updateUserRecord } =
+  await import('../../shared/handlers/users');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -78,6 +79,49 @@ describe('updateUserRecord — email ownership', () => {
     await updateUserRecord(db as any, 2, { email: null });
     const updated = await updateUserRecord(db as any, 1, { email: null });
     expect(updated?.email).toBeNull();
+  });
+});
+
+describe('createUserRecord — email ownership', () => {
+  const account = (username: string, email: string | null) => ({ username, password: 'x', role: 'member', email });
+
+  test('refuses an address another account already uses, ignoring case', async () => {
+    await expect(createUserRecord(db as any, account('alice2', 'ALICE@example.com'))).rejects.toThrow(
+      'Email already in use',
+    );
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+  });
+
+  test('creates an account with a free address', async () => {
+    const created = await createUserRecord(db as any, account('bob', 'bob@example.com'));
+    expect(created).toMatchObject({ username: 'bob', email: 'bob@example.com', emailVerified: false });
+  });
+
+  test('creates any number of accounts without an email', async () => {
+    await createUserRecord(db as any, account('bob', null));
+    await createUserRecord(db as any, account('carol', null));
+    expect(await db.select().from(schema.users)).toHaveLength(3);
+  });
+});
+
+describe('findUserByEmail', () => {
+  test('finds the account ignoring case, except the one excluded', async () => {
+    expect((await findUserByEmail(db as any, 'Alice@EXAMPLE.com'))?.id).toBe(1);
+    expect(await findUserByEmail(db as any, 'alice@example.com', 1)).toBeUndefined();
+    expect(await findUserByEmail(db as any, 'nobody@example.com')).toBeUndefined();
+  });
+});
+
+describe('idx_users_email', () => {
+  test('refuses an address that differs from another account only in letter case', async () => {
+    const error = await db
+      .insert(schema.users)
+      .values({ id: 2, username: 'bob', password: 'x', role: 'user', email: 'ALICE@example.com' })
+      .then(
+        () => null,
+        (failure: Error) => failure,
+      );
+    expect(String(error?.cause)).toContain("UNIQUE constraint failed: index 'idx_users_email'");
   });
 });
 

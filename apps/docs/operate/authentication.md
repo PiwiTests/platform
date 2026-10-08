@@ -127,8 +127,13 @@ Signed-in users can link a provider explicitly from **Settings → Account → C
 ## User management
 
 Administrators manage accounts under **Settings → Users** (`/settings/users`). **Add user** creates one with a
-username, password, instance role and optional display name. Each row shows the user's instance role and the
+username, password, instance role and optional display name and email. Each row shows the user's instance role and the
 [groups](./project-access#groups) they belong to.
+
+An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
+account already uses is refused, and **Forgot password?** finds the account whatever the case typed. When an upgrade
+finds the same address on several accounts, differing only in case, the oldest account that verified it keeps it (the
+oldest account, when none did); the others are left without an email.
 
 ### Changing a role
 
