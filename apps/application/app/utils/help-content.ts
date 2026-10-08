@@ -685,7 +685,7 @@ export const HELP_TOPICS = {
   },
   'cluster.known-issue': {
     title: 'Known issue',
-    text: 'Every link pinned to this cluster. The newest Jira issue, or issue on a connected tracker, is the cluster’s known issue and travels with it wherever it is listed; earlier issues and other links, such as a GitHub issue or a pull request, stay listed here.',
+    text: 'Every link pinned to this cluster, also listed in the Details of each of its executions. The newest Jira issue, or issue on a connected tracker, is the cluster’s known issue and travels with it wherever it is listed; earlier issues and other links, such as a GitHub issue or a pull request, stay listed here.',
   },
   'cluster.scm': {
     title: 'What changed',

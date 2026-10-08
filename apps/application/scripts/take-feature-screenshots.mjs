@@ -3645,6 +3645,36 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'execution-details-links',
+    description:
+      "Failing execution's Details open below the facts line, scrolled to its links: by owner, then the cluster's, read-only",
+    tags: ['desktop'],
+    async prepare({ base, request }) {
+      await prepareJiraSceneConnection({ base, request });
+      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
+      if (!links.items?.some((l) => l.key === 'PROJ-131')) {
+        await request.post(`${base}/api/links`, {
+          data: {
+            entityType: 'failure_cluster',
+            entityId: 1,
+            url: 'http://127.0.0.1:9/browse/PROJ-131',
+            title: 'Pay button click times out',
+          },
+        });
+      }
+    },
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Details' }).first().click();
+      const details = page.getByTestId('execution-details');
+      await details.waitFor();
+      await details.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'execution-issue-line-untracked',
     description: 'Failing execution whose cluster has no issue: the Issue line offers to create or link one',
     tags: ['desktop'],

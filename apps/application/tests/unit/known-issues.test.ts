@@ -170,6 +170,13 @@ describe('the surfaces around an execution carry its cluster issue', () => {
       await db.update(schema.entityLinks).set({ metadata: null }).where(eq(schema.entityLinks.id, link!.id));
     }
   });
+
+  test("the execution detail carries its cluster's own links, newest first, for its Details", async () => {
+    const execution = (await getTestRunCase(db as never, 10)) as {
+      failureCluster: { links: Array<{ key: string | null; url: string }> } | null;
+    } | null;
+    expect(execution?.failureCluster?.links.map((l) => l.key)).toEqual(['PIWI-12', null]);
+  });
 });
 
 describe('clusterIssueFilings', () => {

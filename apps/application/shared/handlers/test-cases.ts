@@ -320,10 +320,13 @@ export async function getTestRunCase(
         .from(failureDiagnoses)
         .where(eq(failureDiagnoses.clusterId, cluster.id));
 
-      // The cluster's issue and where its filings stand.
-      const [knownIssues, filings] = await Promise.all([
+      // The cluster's issue, where its filings stand, and its own links, newest
+      // first as the cluster page lists them: the execution's Details shows them
+      // beside its own, read-only.
+      const [knownIssues, filings, clusterLinks] = await Promise.all([
         clusterKnownIssues(db, [cluster.id]),
         clusterIssueFilings(db, [cluster.id]),
+        db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, cluster.id)).orderBy(desc(entityLinks.id)),
       ]);
       const knownIssue = knownIssues.get(cluster.id) ?? null;
 
@@ -370,6 +373,7 @@ export async function getTestRunCase(
         failureGoesOn,
         issueFilingQueued: filings.queued.has(cluster.id),
         issueFilingFailure: filings.failures.get(cluster.id) ?? null,
+        links: clusterLinks,
       };
     }
   }

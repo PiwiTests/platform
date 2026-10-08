@@ -40,8 +40,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 
 ## The key travels
 
-A cluster's **known issue** is its most recently linked ticket; earlier ones stay among its links. Its key follows the
-failure everywhere:
+A cluster's **known issue** is its most recently linked ticket; earlier ones stay among its links, which an execution's
+*Details* also lists. Its key follows the failure everywhere:
 
 - the **Issue** line of the cluster and of a failing execution, the **inbox row** and the execution's row in the
   **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
