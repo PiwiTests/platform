@@ -395,8 +395,8 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: Dr
   const { provider, providerId, email, emailVerified } = profile;
 
   // Look up the two candidate accounts the decision depends on: one already
-  // linked to this provider identity, and (only for a verified email) one that
-  // owns this email address. Matching email on the dedicated `email` column —
+  // linked to this provider identity, and one that owns the provider's email
+  // address. Matching email on the dedicated `email` column —
   // not `username` — lets accounts created with a non-email username still link,
   // and keeps linking symmetric with the account/admin UIs and notifications.
   // `email` is unique ignoring case (`idx_users_email`), so at most one account matches.
@@ -407,7 +407,9 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: Dr
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  const emailMatch = !identityMatch && emailVerified && email ? await findUserByEmail(db, email) : undefined;
+  // With an identity match, the account holding the provider's address (which
+  // keeps it); without one, the account a verified address may link.
+  const emailMatch = email && (identityMatch || emailVerified) ? await findUserByEmail(db, email) : undefined;
 
   const action = resolveProvisioningAction(profile, identityMatch, emailMatch);
 

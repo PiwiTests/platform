@@ -41,7 +41,7 @@ export default eventHandler(async (event) => {
   const token = await mintAccountToken(db, user.id, 'reset');
   const { html, text } = renderPasswordResetEmail(token);
 
-  sendEmail({ to: email, subject: 'Reset your Piwi Dashboard password', html, text }).catch((e) =>
+  sendEmail({ to: user.email ?? email, subject: 'Reset your Piwi Dashboard password', html, text }).catch((e) =>
     console.error('[auth/forgot-password] Failed to send email:', e),
   );
 
