@@ -44,6 +44,22 @@ export interface PatchValidation {
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
+/**
+ * The patch validation stored on a diagnosis's details. An agent's diagnosis
+ * keeps it inside its suggested fix, Piwi's own diagnosis at the top of the
+ * details; the suggested fix's wins when both are present. `null` when neither
+ * holds an object with a string `status`.
+ */
+export function storedPatchValidation(details: unknown): PatchValidation | null {
+  const d = details as { suggestedFix?: { patchValidation?: unknown } | null; patchValidation?: unknown } | null;
+  for (const candidate of [d?.suggestedFix?.patchValidation, d?.patchValidation]) {
+    if (candidate && typeof candidate === 'object' && typeof (candidate as { status?: unknown }).status === 'string') {
+      return candidate as PatchValidation;
+    }
+  }
+  return null;
+}
+
 /** Strip a leading `a/` or `b/` diff prefix; leave other paths untouched. `/dev/null` → null. */
 export function stripAbPrefix(path: string | null | undefined): string | null {
   if (!path) return null;

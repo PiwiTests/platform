@@ -37,6 +37,7 @@ import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
+import { storedPatchValidation } from '#shared/patch';
 import type { BisectResult } from '@piwitests/core/bisect';
 import type { BisectedCommit } from '#shared/reproduce';
 
@@ -66,12 +67,11 @@ export async function getClusterPatchFacts(db: DrizzleDB, clusterId: number): Pr
     return { diagnosisCompleted: false, summary: null, patchFile: null, patchAppliesCleanly: false };
   }
   const details = (diag.details ?? null) as {
-    suggestedFix?: { patch?: unknown; file?: unknown; description?: unknown; patchValidation?: { status?: unknown } };
-    patchValidation?: { status?: unknown };
+    suggestedFix?: { patch?: unknown; file?: unknown; description?: unknown };
   } | null;
   const sf = details?.suggestedFix ?? null;
   const patch = typeof sf?.patch === 'string' ? sf.patch : null;
-  const validationStatus = sf?.patchValidation?.status ?? details?.patchValidation?.status ?? null;
+  const validationStatus = storedPatchValidation(details)?.status ?? null;
   return {
     diagnosisCompleted: true,
     summary: diag.summary ?? (typeof sf?.description === 'string' ? sf.description : null),

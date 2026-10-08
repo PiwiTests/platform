@@ -3,7 +3,7 @@ import type { FailureDiagnosis } from '~~/server/database/schema';
 import { formatRelativeTime } from '~/utils';
 import { DIAGNOSIS_SECTION_SHORT, isKnownSectionId } from '#shared/diagnosis-sections';
 import { escapeHtml } from '#shared/markdown-to-html';
-import type { PatchValidation } from '#shared/patch';
+import { storedPatchValidation, type PatchValidation } from '#shared/patch';
 import { diagnosisAuthorLabel, isAgentDiagnosis } from '#shared/agent-diagnosis';
 
 const props = defineProps<{
@@ -231,10 +231,7 @@ async function copyDiagnosis() {
   }
 }
 
-const patchValidation = computed<PatchValidation | null>(() => {
-  const v = details.value?.patchValidation;
-  return v && typeof v === 'object' ? (v as PatchValidation) : null;
-});
+const patchValidation = computed<PatchValidation | null>(() => storedPatchValidation(details.value));
 
 const categoryColors: Record<string, 'error' | 'warning' | 'info' | 'secondary' | 'neutral'> = {
   'app-bug': 'error',

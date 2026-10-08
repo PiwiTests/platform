@@ -10,6 +10,7 @@
  */
 import type { FailureDiagnosis } from '~~/server/database/schema';
 import { diagnosisAuthorLabel } from '#shared/agent-diagnosis';
+import { storedPatchValidation } from '#shared/patch';
 import { formatRelativeTime, prettyDateFormat } from '~/utils';
 
 const props = defineProps<{
@@ -124,8 +125,7 @@ const selected = computed(() => entries.value[selectedIndex.value] ?? null);
 
 /** Read the patch-validation status stored on a diagnosis, when present. */
 function patchStatus(d: FailureDiagnosis): string | null {
-  const det = d.details as { patchValidation?: { status?: string } } | null;
-  return det?.patchValidation?.status ?? null;
+  return storedPatchValidation(d.details)?.status ?? null;
 }
 
 /** One-line summary of what changed between a version and the one that superseded it. */

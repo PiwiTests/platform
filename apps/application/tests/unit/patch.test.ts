@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { parseUnifiedDiff, stripAbPrefix, validatePatch } from '#shared/patch';
+import { parseUnifiedDiff, storedPatchValidation, stripAbPrefix, validatePatch } from '#shared/patch';
 
 const SAMPLE = `--- a/src/foo.ts
 +++ b/src/foo.ts
@@ -109,5 +109,38 @@ describe('validatePatch', () => {
     const res = validatePatch(patch, { 'a.ts': 'x\n', 'b.ts': 'DIFFERENT\n' });
     expect(res.filesChecked).toBe(2);
     expect(res.status).toBe('stale-file');
+  });
+});
+
+describe('storedPatchValidation', () => {
+  const applies = { status: 'applies', filesChecked: 1, filesInPatch: 1, errors: [] };
+  const stale = { status: 'stale-file', filesChecked: 1, filesInPatch: 1, errors: ['a.ts: did not apply'] };
+
+  test("reads Piwi's diagnosis, which stores it at the top of the details", () => {
+    expect(storedPatchValidation({ patchValidation: applies, suggestedFix: { patch: SAMPLE } })).toEqual(applies);
+  });
+
+  test("reads an agent's diagnosis, which stores it inside the suggested fix", () => {
+    expect(storedPatchValidation({ suggestedFix: { patch: SAMPLE, patchValidation: stale } })).toEqual(stale);
+  });
+
+  test("prefers the suggested fix's when both are stored", () => {
+    expect(storedPatchValidation({ patchValidation: applies, suggestedFix: { patchValidation: stale } })).toEqual(
+      stale,
+    );
+  });
+
+  test('skips a malformed value for the other place', () => {
+    expect(storedPatchValidation({ patchValidation: applies, suggestedFix: { patchValidation: 'applies' } })).toEqual(
+      applies,
+    );
+  });
+
+  test('is null when nothing usable is stored', () => {
+    expect(storedPatchValidation(null)).toBeNull();
+    expect(storedPatchValidation('applies')).toBeNull();
+    expect(storedPatchValidation({ suggestedFix: { patch: SAMPLE } })).toBeNull();
+    expect(storedPatchValidation({ patchValidation: { status: 3 } })).toBeNull();
+    expect(storedPatchValidation({ suggestedFix: null, patchValidation: null })).toBeNull();
   });
 });

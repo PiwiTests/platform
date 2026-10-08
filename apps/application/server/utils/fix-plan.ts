@@ -21,7 +21,7 @@ import { failureClusters, failureDiagnoses, testCases, testRunsCases } from '../
 import { getLocatorHealingBatch } from './locator-healing';
 import { findFixedBefore } from './cluster-memory';
 import { getClusterKnownIssue } from './integrations/known-issue';
-import { validatePatch, type PatchValidation } from '#shared/patch';
+import { storedPatchValidation, validatePatch } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
 import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
 import { computeReproduceContext } from '#shared/handlers/reproduce';
@@ -86,7 +86,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
 
   let diagnosis: FixPlan['diagnosis'] = null;
   if (diagnosisRow) {
-    const details = diagnosisRow.details as { suggestedFix?: { patch?: unknown; patchValidation?: unknown } } | null;
+    const details = diagnosisRow.details as { suggestedFix?: { patch?: unknown } } | null;
     const patch = typeof details?.suggestedFix?.patch === 'string' ? details.suggestedFix.patch : null;
     diagnosis = {
       id: diagnosisRow.id,
@@ -97,11 +97,9 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
       rootCause: diagnosisRow.rootCause,
       summary: diagnosisRow.summary,
       patch,
-      // Prefer the validation stored at diagnosis time; fall back to a
-      // structural re-parse so a plan always says whether the patch is usable.
-      patchValidation:
-        (details?.suggestedFix?.patchValidation as PatchValidation | undefined) ??
-        (patch ? validatePatch(patch, new Map()) : null),
+      // The validation stored at diagnosis time; with none stored, a structural
+      // re-parse, so a plan always says whether the patch is usable.
+      patchValidation: storedPatchValidation(details) ?? (patch ? validatePatch(patch, new Map()) : null),
     };
   }
 
