@@ -1,37 +1,47 @@
 /**
  * The per-project binding — how a project's failures reach a tracker: which
- * connection, which Jira project and issue type, the default labels and
+ * connection, which tracker project and issue type, the default labels and
  * assignee, the values for the fields the tracker requires, the include
- * toggles, the two-way sync policies, the owner routes that file a team's
- * failures into that team's project, and the auto-create fields (stored, but
- * nothing creates issues from them).
+ * toggles, the write-back policies and the runs they follow, the owner routes
+ * that file a team's failures into that team's project, and automatic creation.
  *
  * Pure + dependency-free, mirroring `shared/auto-heal.ts`: the code that reads
- * the binding and talks to Jira lives in `server/utils/integrations/`. The
- * settings endpoint stores a resolved object; `resolveProjectIntegration`
+ * the binding and talks to the tracker lives in `server/utils/integrations/`.
+ * The settings endpoint stores a resolved object; `resolveProjectIntegration`
  * clamps and normalizes an arbitrary (possibly untrusted) payload onto the
- * defaults so every reader sees the same shape.
+ * defaults so every reader sees the same shape. The rules behind automatic
+ * creation and the run scope live in `./automation`, the owner routes in
+ * `./owner-routes`.
  */
 import { toIssueLocale, type IssueLocale } from './messages';
 import type { IssueIncludeOptions } from './types';
 import { normalizeFieldValues, TRANSITION_SKIPPED_FIELDS, type FieldValues } from './fields';
+import {
+  ANY_RUN_SCOPE,
+  DEFAULT_AUTO_CREATE,
+  resolveAutoCreate,
+  resolveRunScope,
+  toNoteInterval,
+  type AutoCreatePolicy,
+  type NoteInterval,
+  type TrackerRunScope,
+} from './automation';
+import type { OwnerRoute } from './owner-routes';
 
-/** One owner → tracker route. The first route whose owner matches wins. */
-export interface OwnerRoute {
-  /** The owner string a route matches — `@acme/checkout`, `alice@example.com`. */
-  owner: string;
-  /** Override the binding's Jira project key for this owner. */
-  projectKey?: string | null;
-  /** A Jira component id to set on the issue. */
-  componentId?: string | null;
-  /** The account id to assign the issue to. */
-  assigneeAccountId?: string | null;
-  /** Extra labels added on top of the binding's labels. */
-  labels?: string[];
-}
+export { normalizeOwner, pickOwnerRoute, type OwnerRoute } from './owner-routes';
+export { DEFAULT_AUTO_CREATE, type AutoCreatePolicy, type AutoCreateRule } from './automation';
 
-/** The two-way sync policies — each a boolean off by default, plus the transitions and their field values. */
+/**
+ * The write-back policies — each off by default, plus the transitions and their
+ * field values, and the runs the run-driven ones follow.
+ */
 export interface ProjectIntegrationPolicies {
+  /**
+   * The runs whose verdicts write to the ticket: the fix, regression and
+   * still-failing comments, the transitions and the description updates. Every
+   * run when it names nothing.
+   */
+  scope: TrackerRunScope;
   /** Comment on the known issue when the cluster's fix is verified. */
   commentOnFix: boolean;
   /** Transition the issue on fix (to `fixTransitionId`). */
@@ -46,8 +56,20 @@ export interface ProjectIntegrationPolicies {
   reopenTransitionId: string | null;
   /** Values for the fields the reopen transition's screen asks for. */
   reopenTransitionFields: FieldValues;
-  /** At most one comment per day when new occurrences land on an open ticket. */
+  /** Comment when new occurrences land on an open ticket, at most once per `newOccurrencesEvery`. */
   commentOnNewOccurrences: boolean;
+  /** The window of the still-failing note: at most one per day, or per week. */
+  newOccurrencesEvery: NoteInterval;
+  /** New occurrences since the last note before another note is written. */
+  newOccurrencesMin: number;
+  /** Comment with the diagnosis when one completes for a tracked cluster (needs the diagnosis toggle). */
+  commentOnDiagnosis: boolean;
+  /**
+   * Rewrite the title and description of an issue Piwi filed when its facts
+   * change: new occurrences (once a day at most), a completed diagnosis. Never
+   * when the description was edited in the tracker.
+   */
+  updateDescription: boolean;
   /** Resolve the cluster automatically when its ticket moves to Done. */
   resolveOnClose: boolean;
   /** Reopen the cluster when its ticket is reopened while the cluster is resolved. */
@@ -60,27 +82,13 @@ export interface ProjectIntegrationPolicies {
   fileEveryBugReport: boolean;
 }
 
-/** The auto-create guards — stored so the form persists them; nothing acts on them. */
-export interface AutoCreatePolicy {
-  /** Master switch. Stored only: no trigger reads it, and the form renders it disabled. */
-  enabled: boolean;
-  /** Minimum distinct occurrences before a cluster qualifies. */
-  minOccurrences: number;
-  /** Minimum distinct runs the occurrences span. */
-  minRuns: number;
-  /** Cap on issues auto-created per project per day. */
-  dailyCap: number;
-  /** File clusters whose owner matches no route into the binding's default project. */
-  routeUnmatchedToDefault: boolean;
-}
-
 /** The resolved binding the settings endpoint stores and every reader sees. */
 export interface ResolvedProjectIntegration {
   /** The tracker connection this binding targets, or null when unbound. */
   connectionId: number | null;
-  /** The Jira project key issues are filed into. */
+  /** The tracker project key issues are filed into. */
   projectKey: string | null;
-  /** The Jira issue type id. */
+  /** The tracker issue type id. */
   issueType: string | null;
   /** Labels added to every issue filed under this binding. */
   labels: string[];
@@ -96,11 +104,11 @@ export interface ResolvedProjectIntegration {
   locale: IssueLocale | null;
   /** What a ticket body carries. */
   include: IssueIncludeOptions;
-  /** The two-way sync policies. */
+  /** The write-back policies. */
   policies: ProjectIntegrationPolicies;
   /** Owner → tracker routes, in priority order. */
   ownerRoutes: OwnerRoute[];
-  /** The auto-create guards (inert). */
+  /** Automatic creation: its rules and guards. */
   autoCreate: AutoCreatePolicy;
 }
 
@@ -112,6 +120,7 @@ export const DEFAULT_INCLUDE: IssueIncludeOptions = {
 };
 
 export const DEFAULT_POLICIES: ProjectIntegrationPolicies = {
+  scope: ANY_RUN_SCOPE,
   commentOnFix: false,
   transitionOnFix: false,
   fixTransitionId: null,
@@ -120,19 +129,15 @@ export const DEFAULT_POLICIES: ProjectIntegrationPolicies = {
   reopenTransitionId: null,
   reopenTransitionFields: {},
   commentOnNewOccurrences: false,
+  newOccurrencesEvery: 'day',
+  newOccurrencesMin: 1,
+  commentOnDiagnosis: false,
+  updateDescription: false,
   resolveOnClose: false,
   reopenOnTicketReopen: false,
   commentOnMerge: false,
   needsTicketAfterDays: 2,
   fileEveryBugReport: false,
-};
-
-export const DEFAULT_AUTO_CREATE: AutoCreatePolicy = {
-  enabled: false,
-  minOccurrences: 2,
-  minRuns: 2,
-  dailyCap: 5,
-  routeUnmatchedToDefault: false,
 };
 
 export const DEFAULT_PROJECT_INTEGRATION: ResolvedProjectIntegration = {
@@ -195,8 +200,9 @@ function resolveInclude(raw: unknown): IssueIncludeOptions {
 }
 
 function resolvePolicies(raw: unknown): ProjectIntegrationPolicies {
-  const r = (raw ?? {}) as Partial<ProjectIntegrationPolicies>;
+  const r = (raw ?? {}) as Partial<Record<keyof ProjectIntegrationPolicies, unknown>>;
   return {
+    scope: resolveRunScope(r.scope),
     commentOnFix: r.commentOnFix === true,
     transitionOnFix: r.transitionOnFix === true,
     fixTransitionId: trimOrNull(r.fixTransitionId, 100),
@@ -205,23 +211,15 @@ function resolvePolicies(raw: unknown): ProjectIntegrationPolicies {
     reopenTransitionId: trimOrNull(r.reopenTransitionId, 100),
     reopenTransitionFields: normalizeFieldValues(r.reopenTransitionFields, TRANSITION_SKIPPED_FIELDS),
     commentOnNewOccurrences: r.commentOnNewOccurrences === true,
+    newOccurrencesEvery: toNoteInterval(r.newOccurrencesEvery),
+    newOccurrencesMin: clampInt(r.newOccurrencesMin, 1, 1000, DEFAULT_POLICIES.newOccurrencesMin),
+    commentOnDiagnosis: r.commentOnDiagnosis === true,
+    updateDescription: r.updateDescription === true,
     resolveOnClose: r.resolveOnClose === true,
     reopenOnTicketReopen: r.reopenOnTicketReopen === true,
     commentOnMerge: r.commentOnMerge === true,
     needsTicketAfterDays: clampInt(r.needsTicketAfterDays, 0, 365, DEFAULT_POLICIES.needsTicketAfterDays),
     fileEveryBugReport: r.fileEveryBugReport === true,
-  };
-}
-
-function resolveAutoCreate(raw: unknown): AutoCreatePolicy {
-  const r = (raw ?? {}) as Partial<AutoCreatePolicy>;
-  return {
-    // No trigger reads this field to create anything; the form renders it disabled.
-    enabled: r.enabled === true,
-    minOccurrences: clampInt(r.minOccurrences, 1, 1000, DEFAULT_AUTO_CREATE.minOccurrences),
-    minRuns: clampInt(r.minRuns, 1, 1000, DEFAULT_AUTO_CREATE.minRuns),
-    dailyCap: clampInt(r.dailyCap, 0, 1000, DEFAULT_AUTO_CREATE.dailyCap),
-    routeUnmatchedToDefault: r.routeUnmatchedToDefault === true,
   };
 }
 
@@ -249,20 +247,4 @@ export function resolveProjectIntegration(
     ownerRoutes,
     autoCreate: resolveAutoCreate(input?.autoCreate),
   };
-}
-
-/**
- * The route for an owner: the first route whose owner matches, comparing
- * case-insensitively and ignoring a leading `@`. Returns null when no owner is
- * known or no route matches.
- */
-export function pickOwnerRoute(routes: OwnerRoute[], owner: string | null | undefined): OwnerRoute | null {
-  if (!owner) return null;
-  const target = normalizeOwner(owner);
-  return routes.find((route) => normalizeOwner(route.owner) === target) ?? null;
-}
-
-/** Lower-case, trimmed, leading `@` removed — the key owner strings match on. */
-export function normalizeOwner(owner: string): string {
-  return owner.trim().toLowerCase().replace(/^@/, '');
 }

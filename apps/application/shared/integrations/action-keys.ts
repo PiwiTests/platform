@@ -30,9 +30,24 @@ export function reopenTransitionKey(clusterId: number, runId: number): string {
   return `transition:failure_cluster:${clusterId}:reopen:r${runId}`;
 }
 
-/** One still-failing comment per cluster per day (`date` is `YYYY-MM-DD`). */
-export function occurrencesCommentKey(clusterId: number, date: string): string {
-  return `comment:failure_cluster:${clusterId}:occurrences:${date}`;
+/** One still-failing comment per cluster per note window (`2026-10-08` for a day, `2026-W41` for a week). */
+export function occurrencesCommentKey(clusterId: number, window: string): string {
+  return `comment:failure_cluster:${clusterId}:occurrences:${window}`;
+}
+
+/** One diagnosis comment per cluster per completed diagnosis (`completedAt`, epoch ms). */
+export function diagnosisCommentKey(clusterId: number, completedAt: number): string {
+  return `comment:failure_cluster:${clusterId}:diagnosis:${completedAt}`;
+}
+
+/** One description update per cluster and reason: `day:2026-10-08`, `diagnosis:<epoch ms>`. */
+export function updateIssueKey(clusterId: number, reason: string): string {
+  return `update-issue:failure_cluster:${clusterId}:${reason}`;
+}
+
+/** The daily description update's reason for a moment: its UTC date. */
+export function dailyUpdateReason(at: Date): string {
+  return `day:${at.toISOString().slice(0, 10)}`;
 }
 
 /** One merge comment per (cluster, other cluster) pair. */

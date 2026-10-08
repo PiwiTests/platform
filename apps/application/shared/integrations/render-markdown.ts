@@ -33,11 +33,6 @@ function renderInlines(inlines: Inline[]): string {
   return inlines.map(renderInline).join('');
 }
 
-/** A single label/value pair from a `facts` node, rendered as a table row. */
-function factValue(value: Inline[]): string {
-  return cell(renderInlines(value));
-}
-
 function renderNode(node: DocNode): string[] {
   switch (node.type) {
     case 'heading':
@@ -62,14 +57,10 @@ function renderNode(node: DocNode): string[] {
       ];
     }
     case 'facts': {
+      // One `- **Label:** value` line per fact.
       const rows = node.rows.filter(([, v]) => v.length > 0);
       if (!rows.length) return [];
-      return [
-        '|  |  |',
-        '| --- | --- |',
-        ...rows.map(([label, value]) => `| **${cell(label)}** | ${factValue(value)} |`),
-        '',
-      ];
+      return [...rows.map(([label, value]) => `- **${label}:** ${renderInlines(value).replace(/\n/g, ' ')}`), ''];
     }
     case 'rule':
       return ['---', ''];

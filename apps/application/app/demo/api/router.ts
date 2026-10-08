@@ -313,6 +313,7 @@ import {
   demoAssignable,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
+  demoAutoCreatePreview,
   generateDemoWebhookToken,
 } from './integrations';
 import type { ConnectionInput } from '#shared/integrations/types';
@@ -3067,6 +3068,19 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _q, ctx) => {
       assertDemoScope(ctx, +m[1]!);
       return saveDemoProjectIntegration((body ?? {}) as Partial<ResolvedProjectIntegration>);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/integrations\/auto-create-preview$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return demoAutoCreatePreview(
+        await getDemoDb(),
+        +m[1]!,
+        (body ?? null) as Partial<ResolvedProjectIntegration> | null,
+      );
     },
   },
 

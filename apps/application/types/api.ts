@@ -1081,6 +1081,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
     testCaseId: number;
     title: string;
     filePath: string;
+    /** The test's `piwi:owner` annotation, when it declares one. */
+    owner?: string | null;
     runCount: number;
     recentTestRunsCaseId: number;
     quarantined: boolean;

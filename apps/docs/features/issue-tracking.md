@@ -26,8 +26,8 @@ none of the entry points appear.
   *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). It is the primary action while the cluster has no ticket; once one
   exists, the chip shows the key and status and the action becomes *Open in Jira*.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
-  *What to do* (patch, locator replacement, verify command, reproduce steps) and *Links* back to Piwi. Every section
-  degrades independently.
+  *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
+  back to Piwi. Every section degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer, so
   a person or a JQL filter can find every Piwi-filed issue.
 - **Filing is deduped by cluster** — a second click or a duplicate event is a no-op — and before creating, the modal
@@ -64,12 +64,14 @@ write back as the cluster evolves:
 |---|---|
 | A cluster's **fix lands** (stopped failing or diagnosis verified) | Comments *Fix landed in run #N …*, and — with *transition on fix* — moves the issue. |
 | A cluster **regresses** | Comments *Regressed in run #N …*, and optionally reopens the issue. |
-| **New occurrences** on an open ticket | At most one comment a day: *Still failing — +N occurrences in M runs …*. |
+| **New occurrences** on an open ticket | At most one note a day or a week: *Still failing — +N occurrences in 3 runs …*, with what is new. |
 | A cluster is **merged** | With *comment on merge*, notes it on both issues; the survivor inherits the links. |
 | The **ticket moves to Done** | With *resolve on close*, resolves the cluster; otherwise its state line offers *Mark resolved — PROJ-123 is Done*. |
 | The **ticket is reopened** | With *reopen on ticket reopen*, reopens a resolved cluster with a note. |
 
-Every comment is written in the [ticket's language](#language). A Jira admin can also register an optional
+Every comment is written in the [ticket's language](#language), for the [runs that
+write](./issue-automation#the-runs-that-write); [Issue automation](./issue-automation) adds diagnosis comments and
+description updates. A Jira admin can also register an optional
 [inbound webhook](/operate/integrations#registering-the-inbound-webhook) so a close or reopen reflects immediately; it
 can only refresh a link, never create or transition. The failure inbox gains a **Needs ticket** queue — open clusters on
 the default branch, older than the binding's age (default 2 days), with no issue.
@@ -80,11 +82,10 @@ A Project admin or an administrator binds the project under **Project → Settin
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route and fills the rest from the defaults, so a team's failures
-reach that team's destination. The **automatic-creation** fields are greyed out: stored, but inert (see
-[Limits](#limits)).
+reach that team's destination. The rules that file issues on their own are [Issue automation](./issue-automation).
 
 <div class="doc-screenshot">
-  <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, sync-policy switches, an owner-routes table, and the greyed-out automatic-creation fields">
+  <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
 </div>
 
 ## Required Jira fields
@@ -140,10 +141,9 @@ French-configured site works unchanged.
 
 ## Limits
 
-- **Jira Cloud only** in this release (REST v3, email + API token); Server / Data Center, GitHub and GitLab Issues
-  follow as provider files.
-- **Creation stays manual** — Piwi files a ticket on a click, never on its own yet.
-- A ticket's body is a **snapshot** at creation; the policies add comments and status changes rather than editing it.
+- **Jira Cloud only** (REST v3, email + API token).
+- A ticket's body is a **snapshot** at creation, unless [description updates](./issue-automation#comments-and-description-updates)
+  are on for an issue Piwi filed.
 - The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates** that quote
   locators and Playwright terms, so they stay English even in a French ticket.
 - Attachments honor the [export size budget](/features/offline-export); the trace is never attached.

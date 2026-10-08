@@ -7,13 +7,16 @@
  *
  * The fields the tracker requires are checked first: the project's field
  * defaults and the request's own values fill them, and a create that would still
- * leave one empty is refused with the field names before Jira is called. A
- * request that failed before is replaced by the new one rather than replayed.
+ * leave one empty is refused with the field names before the tracker is called
+ * (an automatic create, with no person to tell, records the refusal as a failed
+ * action). A request that failed before is replaced by the new one rather than
+ * replayed.
  */
 import { eq } from 'drizzle-orm';
 import { failureClusters, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
-import { issueLabels } from '#shared/integrations/build-issue';
+import { DEFAULT_ISSUE_OPTS, issueLabels } from '#shared/integrations/build-issue';
+import type { AutomaticFiling } from '#shared/integrations/automation';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue } from './documents';
@@ -21,6 +24,7 @@ import { clusterShareTokenMinter } from './share-url';
 import {
   enqueueOrReplaceAction,
   findActionByKey,
+  recordRefusedAction,
   runActionNow,
   type CreateIssueActionPayload,
   type CreateIssueResult,
@@ -38,7 +42,7 @@ import type { IssueFieldProblem } from '#shared/integrations/types';
 import { readProjectIntegration } from './binding';
 import { pickOwnerRoute, type ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { createIssueKey } from '#shared/integrations/action-keys';
-import { getFailureCluster } from '#shared/handlers/failure-clusters';
+import { resolveClusterOwner } from './owner';
 import type { DraftEntityType } from './draft';
 
 export interface CreateIssueParams {
@@ -56,6 +60,8 @@ export interface CreateIssueParams {
   fields?: FieldValues;
   requestedBy?: number | null;
   siteUrl?: string | null;
+  /** Set when a rule files the issue: the body opens with what it counted. */
+  automatic?: AutomaticFiling | null;
 }
 
 export interface CreateIssueOutcome {
@@ -132,22 +138,19 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   const target = await resolveTarget(db, params.entityType, params.entityId);
   if (!target) return null;
 
-  const include = params.include ?? {};
+  const include = { ...DEFAULT_ISSUE_OPTS, ...(params.include ?? {}) };
   const locale = params.locale ?? DEFAULT_LOCALE;
+  const opts = {
+    ...include,
+    locale,
+    siteUrl: params.siteUrl,
+    mintShareToken: clusterShareTokenMinter(db),
+    automatic: params.automatic ?? null,
+  };
   const built =
     params.entityType === 'failure_cluster'
-      ? await buildClusterIssue(db, params.entityId, {
-          ...include,
-          locale,
-          siteUrl: params.siteUrl,
-          mintShareToken: clusterShareTokenMinter(db),
-        })
-      : await buildExecutionIssue(db, params.entityId, {
-          ...include,
-          locale,
-          siteUrl: params.siteUrl,
-          mintShareToken: clusterShareTokenMinter(db),
-        });
+      ? await buildClusterIssue(db, params.entityId, opts)
+      : await buildExecutionIssue(db, params.entityId, opts);
   if (!built) return null;
 
   const [cluster] = await db
@@ -160,8 +163,8 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
   // any labels the route adds; project key and assignee already ride in on the
   // prefilled request, so the route only fills what the request could not carry.
   const binding = await readProjectIntegration(db, target.projectId);
-  const clusterMeta = await getFailureCluster(db, target.clusterId).catch(() => null);
-  const route = pickOwnerRoute(binding.ownerRoutes, clusterMeta?.owner?.name ?? null);
+  const owner = await resolveClusterOwner(db, target.clusterId).catch(() => null);
+  const route = pickOwnerRoute(binding.ownerRoutes, owner);
 
   const labels = [...new Set([...(params.labels ?? built.labels), ...(route?.labels ?? []), ...standardLabels])];
 
@@ -175,6 +178,8 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     // shows on the cluster page and the inbox regardless of the entity clicked.
     linkEntityType: 'failure_cluster',
     linkEntityId: target.clusterId,
+    include,
+    shareUrl: built.shareUrl,
   });
 }
 
@@ -198,6 +203,8 @@ async function createBugReportIssue(db: DbClient, params: CreateIssueParams): Pr
     componentId: null,
     linkEntityType: 'bug_report',
     linkEntityId: params.entityId,
+    include: null,
+    shareUrl: null,
   });
 }
 
@@ -211,6 +218,8 @@ interface IssueToFile {
   componentId: string | null;
   linkEntityType: CreateIssueActionPayload['linkEntityType'];
   linkEntityId: number;
+  include: CreateIssueActionPayload['include'];
+  shareUrl: string | null;
 }
 
 /**
@@ -232,26 +241,8 @@ async function fileIssue(
     return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: issue.projectId };
   }
 
-  // Required fields: refuse before calling Jira when the defaults and the
-  // request still leave one empty, naming them.
   const values = mergeFieldValues(binding.fieldDefaults, params.fields);
   const screen = await screenFields(db, params.connectionId, params.projectKey, params.issueType);
-  if (screen) {
-    const missing = missingRequiredFields(screen, values, {
-      assignee: !!params.assignee,
-      components: !!issue.componentId,
-    });
-    if (missing.length) {
-      return {
-        actionId: null,
-        status: 'failed',
-        error: missingFieldsMessage(missing),
-        missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
-        projectId: issue.projectId,
-      };
-    }
-  }
-
   const payload: CreateIssueActionPayload = {
     projectKey: params.projectKey,
     issueType: params.issueType,
@@ -264,7 +255,42 @@ async function fileIssue(
     locale: params.locale ?? DEFAULT_LOCALE,
     linkEntityType: issue.linkEntityType,
     linkEntityId: issue.linkEntityId,
+    automatic: params.automatic ?? null,
+    include: issue.include,
+    shareUrl: issue.shareUrl,
   };
+
+  // Required fields: refuse before calling the tracker when the defaults and
+  // the request still leave one empty, naming them.
+  if (screen) {
+    const missing = missingRequiredFields(screen, values, {
+      assignee: !!params.assignee,
+      components: !!issue.componentId,
+    });
+    if (missing.length) {
+      const error = missingFieldsMessage(missing);
+      const refused = params.automatic
+        ? await recordRefusedAction(db, {
+            connectionId: params.connectionId,
+            projectId: issue.projectId,
+            kind: 'create-issue',
+            entityType: params.entityType,
+            entityId: params.entityId,
+            dedupeKey,
+            payload,
+            requestedBy: null,
+            error,
+          })
+        : null;
+      return {
+        actionId: refused?.id ?? null,
+        status: 'failed',
+        error,
+        missingFields: missing.map((f) => ({ id: f.id, name: f.name })),
+        projectId: issue.projectId,
+      };
+    }
+  }
 
   const action = await enqueueOrReplaceAction(db, {
     connectionId: params.connectionId,

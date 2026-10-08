@@ -7,7 +7,10 @@
  * A click enqueues an action and asks for one immediate attempt (`runActionNow`),
  * so the issue resolves in a single round-trip when Jira is up and degrades to a
  * background retry (`sweepIntegrationActions`, every minute) when it is not. A
- * successful `create-issue` writes the entity link and the result together.
+ * successful `create-issue` writes the entity link and the result together, and
+ * records on the link what Piwi wrote: an `update-issue` replaces the title and
+ * description only while they still read that way, so an edit made in the
+ * tracker is never overwritten.
  *
  * A refusal no retry can change — Jira answering that the request itself is
  * wrong (a missing required field, a project the account cannot see), or a
@@ -15,19 +18,26 @@
  * fails the action at once instead of retrying it for hours.
  */
 import { and, eq, inArray, lt, lte } from 'drizzle-orm';
-import { bugReports, integrationActions } from '../../database/schema';
+import { bugReports, entityLinks, integrationActions } from '../../database/schema';
 import { getStorage } from '../../storage';
 import { bugReportStorageDir } from '#shared/handlers/bug-reports';
 import { attachKey } from '#shared/integrations/action-keys';
 import type { DbClient } from '../../database';
 import type { IssueDocument } from '#shared/integrations/document';
 import type { IssueLocale } from '#shared/integrations/messages';
+import type { IssueIncludeOptions } from '#shared/integrations/types';
 import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
 import { createTracker } from './connections';
 import { JiraError } from './jira/client';
-import { writeCreatedIssueLink } from './entity-links';
+import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
+import {
+  descriptionDigest,
+  documentDigest,
+  type AutomaticFiling,
+  type WrittenIssueRecord,
+} from '#shared/integrations/automation';
 import {
   claimOutboxRows,
   nextAttempt,
@@ -61,6 +71,36 @@ export interface CreateIssueActionPayload {
   /** The entity the created known-issue link attaches to — normally the cluster. */
   linkEntityType: LinkEntityType;
   linkEntityId: number;
+  /** Set when a rule filed the issue: what it counted, kept on the link for the description updates. */
+  automatic?: AutomaticFiling | null;
+  /** What the body carries, kept on the link so a description update carries the same. */
+  include?: IssueIncludeOptions | null;
+  /** The share link the body carries, kept on the link so a description update reuses it. */
+  shareUrl?: string | null;
+}
+
+/** An update action's snapshot: the rebuilt title and description of an issue Piwi filed. */
+export interface UpdateIssueActionPayload {
+  issueKey: string;
+  /** The link that remembers what Piwi wrote. */
+  linkId: number;
+  /** The new title, or null to leave the title alone (a person chose it when filing). */
+  title: string | null;
+  document: IssueDocument;
+}
+
+/** The bookkeeping a tracker link keeps about the issue Piwi filed. */
+export interface FiledIssueMeta {
+  /** What Piwi last wrote; absent when Piwi did not file the issue or could not read it back. */
+  written?: WrittenIssueRecord | null;
+  /** Set once the description was found edited in the tracker: Piwi no longer replaces it. */
+  descriptionEdited?: boolean;
+  /** Set when a rule filed the issue. */
+  automatic?: AutomaticFiling | null;
+  /** The language, the include toggles and the share link the issue was filed with. */
+  locale?: IssueLocale | null;
+  include?: IssueIncludeOptions | null;
+  shareUrl?: string | null;
 }
 
 /** A comment action's snapshot — the rendered body, keyed to an issue. */
@@ -156,15 +196,16 @@ export async function findActionByKey(db: DbClient, dedupeKey: string): Promise<
 
 /**
  * Enqueue an action, or give an earlier one with the same dedupe key a new
- * payload when it has already failed: a person who changes the request after a
- * refusal (another issue type, a filled-in field) sends the new request, not
- * the one that was refused. An action that succeeded, that is queued and has
- * not been tried yet, or that an attempt holds (even one claimed while this
- * runs) is returned as it is.
+ * payload when it has already failed or was skipped: a person who changes the
+ * request after a refusal (another issue type, a filled-in field) sends the new
+ * request, not the one that was refused. An action that succeeded, that is
+ * queued and has not been tried yet, or that an attempt holds (even one claimed
+ * while this runs) is returned as it is.
  */
 export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput): Promise<IntegrationAction> {
   const action = await enqueueAction(db, input);
-  const failedBefore = action.status === 'failed' || (action.status === 'pending' && action.attempts > 0);
+  const failedBefore =
+    action.status === 'failed' || action.status === 'skipped' || (action.status === 'pending' && action.attempts > 0);
   if (!failedBefore) return action;
   const [replaced] = await db
     .update(integrationActions)
@@ -180,6 +221,52 @@ export async function enqueueOrReplaceAction(db: DbClient, input: EnqueueInput):
     .where(and(eq(integrationActions.id, action.id), eq(integrationActions.status, action.status)))
     .returning();
   return replaced ?? action;
+}
+
+/**
+ * Record a write Piwi did not send, for an action no person waits on (an
+ * automatic create): a `failed` row for a refusal (a required field left
+ * empty), a `skipped` one for a write left to a person (an issue already
+ * carries the failure), each with the reason the activity list shows. A failed
+ * or skipped row already under the key takes the new status, reason and
+ * payload; any other row under it is returned as it is.
+ */
+export async function recordRefusedAction(
+  db: DbClient,
+  input: EnqueueInput & { error: string; status?: 'failed' | 'skipped' },
+): Promise<IntegrationAction> {
+  const now = new Date();
+  const status = input.status ?? 'failed';
+  const existing = await findActionByKey(db, input.dedupeKey);
+  if (existing) {
+    if (existing.status !== 'failed' && existing.status !== 'skipped') return existing;
+    const [updated] = await db
+      .update(integrationActions)
+      .set({ status, error: input.error, payload: input.payload as never, finishedAt: now })
+      .where(eq(integrationActions.id, existing.id))
+      .returning();
+    return updated ?? existing;
+  }
+  const [row] = await db
+    .insert(integrationActions)
+    .values({
+      connectionId: input.connectionId,
+      projectId: input.projectId,
+      kind: input.kind,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      dedupeKey: input.dedupeKey,
+      status,
+      attempts: 0,
+      scheduledFor: now,
+      payload: input.payload as never,
+      requestedBy: input.requestedBy ?? null,
+      error: input.error,
+      finishedAt: now,
+    })
+    .onConflictDoNothing({ target: integrationActions.dedupeKey })
+    .returning();
+  return row ?? (await findActionByKey(db, input.dedupeKey))!;
 }
 
 /**
@@ -225,6 +312,24 @@ function retryAfterMs(err: unknown): number | null {
   return null;
 }
 
+/** What Piwi just wrote, read back from the tracker; null when the tracker cannot say. */
+async function readBackWritten(
+  tracker: IssueTracker,
+  key: string,
+  sourceTitle: string,
+  document: IssueDocument,
+): Promise<WrittenIssueRecord | null> {
+  if (!tracker.readIssueText) return null;
+  const text = await tracker.readIssueText(key).catch(() => null);
+  if (!text) return null;
+  return {
+    descriptionDigest: await descriptionDigest(text.description),
+    documentDigest: await documentDigest(document),
+    title: text.title,
+    sourceTitle,
+  };
+}
+
 /** Perform one create-issue against the tracker and record the link + result. */
 async function applyCreateIssue(
   db: DbClient,
@@ -248,6 +353,14 @@ async function applyCreateIssue(
   const enriched = (await tracker.getIssue(created.key).catch(() => null)) ?? created;
   const issue = { ...created, ...enriched, id: created.id ?? enriched.id };
   const result: CreateIssueResult = { key: issue.key, url: issue.url, issueId: issue.id };
+  const written = await readBackWritten(tracker, issue.key, payload.title, payload.document);
+  const metadata: FiledIssueMeta = {
+    ...(written ? { written } : {}),
+    ...(payload.automatic ? { automatic: payload.automatic } : {}),
+    ...(payload.locale ? { locale: payload.locale } : {}),
+    ...(payload.include ? { include: payload.include } : {}),
+    ...(payload.shareUrl ? { shareUrl: payload.shareUrl } : {}),
+  };
 
   await db.transaction(async (tx) => {
     await writeCreatedIssueLink(tx as unknown as DbClient, {
@@ -255,6 +368,7 @@ async function applyCreateIssue(
       entityId: payload.linkEntityId,
       connectionId: action.connectionId,
       createdBy: action.requestedBy ?? null,
+      metadata: Object.keys(metadata).length ? (metadata as Record<string, unknown>) : null,
       issue: {
         provider: tracker.provider,
         url: issue.url,
@@ -313,6 +427,59 @@ async function applyAttach(tracker: IssueTracker, action: IntegrationAction): Pr
   if (!tracker.attach) throw new Error('this tracker takes no attachments');
   const bytes = await getStorage().readFile(payload.storagePath);
   await tracker.attach(payload.issueKey, { name: payload.name, bytes: new Uint8Array(bytes), mime: payload.mime });
+}
+
+/**
+ * Replace the title and description of an issue Piwi filed, only while they
+ * read as Piwi wrote them: an edit made in the tracker is never overwritten,
+ * and an update that would send what is already there sends nothing. Returns
+ * why nothing was written, or null when the issue is up to date.
+ */
+async function applyUpdateIssue(
+  db: DbClient,
+  tracker: IssueTracker,
+  action: IntegrationAction,
+): Promise<string | null> {
+  const payload = action.payload as UpdateIssueActionPayload;
+  if (!tracker.updateIssue || !tracker.readIssueText) return 'this tracker cannot update an issue';
+  const [link] = await db
+    .select({ metadata: entityLinks.metadata })
+    .from(entityLinks)
+    .where(eq(entityLinks.id, payload.linkId));
+  const meta = (link?.metadata ?? null) as FiledIssueMeta | null;
+  const written = meta?.written;
+  if (!link || !written) return 'Piwi did not write this description';
+  if (meta?.descriptionEdited) return 'the description was edited in the tracker';
+
+  const current = await tracker.readIssueText(payload.issueKey);
+  if (!current) return 'the issue no longer exists';
+  if ((await descriptionDigest(current.description)) !== written.descriptionDigest) {
+    await mergeEntityLinkMetadata(db, payload.linkId, { descriptionEdited: true });
+    return 'the description was edited in the tracker';
+  }
+
+  const nextDocumentDigest = await documentDigest(payload.document);
+  const body = nextDocumentDigest !== written.documentDigest ? payload.document : undefined;
+  // A title changed in the tracker stays as it is.
+  const title =
+    payload.title != null && current.title === written.title && payload.title !== written.sourceTitle
+      ? payload.title
+      : undefined;
+  if (!body && title === undefined) return null;
+
+  await tracker.updateIssue(payload.issueKey, { title, body });
+  const after = await tracker.readIssueText(payload.issueKey).catch(() => null);
+  // Without the text read back, a later update cannot tell Piwi's text from an edit, so it writes nothing.
+  const next: WrittenIssueRecord | null = after
+    ? {
+        descriptionDigest: await descriptionDigest(after.description),
+        documentDigest: nextDocumentDigest,
+        title: title !== undefined ? after.title : written.title,
+        sourceTitle: title ?? written.sourceTitle,
+      }
+    : null;
+  await mergeEntityLinkMetadata(db, payload.linkId, { written: next });
+  return null;
 }
 
 /** Perform one comment against the tracker (queued by the comment policies). */
@@ -384,6 +551,14 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
         .set({ status: 'done', error: null, attempts, finishedAt: now })
         .where(eq(integrationActions.id, action.id));
       return { status: 'done' };
+    }
+    if (action.kind === 'update-issue') {
+      const skipped = await applyUpdateIssue(db, tracker, action);
+      await db
+        .update(integrationActions)
+        .set({ status: skipped ? 'skipped' : 'done', error: skipped, attempts, finishedAt: now })
+        .where(eq(integrationActions.id, action.id));
+      return skipped ? { status: 'skipped', reason: skipped } : { status: 'done' };
     }
     if (action.kind === 'attach') {
       await applyAttach(tracker, action);

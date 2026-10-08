@@ -40,6 +40,7 @@ const EXCLUDED: Record<RunUse, string[]> = {
   'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
   notifications: ['flake-lab', 'probe', 'editor'],
+  tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'run-health': ['flake-lab', 'probe'],
 };
 
@@ -54,13 +55,17 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'editor-overlay',
   'auto-heal',
   'notifications',
+  'tracker',
 ];
 
 /** The uses that read complete runs only. */
 const COMPLETE_ONLY: RunUse[] = ['run-baseline', 'branch-failures', 'change-coverage'];
 
 /** The uses that read the runs of some origins only when complete, and those origins. */
-const COMPLETE_ONLY_FOR: Partial<Record<RunUse, string[]>> = { notifications: ['local', 'desktop'] };
+const COMPLETE_ONLY_FOR: Partial<Record<RunUse, string[]>> = {
+  notifications: ['local', 'desktop'],
+  tracker: ['local', 'desktop'],
+};
 
 const USES = Object.keys(RUN_USES) as RunUse[];
 
@@ -121,11 +126,12 @@ describe('the run eligibility table', () => {
     }
   });
 
-  test('a complete local run counts wherever a CI run does, but an editor run never notifies', () => {
+  test('a complete local run counts wherever a CI run does, but an editor run never notifies or writes to a tracker', () => {
+    const outbound: RunUse[] = ['notifications', 'tracker'];
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
         const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);
-        expect(eligible, `${use} ${kind}`).toBe(use !== 'notifications' || kind !== 'editor');
+        expect(eligible, `${use} ${kind}`).toBe(!outbound.includes(use) || kind !== 'editor');
       }
     }
   });

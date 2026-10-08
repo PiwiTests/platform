@@ -71,13 +71,15 @@ What each origin feeds:
 - **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
 - **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They notify like any run, but
   stay out of baselines, fix verification, flaky scores, selections, change coverage, the stored locators and test
-  metadata, auto-heal and the bug-report lifecycle.
+  metadata, auto-heal, the bug-report lifecycle and the [automatic writes to an issue
+  tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
 - **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with two exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
   none. An `editor` run, or a `local` or `desktop` run of part of the suite, fires no run, new-cluster, flakiness or
   performance [notification](/features/notifications#events), posts no
-  [pull-request comment or commit status](/features/pr-feedback), and starts no automatic AI diagnosis or auto-heal.
+  [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
+  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
 - **Partial runs** (a `--grep`, a file filter, a selection) never count for change coverage, which asks whether a
   file was reached in the recent runs.
 

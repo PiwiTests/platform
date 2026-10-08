@@ -6,8 +6,11 @@ Underneath both sits an **integration layer** (connections, providers, a neutral
 outbox) so the next tracker or wiki is one provider file, not one more feature.
 
 **Status:** accepted; rollout steps 1–3 shipped (foundations, create an issue, keep it honest — two-way sync, the
-project binding with policies and owner routes, the optional webhook, the needs-ticket queue, and localization); auto-create
-(step 4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
+project binding with policies and owner routes, the optional webhook, the needs-ticket queue, and localization), and
+the automatic creation of step 4 (ordered rules over branches, environments, test tags, occurrences, runs and days;
+the flaky, already-tracked and labeled-issue guards; the daily cap; a preview; a run scope for the write-backs, a
+diagnosis comment and description updates that never overwrite an edit made in the tracker); flaky-test and run
+tickets (the rest of step 4) and Confluence (step 5) remain. · **Scope:** Jira Cloud (and the shape that lets Server/Data Center follow),
 Confluence, the shared layer, and the smaller trackers that fall out of it · **Date:** 2026-09-13 · **Builds on:**
 entity links, the notifications outbox, the auto-heal outbox, the SCM provider layer, ownership, fix plans, offline
 export, share links.
@@ -633,8 +636,9 @@ Each step is a separately mergeable pull request that leaves the app green and u
 3. **Keep it honest** — ✅ *shipped.* The sync task, the binding form with policies (comment on fix / regression, transition,
    resolve on close), merge handling, the optional webhook, `needs-ticket` queue, and the response-language setting.
    *Outcome: the loop closes both ways.*
-4. **Teams and automation** — owner routes, auto-create guards, daily cap; flaky-test and run tickets; the
-   `relatedIssue` and annotation resolutions if not already in step 2.
+4. **Teams and automation** — owner routes, auto-create guards, daily cap ✅ *shipped* (as rules: see
+   `shared/integrations/automation.ts`); flaky-test and run tickets; the `relatedIssue` and annotation resolutions if
+   not already in step 2.
 5. **Confluence** — the wiki interface, the storage renderer, publish investigation and run report, page-in-place
    updates.
 6. **The next trackers** — GitHub Issues and GitLab Issues on the SCM token; Jira Data Center; Linear.

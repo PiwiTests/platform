@@ -10,7 +10,9 @@
  * through here, so the two can never drift.
  */
 import { doc, type DocNode, type Inline, type IssueDocument } from './document';
-import { DEFAULT_LOCALE, formatNumber, t, type IssueLocale } from './messages';
+import { DEFAULT_LOCALE, formatDate, formatNumber, t, type IssueLocale, type MessageKey } from './messages';
+import { en } from './messages/en';
+import type { AutomaticFiling } from './automation';
 import {
   describeExpectation,
   describeStepInWords,
@@ -43,6 +45,8 @@ export interface AffectedTestFact {
   title: string;
   filePath: string | null;
   owner: string | null;
+  /** How many times the test failed into the cluster, when known. */
+  failures?: number | null;
 }
 
 /** One suggested locator replacement, from the fix plan. */
@@ -51,6 +55,14 @@ export interface LocatorEditFact {
   line: number | null;
   failingLocator: string | null;
   suggestedLocator: string | null;
+}
+
+/** An issue that tracked the same kind of failure before. */
+export interface RelatedIssueFact {
+  key: string;
+  url: string;
+  title: string | null;
+  status: string | null;
 }
 
 /** Everything the builder reads; assembled from the DB (or seeded in the demo). */
@@ -65,13 +77,24 @@ export interface IssueFacts {
   firstSeen: string | null;
   lastSeen: string | null;
   occurrences: number;
+  /** Distinct runs it failed in, when known. */
+  runs?: number | null;
   affectedTests: AffectedTestFact[];
+  /** Affected tests beyond those listed. */
+  moreAffectedTests?: number;
+  /** The latest occurrence's branch and environment, the fallback when the lists below are empty. */
   branch: string | null;
   environment: string | null;
+  /** Distinct branches and environments it failed on, newest first. */
+  branches?: string[];
+  environments?: string[];
   commit: string | null;
 
   diagnosisSummary: string | null;
   rootCause: string | null;
+  /** The diagnosis category (`app-bug`, `test-bug` …) and confidence, when diagnosed. */
+  diagnosisCategory?: string | null;
+  diagnosisConfidence?: string | null;
   /** The top clue, shown when there is no diagnosis. */
   clue: string | null;
 
@@ -83,6 +106,11 @@ export interface IssueFacts {
   locatorEdits: LocatorEditFact[];
   verifyCommand: string | null;
   reproduceScript: string | null;
+
+  /** Issues that tracked the same kind of failure before. */
+  relatedIssues?: RelatedIssueFact[];
+  /** Set when a rule filed the issue: what it counted, and where. */
+  automatic?: AutomaticFiling | null;
 
   clusterUrl: string | null;
   executionUrl: string | null;
@@ -107,32 +135,110 @@ function code(text: string): Inline {
   return { text, code: true };
 }
 
+/** A bold label, the colon inside, the space after it outside: `**Root cause:** …`. */
+export function label(text: string): Inline[] {
+  return [{ text: `${text}:`, strong: true }, ' '];
+}
+
+/** Code spans separated by commas. */
+function codeList(values: string[]): Inline[] {
+  return values.flatMap((value, i) => (i === 0 ? [code(value)] : [', ', code(value)]));
+}
+
+/** Branches and environments as one phrase: `main, release/2.0 (staging)`. */
+export function wherePhrase(branches: string[], environments: string[]): string {
+  const envs = environments.length ? ` (${environments.join(', ')})` : '';
+  return `${branches.join(', ')}${envs}`;
+}
+
+/** The sentences opening an issue a rule filed: what it counted, since when, and where. */
+export function automaticFilingInlines(locale: IssueLocale, filing: AutomaticFiling): Inline[] {
+  const occurrences = t(locale, 'count.occurrences', { count: filing.occurrences });
+  const runs = t(locale, 'count.runs', { count: filing.runs });
+  const since = filing.firstFailureAt != null ? formatDate(locale, new Date(filing.firstFailureAt)) : null;
+  const parts: Inline[] = [
+    since
+      ? t(locale, 'auto.filed', { occurrences, runs, since })
+      : t(locale, 'auto.filed.noDate', { occurrences, runs }),
+  ];
+  const branches = filing.branches.slice(0, 3);
+  const environments = filing.environments.slice(0, 3);
+  if (branches.length) parts.push(' ', t(locale, 'auto.countedOn', { where: wherePhrase(branches, environments) }));
+  else if (environments.length)
+    parts.push(' ', t(locale, 'auto.countedIn', { where: environments.join(', '), count: environments.length }));
+  return parts;
+}
+
+/** The diagnosis category and confidence in the ticket's language, or null when unknown. */
+export function diagnosisCategoryText(
+  locale: IssueLocale,
+  category: string | null | undefined,
+  confidence: string | null | undefined,
+): string | null {
+  const categoryKey = `category.${category ?? ''}`;
+  if (!category || !(categoryKey in en)) return null;
+  const name = t(locale, categoryKey as MessageKey);
+  const confidenceKey = `confidence.${confidence ?? ''}`;
+  return confidence && confidenceKey in en ? `${name} (${t(locale, confidenceKey as MessageKey)})` : name;
+}
+
 /** Assemble the document from gathered facts and the include toggles. */
 export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {}): IssueDocument {
   const o = { ...DEFAULT_ISSUE_OPTS, ...opts };
   const locale = opts.locale ?? DEFAULT_LOCALE;
   const b = doc();
 
+  // An issue no person filed says so first, with what made it qualify.
+  if (facts.automatic) b.paragraph(...automaticFilingInlines(locale, facts.automatic));
+
   // What happened. The headline is a deterministic English sentence quoting
   // locators and Playwright terms — data, reproduced verbatim.
   b.heading(2, t(locale, 'section.whatHappened'));
   if (facts.headline) b.paragraph(facts.headline);
+  const branches = facts.branches?.length ? facts.branches.slice(0, 5) : facts.branch ? [facts.branch] : [];
+  const environments = facts.environments?.length
+    ? facts.environments.slice(0, 5)
+    : facts.environment
+      ? [facts.environment]
+      : [];
+  const occurrences = formatNumber(locale, facts.occurrences);
   const factRows: [string, Inline[]][] = [
     [t(locale, 'fact.errorType'), facts.errorType ? [facts.errorType] : []],
     [t(locale, 'fact.firstSeen'), facts.firstSeen ? [facts.firstSeen] : []],
     [t(locale, 'fact.lastSeen'), facts.lastSeen ? [facts.lastSeen] : []],
-    [t(locale, 'fact.occurrences'), [formatNumber(locale, facts.occurrences)]],
-    [t(locale, 'fact.branch'), facts.branch ? [code(facts.branch)] : []],
-    [t(locale, 'fact.environment'), facts.environment ? [facts.environment] : []],
+    [
+      t(locale, 'fact.occurrences'),
+      [facts.runs ? t(locale, 'value.inRuns', { occurrences, count: facts.runs }) : occurrences],
+    ],
+    [t(locale, 'fact.branches', { count: branches.length }), codeList(branches)],
+    [
+      t(locale, 'fact.environments', { count: environments.length }),
+      environments.length ? [environments.join(', ')] : [],
+    ],
     [t(locale, 'fact.commit'), facts.commit ? [code(facts.commit)] : []],
   ];
   b.facts(factRows);
   if (facts.affectedTests.length) {
-    b.heading(3, t(locale, 'section.affectedTests', { count: facts.affectedTests.length }));
+    const more = facts.moreAffectedTests ?? 0;
+    b.heading(3, t(locale, 'section.affectedTests', { count: facts.affectedTests.length + more }));
+    // The owner and failure columns appear only when some row has a value.
+    const withOwner = facts.affectedTests.some((test) => test.owner);
+    const withFailures = facts.affectedTests.some((test) => test.failures != null);
     b.table(
-      [t(locale, 'table.test'), t(locale, 'table.file'), t(locale, 'table.owner')],
-      facts.affectedTests.map((test) => [test.title, test.filePath ?? '', test.owner ?? '']),
+      [
+        t(locale, 'table.test'),
+        t(locale, 'table.file'),
+        ...(withOwner ? [t(locale, 'table.owner')] : []),
+        ...(withFailures ? [t(locale, 'table.failures')] : []),
+      ],
+      facts.affectedTests.map((test) => [
+        test.title,
+        test.filePath ?? '',
+        ...(withOwner ? [test.owner ?? ''] : []),
+        ...(withFailures ? [test.failures != null ? formatNumber(locale, test.failures) : ''] : []),
+      ]),
     );
+    if (more > 0) b.paragraph(t(locale, 'text.moreTests', { count: more }));
   }
 
   // Most likely. The diagnosis/root cause are model prose used as stored (their
@@ -141,10 +247,9 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
   if (o.includeDiagnosis && (facts.diagnosisSummary || facts.rootCause)) {
     if (facts.diagnosisSummary) mostLikely.push({ type: 'paragraph', inlines: [facts.diagnosisSummary] });
     if (facts.rootCause)
-      mostLikely.push({
-        type: 'paragraph',
-        inlines: [{ text: `${t(locale, 'label.rootCause')}: `, strong: true }, facts.rootCause],
-      });
+      mostLikely.push({ type: 'paragraph', inlines: [...label(t(locale, 'label.rootCause')), facts.rootCause] });
+    const category = diagnosisCategoryText(locale, facts.diagnosisCategory, facts.diagnosisConfidence);
+    if (category) mostLikely.push({ type: 'paragraph', inlines: [...label(t(locale, 'label.category')), category] });
   } else if (facts.clue) {
     mostLikely.push({ type: 'paragraph', inlines: [facts.clue] });
   }
@@ -158,8 +263,7 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
   if (hasEvidence) {
     b.heading(2, t(locale, 'section.evidence'));
     if (facts.errorExcerpt) b.code(facts.errorExcerpt);
-    if (facts.failingLocator)
-      b.paragraph({ text: `${t(locale, 'label.failingLocator')}: `, strong: true }, code(facts.failingLocator));
+    if (facts.failingLocator) b.paragraph(...label(t(locale, 'label.failingLocator')), code(facts.failingLocator));
   }
 
   // What to do — the patch, locator edit, verify command and reproduce recipe
@@ -189,6 +293,20 @@ export function buildIssueDocument(facts: IssueFacts, opts: IssueBuildOpts = {})
   if (whatToDo.length) {
     b.heading(2, t(locale, 'section.whatToDo'));
     for (const n of whatToDo) b.push(n);
+  }
+
+  // Related issues — tickets of the same kind of failure, fixed before.
+  if (facts.relatedIssues?.length) {
+    b.heading(2, t(locale, 'section.related'));
+    b.bullets(
+      facts.relatedIssues.map((issue) => {
+        const parts: Inline[] = [{ text: issue.key, href: issue.url }];
+        if (issue.title) parts.push(` ${issue.title}`);
+        if (issue.status) parts.push(` (${issue.status})`);
+        parts.push(` — ${t(locale, 'related.fixedBefore')}`);
+        return parts;
+      }),
+    );
   }
 
   // Links
@@ -302,12 +420,9 @@ export function buildBugIssueDocument(facts: BugIssueFacts, opts: { locale?: Iss
   if (expected.length) {
     b.heading(2, t(locale, 'section.expectedActual'));
     for (const { step, a } of expected) {
-      b.paragraph(
-        { text: `${t(locale, 'label.expected')}: `, strong: true },
-        ...phraseInlines(describeExpectation(step, phrases)),
-      );
-      if (a.actual != null) b.paragraph({ text: `${t(locale, 'label.actual')}: `, strong: true }, code(a.actual));
-      if (a.note) b.paragraph({ text: `${t(locale, 'label.note')}: `, strong: true }, a.note);
+      b.paragraph(...label(t(locale, 'label.expected')), ...phraseInlines(describeExpectation(step, phrases)));
+      if (a.actual != null) b.paragraph(...label(t(locale, 'label.actual')), code(a.actual));
+      if (a.note) b.paragraph(...label(t(locale, 'label.note')), a.note);
     }
   }
 

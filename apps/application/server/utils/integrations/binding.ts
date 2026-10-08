@@ -14,6 +14,14 @@ import { projectIntegrations } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { ProjectIntegration } from '../../database/schema';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
+import { DEFAULT_LOCALE, toIssueLocale, type IssueLocale } from '#shared/integrations/messages';
+
+/** The language of the project's tickets: the binding's, else the connection's default, else English. */
+export function bindingLocale(binding: ResolvedProjectIntegration, connectionConfig: unknown): IssueLocale {
+  if (binding.locale) return binding.locale;
+  const config = (connectionConfig ?? null) as { locale?: string } | null;
+  return toIssueLocale(config?.locale) ?? DEFAULT_LOCALE;
+}
 
 /** Map a stored binding row onto the flat resolved shape. */
 export function bindingRowToResolved(row: ProjectIntegration | null): ResolvedProjectIntegration {

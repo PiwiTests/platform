@@ -26,6 +26,8 @@ import { RESEARCH_SYSTEM_PROMPT, RESEARCH_JSON_SCHEMA, parseResearchJson, format
 import { buildDiagnosisVersionValues } from '#shared/handlers/diagnosis-versions';
 import { contextStalenessHash, diagnosisPromptHash } from '#shared/diagnosis-staleness';
 import { emitNotification } from './notifications/emit';
+import { enqueueDiagnosisPolicies } from './integrations/policies';
+import type { DiagnosisCompletedPayload } from '#shared/notification-events';
 import type { DbClient } from '../database';
 
 const STALE_RUNNING_MS = 5 * 60 * 1000;
@@ -448,7 +450,7 @@ async function persistCompletedDiagnosis(
 
   // The event is about a cluster: a failure in no cluster sends none.
   if (subject.cluster) {
-    emitNotification(db, 'diagnosis.completed', {
+    const event: DiagnosisCompletedPayload = {
       clusterId: subject.cluster.id,
       ...(subject.scope === 'execution' ? { executionId: subject.executionId } : {}),
       projectId: subject.projectId,
@@ -457,7 +459,9 @@ async function persistCompletedDiagnosis(
       rootCause: diagnosis.rootCause,
       category: diagnosis.category,
       confidence: diagnosis.confidence,
-    });
+    };
+    emitNotification(db, 'diagnosis.completed', event);
+    enqueueDiagnosisPolicies(db, event).catch((e) => console.error('[integrations] diagnosis policies failed', e));
   }
 
   return completed;

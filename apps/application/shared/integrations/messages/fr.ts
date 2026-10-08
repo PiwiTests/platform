@@ -20,20 +20,49 @@ export const fr: Record<MessageKey, MessageValue> = {
   'fact.firstSeen': 'Première occurrence',
   'fact.lastSeen': 'Dernière occurrence',
   'fact.occurrences': 'Occurrences',
-  'fact.branch': 'Branche',
-  'fact.environment': 'Environnement',
-  'fact.commit': 'Commit',
+  'fact.branches': { one: 'Branche', other: 'Branches' },
+  'fact.environments': { one: 'Environnement', other: 'Environnements' },
+  'fact.commit': 'Dernier commit',
+  'value.inRuns': { one: '{occurrences} sur {count} série', other: '{occurrences} sur {count} séries' },
 
   // En-têtes du tableau des tests affectés
   'table.test': 'Test',
   'table.file': 'Fichier',
   'table.owner': 'Propriétaire',
+  'table.failures': 'Échecs',
+  'text.moreTests': { one: '… et {count} autre test.', other: '… et {count} autres tests.' },
 
   // Étiquettes en ligne
   'label.rootCause': 'Cause racine',
   'label.failingLocator': 'Localisateur en échec',
   'label.verify': 'Vérifier',
   'label.reproduce': 'Reproduire',
+  'label.category': 'Catégorie',
+
+  // Catégories et confiance du diagnostic
+  'category.app-bug': 'Bug applicatif',
+  'category.test-bug': 'Bug du test',
+  'category.flaky-test': 'Test instable',
+  'category.infrastructure': 'Infrastructure',
+  'category.environment': 'Environnement',
+  'confidence.high': 'confiance élevée',
+  'confidence.medium': 'confiance moyenne',
+  'confidence.low': 'confiance faible',
+
+  // Tickets liés
+  'section.related': 'Tickets liés',
+  'related.fixedBefore': 'un échec du même type, déjà corrigé',
+
+  // Un ticket créé par une règle, sans intervention humaine
+  'count.occurrences': { one: '{count} occurrence', other: '{count} occurrences' },
+  'count.runs': { one: '{count} série', other: '{count} séries' },
+  'auto.filed': 'Créé automatiquement par Piwi après {occurrences} sur {runs} depuis le {since}.',
+  'auto.filed.noDate': 'Créé automatiquement par Piwi après {occurrences} sur {runs}.',
+  'auto.countedOn': 'Comptés sur {where}.',
+  'auto.countedIn': {
+    one: 'Comptés dans l’environnement {where}.',
+    other: 'Comptés dans les environnements {where}.',
+  },
 
   // Étiquettes de liens
   'link.cluster': "Grappe d'échecs",
@@ -86,10 +115,24 @@ export const fr: Record<MessageKey, MessageValue> = {
   'verification.stoppedFailing': 'a cessé d’échouer',
   'comment.regressed': 'Régression dans la série #{run} — le correctif n’a pas tenu.',
   'comment.stillFailing': {
-    one: 'Toujours en échec — +{count} occurrence sur {runs} séries depuis la dernière note, dernière série #{latest}.',
-    other:
-      'Toujours en échec — +{count} occurrences sur {runs} séries depuis la dernière note, dernière série #{latest}.',
+    one: 'Toujours en échec — +{count} occurrence sur {runs} depuis la dernière note, dernière série #{latest}.',
+    other: 'Toujours en échec — +{count} occurrences sur {runs} depuis la dernière note, dernière série #{latest}.',
   },
+  'comment.lastFailureOn': 'Dernier échec sur {where}.',
+  'comment.lastFailureIn': 'Dernier échec dans l’environnement {where}.',
+  'comment.newTests': {
+    one: 'Échoue désormais aussi dans {count} autre test :',
+    other: 'Échoue désormais aussi dans {count} autres tests :',
+  },
+  'comment.newBranches': {
+    one: 'Échoue désormais sur une nouvelle branche : {list}.',
+    other: 'Échoue désormais sur de nouvelles branches : {list}.',
+  },
+  'comment.newEnvironments': {
+    one: 'Échoue désormais dans un nouvel environnement : {list}.',
+    other: 'Échoue désormais dans de nouveaux environnements : {list}.',
+  },
+  'comment.diagnosis': 'Diagnostic de Piwi :',
   'comment.mergedInto': 'Cet échec a été fusionné dans {key} — le suivi se poursuit là-bas.',
   'comment.absorbed': '{key} a été absorbé dans ce ticket — ses échecs sont suivis ici désormais.',
 };

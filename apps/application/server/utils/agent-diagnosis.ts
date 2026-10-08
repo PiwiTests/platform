@@ -18,6 +18,7 @@ import { isDiagnosisRunning, isDiagnosisRunningForExecution } from './ai-diagnos
 import { createScmProvider } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
 import { emitNotification } from './notifications/emit';
+import { enqueueDiagnosisPolicies } from './integrations/policies';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
 
@@ -62,6 +63,9 @@ export async function recordAgentDiagnosisOn(
     resolved,
   });
   const event = result.ok ? agentDiagnosisEvent(target, result, input) : null;
-  if (event) emitNotification(db, 'diagnosis.completed', event);
+  if (event) {
+    emitNotification(db, 'diagnosis.completed', event);
+    enqueueDiagnosisPolicies(db, event).catch((e) => console.error('[integrations] diagnosis policies failed', e));
+  }
   return result;
 }

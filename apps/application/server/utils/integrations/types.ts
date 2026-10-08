@@ -60,6 +60,18 @@ export interface CreateIssueInput {
   fields?: Record<string, unknown>;
 }
 
+/** The title and description an update replaces; a field left out stays as it is. */
+export interface UpdateIssueInput {
+  title?: string;
+  body?: IssueDocument;
+}
+
+/** An issue's title and description as plain text, as the tracker stores them. */
+export interface IssueText {
+  title: string | null;
+  description: string;
+}
+
 export interface TrackerSearch {
   /** Free text matched against summary/description. */
   text?: string;
@@ -86,6 +98,10 @@ export interface IssueTracker {
   createIssue(input: CreateIssueInput): Promise<TrackerIssue>;
   getIssue(key: string): Promise<TrackerIssue | null>;
   addComment(key: string, body: IssueDocument): Promise<void>;
+  /** Replace an issue's title and/or description. A tracker without it keeps what Piwi first wrote. */
+  updateIssue?(key: string, input: UpdateIssueInput): Promise<void>;
+  /** The issue's title and description as plain text; null when the issue is gone. */
+  readIssueText?(key: string): Promise<IssueText | null>;
   /** The transitions an issue offers from its current status, with their screens' fields. */
   listTransitions(key: string): Promise<TrackerTransition[]>;
   /** Move an issue through a transition, with values for its screen's fields. */
