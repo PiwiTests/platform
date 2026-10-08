@@ -165,10 +165,21 @@ preview and the runnable command) · `/test-runs/[id]` · `/test-cases/[id]` (st
 case across runs) · `/test-run-cases/[id]` (one execution) · `/failure-clusters/[id]` · `/analytics` (the viewer's default dashboard) + `/analytics/d/[id]` (one dashboard, `?tv=1` for TV mode) + `/analytics/dashboards` · `/settings/*` ·
 `/docs` (in-app API reference) · `/mcp` · `/login`, `/forgot-password`, `/reset-password` (public, layout-free).
 
-`/test-run-cases/[id]` is **diagnosis-first**: a failing execution opens on a **Diagnosis** tab (full-width error card,
-then a right rail of verdict/cluster/AI cards beside a left evidence funnel); a passing one opens on **Steps** with an
-**Artifacts** tab. Both keep **Performance** and **History**. The tab is synced to `?tab=` with legacy aliases, and the
-page `provide`s a section locator so an AI citation can reveal and scroll to the matching evidence block.
+**Failure pages.** `/test-run-cases/[id]` (one execution) and `/failure-clusters/[id]` read top to bottom in one
+column. Both open on `SituationBlock`: an identity kicker, the headline as the page's `h1`, then labelled rows in the
+order of its `ROWS` (Most likely `StoryLine`, Situation, Occurrences, What changed `WhatChangedLine`, State
+`ClusterStateLine`, Issue `IssueLine`, The suite, Next `NextStepLine`; a page fills the rows it has) and a facts line
+(`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. The rows are built in the handlers the demo
+shares (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from `shared/situation.ts`,
+`shared/cluster-state.ts` and `computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's
+action id into behavior on both pages. Under the block, the execution page shows `DidNotRunCard` for a test that did
+not run, `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to
+fix: one folded section per way to fix, the one the next step points at open) and History (`HistoryStrip`). The
+cluster page shows `ClusterInvestigation` when there is a diff to browse, `ClusterAffectedTests` (its selection picks
+the execution the evidence shows), `EvidenceTabs`, `ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both
+pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites.
+`/bug-reports/[id]` opens on the same block with Situation, State, The suite and Next. `npm run app:measure` holds the
+two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
 
 ### Components (`app/components/`)
 
@@ -178,11 +189,15 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shared/`                                                               | Cross-page primitives and widgets — see below                                                                                                                                                                                   |
 | `run/`                                                                  | Run detail: summary, cases table, workers timeline, comparison, slow endpoints, failure groups, reports, the Resources tab (`RunResources`, formatting in `app/utils/resources.ts`)                                             |
-| `test-case/`                                                            | Single-execution detail: summary, verdict, cluster card, AI card, evidence, console/network, DOM/ARIA, history                                                                                                                  |
-| `cluster/`                                                              | Failure-cluster detail: summary, per-case evidence tabs, investigation + baseline picker, commit browser                                                                                                                        |
+| `test-case/`                                                            | Single-execution detail: the facts line, the evidence tabs and their cards (timeline, screen, source, network, console, state, performance, attempts, locators), the did-not-run card, clues; the test page's flakiness tab     |
+| `cluster/`                                                              | Failure-cluster detail: the state, what-changed and facts lines, the occurrence sparkline and trend, the affected-tests selector, investigation + baseline picker, commit browser, activity, fixed-before matches               |
 | `diagnosis/`                                                            | AI diagnosis panel: context preview + coverage strip, result with evidence citations, export                                                                                                                                    |
+| `integrations/`                                                         | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the integration activity                                                 |
 | `project/`                                                              | Project detail charts, flaky list, cluster list, SCM changes, subscribe bell                                                                                                                                                    |
 | `analytics/`                                                            | Cross-project widgets (component map in `app/utils/analytics-widgets.ts`), and the dashboard page: `DashboardPage`, `DashboardBody` (view, editor, TV mode), `DashboardSwitcher`, `AddWidgetSlideover`, `WidgetConfigSlideover` |
+| `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps, the evidence, the generated spec                                                                                                                                           |
+| `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
+| `notifications/`, `reports/`                                            | Notification channels and subscription scope; quality reports: the schedule form and list, previews, snapshots                                                                                                                  |
 | `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner/simulator                                                                                                            |
 
 Shared building blocks worth knowing before writing new markup (`AGENTS.md` makes reuse a rule):
@@ -224,6 +239,11 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `app/utils/lightbox.ts`),
   `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
   `SnapshotLocatorPicker`, `EnvironmentDiffCard`, `DataLocationCard`.
+- **Failure pages** — `SituationBlock` (the labelled block the failure pages and a bug report open on: its rows in
+  `ROWS`, the status color on its left edge), `FailureHeadline` (the one-line headline, its locator in a chip when it
+  is the `h1`), `StatusChip` in the block's identity kicker, `StoryLine` (Most likely), `NextStepLine` (the one
+  recommended step, its actions emitted as ids the page handles through `useNextStepActions`), `Toolbox` (More ways
+  to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a row of squares).
 
 ### Composables & utils
 

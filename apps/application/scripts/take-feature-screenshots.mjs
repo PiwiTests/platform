@@ -2756,10 +2756,9 @@ const SCENES = [
   },
   {
     name: 'execution-history',
-    description: 'Execution page opened straight onto its History tab (duration trend + executions)',
-    route: '/test-run-cases/229?tab=history',
+    description: "Execution page: the History block, this test's recent executions as a strip",
+    route: '/test-run-cases/229',
     viewport: { width: 1280, height: 1000 },
-    charts: true,
     of: '[data-shot="execution-history"]',
     pad: 12,
   },
@@ -3699,6 +3698,32 @@ const SCENES = [
     name: 'cluster-clarity-mobile',
     description: 'The same cluster page first screen at phone width',
     route: '/failure-clusters/10',
+    viewport: { width: 390, height: 800 },
+  },
+  {
+    name: 'retry-pass-clarity',
+    description: 'Execution page first screen for a test that passed on retry (1280×800 clarity baseline)',
+    // Execution 768 failed its first attempt and passed its retry.
+    route: '/test-run-cases/768',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'retry-pass-clarity-mobile',
+    description: 'The same passed-on-retry execution first screen at phone width',
+    route: '/test-run-cases/768',
+    viewport: { width: 390, height: 800 },
+  },
+  {
+    name: 'did-not-run-clarity',
+    description: 'Execution page first screen for a test that did not run (1280×800 clarity baseline)',
+    // Execution 748 never ran: its run stopped at the max-failures limit.
+    route: '/test-run-cases/748',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'did-not-run-clarity-mobile',
+    description: 'The same did-not-run execution first screen at phone width',
+    route: '/test-run-cases/748',
     viewport: { width: 390, height: 800 },
   },
 
