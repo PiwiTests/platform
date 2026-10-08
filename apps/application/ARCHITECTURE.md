@@ -219,7 +219,9 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 - **Domain widgets** — `RunStatusBadge`, `StatusChip` (status icon + label in one badge, for detail summaries),
   `TestStatusBar`, `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerFormModal`,
   `ZoomableImage` (a click / keyboard-accessible image with a hover "Enlarge" affordance) driving
-  `ScreenshotLightbox` (full-screen, keyboard-navigable, with an actual-size zoom toggle for large captures),
+  `ScreenshotLightbox` (full-screen, keyboard-navigable, with an actual-size zoom toggle for large captures and a
+  details panel naming the test, the step and the error raised on the page — `LightboxImage` in
+  `app/utils/lightbox.ts`),
   `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
   `SnapshotLocatorPicker`, `EnvironmentDiffCard`, `DataLocationCard`.
 

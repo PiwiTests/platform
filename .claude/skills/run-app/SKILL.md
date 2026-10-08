@@ -44,9 +44,10 @@ npm run app:dev:bg          # dev server on http://localhost:3000, detached, wai
 
 - Nuxt HMR picks up edits; there is no need to restart per change. Compile errors show up in
   `.data/dev-server.log`, not in the browser.
-- `app:seed:dev` also copies the committed evidence media (`public/demo/{screenshots,traces,videos}`)
-  into the storage directory under the `demo/…` paths the seeded rows reference, so the failure pages
-  serve the real screenshot, trace and video through `/api/files/` instead of a broken image.
+- `app:seed:dev` also moves each seeded `demo/…` media row under its project's folder
+  (`project-<id>/demo/…`, the only paths `/api/files/` serves) and copies the committed evidence media
+  (`public/demo/{screenshots,traces,videos}`) there, so the failure pages serve the real screenshot,
+  trace and video instead of a broken image. Re-running it heals a dev database seeded before that.
 - The Playwright E2E config reuses a server already on port 3000 (`npm run app:test -- <spec>`), so one
   background server serves both your screenshots and the specs.
 - Capture against it with `npm run app:screens -- --route <path> --url http://localhost:3000`.

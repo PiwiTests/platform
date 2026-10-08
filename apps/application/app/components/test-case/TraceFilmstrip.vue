@@ -3,11 +3,19 @@
  * A filmstrip of the page *before* each step, from this run's trace screen
  * snapshots (Playwright 1.63 `snapshots.screen`). One thumbnail per step in
  * order, the failing step marked, each opening full-screen in the shared
- * lightbox. Renders nothing when the trace carries no screen snapshots.
+ * lightbox with its step, and the error beside the failing one. Renders nothing
+ * when the trace carries no screen snapshots.
  */
 import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
+import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
 
-const props = defineProps<{ testRunsCaseId: number }>();
+const props = defineProps<{
+  testRunsCaseId: number;
+  /** The execution's error, shown beside the enlarged failing step. */
+  error?: string | null;
+  /** The test, named in the enlarged screenshot's details. */
+  subject?: LightboxSubject | null;
+}>();
 
 const { steps, hasScreen, snapshotUrl } = useTraceSnapshots(() => props.testRunsCaseId);
 
@@ -17,8 +25,14 @@ const frames = computed(() =>
 );
 
 // The same list, shaped for the lightbox (a frame's index addresses it there).
-const lightboxImages = computed(() =>
-  frames.value.map((frame, i) => ({ src: frame.src, name: `Step ${i + 1}: ${frame.title}` })),
+const lightboxImages = computed<LightboxImage[]>(() =>
+  frames.value.map((frame, i) => ({
+    src: frame.src,
+    name: `Before step ${i + 1}`,
+    failed: frame.failed,
+    step: frame.title,
+    error: frame.failed ? props.error || null : null,
+  })),
 );
 const lightboxIndex = ref<number | null>(null);
 </script>
@@ -51,6 +65,6 @@ const lightboxIndex = ref<number | null>(null);
       </li>
     </ol>
 
-    <ScreenshotLightbox v-model="lightboxIndex" :images="lightboxImages" />
+    <ScreenshotLightbox v-model="lightboxIndex" :images="lightboxImages" :subject="subject" />
   </section>
 </template>

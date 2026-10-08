@@ -105,6 +105,33 @@ test.describe('Trace aria/screen snapshots', () => {
     await expect(page.getByText('before the failing action → at the failure')).toBeVisible();
   });
 
+  test('an enlarged screenshot names the test, the failing step and the error raised on the page', async ({ page }) => {
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Screen', exact: true })
+      .click();
+    await page.getByRole('button', { name: 'Enlarge At the failure' }).click();
+
+    const viewer = page.getByRole('dialog', { name: 'At the failure' });
+    const details = viewer.getByRole('complementary', { name: 'Screenshot details' });
+    await expect(details).toContainText(CASE.title);
+    await expect(details.getByText('Step', { exact: true })).toBeVisible();
+    await expect(details).toContainText('locator.click: Timeout 1500ms exceeded.');
+
+    // The page before the action raised no error yet: its details name the step only.
+    await page.keyboard.press('ArrowLeft');
+    const before = page.getByRole('dialog', { name: 'Before the failing action' });
+    await expect(before.getByRole('complementary', { name: 'Screenshot details' })).not.toContainText('Timeout 1500ms');
+
+    await before.getByRole('button', { name: 'Hide details' }).click();
+    await expect(before.getByRole('complementary', { name: 'Screenshot details' })).toBeHidden();
+    await page.keyboard.press('Escape');
+    await expect(before).toBeHidden();
+  });
+
   test('the Timeline tab shows a filmstrip of the page before each step', async ({ page }) => {
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);

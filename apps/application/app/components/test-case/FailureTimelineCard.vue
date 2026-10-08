@@ -52,6 +52,8 @@ import TimelineTypeFilter from './TimelineTypeFilter.vue';
 import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
 import { buildStepTreeView, groupRowsBySection, sectionSummaryText } from '~/utils/timeline-rows';
+import type { LightboxSubject } from '~/utils/lightbox';
+import { stepLabel } from '@piwitests/core/step-analysis';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -76,6 +78,8 @@ const props = defineProps<{
   ariaSnapshot?: string | null;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
+  /** The test, named in the details of an enlarged screenshot. */
+  subject?: LightboxSubject | null;
 }>();
 
 // The axis only exists for a failure; a passing execution reads its steps off the
@@ -852,7 +856,7 @@ function revealItem(item: TimelineItem) {
       </div>
 
       <!-- Filmstrip: the page before each step, from this run's trace screen snapshots. -->
-      <TraceFilmstrip :test-runs-case-id="testRunsCaseId" />
+      <TraceFilmstrip :test-runs-case-id="testRunsCaseId" :error="error" :subject="subject" />
 
       <!-- Estimated-positions note -->
       <p v-if="showAxis && data?.estimated" class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
@@ -1006,6 +1010,9 @@ function revealItem(item: TimelineItem) {
                 :test-runs-case-id="testRunsCaseId"
                 :attachments="attachments"
                 :aria-snapshot="ariaSnapshot"
+                :step="stepLabel(entry.step)"
+                :error="error || entry.step.error?.message"
+                :subject="subject"
                 class="mt-2.5"
               />
             </div>
@@ -1175,6 +1182,9 @@ function revealItem(item: TimelineItem) {
                           :test-runs-case-id="testRunsCaseId"
                           :attachments="attachments"
                           :aria-snapshot="ariaSnapshot"
+                          :step="stepLabel(entry.step)"
+                          :error="error || entry.step.error?.message"
+                          :subject="subject"
                           class="mt-2.5"
                         />
                       </div>

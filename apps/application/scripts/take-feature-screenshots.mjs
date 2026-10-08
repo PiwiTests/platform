@@ -1052,6 +1052,25 @@ async function prepareQuarantineProposals({ base, request }) {
  * list with its reason popover open, then project 3's proposed release in the
  * quarantine view. Opens the popover without submitting, so the scene repeats.
  */
+function screenshotLightboxScene(width, suffix) {
+  return {
+    name: `screenshot-lightbox${suffix}`,
+    description: `An enlarged failure screenshot beside its details — the test, the failing step and the error raised on the page — at ${width} px`,
+    tags: ['desktop'],
+    route: '/test-run-cases/37',
+    viewport: { width, height: width < 640 ? 844 : 900 },
+    async run({ page, settle, shoot }) {
+      const enlarge = page.getByRole('button', { name: 'Enlarge At the failure' }).first();
+      await enlarge.waitFor({ timeout: 60_000 });
+      await settle();
+      await enlarge.click();
+      await page.getByRole('complementary', { name: 'Screenshot details' }).waitFor();
+      await settle();
+      await shoot();
+    },
+  };
+}
+
 function quarantineDismissScene(width, suffix) {
   return {
     name: `quarantine-dismiss${suffix}`,
@@ -3395,6 +3414,8 @@ const SCENES = [
   },
   quarantineDismissScene(1280, ''),
   quarantineDismissScene(390, '-mobile'),
+  screenshotLightboxScene(1280, ''),
+  screenshotLightboxScene(390, '-mobile'),
   {
     name: 'flaky-list-suspects',
     description: 'The flaky list with each test’s top suspect and the reproduced badge',

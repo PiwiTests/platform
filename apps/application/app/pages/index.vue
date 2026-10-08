@@ -386,42 +386,6 @@ function statusBorderClass(status: string): string {
           </button>
         </div>
 
-        <!-- Open failures across the visible projects — one click to a failing cluster -->
-        <OpenFailuresCard
-          v-if="hasProjects"
-          data-shot="open-failures"
-          :clusters="openClusters"
-          @changed="refreshOpenClusters"
-        />
-
-        <!-- Accepted-but-unwritten scenario gaps — the gaps inbox queue -->
-        <SectionCard
-          v-if="!gapsHidden && inboxGaps.length > 0"
-          data-shot="gaps-inbox"
-          icon="i-lucide-radar"
-          title="Accepted gaps not yet written"
-        >
-          <div class="divide-y divide-default text-sm">
-            <NuxtLink
-              v-for="gap in inboxGaps"
-              :key="gap.id"
-              :to="`/projects/${gap.projectId}?tab=gaps&gapStatus=accepted`"
-              class="flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded transition-colors"
-            >
-              <UBadge color="neutral" variant="subtle" size="sm">{{ gap.class }}</UBadge>
-              <span class="flex-1 min-w-0 truncate text-highlighted">{{ gap.title }}</span>
-              <span class="text-xs text-muted tabular-nums shrink-0">{{ (gap.score ?? 0).toFixed(3) }}</span>
-            </NuxtLink>
-          </div>
-        </SectionCard>
-
-        <!-- Flaky tests the Flake Lab can move forward: verify a fix, reproduce under an untested suspect -->
-        <FlakeLabInboxCard
-          v-if="!flakeLabHidden && flakeLabInbox.length > 0"
-          data-shot="flake-lab-inbox"
-          :items="flakeLabInbox"
-        />
-
         <!-- Per-project trend table + Recent activity side by side on wide screens -->
         <div v-if="hasProjects || hasActivity" class="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
           <div id="project-health" class="xl:col-span-2 space-y-2 scroll-mt-4">
@@ -485,6 +449,42 @@ function statusBorderClass(status: string): string {
             </div>
           </SectionCard>
         </div>
+
+        <!-- Open failures across the visible projects — one click to a failing cluster -->
+        <OpenFailuresCard
+          v-if="hasProjects"
+          data-shot="open-failures"
+          :clusters="openClusters"
+          @changed="refreshOpenClusters"
+        />
+
+        <!-- Accepted-but-unwritten scenario gaps — the gaps inbox queue -->
+        <SectionCard
+          v-if="!gapsHidden && inboxGaps.length > 0"
+          data-shot="gaps-inbox"
+          icon="i-lucide-radar"
+          title="Accepted gaps not yet written"
+        >
+          <div class="divide-y divide-default text-sm">
+            <NuxtLink
+              v-for="gap in inboxGaps"
+              :key="gap.id"
+              :to="`/projects/${gap.projectId}?tab=gaps&gapStatus=accepted`"
+              class="flex items-center gap-3 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded transition-colors"
+            >
+              <UBadge color="neutral" variant="subtle" size="sm">{{ gap.class }}</UBadge>
+              <span class="flex-1 min-w-0 truncate text-highlighted">{{ gap.title }}</span>
+              <span class="text-xs text-muted tabular-nums shrink-0">{{ (gap.score ?? 0).toFixed(3) }}</span>
+            </NuxtLink>
+          </div>
+        </SectionCard>
+
+        <!-- Flaky tests the Flake Lab can move forward: verify a fix, reproduce under an untested suspect -->
+        <FlakeLabInboxCard
+          v-if="!flakeLabHidden && flakeLabInbox.length > 0"
+          data-shot="flake-lab-inbox"
+          :items="flakeLabInbox"
+        />
 
         <!-- Empty state when projects exist but all filtered out -->
         <div
