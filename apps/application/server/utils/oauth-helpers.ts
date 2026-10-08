@@ -154,9 +154,16 @@ export function firstFreeUsername(candidates: string[], taken: Iterable<string>)
   return candidates.find((candidate) => !used.has(candidate)) ?? candidates.at(-1)!;
 }
 
-/** Email addresses are compared ignoring case, as the `idx_users_email` unique index does. */
+const asciiLowerCase = (value: string) => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+
+/**
+ * Email addresses are compared ignoring ASCII letter case only. A wider folding
+ * would let an address someone else controls pass for another account's:
+ * PostgreSQL's `lower()` maps `İ` to `i` and the Kelvin sign to `k`, so a match
+ * from `findUserByEmail` is checked again here before it grants anything.
+ */
 function sameEmailAddress(a: string | null, b: string | null): boolean {
-  return a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
+  return a !== null && b !== null && asciiLowerCase(a) === asciiLowerCase(b);
 }
 
 export type ProvisioningAction =
@@ -210,7 +217,7 @@ export function resolveProvisioningAction(
     };
   }
 
-  if (emailVerified && emailMatch) {
+  if (emailVerified && emailMatch && sameEmailAddress(email, emailMatch.email)) {
     const linkedElsewhere =
       Boolean(emailMatch.oauthProvider) &&
       Boolean(emailMatch.oauthProviderId) &&

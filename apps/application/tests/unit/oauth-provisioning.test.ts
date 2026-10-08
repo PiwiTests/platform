@@ -103,6 +103,18 @@ describe('linkProviderToUser — email compared ignoring case', () => {
     expect(owner).toMatchObject({ email: 'Bob@corp.com', emailVerified: true });
   });
 
+  test('a provider linked without its address keeps signing in, and the address stays with its owner', async () => {
+    const bob = await addUser({ username: 'bob', email: 'Bob@corp.com', emailVerified: true });
+    const octo = await addUser({ username: 'octo', oauthProvider: 'github', oauthProviderId: 'github-octo' });
+    await linkProviderToUser(octo.id, profile(), db);
+
+    const signedIn = await findOrCreateOAuthUser(profile(), db);
+
+    expect(signedIn).toMatchObject({ id: octo.id, email: null, emailVerified: false, oauthProvider: 'google' });
+    const [owner] = await db.select().from(schema.users).where(eq(schema.users.id, bob.id));
+    expect(owner).toMatchObject({ email: 'Bob@corp.com', emailVerified: true });
+  });
+
   test('an address no account owns is copied to an account without one', async () => {
     const alice = await addUser({ username: 'alice' });
 

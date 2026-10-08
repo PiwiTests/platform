@@ -149,6 +149,35 @@ describe('allowlists', () => {
 // Provisioning ---------------------------------------------------------------
 
 describe('resolveProvisioningAction', () => {
+  // PostgreSQL's lower() folds these to the owner's address: dotted capital I (U+0130), Kelvin sign (U+212A).
+  test.each([
+    ['bob@gmail.com', 'bob@gma\u0130l.com'],
+    ['kate@corp.com', '\u212Aate@corp.com'],
+  ])('never links %s to a provider address that matches it only through Unicode case folding', (stored, email) => {
+    const owner = row({ id: 3, email: stored, emailVerified: true });
+    const action = resolveProvisioningAction(profile({ email, emailVerified: true }), undefined, owner);
+    expect(action.kind).toBe('create');
+  });
+
+  test('links an address that differs only in ASCII letter case', () => {
+    const owner = row({ id: 3, email: 'Bob@Corp.com', emailVerified: true });
+    const action = resolveProvisioningAction(profile({ email: 'bob@corp.com', emailVerified: true }), undefined, owner);
+    expect(action).toMatchObject({ kind: 'link', userId: 3 });
+  });
+
+  test("a refresh keeps the account's own address and verified flag when another account holds the new one", () => {
+    const me = row({
+      id: 7,
+      email: 'me@corp.com',
+      emailVerified: true,
+      oauthProvider: 'google',
+      oauthProviderId: 'pid-1',
+    });
+    const holder = row({ id: 8, email: 'Alice@example.com', emailVerified: false });
+    const action = resolveProvisioningAction(profile(), me, holder);
+    expect(action).toMatchObject({ kind: 'refresh', set: { email: 'me@corp.com', emailVerified: true } });
+  });
+
   test('refresh: identity match keeps profile + email in sync', () => {
     const existing = row({
       id: 7,
