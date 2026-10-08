@@ -781,10 +781,11 @@ NUXT_IGNORE_LOCK=1 npx nuxt dev --port 3002      # 4. plain dev server, auth dis
 ```
 
 `app:seed:dev` creates and migrates a missing or empty dev DB itself, so step 2 is only needed when you want a clean
-schema by hand; it is idempotent (`INSERT OR IGNORE`), and to refresh stale rows wipe `.data` and re-run it. It also
-copies the committed evidence media (`public/demo/{screenshots,traces,videos}`) into the storage directory under the
-`demo/…` paths the seeded rows reference, so the failure pages serve the real screenshot, trace and video through the
-file endpoint rather than a broken image. Drive the
+schema by hand; it is idempotent (`INSERT OR IGNORE`), and to refresh stale rows wipe `.data` and re-run it. The file
+endpoint serves only paths inside a project's folder, so it also moves each seeded `demo/…` media row to
+`project-<id>/demo/…` and copies the committed binary (`public/demo/{screenshots,traces,videos}`) there, and the failure
+pages serve the real screenshot, trace and video rather than a broken image. The seed itself keeps `demo/…`, the path
+demo mode serves from `public/demo/`. Drive the
 app with Playwright — `scripts/take-feature-screenshots.mjs` (`--route`, `--url`) is the working harness, and its
 `settlePage` is the wait strategy to copy: the run and execution pages hold an SSE stream open, so a bare
 `networkidle` never resolves, and the page scrolls inside a panel, so `fullPage` captures a single viewport.

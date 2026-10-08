@@ -16,7 +16,7 @@ import { execSync } from 'child_process';
 import { join, dirname, isAbsolute, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-import { copyDemoMedia } from './copy-demo-media.mjs';
+import { copyDemoMedia, DEMO_MEDIA_PREFIX, projectMediaPath } from './copy-demo-media.mjs';
 
 const require = createRequire(import.meta.url);
 const { createClient } = require('@libsql/client');
@@ -29,9 +29,9 @@ const dbPath = process.env.PIWI_DATABASE_PATH
   ? resolve(appDir, process.env.PIWI_DATABASE_PATH)
   : join(appDir, '.data/piwi.db');
 
-// The file endpoint resolves a row's `demo/…` path inside the storage
-// directory, so the seeded evidence binaries must be copied there. Match the
-// server's storage root (`PIWI_STORAGE_PATH`, default `.data/storage`).
+// The file endpoint reads a row's path inside the storage directory, so the
+// seeded evidence binaries must be copied there. Match the server's storage
+// root (`PIWI_STORAGE_PATH`, default `.data/storage`).
 const storageEnv = process.env.PIWI_STORAGE_PATH || '.data/storage';
 const storageDir = isAbsolute(storageEnv) ? storageEnv : join(appDir, storageEnv);
 const publicDemoDir = join(appDir, 'public/demo');
@@ -148,11 +148,31 @@ if (skip > 0) {
   process.exit(1);
 }
 
-// Copy the committed evidence binaries into the storage directory the file
-// endpoint reads from, under the `demo/…` paths the seeded rows reference.
-// Idempotent, so it also heals a storage directory that was wiped after an
-// earlier seed.
-const copied = copyDemoMedia(publicDemoDir, storageDir);
+// The file endpoint serves only paths inside a project's folder: move each
+// seeded `demo/…` media row under its project's folder, then copy the committed
+// binaries to the paths the rows now name. Both steps are idempotent, so a
+// re-run also heals a database seeded before and a storage directory wiped since.
+const seededMedia = await db.execute({
+  sql: `SELECT f.id, f.path, r.project_id AS projectId FROM files f
+        JOIN test_runs r ON r.id = coalesce(
+          f.test_run_id,
+          (SELECT c.test_run_id FROM test_runs_cases c WHERE c.id = f.test_runs_case_id)
+        )
+        WHERE f.path LIKE ?`,
+  args: [`${DEMO_MEDIA_PREFIX}%`],
+});
+for (const row of seededMedia.rows) {
+  await db.execute({
+    sql: 'UPDATE files SET path = ? WHERE id = ?',
+    args: [projectMediaPath(row.projectId, row.path), row.id],
+  });
+}
+const storedMedia = await db.execute("SELECT DISTINCT path FROM files WHERE path LIKE 'project-%/demo/%'");
+const copied = copyDemoMedia(
+  publicDemoDir,
+  storageDir,
+  storedMedia.rows.map((row) => String(row.path)),
+);
 console.log(`Demo media: ${copied} file(s) copied into ${storageDir}.`);
 
 // The seeded runs bypass the ingest hook, so the next server start recomputes
