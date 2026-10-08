@@ -2,9 +2,10 @@
 /**
  * Renders a source path (or a `file:line:col` location) as a fully-clickable
  * "open in IDE" link: a dashed-underlined label runs the configured default
- * (Auto by default) and reveals an external-link icon on hover; a caret opens a
- * chooser to pick a specific method or copy the path. The chooser popover is
- * mounted lazily on first use so lists of these stay cheap to render. All
+ * (Auto by default) and reveals an external-link icon on hover; a caret, shown
+ * on hover or keyboard focus, opens a chooser to pick a specific method or copy
+ * the path. Phones and touch screens get no caret — the label alone. The chooser
+ * popover is mounted lazily on first use so lists of these stay cheap to render. All
  * launching/preferences live in `useOpenInIde`; this is a thin, client-only
  * trigger safe to drop in anywhere a path is shown today.
  */
@@ -68,6 +69,11 @@ function mountMenu() {
   });
 }
 
+// The caret appears on hover or keyboard focus, and only where a pointer can
+// hover: below `sm` or on a touch screen it is not rendered at all.
+const caretClass =
+  'hidden sm:pointer-fine:inline-flex shrink-0 items-center rounded p-0.5 text-muted cursor-pointer transition-opacity hover:bg-elevated/60 hover:text-default opacity-0 group-hover/ide:opacity-100 focus-visible:opacity-100';
+
 function run(action: () => void) {
   open.value = false;
   action();
@@ -102,7 +108,7 @@ function run(action: () => void) {
       <button
         v-if="!menuMounted"
         type="button"
-        class="shrink-0 inline-flex items-center rounded p-0.5 text-muted cursor-pointer transition-opacity hover:bg-elevated/60 hover:text-default opacity-100 sm:opacity-0 sm:group-hover/ide:opacity-100 focus-visible:opacity-100"
+        :class="caretClass"
         aria-label="Choose how to open in IDE"
         title="Choose how to open"
         @click="mountMenu"
@@ -112,7 +118,7 @@ function run(action: () => void) {
       <UPopover v-else v-model:open="open">
         <button
           type="button"
-          class="shrink-0 inline-flex items-center rounded p-0.5 text-muted cursor-pointer transition-colors hover:bg-elevated/60 hover:text-default"
+          :class="[caretClass, open ? 'opacity-100' : '']"
           aria-label="Choose how to open in IDE"
           title="Choose how to open"
         >
