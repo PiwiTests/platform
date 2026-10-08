@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { eq, and, gt } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { accountTokens } from '../database/schema';
+import { accountTokens, users } from '../database/schema';
 
 export type TokenPurpose = 'reset' | 'verify' | 'invite';
 
@@ -15,12 +15,16 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-/** Mint a new single-use token for a user. Returns the plaintext token to email. */
+/**
+ * Mint a new single-use token for a user, to email to `email`. Returns the
+ * plaintext token. The token acts only while the account still holds `email`.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function mintAccountToken(
   db: LibSQLDatabase<any>,
   userId: number,
   purpose: TokenPurpose,
+  email: string,
 ): Promise<string> {
   const token = randomBytes(32).toString('hex');
   const tokenHash = hashToken(token);
@@ -29,7 +33,7 @@ export async function mintAccountToken(
   // Invalidate any unused tokens of the same purpose for this user
   await db.delete(accountTokens).where(and(eq(accountTokens.userId, userId), eq(accountTokens.purpose, purpose)));
 
-  await db.insert(accountTokens).values({ userId, purpose, tokenHash, expiresAt });
+  await db.insert(accountTokens).values({ userId, purpose, tokenHash, email, expiresAt });
   return token;
 }
 
@@ -37,9 +41,15 @@ export interface ValidatedToken {
   userId: number;
   purpose: TokenPurpose;
   tokenId: number;
+  /** The address the token was sent to, which the account still holds. */
+  email: string;
 }
 
-/** Validate a token. Returns the validated token info or null if invalid/expired/used. */
+/**
+ * Validate a token. Returns the validated token info, or null when it is
+ * unknown, expired or used, or when the account no longer holds the address
+ * it was sent to.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function validateAccountToken(
   db: LibSQLDatabase<any>,
@@ -49,17 +59,24 @@ export async function validateAccountToken(
   const tokenHash = hashToken(token);
   const now = new Date();
 
-  const rows = await db
-    .select()
+  const [row] = await db
+    .select({
+      id: accountTokens.id,
+      userId: accountTokens.userId,
+      purpose: accountTokens.purpose,
+      usedAt: accountTokens.usedAt,
+      email: accountTokens.email,
+      accountEmail: users.email,
+    })
     .from(accountTokens)
+    .innerJoin(users, eq(users.id, accountTokens.userId))
     .where(
       and(eq(accountTokens.tokenHash, tokenHash), eq(accountTokens.purpose, purpose), gt(accountTokens.expiresAt, now)),
     );
 
-  const row = rows[0];
-  if (!row || row.usedAt) return null;
+  if (!row || row.usedAt || !row.email || row.email !== row.accountEmail) return null;
 
-  return { userId: row.userId, purpose: row.purpose as TokenPurpose, tokenId: row.id };
+  return { userId: row.userId, purpose: row.purpose as TokenPurpose, tokenId: row.id, email: row.email };
 }
 
 /** Mark a token as used (single-use enforcement). */

@@ -25,7 +25,7 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const token = await mintAccountToken(db, user.id, 'verify');
+  const token = await mintAccountToken(db, user.id, 'verify', user.email);
   const { html, text } = renderVerifyEmail(token);
 
   try {

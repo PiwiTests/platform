@@ -135,6 +135,10 @@ account already uses is refused, and **Forgot password?** finds the account what
 finds the same address on several accounts, differing only in case, the oldest account that verified it keeps it (the
 oldest account, when none did); the others are left without an email.
 
+A link Piwi emails, to verify an address, accept an invite or reset a password, works only while the account still
+holds the address it was sent to. Once the address changes, by its owner, an administrator or a provider sign-in, the
+links already sent are refused: send a new one to the new address.
+
 ### Changing a role
 
 Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github), which always start as a **Member** with no access. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
