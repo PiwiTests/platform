@@ -5,6 +5,7 @@
 // security-relevant decisions to these functions.
 
 import { randomBytes, createHash } from 'node:crypto';
+import { z } from 'zod';
 import { InstanceRole } from '#shared/permissions';
 
 // ---------------------------------------------------------------------------
@@ -121,6 +122,36 @@ export interface OAuthProfile {
   emailVerified: boolean;
   name: string;
   avatar: string;
+  /** The provider's account name (GitHub login), the username of a new account that stores no email. */
+  login?: string;
+}
+
+const emailAddress = z.string().email();
+
+/**
+ * `value` when it is a valid email address, else `''`. `users.email` only ever
+ * holds an address, never a login name or another identifier.
+ */
+export function validEmailAddress(value: string): string {
+  return emailAddress.safeParse(value).success ? value : '';
+}
+
+/** How many numbered usernames (`base-2` … `base-N`) a new account tries before the provider id. */
+const NUMBERED_USERNAMES = 9;
+
+/**
+ * Usernames a new OAuth account may take, in order: the base, the base with
+ * `-2` … `-10`, then the base with the provider id.
+ */
+export function usernameCandidates(base: string, providerId: string): string[] {
+  const numbered = Array.from({ length: NUMBERED_USERNAMES }, (_, i) => `${base}-${i + 2}`);
+  return [base, ...numbered, `${base}-${providerId}`];
+}
+
+/** The first candidate no account uses, else the last one (the insert then fails on the unique username). */
+export function firstFreeUsername(candidates: string[], taken: Iterable<string>): string {
+  const used = new Set(taken);
+  return candidates.find((candidate) => !used.has(candidate)) ?? candidates.at(-1)!;
 }
 
 export type ProvisioningAction =
@@ -128,50 +159,53 @@ export type ProvisioningAction =
   | { kind: 'link'; userId: number; set: Record<string, unknown> }
   | { kind: 'conflict' }
   | { kind: 'unverified' }
-  | { kind: 'create'; values: Record<string, unknown> };
+  | { kind: 'create'; values: Record<string, unknown>; usernames: string[] };
 
 /**
  * Decide how to provision a sign-in given the user (if any) already linked to
- * this provider identity and the user (if any) owning the verified email.
+ * this provider identity and the other user (if any) whose email is the
+ * provider's address, ignoring case.
  *
  * Linking by email needs proof on both sides: the provider verified the
  * address for this identity, and the local account verified it too (email
  * link, accepted invite, or an earlier provider sign-in). Anyone can type an
  * address into their own account, so an unproven local claim is never linked.
+ * An address another account holds is never stored on a second account.
  *
- * - `refresh`    — identity already linked → keep profile + email in sync.
+ * - `refresh`    — identity already linked → keep profile + email in sync;
+ *                  the stored email stays when another account holds the new one.
  * - `link`       — verified email matches a local account that also verified
  *                  it and is not yet linked.
  * - `conflict`   — verified email matches an account linked to a *different*
  *                  provider identity (single-provider schema can't hold both).
  * - `unverified` — verified email matches a local account that never verified
  *                  the address → refuse; its owner links from their settings.
- * - `create`     — no match → make a new OAuth-only account.
+ * - `create`     — otherwise → make a new OAuth-only account, without the
+ *                  email when it is unverified and another account holds it.
+ *                  `usernames` lists the usernames to try, in order.
  */
 export function resolveProvisioningAction(
   profile: OAuthProfile,
   identityMatch?: OAuthUserRow,
   emailMatch?: OAuthUserRow,
 ): ProvisioningAction {
-  const { provider, providerId, email, emailVerified, name, avatar } = profile;
+  const { provider, providerId, name, avatar } = profile;
+  const email = validEmailAddress(profile.email);
+  const emailVerified = Boolean(email) && profile.emailVerified;
 
   if (identityMatch) {
-    // The verified flag belongs to an address: a changed address carries only
-    // the provider's verdict, never the one earned by the previous address.
-    const sameEmail = !email || email === identityMatch.email;
     return {
       kind: 'refresh',
       userId: identityMatch.id,
       set: {
         avatarUrl: avatar || null,
         name: name || null,
-        email: email || identityMatch.email,
-        emailVerified: sameEmail ? emailVerified || identityMatch.emailVerified : emailVerified,
+        ...refreshedEmail(identityMatch, email, emailVerified, emailMatch),
       },
     };
   }
 
-  if (emailVerified && email && emailMatch) {
+  if (emailVerified && emailMatch) {
     const linkedElsewhere =
       Boolean(emailMatch.oauthProvider) &&
       Boolean(emailMatch.oauthProviderId) &&
@@ -198,20 +232,45 @@ export function resolveProvisioningAction(
     };
   }
 
+  const storedEmail = emailMatch ? '' : email;
+  const usernameBase = storedEmail || profile.login || `${provider}-${providerId}`;
   return {
     kind: 'create',
+    usernames: usernameCandidates(usernameBase, providerId),
     values: {
-      username: email,
       password: '',
       role: InstanceRole.MEMBER,
       name: name || null,
-      email: email || null,
-      emailVerified,
+      email: storedEmail || null,
+      emailVerified: Boolean(storedEmail) && emailVerified,
       avatarUrl: avatar || null,
       oauthProvider: provider,
       oauthProviderId: providerId,
     },
   };
+}
+
+/**
+ * The email an identity-matched account keeps after a sign-in. The verified
+ * flag belongs to an address: a changed address carries only the provider's
+ * verdict, never the one earned by the previous address. A stored value that
+ * is not an address is dropped.
+ */
+function refreshedEmail(
+  current: OAuthUserRow,
+  email: string,
+  emailVerified: boolean,
+  emailMatch: OAuthUserRow | undefined,
+): { email: string | null; emailVerified: boolean } {
+  const heldElsewhere = emailMatch !== undefined && emailMatch.id !== current.id;
+  if (!email || heldElsewhere) {
+    const stored = validEmailAddress(current.email ?? '');
+    return { email: stored || null, emailVerified: Boolean(stored) && current.emailVerified };
+  }
+  if (email === current.email) {
+    return { email, emailVerified: emailVerified || current.emailVerified };
+  }
+  return { email, emailVerified };
 }
 
 export type LinkAction = { kind: 'conflict' } | { kind: 'link'; set: Record<string, unknown> };
@@ -220,16 +279,21 @@ export type LinkAction = { kind: 'conflict' } | { kind: 'link'; set: Record<stri
  * Decide how to link a provider to an already-signed-in user. Refuses when the
  * provider identity already belongs to a different account; otherwise backfills
  * only the profile fields the user is missing (never overwriting their values).
+ * The provider's email is adopted only when it is an address no other account
+ * holds (`emailTakenBy`, matched ignoring case).
  */
 export function resolveLinkAction(
   currentUser: OAuthUserRow,
   profile: OAuthProfile,
   identityTakenBy?: OAuthUserRow,
+  emailTakenBy?: OAuthUserRow,
 ): LinkAction {
   if (identityTakenBy && identityTakenBy.id !== currentUser.id) {
     return { kind: 'conflict' };
   }
 
+  const heldElsewhere = emailTakenBy !== undefined && emailTakenBy.id !== currentUser.id;
+  const providerEmail = heldElsewhere ? '' : validEmailAddress(profile.email);
   return {
     kind: 'link',
     set: {
@@ -237,8 +301,8 @@ export function resolveLinkAction(
       oauthProviderId: profile.providerId,
       avatarUrl: currentUser.avatarUrl ?? (profile.avatar || null),
       name: currentUser.name ?? (profile.name || null),
-      email: currentUser.email ?? (profile.email || null),
-      emailVerified: currentUser.email ? currentUser.emailVerified : profile.emailVerified,
+      email: currentUser.email ?? (providerEmail || null),
+      emailVerified: currentUser.email ? currentUser.emailVerified : Boolean(providerEmail) && profile.emailVerified,
     },
   };
 }

@@ -15,6 +15,9 @@ import {
   resolveProvisioningAction,
   resolveLinkAction,
   resolveUnlink,
+  validEmailAddress,
+  usernameCandidates,
+  firstFreeUsername,
   type OAuthUserRow,
   type OAuthProfile,
   safeReturnPath,
@@ -264,8 +267,8 @@ describe('resolveProvisioningAction', () => {
     const action = resolveProvisioningAction(profile());
     expect(action.kind).toBe('create');
     if (action.kind === 'create') {
+      expect(action.usernames[0]).toBe('alice@example.com');
       expect(action.values).toMatchObject({
-        username: 'alice@example.com',
         password: '',
         role: InstanceRole.MEMBER,
         email: 'alice@example.com',
@@ -276,13 +279,110 @@ describe('resolveProvisioningAction', () => {
     }
   });
 
-  test('create: an unverified email is not used to link, even if it matches', () => {
-    // emailMatch is only passed by the caller for verified emails; with an
-    // unverified email the resolver must fall through to create regardless.
-    const local = row({ id: 9, email: 'alice@example.com' });
-    const action = resolveProvisioningAction(profile({ emailVerified: false }), undefined, local);
+  test('create: an unverified email that no account holds is stored, unverified', () => {
+    const action = resolveProvisioningAction(profile({ emailVerified: false }));
     expect(action.kind).toBe('create');
-    if (action.kind === 'create') expect(action.values.emailVerified).toBe(false);
+    if (action.kind === 'create') {
+      expect(action.values).toMatchObject({ email: 'alice@example.com', emailVerified: false });
+      expect(action.usernames[0]).toBe('alice@example.com');
+    }
+  });
+
+  test('create: an unverified email another account holds is neither linked nor stored', () => {
+    const local = row({ id: 9, email: 'Alice@Example.com', emailVerified: true });
+    const action = resolveProvisioningAction(profile({ provider: 'github', emailVerified: false }), undefined, local);
+    expect(action.kind).toBe('create');
+    if (action.kind === 'create') {
+      expect(action.values).toMatchObject({ email: null, emailVerified: false });
+      expect(action.usernames).not.toContain('alice@example.com');
+      expect(action.usernames[0]).toBe('github-pid-1');
+    }
+  });
+
+  test('create: without a stored email the username comes from the provider login', () => {
+    const local = row({ id: 9, email: 'alice@example.com' });
+    const action = resolveProvisioningAction(
+      profile({ provider: 'github', emailVerified: false, login: 'octocat' }),
+      undefined,
+      local,
+    );
+    if (action.kind !== 'create') throw new Error(`expected create, got ${action.kind}`);
+    expect(action.usernames.slice(0, 3)).toEqual(['octocat', 'octocat-2', 'octocat-3']);
+  });
+
+  test('create: a value that is not an email address is never stored as the email', () => {
+    const action = resolveProvisioningAction(
+      profile({ provider: 'github', email: 'octocat', emailVerified: true, login: 'octocat' }),
+    );
+    if (action.kind !== 'create') throw new Error(`expected create, got ${action.kind}`);
+    expect(action.values).toMatchObject({ email: null, emailVerified: false });
+    expect(action.usernames[0]).toBe('octocat');
+  });
+
+  test('refresh: keeps the stored email when another account holds the new address', () => {
+    const existing = row({
+      id: 7,
+      email: 'alice@example.com',
+      emailVerified: true,
+      oauthProvider: 'google',
+      oauthProviderId: 'pid-1',
+    });
+    const other = row({ id: 8, email: 'bob@example.com', emailVerified: false });
+    const action = resolveProvisioningAction(
+      profile({ email: 'Bob@example.com', emailVerified: true }),
+      existing,
+      other,
+    );
+    expect(action.kind).toBe('refresh');
+    if (action.kind === 'refresh') {
+      expect(action.set.email).toBe('alice@example.com');
+      expect(action.set.emailVerified).toBe(true);
+    }
+  });
+
+  test('refresh: drops a stored value that is not an email address', () => {
+    const existing = row({
+      id: 7,
+      email: 'octocat',
+      emailVerified: false,
+      oauthProvider: 'github',
+      oauthProviderId: 'pid-1',
+    });
+    const action = resolveProvisioningAction(
+      profile({ provider: 'github', email: '', emailVerified: false }),
+      existing,
+    );
+    expect(action.kind).toBe('refresh');
+    if (action.kind === 'refresh') {
+      expect(action.set.email).toBeNull();
+      expect(action.set.emailVerified).toBe(false);
+    }
+  });
+});
+
+describe('validEmailAddress', () => {
+  test('keeps an address and blanks anything else', () => {
+    expect(validEmailAddress('alice@example.com')).toBe('alice@example.com');
+    expect(validEmailAddress('octocat')).toBe('');
+    expect(validEmailAddress('')).toBe('');
+    expect(validEmailAddress('two words@example.com')).toBe('');
+  });
+});
+
+describe('usernames for a new account', () => {
+  test('candidates are the base, numbered variants, then the base with the provider id', () => {
+    const candidates = usernameCandidates('octocat', '583231');
+    expect(candidates[0]).toBe('octocat');
+    expect(candidates[1]).toBe('octocat-2');
+    expect(candidates.at(-2)).toBe('octocat-10');
+    expect(candidates.at(-1)).toBe('octocat-583231');
+  });
+
+  test('picks the first candidate no account uses', () => {
+    const candidates = usernameCandidates('octocat', '583231');
+    expect(firstFreeUsername(candidates, [])).toBe('octocat');
+    expect(firstFreeUsername(candidates, ['octocat', 'octocat-2'])).toBe('octocat-3');
+    expect(firstFreeUsername(candidates, candidates.slice(0, -1))).toBe('octocat-583231');
   });
 });
 
@@ -332,6 +432,23 @@ describe('resolveLinkAction', () => {
       expect(action.set.email).toBe('alice@example.com');
       expect(action.set.emailVerified).toBe(true);
     }
+  });
+
+  test('does not adopt a provider email another account holds', () => {
+    const me = row({ id: 1, email: null, emailVerified: false, password: 'hash' });
+    const other = row({ id: 2, email: 'alice@example.com', emailVerified: true });
+    const action = resolveLinkAction(me, profile({ emailVerified: true }), undefined, other);
+    if (action.kind !== 'link') throw new Error(`expected link, got ${action.kind}`);
+    expect(action.set.email).toBeNull();
+    expect(action.set.emailVerified).toBe(false);
+  });
+
+  test('does not adopt a provider value that is not an email address', () => {
+    const me = row({ id: 1, email: null, emailVerified: false, password: 'hash' });
+    const action = resolveLinkAction(me, profile({ provider: 'github', email: 'octocat', emailVerified: true }));
+    if (action.kind !== 'link') throw new Error(`expected link, got ${action.kind}`);
+    expect(action.set.email).toBeNull();
+    expect(action.set.emailVerified).toBe(false);
   });
 });
 
