@@ -145,7 +145,8 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
           'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
-          'Write/triage tools (set_cluster_status, triage_cluster, triage_gap, decide_merge_suggestion, dismiss_quarantine_proposal, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, run_cluster_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) need, on the project they act on, the permission the same action needs in the dashboard (each description names it and the roles that hold it); tools/list leaves out the ones this key cannot use on any project, and each call is logged with the key that made it. ' +
+          'Write/triage tools (set_cluster_status, triage_cluster, move_tests_to_new_cluster, triage_gap, decide_merge_suggestion, set_test_quarantine, dismiss_quarantine_proposal, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, unlink_issue, run_cluster_diagnosis, run_execution_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) need, on the project they act on, the permission the same action needs in the dashboard (each description names it and the roles that hold it); tools/list leaves out the ones this key cannot use on any project, and each call is logged with the key that made it. ' +
+          'To set the diagnosis of a cluster or of one failure, write it and call record_diagnosis with clusterId or executionId. ' +
           'After fixing a cluster, call report_fix_attempt with the commit or branch, and put the Piwi-Cluster trailer get_fix_plan suggests in the commit message, so Piwi can verify the fix. ' +
           'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
           'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
@@ -191,7 +192,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       try {
         const data = await tool.handler(db, args, ctx);
         // Write tools are logged with what they acted on; read tools never are.
-        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok');
+        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok', null, data);
         return ok(id, toContent(data));
       } catch (err) {
         // A tool that throws surfaces as a tool result with `isError: true`, not

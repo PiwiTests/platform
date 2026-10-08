@@ -1,36 +1,36 @@
 /**
  * The server side of recording an agent's diagnosis: the patch is validated
  * against the source files it names, read through the project's SCM provider
- * at the commit the cluster last failed at, and the stored diagnosis notifies
- * like one Piwi produced. The write itself is the shared handler.
+ * at the commit of the run the failure was seen in, and the stored diagnosis
+ * notifies like one Piwi produced. The write itself is the shared handler.
  */
 import { eq } from 'drizzle-orm';
-import { failureClusters, testRuns } from '../database/schema';
-import type { AgentDiagnosisInput } from '#shared/agent-diagnosis';
+import { testRuns } from '../database/schema';
+import type { AgentDiagnosisInput, AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import type { HandbackActor } from '#shared/handback-outcomes';
-import { recordAgentDiagnosis, type RecordAgentDiagnosisResult } from '#shared/handlers/agent-diagnosis';
-import { isDiagnosisRunning } from './ai-diagnosis';
+import {
+  agentDiagnosisEvent,
+  recordAgentDiagnosis,
+  type RecordAgentDiagnosisResult,
+  type ResolvedDiagnosisTarget,
+} from '#shared/handlers/agent-diagnosis';
+import { isDiagnosisRunning, isDiagnosisRunningForExecution } from './ai-diagnosis';
 import { createScmProvider } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
 import { emitNotification } from './notifications/emit';
 import type { RunMetadata } from './run-json-types';
 import type { DbClient } from '../database';
 
-/** Read the files a patch names at the commit the cluster last failed at; null without SCM. */
-async function loadClusterSources(
-  db: DbClient,
-  clusterId: number,
-  paths: string[],
-): Promise<Map<string, string> | null> {
-  const [row] = await db
-    .select({ projectId: failureClusters.projectId, metadata: testRuns.metadata })
-    .from(failureClusters)
-    .innerJoin(testRuns, eq(testRuns.id, failureClusters.lastSeenRunId))
-    .where(eq(failureClusters.id, clusterId));
-  const scm = (row?.metadata as RunMetadata | null)?.scm;
+/** Read the files a patch names at the commit of a run; null without SCM. */
+async function loadRunSources(db: DbClient, runId: number, paths: string[]): Promise<Map<string, string> | null> {
+  const [run] = await db
+    .select({ projectId: testRuns.projectId, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  const scm = (run?.metadata as RunMetadata | null)?.scm;
   const repositoryUrl = normalizeGitUrl(scm?.remoteUrl ?? null);
-  if (!row || !repositoryUrl || !scm?.commit) return null;
-  const provider = await createScmProvider(repositoryUrl, db, row.projectId);
+  if (!run || !repositoryUrl || !scm?.commit) return null;
+  const provider = await createScmProvider(repositoryUrl, db, run.projectId);
   if (!provider) return null;
   const files = new Map<string, string>();
   for (const path of paths) {
@@ -40,28 +40,28 @@ async function loadClusterSources(
   return files;
 }
 
-/** Record an agent's diagnosis on a cluster and send `diagnosis.completed`. */
-export async function recordAgentDiagnosisOnCluster(
+/**
+ * Record an agent's diagnosis on a cluster or a failure and send
+ * `diagnosis.completed`; `resolved` is the target when the caller already resolved it.
+ */
+export async function recordAgentDiagnosisOn(
   db: DbClient,
-  clusterId: number,
+  target: AgentDiagnosisTarget,
   input: AgentDiagnosisInput,
   actor: HandbackActor,
+  resolved?: ResolvedDiagnosisTarget,
 ): Promise<RecordAgentDiagnosisResult> {
-  if (isDiagnosisRunning(clusterId)) return { ok: false, error: 'running' };
-  const result = await recordAgentDiagnosis(db, clusterId, input, {
+  const running =
+    target.scope === 'cluster'
+      ? isDiagnosisRunning(target.clusterId)
+      : isDiagnosisRunningForExecution(target.executionId);
+  if (running) return { ok: false, error: 'running' };
+  const result = await recordAgentDiagnosis(db, target, input, {
     actor,
-    loadSources: (id, paths) => loadClusterSources(db, id, paths),
+    loadSources: (runId, paths) => loadRunSources(db, runId, paths),
+    resolved,
   });
-  if (result.ok) {
-    emitNotification(db, 'diagnosis.completed', {
-      clusterId,
-      projectId: result.projectId,
-      completedAt: Date.now(),
-      summary: input.diagnosis.summary,
-      rootCause: input.diagnosis.rootCause,
-      category: input.diagnosis.category,
-      confidence: input.diagnosis.confidence,
-    });
-  }
+  const event = result.ok ? agentDiagnosisEvent(target, result, input) : null;
+  if (event) emitNotification(db, 'diagnosis.completed', event);
   return result;
 }

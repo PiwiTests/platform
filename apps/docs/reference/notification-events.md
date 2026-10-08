@@ -23,7 +23,7 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |
 | `flakiness.spike` | A completed run contains flaky tests; the flakiness-threshold filter keeps only rates above N% |
 | `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch and environment; the regression-% filter raises the bar |
-| `diagnosis.completed` | An AI diagnosis finishes (requires an [AI provider](/guide/ai-provider)) |
+| `diagnosis.completed` | A diagnosis of a cluster, or of one of its failures, is stored: Piwi's (requires an [AI provider](/guide/ai-provider)) or one an agent records. A failure in no cluster sends none |
 | `auto_heal.pr_opened` | [Auto-heal](/features/auto-heal) opened a pull request; the payload carries `prNumber`, `prUrl`, `branch` and `editCount` |
 | `environment.incident` | A completed run is flagged as an [environment incident](/features/environment-incidents); it replaces the run's `run.failed`, `run.failed.default_branch`, `flakiness.spike`, `perf.regression`, `cluster.new` and `bug.looks_fixed` (`run.finished` still fires). The payload carries `rule`, `reason`, `host`, `otherProjects` and `incidentKey`, which is the same for every run of one outage across projects, so a channel receives one message. A subscription filtered on owners does not receive it |
 | `bug.looks_fixed` | A `test.fail()` test passed in a completed run, in every browser project that ran it, and did not already pass on the previous completed run of the same branch; the payload lists the `tests`, each with the bug report (`bugId`, from `piwi:bug`) and ticket (`link`) it names |
@@ -84,7 +84,8 @@ Every event that comes from a run carries that run's `branch` and `environment` 
   verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).
   A fix landed by an [auto-heal PR](/features/auto-heal#after-the-pr-opens) carries `healPr` (`{ number, url, actionId }`).
-- **`diagnosis.completed`**: the cluster, and the diagnosis's `summary`, `rootCause`, `category` and `confidence`.
+- **`diagnosis.completed`**: the cluster, and the diagnosis's `summary`, `rootCause`, `category` and `confidence`. A
+  diagnosis of one failure in the cluster adds its `executionId`, and the notification opens that failure.
 
 A `cluster.*` event also carries `knownIssue` (`{ key, url }`) when the cluster is linked to a tracker issue.
 

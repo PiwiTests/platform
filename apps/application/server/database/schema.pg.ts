@@ -1939,7 +1939,7 @@ export const mcpToolCalls = pgTable(
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }), // null for a session or with auth off
     userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
     tool: text('tool').notNull(),
-    subjectType: text('subject_type'), // 'cluster', 'gap', 'bug-report', 'run', 'test-case', 'suggestion', 'diagnosis'
+    subjectType: text('subject_type'), // 'cluster', 'execution', 'gap', 'bug-report', 'run', 'test-case', 'suggestion', 'diagnosis'
     subjectId: integer('subject_id'),
     result: text('result').notNull(), // 'ok' | 'error'
     error: text('error'), // the error text an agent was given, truncated

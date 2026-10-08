@@ -275,6 +275,8 @@ export interface ClusterRegressedPayload extends RunScope {
 
 export interface DiagnosisCompletedPayload {
   clusterId: number;
+  /** For a diagnosis of one failure in the cluster: that execution, which the notification opens. */
+  executionId?: number;
   projectId: number;
   /** Epoch ms of this completion — distinguishes re-diagnoses of the same cluster. */
   completedAt?: number;
@@ -504,7 +506,8 @@ export function buildNotificationDedupeKey(
   }
   if (event === 'diagnosis.completed') {
     const p = payload as DiagnosisCompletedPayload;
-    return `${event}:c${p.clusterId}:${p.completedAt ?? 'x'}:${channelId}`;
+    const execution = p.executionId ? `:e${p.executionId}` : '';
+    return `${event}:c${p.clusterId}${execution}:${p.completedAt ?? 'x'}:${channelId}`;
   }
   if (event === 'environment.incident') {
     const p = payload as EnvironmentIncidentPayload;
@@ -536,6 +539,9 @@ export function computePerfBaseline(
 
 /** Dashboard path the notification links to, or null when it has no target. */
 export function notificationTargetPath(event: NotificationEvent, payload: NotificationPayload): string | null {
+  if (event === 'diagnosis.completed' && (payload as DiagnosisCompletedPayload).executionId) {
+    return `/test-run-cases/${(payload as DiagnosisCompletedPayload).executionId}`;
+  }
   if (
     event === 'cluster.new' ||
     event === 'cluster.fixed' ||

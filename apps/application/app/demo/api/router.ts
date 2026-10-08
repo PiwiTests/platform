@@ -68,6 +68,7 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
+import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
 import { branchFailuresOrError } from '~~/server/utils/branch-failures';
@@ -235,8 +236,13 @@ import {
 } from '#shared/handlers/flake-lab';
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
-import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
-import { recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
+import {
+  AGENT_DIAGNOSIS_STATUS,
+  agentDiagnosisErrorMessage,
+  parseAgentDiagnosis,
+  type AgentDiagnosisTarget,
+} from '#shared/agent-diagnosis';
+import { agentDiagnosisEvent, recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
 import { parseFixAttempt } from '#shared/fix-attempts';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
 import { getClusterActivity } from '#shared/handlers/cluster-activity';
@@ -534,6 +540,21 @@ async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntit
   if (projectId === null) throw demoHttpError(404, 'Not found');
   assertDemoScope(ctx, projectId);
   return projectId;
+}
+
+/** Record an agent's diagnosis on a cluster or a failure (mirrors both `agent-diagnosis` routes). */
+async function recordDemoAgentDiagnosis(target: AgentDiagnosisTarget, body: unknown, ctx: DemoCtx | undefined) {
+  const parsed = parseAgentDiagnosis(body);
+  if (!parsed.ok) throw demoHttpError(400, parsed.message);
+  const result = await recordAgentDiagnosis(await getDemoDb(), target, parsed.value, {
+    actor: { channel: parsed.value.channel ?? 'ui', userId: ctx?.actingUserId ?? null },
+  });
+  if (!result.ok) {
+    throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], agentDiagnosisErrorMessage(result.error, target.scope));
+  }
+  const event = agentDiagnosisEvent(target, result, parsed.value);
+  if (event) publishDemoNotificationEvent({ type: 'diagnosis.completed', ...event });
+  return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
 }
 
 /** A user's own API keys, or anyone's for an administrator (mirrors the api-keys routes). */
@@ -1349,13 +1370,16 @@ const routes: RouteEntry[] = [
     permission: 'ai:run',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const parsed = parseAgentDiagnosis(body);
-      if (!parsed.ok) throw demoHttpError(400, parsed.message);
-      const result = await recordAgentDiagnosis(await getDemoDb(), +m[1]!, parsed.value, {
-        actor: { channel: parsed.value.channel ?? 'ui', userId: ctx?.actingUserId ?? null },
-      });
-      if (!result.ok) throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], AGENT_DIAGNOSIS_ERRORS[result.error]);
-      return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
+      return recordDemoAgentDiagnosis({ scope: 'cluster', clusterId: +m[1]! }, body, ctx);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/agent-diagnosis$/,
+    permission: 'ai:run',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return recordDemoAgentDiagnosis({ scope: 'execution', executionId: +m[1]! }, body, ctx);
     },
   },
   {
@@ -1762,9 +1786,9 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/diagnose$/,
     permission: 'ai:run',
-    handler: async (m, body, _q, ctx) => {
+    handler: async (m, body, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return apiDiagnoseExecution(+m[1]!, body as Record<string, unknown> | undefined);
+      return apiDiagnoseExecution(+m[1]!, body as Record<string, unknown> | undefined, q);
     },
   },
   {

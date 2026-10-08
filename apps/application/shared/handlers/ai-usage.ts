@@ -17,6 +17,7 @@
 import { and, count, eq, gte, inArray, isNotNull, ne, sql, sum } from 'drizzle-orm';
 import { failureDiagnoses, failureDiagnosisVersions, handbackOutcomes } from '../../server/database/schema';
 import { HANDBACK_MIN_SAMPLE } from '#shared/analytics/metrics';
+import { storedPatchValidation } from '#shared/patch';
 import type { AiUsageModelRow, AiUsageSummary } from '../../types/api';
 import type { DrizzleDB } from './db';
 
@@ -37,16 +38,9 @@ const emptyQuality = (): QualityCounts => ({
 const modelKey = (provider: string | null | undefined, model: string | null | undefined) =>
   `${provider ?? ''}\u0000${model ?? ''}`;
 
-/**
- * The validation of a diagnosis' suggested patch: Piwi stores it at the top of
- * the details, an agent's diagnosis inside its suggested fix.
- */
+/** The status of the validation stored with a diagnosis' suggested patch. */
 export function patchValidationStatus(details: unknown): string | null {
-  const d = details as {
-    patchValidation?: { status?: unknown } | null;
-    suggestedFix?: { patchValidation?: { status?: unknown } | null } | null;
-  } | null;
-  const status = d?.patchValidation?.status ?? d?.suggestedFix?.patchValidation?.status;
+  const status: unknown = storedPatchValidation(details)?.status;
   return typeof status === 'string' ? status : null;
 }
 

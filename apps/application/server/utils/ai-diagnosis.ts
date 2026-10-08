@@ -39,11 +39,10 @@ function autoDiagnoseBudget(): number {
 
 // Concurrency guard: prevent double-running for the same cluster/execution.
 // Keys are scoped: 'cluster:<id>' for cluster-scope, 'exec:<testRunsCaseId>' for execution-scope.
-// This prevents the id=0 synthetic cluster used for unclustered executions from creating a shared slot.
 const running = new Set<string>();
 
-function runningKey(clusterId: number, testRunsCaseId?: number): string {
-  return testRunsCaseId != null ? `exec:${testRunsCaseId}` : `cluster:${clusterId}`;
+function runningKey(subject: DiagnosisSubject): string {
+  return subject.scope === 'execution' ? `exec:${subject.executionId}` : `cluster:${subject.cluster.id}`;
 }
 
 export function isDiagnosisRunning(clusterId: number): boolean {
@@ -163,12 +162,27 @@ function validateSuggestedPatch(ctx: BuiltDiagnosisContext, patch: string | null
 // other step — claiming the running row, the research stage + context assembly,
 // and persisting the completed/failed result — is shared below.
 
+/**
+ * What a diagnosis run is about: a cluster, or one execution (execution scope),
+ * with the cluster it belongs to when it has one.
+ */
+type DiagnosisSubject =
+  | { scope: 'cluster'; projectId: number; cluster: FailureCluster }
+  | { scope: 'execution'; projectId: number; cluster: FailureCluster | null; executionId: number };
+
+/** The execution an execution-scope diagnosis is about, and its cluster when it has one. */
+export interface DiagnosedExecution {
+  id: number;
+  projectId: number;
+  cluster: FailureCluster | null;
+}
+
 interface DiagnosisRunOpts {
   additionalContext?: string;
   images?: AiAttachedImage[];
   baseCommit?: string;
   selectedCommitShas?: string[];
-  /** When set, scope is 'execution' and the diagnosis is for a specific test-run-case. */
+  /** When set, scope is 'execution' and the diagnosis is for a specific test-run-case of the cluster. */
   testRunsCaseId?: number;
   /** Streaming only: receives thinking chunks, then the final `done`/`error` chunk. */
   onChunk?: (chunk: StreamChunk) => void;
@@ -186,8 +200,16 @@ type PipelineStage = {
 };
 
 /** 409 error thrown when a diagnosis is already running for this cluster/execution. */
-function alreadyRunningError() {
-  return Object.assign(new Error('Diagnosis already running for this cluster'), { statusCode: 409 });
+function alreadyRunningError(subject: DiagnosisSubject) {
+  const what = subject.scope === 'execution' ? 'failure' : 'cluster';
+  return Object.assign(new Error(`Diagnosis already running for this ${what}`), { statusCode: 409 });
+}
+
+/** The subject of a run on a cluster, or on one of its executions when `testRunsCaseId` is set. */
+function clusterSubject(cluster: FailureCluster, opts: DiagnosisRunOpts): DiagnosisSubject {
+  return opts.testRunsCaseId != null
+    ? { scope: 'execution', projectId: cluster.projectId, cluster, executionId: opts.testRunsCaseId }
+    : { scope: 'cluster', projectId: cluster.projectId, cluster };
 }
 
 /** Whether an error is a unique-constraint violation (SQLite or PostgreSQL). */
@@ -199,20 +221,20 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /** The WHERE clause identifying this diagnosis row (execution vs cluster scope). */
-function diagnosisWhere(cluster: FailureCluster, opts: DiagnosisRunOpts) {
-  return opts.testRunsCaseId != null
-    ? and(eq(failureDiagnoses.testRunsCaseId, opts.testRunsCaseId), eq(failureDiagnoses.scope, 'execution'))
-    : and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster'));
+function diagnosisWhere(subject: DiagnosisSubject) {
+  return subject.scope === 'execution'
+    ? and(eq(failureDiagnoses.testRunsCaseId, subject.executionId), eq(failureDiagnoses.scope, 'execution'))
+    : and(eq(failureDiagnoses.clusterId, subject.cluster.id), eq(failureDiagnoses.scope, 'cluster'));
 }
 
 /** Build the combined (global + project) diagnosis system prompt. */
-export async function loadDiagnosisSystemPrompt(db: DbClient, cluster: { projectId: number }): Promise<string> {
+export async function loadDiagnosisSystemPrompt(db: DbClient, owner: { projectId: number }): Promise<string> {
   const [globalInstructionsRow, projectRows, globalLanguage] = await Promise.all([
     getAppSetting<{ value?: string }>(db, 'ai_instructions'),
     db
       .select({ diagnosisInstructions: projects.diagnosisInstructions, aiLanguage: projects.aiLanguage })
       .from(projects)
-      .where(eq(projects.id, cluster.projectId))
+      .where(eq(projects.id, owner.projectId))
       .limit(1),
     readAiLanguage(db),
   ]);
@@ -231,20 +253,19 @@ export async function loadDiagnosisSystemPrompt(db: DbClient, cluster: { project
  * completed/failed/stale row before resetting it, and treats a unique-index
  * violation on the insert (a concurrent instance won the race) as a 409 too.
  */
-async function claimRunningRow(db: DbClient, cluster: FailureCluster, config: AiConfig, opts: DiagnosisRunOpts) {
-  const isExecutionScope = opts.testRunsCaseId != null;
+async function claimRunningRow(db: DbClient, subject: DiagnosisSubject, config: AiConfig) {
   const runningFields = runningDiagnosisFields(config);
 
   const [existing] = await db
     .select({ id: failureDiagnoses.id, status: failureDiagnoses.status, updatedAt: failureDiagnoses.updatedAt })
     .from(failureDiagnoses)
-    .where(diagnosisWhere(cluster, opts))
+    .where(diagnosisWhere(subject))
     .limit(1);
 
   if (existing) {
     // Don't overwrite a diagnosis another run/instance is actively producing.
     if (existing.status === 'running' && !isDiagnosisStale(existing as FailureDiagnosis)) {
-      throw alreadyRunningError();
+      throw alreadyRunningError(subject);
     }
     await snapshotDiagnosis(db, existing.id);
     await db.update(failureDiagnoses).set(runningFields).where(eq(failureDiagnoses.id, existing.id));
@@ -256,15 +277,15 @@ async function claimRunningRow(db: DbClient, cluster: FailureCluster, config: Ai
       // Execution-scoped rows key on `testRunsCaseId`, never on a cluster — a failure may
       // have no cluster, and a null keeps the (cluster_id, scope) unique index from
       // colliding across executions that share one cluster.
-      clusterId: isExecutionScope ? null : cluster.id,
-      scope: isExecutionScope ? 'execution' : 'cluster',
-      ...(isExecutionScope ? { testRunsCaseId: opts.testRunsCaseId! } : {}),
+      ...(subject.scope === 'execution'
+        ? { clusterId: null, scope: 'execution', testRunsCaseId: subject.executionId }
+        : { clusterId: subject.cluster.id, scope: 'cluster' }),
       ...runningFields,
     });
   } catch (err) {
     // The unique index on (cluster_id, scope) / (test_runs_case_id, scope) means a
     // concurrent instance inserted the running row between our SELECT and INSERT.
-    if (isUniqueViolation(err)) throw alreadyRunningError();
+    if (isUniqueViolation(err)) throw alreadyRunningError(subject);
     throw err;
   }
 }
@@ -276,28 +297,27 @@ async function claimRunningRow(db: DbClient, cluster: FailureCluster, config: Ai
  */
 async function prepareDiagnosisInputs(
   db: DbClient,
-  cluster: FailureCluster,
+  subject: DiagnosisSubject,
   config: AiConfig,
   opts: DiagnosisRunOpts,
   pipeline: PipelineStage[],
 ): Promise<{ ctx: BuiltDiagnosisContext; userContent: string; images: AiAttachedImage[] | undefined }> {
-  const isExecutionScope = opts.testRunsCaseId != null;
   // Honour the cluster's manually-pinned baseline when the caller didn't supply one.
-  const effectiveBaseCommit = opts.baseCommit || cluster.manualBaseCommit || undefined;
+  const effectiveBaseCommit = opts.baseCommit || subject.cluster?.manualBaseCommit || undefined;
 
   const buildCtx = (skipScm: boolean) =>
-    isExecutionScope
+    subject.scope === 'execution'
       ? buildDiagnosisContext(db, {
           kind: 'execution',
-          clusterId: cluster.id,
-          executionId: opts.testRunsCaseId!,
+          clusterId: subject.cluster?.id,
+          executionId: subject.executionId,
           baseCommit: effectiveBaseCommit,
           selectedCommitShas: opts.selectedCommitShas,
           skipScm,
         })
       : buildDiagnosisContext(db, {
           kind: 'cluster',
-          clusterId: cluster.id,
+          clusterId: subject.cluster.id,
           baseCommit: effectiveBaseCommit,
           selectedCommitShas: opts.selectedCommitShas,
           skipScm,
@@ -325,7 +345,7 @@ async function prepareDiagnosisInputs(
   if (useResearch) {
     opts.onStage?.('research');
     try {
-      const researchLang = languageInstruction(await resolveProjectAiLanguage(db, cluster.projectId));
+      const researchLang = languageInstruction(await resolveProjectAiLanguage(db, subject.projectId));
       const research = await callAiProvider(researchConfig!, {
         system: researchLang ? `${RESEARCH_SYSTEM_PROMPT}\n${researchLang}` : RESEARCH_SYSTEM_PROMPT,
         user: buildResearchProjection(ctx),
@@ -368,7 +388,7 @@ async function prepareDiagnosisInputs(
 /** Persist the completed diagnosis row and return it. */
 async function persistCompletedDiagnosis(
   db: DbClient,
-  cluster: FailureCluster,
+  subject: DiagnosisSubject,
   opts: DiagnosisRunOpts,
   args: {
     diagnosis: ReturnType<typeof parseDiagnosisJson>;
@@ -421,20 +441,24 @@ async function persistCompletedDiagnosis(
       durationMs: Date.now() - t0,
       updatedAt: new Date(),
     })
-    .where(diagnosisWhere(cluster, opts))
+    .where(diagnosisWhere(subject))
     .returning();
 
   const completed = updated[0]!;
 
-  emitNotification(db, 'diagnosis.completed', {
-    clusterId: cluster.id,
-    projectId: cluster.projectId,
-    completedAt: completed.updatedAt?.getTime() ?? Date.now(),
-    summary: diagnosis.summary,
-    rootCause: diagnosis.rootCause,
-    category: diagnosis.category,
-    confidence: diagnosis.confidence,
-  });
+  // The event is about a cluster: a failure in no cluster sends none.
+  if (subject.cluster) {
+    emitNotification(db, 'diagnosis.completed', {
+      clusterId: subject.cluster.id,
+      ...(subject.scope === 'execution' ? { executionId: subject.executionId } : {}),
+      projectId: subject.projectId,
+      completedAt: completed.updatedAt?.getTime() ?? Date.now(),
+      summary: diagnosis.summary,
+      rootCause: diagnosis.rootCause,
+      category: diagnosis.category,
+      confidence: diagnosis.confidence,
+    });
+  }
 
   return completed;
 }
@@ -442,8 +466,7 @@ async function persistCompletedDiagnosis(
 /** Persist the failed diagnosis row and return it. */
 async function persistFailedDiagnosis(
   db: DbClient,
-  cluster: FailureCluster,
-  opts: DiagnosisRunOpts,
+  subject: DiagnosisSubject,
   message: string,
   t0: number,
 ): Promise<FailureDiagnosis> {
@@ -455,7 +478,7 @@ async function persistFailedDiagnosis(
       durationMs: Date.now() - t0,
       updatedAt: new Date(),
     })
-    .where(diagnosisWhere(cluster, opts))
+    .where(diagnosisWhere(subject))
     .returning();
 
   return failed[0]!;
@@ -479,18 +502,43 @@ export async function runClusterDiagnosis(
   config: AiConfig,
   opts: DiagnosisRunOpts = {},
 ): Promise<FailureDiagnosis> {
-  const mutexKey = runningKey(cluster.id, opts.testRunsCaseId);
-  if (running.has(mutexKey)) throw alreadyRunningError();
+  return runDiagnosis(db, clusterSubject(cluster, opts), config, opts);
+}
+
+/** Diagnose one execution (execution scope), in a cluster or in none. */
+export async function runExecutionDiagnosis(
+  db: DbClient,
+  execution: DiagnosedExecution,
+  config: AiConfig,
+  opts: Omit<DiagnosisRunOpts, 'testRunsCaseId' | 'onChunk' | 'onStage'> = {},
+): Promise<FailureDiagnosis> {
+  const subject: DiagnosisSubject = {
+    scope: 'execution',
+    projectId: execution.projectId,
+    cluster: execution.cluster,
+    executionId: execution.id,
+  };
+  return runDiagnosis(db, subject, config, opts);
+}
+
+async function runDiagnosis(
+  db: DbClient,
+  subject: DiagnosisSubject,
+  config: AiConfig,
+  opts: DiagnosisRunOpts,
+): Promise<FailureDiagnosis> {
+  const mutexKey = runningKey(subject);
+  if (running.has(mutexKey)) throw alreadyRunningError(subject);
   running.add(mutexKey);
 
   try {
-    const systemPrompt = await loadDiagnosisSystemPrompt(db, cluster);
-    await claimRunningRow(db, cluster, config, opts);
+    const systemPrompt = await loadDiagnosisSystemPrompt(db, subject);
+    await claimRunningRow(db, subject, config);
 
     const t0 = Date.now();
     const pipeline: PipelineStage[] = [];
     try {
-      const { ctx, userContent, images } = await prepareDiagnosisInputs(db, cluster, config, opts, pipeline);
+      const { ctx, userContent, images } = await prepareDiagnosisInputs(db, subject, config, opts, pipeline);
 
       const result = await callAiProvider(config, {
         system: systemPrompt,
@@ -513,7 +561,7 @@ export async function runClusterDiagnosis(
       });
 
       const diagnosis = parseDiagnosisJson(result.text);
-      return await persistCompletedDiagnosis(db, cluster, opts, {
+      return await persistCompletedDiagnosis(db, subject, opts, {
         diagnosis,
         ctx,
         pipeline,
@@ -522,7 +570,7 @@ export async function runClusterDiagnosis(
         systemPrompt,
       });
     } catch (err) {
-      return await persistFailedDiagnosis(db, cluster, opts, err instanceof Error ? err.message : String(err), t0);
+      return await persistFailedDiagnosis(db, subject, err instanceof Error ? err.message : String(err), t0);
     }
   } finally {
     running.delete(mutexKey);
@@ -544,18 +592,19 @@ export async function streamClusterDiagnosis(
   config: AiConfig,
   opts: DiagnosisRunOpts = {},
 ): Promise<FailureDiagnosis> {
-  const mutexKey = runningKey(cluster.id, opts.testRunsCaseId);
-  if (running.has(mutexKey)) throw alreadyRunningError();
+  const subject = clusterSubject(cluster, opts);
+  const mutexKey = runningKey(subject);
+  if (running.has(mutexKey)) throw alreadyRunningError(subject);
   running.add(mutexKey);
 
   try {
-    const systemPrompt = await loadDiagnosisSystemPrompt(db, cluster);
-    await claimRunningRow(db, cluster, config, opts);
+    const systemPrompt = await loadDiagnosisSystemPrompt(db, subject);
+    await claimRunningRow(db, subject, config);
 
     const t0 = Date.now();
     const pipeline: PipelineStage[] = [];
     try {
-      const { ctx, userContent, images } = await prepareDiagnosisInputs(db, cluster, config, opts, pipeline);
+      const { ctx, userContent, images } = await prepareDiagnosisInputs(db, subject, config, opts, pipeline);
 
       opts.onStage?.('diagnosis');
 
@@ -600,7 +649,7 @@ export async function streamClusterDiagnosis(
       });
 
       const diagnosis = parseDiagnosisJson(accumulatedText);
-      const finalDiagnosis = await persistCompletedDiagnosis(db, cluster, opts, {
+      const finalDiagnosis = await persistCompletedDiagnosis(db, subject, opts, {
         diagnosis,
         ctx,
         pipeline,
@@ -612,7 +661,7 @@ export async function streamClusterDiagnosis(
       return finalDiagnosis;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const result = await persistFailedDiagnosis(db, cluster, opts, message, t0);
+      const result = await persistFailedDiagnosis(db, subject, message, t0);
       if (opts.onChunk) opts.onChunk({ type: 'error', data: message });
       return result;
     }
