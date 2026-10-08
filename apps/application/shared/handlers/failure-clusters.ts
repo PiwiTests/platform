@@ -314,6 +314,7 @@ export async function getFailureCluster(
       testCaseId: t.testCaseId,
       title: t.title,
       filePath: t.filePath,
+      owner: (t.owner as string | null) ?? null,
       runCount: Number(t.runCount),
       recentTestRunsCaseId: t.recentTestRunsCaseId,
       quarantined: quarantinedIds.has(t.testCaseId),

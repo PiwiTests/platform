@@ -21,6 +21,8 @@ import type { TransitionSample } from '#shared/integrations/transitions';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#shared/integrations/binding';
+import { previewAutoCreate, type AutoCreatePreview } from '#shared/handlers/tracker-automation';
+import { projectDefaultBranch } from '~~/server/utils/scm/stored-default-branch';
 import { buildClusterIssue, buildExecutionIssue } from '~~/server/utils/integrations/documents';
 import { entityLinks, testRunsCases } from '~~/server/database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -407,6 +409,20 @@ export function getDemoProjectIntegration(): ResolvedProjectIntegration {
     labels: ['piwi'],
     locale: 'en',
   });
+}
+
+/**
+ * The automatic-creation preview over the seeded clusters, with the binding the
+ * form sends (else the canned one): the same facts and rules as the server, the
+ * default branch from the stored runs, and no CODEOWNERS or tracker to ask.
+ */
+export async function demoAutoCreatePreview(
+  db: DrizzleDB,
+  projectId: number,
+  body: Partial<ResolvedProjectIntegration> | null,
+): Promise<AutoCreatePreview> {
+  const binding = body && Object.keys(body).length > 0 ? resolveProjectIntegration(body) : getDemoProjectIntegration();
+  return previewAutoCreate(db, projectId, binding, { defaultBranch: await projectDefaultBranch(db, projectId) });
 }
 
 /** Echo the normalized binding back — the demo has nothing to persist to. */

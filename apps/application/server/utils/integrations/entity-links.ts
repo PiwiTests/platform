@@ -50,6 +50,8 @@ export async function writeCreatedIssueLink(
     connectionId: number;
     createdBy: number | null;
     issue: CreatedIssueLink;
+    /** Bookkeeping kept on the link from the start, such as what Piwi wrote. */
+    metadata?: Record<string, unknown> | null;
   },
 ): Promise<{ id: number } | null> {
   const [row] = await db
@@ -66,6 +68,7 @@ export async function writeCreatedIssueLink(
       externalId: input.issue.externalId,
       origin: 'created',
       createdBy: input.createdBy,
+      ...(input.metadata ? { metadata: input.metadata as never } : {}),
       unfurledAt: new Date(),
     })
     .returning({ id: entityLinks.id });

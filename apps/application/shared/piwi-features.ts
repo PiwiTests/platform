@@ -268,6 +268,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/issue-tracking',
       },
       {
+        title: 'Issue automation',
+        summary:
+          'Rules that file an issue for a failure that keeps failing on the branches and environments you choose, and keep its comments and description current.',
+        needs: ['admin'],
+        where: 'Project → Settings → Issue tracker',
+        doc: 'features/issue-automation',
+      },
+      {
         title: 'Pull-request feedback & re-run',
         summary: 'A summary of the failures on the branch posted to the PR, and a re-run triggered from the dashboard.',
         needs: ['scm'],

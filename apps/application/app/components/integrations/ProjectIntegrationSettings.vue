@@ -3,16 +3,24 @@
  * The per-project tracker binding form (admin, project Settings tab): which
  * connection and Jira project/issue type a failure files into, the default
  * labels and assignee, values for the fields that issue type requires, the
- * ticket language, what a ticket carries, the two-way sync policies with values
- * for the fields their transitions ask for, the owner routes, and the
- * auto-create fields (greyed out — the trigger is not enabled yet). Saves the
- * whole resolved binding to
+ * ticket language, what a ticket carries, the write-back policies and the runs
+ * they follow, with values for the fields their transitions ask for, the owner
+ * routes, and automatic creation with its rules, guards and a preview of what
+ * the rules file. Saves the whole resolved binding to
  * PUT /api/projects/:id/integrations.
  *
  * The form holds strings (never null) so the inputs bind cleanly; the server
  * normalizes and clamps the payload on save.
  */
 import { DEFAULT_PROJECT_INTEGRATION, type ResolvedProjectIntegration } from '#shared/integrations/binding';
+import { NOTE_INTERVALS, type NoteInterval } from '#shared/integrations/automation';
+import {
+  autoCreateRuleFromForm,
+  autoCreateRuleToForm,
+  runScopeFromForm,
+  runScopeToForm,
+  type AutoCreateRuleForm,
+} from '~/utils/tracker-binding-form';
 import { SUPPORTED_LOCALES } from '#shared/integrations/messages';
 import { JIRA_NO_PROJECTS_HINT, jiraProjectUrl } from '#shared/integrations/jira-setup';
 import { requiredFieldsToFill, type FieldValues } from '#shared/integrations/fields';
@@ -40,11 +48,15 @@ const form = reactive({
   include: { ...DEFAULT_PROJECT_INTEGRATION.include },
   policies: {
     ...DEFAULT_PROJECT_INTEGRATION.policies,
+    scope: runScopeToForm(DEFAULT_PROJECT_INTEGRATION.policies.scope),
     fixTransitionId: '',
     reopenTransitionId: '',
   },
   ownerRoutes: [] as RouteForm[],
-  autoCreate: { ...DEFAULT_PROJECT_INTEGRATION.autoCreate },
+  autoCreate: {
+    ...DEFAULT_PROJECT_INTEGRATION.autoCreate,
+    rules: DEFAULT_PROJECT_INTEGRATION.autoCreate.rules.map(autoCreateRuleToForm) as AutoCreateRuleForm[],
+  },
 });
 
 const connections = ref<TrackerSummary[]>([]);
@@ -52,6 +64,11 @@ const jiraProjects = ref<TrackerProjectOption[]>([]);
 const issueTypes = ref<TrackerIssueTypeOption[]>([]);
 const loading = ref(true);
 const saving = ref(false);
+
+const noteIntervalItems: Array<{ label: string; value: NoteInterval }> = NOTE_INTERVALS.map((interval) => ({
+  label: interval === 'day' ? 'once a day' : 'once a week',
+  value: interval,
+}));
 
 const localeItems = [
   { label: 'Inherit from connection', value: '' },
@@ -127,6 +144,7 @@ function fromBinding(b: ResolvedProjectIntegration) {
   form.include = { ...b.include };
   form.policies = {
     ...b.policies,
+    scope: runScopeToForm(b.policies.scope),
     fixTransitionId: b.policies.fixTransitionId ?? '',
     reopenTransitionId: b.policies.reopenTransitionId ?? '',
   };
@@ -137,7 +155,7 @@ function fromBinding(b: ResolvedProjectIntegration) {
     assigneeAccountId: r.assigneeAccountId ?? '',
     labels: (r.labels ?? []).join(', '),
   }));
-  form.autoCreate = { ...b.autoCreate };
+  form.autoCreate = { ...b.autoCreate, rules: b.autoCreate.rules.map(autoCreateRuleToForm) };
 }
 
 function toBinding(): Partial<ResolvedProjectIntegration> {
@@ -157,6 +175,7 @@ function toBinding(): Partial<ResolvedProjectIntegration> {
     include: { ...form.include },
     policies: {
       ...form.policies,
+      scope: runScopeFromForm(form.policies.scope),
       fixTransitionId: form.policies.fixTransitionId || null,
       reopenTransitionId: form.policies.reopenTransitionId || null,
     },
@@ -169,9 +188,12 @@ function toBinding(): Partial<ResolvedProjectIntegration> {
         assigneeAccountId: r.assigneeAccountId || null,
         labels: list(r.labels),
       })),
-    autoCreate: { ...form.autoCreate },
+    autoCreate: { ...form.autoCreate, rules: form.autoCreate.rules.map(autoCreateRuleFromForm) },
   };
 }
+
+/** The binding as the form holds it, for the automatic-creation preview. */
+const draftBinding = computed(() => toBinding());
 
 async function load() {
   loading.value = true;
@@ -327,6 +349,12 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
         <!-- Sync policies -->
         <div data-shot="binding-sync-policies">
           <p class="text-xs font-medium text-muted mb-2">Keep the ticket honest</p>
+          <div class="mb-4" data-shot="binding-write-scope">
+            <p class="text-sm font-semibold text-highlighted mb-2 flex items-center gap-1">
+              Runs that write to the ticket <HelpHint topic="integrations.run-scope" />
+            </p>
+            <TrackerRunScopeFields v-model="form.policies.scope" />
+          </div>
           <div class="space-y-2">
             <USwitch v-model="form.policies.commentOnFix" label="Comment when the fix lands" />
             <div class="flex items-center gap-2">
@@ -370,7 +398,43 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
               class="ps-11"
               @pick="(value) => (form.policies.reopenTransitionId = value)"
             />
-            <USwitch v-model="form.policies.commentOnNewOccurrences" label="Daily 'still failing' note" />
+            <div class="flex flex-wrap items-center gap-2">
+              <USwitch v-model="form.policies.commentOnNewOccurrences" label="'Still failing' note" />
+              <USelect
+                v-model="form.policies.newOccurrencesEvery"
+                :items="noteIntervalItems"
+                :disabled="!form.policies.commentOnNewOccurrences"
+                size="xs"
+                class="w-36"
+                title="At most one note per day, or per week"
+              />
+              <span class="text-xs text-muted">after</span>
+              <UInput
+                v-model.number="form.policies.newOccurrencesMin"
+                type="number"
+                min="1"
+                :disabled="!form.policies.commentOnNewOccurrences"
+                size="xs"
+                class="w-20"
+                title="New occurrences since the last note before another note"
+              />
+              <span class="text-xs text-muted">new occurrences</span>
+            </div>
+            <USwitch
+              v-model="form.policies.commentOnDiagnosis"
+              :disabled="!form.include.includeDiagnosis"
+              label="Comment when the failure is diagnosed"
+              :description="
+                form.include.includeDiagnosis
+                  ? 'With the summary, the root cause and the category'
+                  : 'Needs the diagnosis switched on in what the ticket carries, above'
+              "
+            />
+            <USwitch
+              v-model="form.policies.updateDescription"
+              label="Keep the description up to date"
+              description="Rewrite the description of an issue Piwi filed as the failure evolves, at most once a day and when a diagnosis completes. Never once someone edited it in the tracker."
+            />
             <USwitch v-model="form.policies.resolveOnClose" label="Resolve the cluster when the ticket closes" />
             <USwitch v-model="form.policies.reopenOnTicketReopen" label="Reopen the cluster when the ticket reopens" />
             <USwitch v-model="form.policies.commentOnMerge" label="Comment on both tickets when clusters merge" />
@@ -424,31 +488,39 @@ const requiredFields = computed(() => requiredFieldsToFill(screenFields.value));
           </div>
         </div>
 
-        <!-- Auto-create (inert) -->
-        <div class="rounded-lg border border-default p-3 opacity-60">
-          <div class="flex items-center gap-2 mb-2">
-            <UIcon name="i-lucide-lock" class="size-4 text-muted" />
-            <p class="text-xs font-medium text-muted">Automatic creation — not enabled yet</p>
-          </div>
-          <p class="text-xs text-muted mb-3">
-            These are stored but inert: Piwi does not file tickets automatically in this release.
-          </p>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <UFormField label="Min occurrences">
-              <UInput v-model.number="form.autoCreate.minOccurrences" type="number" disabled class="w-full" />
-            </UFormField>
-            <UFormField label="Min runs">
-              <UInput v-model.number="form.autoCreate.minRuns" type="number" disabled class="w-full" />
-            </UFormField>
-            <UFormField label="Daily cap">
-              <UInput v-model.number="form.autoCreate.dailyCap" type="number" disabled class="w-full" />
-            </UFormField>
+        <!-- Automatic creation -->
+        <div class="rounded-lg border border-default p-3 space-y-4" data-shot="binding-auto-create">
+          <div class="space-y-2">
+            <p class="text-sm font-semibold text-highlighted flex items-center gap-1">
+              Automatic creation <HelpHint topic="integrations.auto-create" />
+            </p>
             <USwitch
-              v-model="form.autoCreate.routeUnmatchedToDefault"
-              disabled
-              label="Route unmatched owners to default"
+              v-model="form.autoCreate.enabled"
+              label="File issues automatically"
+              description="After each run, file an issue for every failure that meets a rule below, through the destination and owner routes above."
             />
           </div>
+          <AutoCreateRulesEditor v-model="form.autoCreate.rules" />
+          <div class="space-y-2">
+            <USwitch
+              v-model="form.autoCreate.skipFlaky"
+              label="Leave out failures that look flaky"
+              description="A test of the failure passed on a retry, or passed at the commit it failed at"
+            />
+            <USwitch
+              v-model="form.autoCreate.routeUnmatchedToDefault"
+              label="File owners with no matching route into the default project"
+              :description="
+                form.ownerRoutes.length
+                  ? 'Otherwise a failure whose owner matches no owner route is not filed'
+                  : 'Applies once owner routes exist'
+              "
+            />
+            <UFormField label="At most this many issues a day" class="max-w-xs">
+              <UInput v-model.number="form.autoCreate.dailyCap" type="number" min="0" class="w-full" />
+            </UFormField>
+          </div>
+          <AutoCreatePreviewList :project-id="projectId" :binding="draftBinding" />
         </div>
       </div>
     </SectionCard>

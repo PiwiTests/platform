@@ -33,20 +33,49 @@ export const en = {
   'fact.firstSeen': 'First seen',
   'fact.lastSeen': 'Last seen',
   'fact.occurrences': 'Occurrences',
-  'fact.branch': 'Branch',
-  'fact.environment': 'Environment',
-  'fact.commit': 'Commit',
+  'fact.branches': { one: 'Branch', other: 'Branches' },
+  'fact.environments': { one: 'Environment', other: 'Environments' },
+  'fact.commit': 'Latest commit',
+  'value.inRuns': { one: '{occurrences} in {count} run', other: '{occurrences} in {count} runs' },
 
   // Affected-tests table headers
   'table.test': 'Test',
   'table.file': 'File',
   'table.owner': 'Owner',
+  'table.failures': 'Failures',
+  'text.moreTests': { one: '…and {count} more test.', other: '…and {count} more tests.' },
 
   // Inline labels
   'label.rootCause': 'Root cause',
   'label.failingLocator': 'Failing locator',
   'label.verify': 'Verify',
   'label.reproduce': 'Reproduce',
+  'label.category': 'Category',
+
+  // Diagnosis categories and confidence
+  'category.app-bug': 'Application bug',
+  'category.test-bug': 'Test bug',
+  'category.flaky-test': 'Flaky test',
+  'category.infrastructure': 'Infrastructure',
+  'category.environment': 'Environment',
+  'confidence.high': 'high confidence',
+  'confidence.medium': 'medium confidence',
+  'confidence.low': 'low confidence',
+
+  // Related issues
+  'section.related': 'Related issues',
+  'related.fixedBefore': 'the same kind of failure, fixed before',
+
+  // An issue filed by a rule, not a person
+  'count.occurrences': { one: '{count} occurrence', other: '{count} occurrences' },
+  'count.runs': { one: '{count} run', other: '{count} runs' },
+  'auto.filed': 'Filed automatically by Piwi after {occurrences} in {runs} since {since}.',
+  'auto.filed.noDate': 'Filed automatically by Piwi after {occurrences} in {runs}.',
+  'auto.countedOn': 'Counted on {where}.',
+  'auto.countedIn': {
+    one: 'Counted in the {where} environment.',
+    other: 'Counted in the {where} environments.',
+  },
 
   // Link labels
   'link.cluster': 'Failure cluster',
@@ -94,9 +123,21 @@ export const en = {
   'verification.stoppedFailing': 'stopped failing',
   'comment.regressed': 'Regressed in run #{run} — the fix did not hold.',
   'comment.stillFailing': {
-    one: 'Still failing — +{count} occurrence in {runs} runs since the last note, latest run #{latest}.',
-    other: 'Still failing — +{count} occurrences in {runs} runs since the last note, latest run #{latest}.',
+    one: 'Still failing — +{count} occurrence in {runs} since the last note, latest run #{latest}.',
+    other: 'Still failing — +{count} occurrences in {runs} since the last note, latest run #{latest}.',
   },
+  'comment.lastFailureOn': 'Latest failure on {where}.',
+  'comment.lastFailureIn': 'Latest failure in the {where} environment.',
+  'comment.newTests': {
+    one: 'Now also failing in {count} more test:',
+    other: 'Now also failing in {count} more tests:',
+  },
+  'comment.newBranches': { one: 'Now failing on a new branch: {list}.', other: 'Now failing on new branches: {list}.' },
+  'comment.newEnvironments': {
+    one: 'Now failing in a new environment: {list}.',
+    other: 'Now failing in new environments: {list}.',
+  },
+  'comment.diagnosis': 'Piwi diagnosed this failure:',
   'comment.mergedInto': 'This failure was merged into {key} — tracking continues there.',
   'comment.absorbed': 'Absorbed {key} into this issue — its failures are tracked here now.',
 } satisfies Record<string, MessageValue>;

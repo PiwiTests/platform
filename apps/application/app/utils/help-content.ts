@@ -57,6 +57,16 @@ export const HELP_TOPICS = {
     text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
     doc: 'features/issue-tracking#the-key-travels',
   },
+  'integrations.run-scope': {
+    title: 'Runs that write to the ticket',
+    text: 'The runs whose results comment on, move or update a tracked issue: the fix, regression and still-failing notes, the transitions and the description updates.\n\n- **Branches** — names or `*` patterns (`release/*`)\n- **Default branch** — the project default branch, whatever it is named\n- **Environments** — names or `*` patterns\n\nNothing named means every run. A run from an editor, a lab run, a bisect step or a reproduction never writes, nor does a developer run of part of the suite.',
+    doc: 'features/issue-automation#the-runs-that-write',
+  },
+  'integrations.auto-create': {
+    title: 'Automatic creation',
+    text: 'After each run, Piwi files an issue for each failure that meets a rule, counting only the runs the rule names.\n\n- **Occurrences, Runs** — how often it failed, and in how many distinct runs\n- **Days** — how long since the first occurrence counted\n- **Test tags** — only failures of tests carrying one of them\n\nA failure that is snoozed, looks flaky, is already tracked or that an open issue already carries the labels of is never filed, and the daily cap holds. Preview shows what the rules file before you save.',
+    doc: 'features/issue-automation#automatic-creation',
+  },
 
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {

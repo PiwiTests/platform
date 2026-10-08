@@ -76,6 +76,7 @@ export type RunUse =
   | 'auto-heal'
   | 'bug-lifecycle'
   | 'notifications'
+  | 'tracker'
   | 'run-health';
 
 export interface RunUseRule {
@@ -184,6 +185,19 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
    */
   notifications: {
     excludes: [...LAB_RUN_ORIGINS, 'editor'],
+    excludesIncidents: true,
+    completeOnly: false,
+    completeOnlyFor: ['local', 'desktop'],
+    excludesHistoricalImports: false,
+  },
+  /**
+   * The writes Piwi makes to an issue tracker on its own: automatic creation,
+   * and the comments, transitions and description updates a run's verdicts
+   * trigger. The outbound rule of `notifications`, and never a run at a commit
+   * chosen to investigate a failure.
+   */
+  tracker: {
+    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],

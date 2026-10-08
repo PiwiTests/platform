@@ -39,7 +39,7 @@ export const INTEGRATION_PROVIDERS = {
     kind: 'tracker',
     label: 'Jira',
     icon: 'i-simple-icons-jira',
-    capabilities: ['create', 'comment', 'transition', 'search', 'attach', 'assignable-users', 'webhook'],
+    capabilities: ['create', 'update', 'comment', 'transition', 'search', 'attach', 'assignable-users', 'webhook'],
     credentialFields: [
       {
         key: 'email',

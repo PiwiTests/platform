@@ -2138,9 +2138,71 @@ const SCENES = [
       }
     },
     route: '/projects/2?tab=settings&section=issue-tracker',
-    viewport: { width: 1280, height: 1600 },
+    viewport: { width: 1280, height: 2000 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
+  },
+  {
+    name: 'project-integration-auto-create',
+    description:
+      'Project → Settings → Issue tracker: automatic creation with two rules, and the preview of what they file',
+    tags: ['docs'],
+    out: 'docs',
+    // The binding is answered as bound to CHK / Bug with automatic creation on;
+    // the preview runs for real against the seeded clusters of project 2.
+    prepare: prepareJiraSceneConnection,
+    route: '/projects/2?tab=settings&section=issue-tracker',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, goto, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            autoCreate: {
+              enabled: true,
+              rules: [
+                {
+                  branches: ['release/*'],
+                  defaultBranch: false,
+                  environments: [],
+                  tags: [],
+                  minOccurrences: 1,
+                  minRuns: 1,
+                  minDays: 0,
+                  labels: ['release-blocker'],
+                },
+                {
+                  branches: [],
+                  defaultBranch: true,
+                  environments: ['staging'],
+                  tags: [],
+                  minOccurrences: 3,
+                  minRuns: 2,
+                  minDays: 1,
+                  labels: [],
+                },
+              ],
+              skipFlaky: true,
+              dailyCap: 5,
+              routeUnmatchedToDefault: false,
+            },
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings&section=issue-tracker');
+      const block = page.locator('[data-shot="binding-auto-create"]');
+      await block.waitFor({ timeout: 20000 });
+      await block.getByRole('button', { name: 'Preview' }).click();
+      await block.getByText(/issues filed automatically in the last 24 hours/).waitFor({ timeout: 15000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="binding-auto-create"]', pad: 12 });
+    },
   },
   {
     name: 'create-issue-required-fields',
