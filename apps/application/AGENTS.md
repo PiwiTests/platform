@@ -83,6 +83,12 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   administrator (`ADMIN_ACCESS`), so every endpoint keeps working and the UI allows everything.
 - Two methods when enabled: session cookie (browser) or API key (Bearer / `X-API-Key`, `pd_` prefix). **An API key
   carries its owner's access** (instance role and project roles), nothing more and nothing less.
+- **`/mcp` takes a third: an OAuth access token** (`pdo_`), from the authorization server MCP clients sign in through
+  (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `proposals/mcp-oauth.md`).
+  Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it; keep it that way. Each grant owns
+  an `api_keys` row named after the client, whose value is never handed out: it carries the access, the write log
+  names it, and deleting it ends the grant (foreign-key cascade). Every 401 from `/mcp` carries the
+  `WWW-Authenticate` challenge clients discover the server from.
 - **The model lives in `#shared/permissions`** (pure, shared by the server, the MCP tools, the demo and the UI; design
   record `proposals/roles-and-groups.md`): instance roles `InstanceRole` (`administrator`, `member`; stored in
   `users.role`), project roles `ProjectRole` (`viewer`, `contributor`, `maintainer`, `project_admin`, `uploader`),

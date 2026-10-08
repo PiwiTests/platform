@@ -20,6 +20,20 @@ const { data: reporterConfig } = await useFetch<{ url: string; token: string } |
 const apiKeyPlaceholder = 'pd_YOUR_API_KEY';
 const bearerToken = computed(() => reporterConfig.value?.token ?? apiKeyPlaceholder);
 
+// With authentication on, a client signs in through OAuth on its first
+// connection, so the snippets carry only the URL; "Use an API key" puts the
+// Bearer header back for clients that cannot sign in that way. The desktop
+// app keeps its local access token.
+const oauthAvailable = config.public.authEnabled && !isDesktop;
+const useApiKey = ref(false);
+const withKey = computed(() => !oauthAvailable || useApiKey.value);
+const authHeaders = computed(() =>
+  withKey.value ? { headers: { Authorization: `Bearer ${bearerToken.value}` } } : {},
+);
+const headerFlag = computed(() =>
+  withKey.value ? ` \\\n  --header "Authorization: Bearer ${bearerToken.value}"` : '',
+);
+
 // "Core tools only" appends ?modules=core to the URL and every client snippet,
 // so a client can connect with just the core module's tools for a tighter token
 // budget. It only narrows what the server lists; it never re-enables a tool an
@@ -103,8 +117,7 @@ const clientItems = [
 const serverKey = isDesktop ? 'piwi-desktop' : 'piwi';
 
 const claudeCodeSnippet = computed(
-  () =>
-    `claude mcp add --transport http ${serverKey} ${mcpUrl.value} \\\n  --header "Authorization: Bearer ${bearerToken.value}"`,
+  () => `claude mcp add --transport http ${serverKey} ${mcpUrl.value}${headerFlag.value}`,
 );
 
 const opencodeSnippet = computed(() =>
@@ -114,7 +127,7 @@ const opencodeSnippet = computed(() =>
         [serverKey]: {
           type: 'remote',
           url: mcpUrl.value,
-          headers: { Authorization: `Bearer ${bearerToken.value}` },
+          ...authHeaders.value,
         },
       },
     },
@@ -129,7 +142,7 @@ const cursorSnippet = computed(() =>
       mcpServers: {
         [serverKey]: {
           url: mcpUrl.value,
-          headers: { Authorization: `Bearer ${bearerToken.value}` },
+          ...authHeaders.value,
         },
       },
     },
@@ -145,7 +158,7 @@ const vscodeSnippet = computed(() =>
         [serverKey]: {
           type: 'http',
           url: mcpUrl.value,
-          headers: { Authorization: `Bearer ${bearerToken.value}` },
+          ...authHeaders.value,
         },
       },
     },
@@ -157,8 +170,8 @@ const vscodeSnippet = computed(() =>
 // Claude Desktop loads only *stdio* servers from claude_desktop_config.json: an
 // entry with a `url` is refused at startup ("… are not valid MCP server
 // configurations and were ignored"), so the endpoint goes behind the `mcp-remote`
-// bridge. The header travels in `env` because Claude Desktop mangles arguments
-// containing spaces.
+// bridge, which also runs the OAuth sign-in. The header travels in `env`
+// because Claude Desktop mangles arguments containing spaces.
 const claudeDesktopSnippet = computed(() =>
   JSON.stringify(
     {
@@ -171,10 +184,9 @@ const claudeDesktopSnippet = computed(() =>
             mcpUrl.value,
             '--transport',
             'http-only',
-            '--header',
-            'Authorization:${AUTH_HEADER}',
+            ...(withKey.value ? ['--header', 'Authorization:${AUTH_HEADER}'] : []),
           ],
-          env: { AUTH_HEADER: `Bearer ${bearerToken.value}` },
+          ...(withKey.value ? { env: { AUTH_HEADER: `Bearer ${bearerToken.value}` } } : {}),
         },
       },
     },
@@ -183,10 +195,7 @@ const claudeDesktopSnippet = computed(() =>
   ),
 );
 
-const geminiSnippet = computed(
-  () =>
-    `gemini mcp add --transport http ${serverKey} ${mcpUrl.value} \\\n  --header "Authorization: Bearer ${bearerToken.value}"`,
-);
+const geminiSnippet = computed(() => `gemini mcp add --transport http ${serverKey} ${mcpUrl.value}${headerFlag.value}`);
 
 const windsurfSnippet = computed(() =>
   JSON.stringify(
@@ -194,7 +203,7 @@ const windsurfSnippet = computed(() =>
       mcpServers: {
         [serverKey]: {
           serverUrl: mcpUrl.value,
-          headers: { Authorization: `Bearer ${bearerToken.value}` },
+          ...authHeaders.value,
         },
       },
     },
@@ -231,7 +240,12 @@ const windsurfSnippet = computed(() =>
           <!-- Client setup — the single place to connect any MCP client. On the
              desktop build this also carries the real URL + local access token,
              already baked into every snippet (no placeholder to swap). -->
-          <SectionCard icon="i-lucide-settings-2" title="Client setup" help="mcp.client-setup">
+          <SectionCard
+            icon="i-lucide-settings-2"
+            title="Client setup"
+            help="mcp.client-setup"
+            data-shot="mcp-client-setup"
+          >
             <div v-if="reporterConfig" class="mb-4 space-y-3 rounded-md border border-default bg-elevated/50 p-3">
               <div class="space-y-1">
                 <div class="text-xs text-muted">MCP URL</div>
@@ -267,7 +281,27 @@ const windsurfSnippet = computed(() =>
               </p>
             </div>
 
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            <div v-if="oauthAvailable" class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                <template v-if="!useApiKey"
+                  >No key to paste: the first time your client connects, it opens this instance in your browser. Sign in
+                  if asked, check the client's name and click <strong>Allow</strong>. The client renews its access on
+                  its own.</template
+                >
+                <template v-else
+                  >Replace <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_YOUR_API_KEY</code> with your
+                  actual API key.</template
+                >
+                The MCP URL shown in the snippets is auto-detected from your current browser origin.
+              </p>
+              <USwitch
+                v-model="useApiKey"
+                label="Use an API key"
+                class="shrink-0"
+                title="For a client that cannot sign in through OAuth: send an API key in the Authorization header"
+              />
+            </div>
+            <p v-else class="text-sm text-gray-500 dark:text-gray-400 mb-4">
               <template v-if="reporterConfig"
                 >Pick your client below — the URL and access token above are already baked into each snippet.</template
               >
@@ -288,8 +322,10 @@ const windsurfSnippet = computed(() =>
                   <CodeBlock :code="claudeCodeSnippet" lang="sh" />
                   <p class="text-xs text-gray-400">
                     After adding, restart Claude Code and use
-                    <code class="font-mono">/mcp</code> to verify <strong>{{ serverKey }}</strong> is connected. Claude
-                    will call the tools automatically when you ask about test results or failures.
+                    <code class="font-mono">/mcp</code> to verify <strong>{{ serverKey }}</strong> is connected<template
+                      v-if="!withKey"
+                      >; pick it and choose <strong>Authenticate</strong> to sign in</template
+                    >. Claude will call the tools automatically when you ask about test results or failures.
                   </p>
                 </div>
               </template>
@@ -528,11 +564,26 @@ const windsurfSnippet = computed(() =>
           <!-- Authentication -->
           <SectionCard icon="i-lucide-key" title="Authentication" help="mcp.auth">
             <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
-              <p>
+              <template v-if="oauthAvailable">
+                <p>
+                  A client signs in through OAuth: it opens this instance in your browser, you allow it, and it receives
+                  tokens that act with your role and project access, on the MCP server only. Each connection is listed
+                  in <strong>Settings → Account → API keys</strong>, named after the client, and you revoke it there.
+                </p>
+                <p>
+                  A client that cannot sign in that way sends an API key instead, the same keys as the REST API (<code
+                    class="px-1 py-0.5 bg-muted rounded text-xs font-mono"
+                    >pd_</code
+                  >
+                  prefix): create one in <strong>Settings → Account → API keys</strong> and turn on
+                  <strong>Use an API key</strong> above.
+                </p>
+              </template>
+              <p v-else>
                 MCP requests are authenticated with the same API keys used by the REST API. API keys start with
                 <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_</code>.
               </p>
-              <p v-if="!isDesktop">
+              <p v-if="!isDesktop && !oauthAvailable">
                 Generate a key in <strong>Settings → Account → API keys</strong>, then replace
                 <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_YOUR_API_KEY</code> in the snippets
                 above.
@@ -574,6 +625,10 @@ const windsurfSnippet = computed(() =>
                 <template v-if="isDesktop"
                   >This desktop app requires its local access token as the <code class="font-mono">Bearer</code> value
                   on every request.</template
+                >
+                <template v-else-if="oauthAvailable"
+                  >The server requires an access token, which your client obtains by signing in, or an API
+                  key.</template
                 >
                 <template v-else
                   >The server requires a valid Bearer token (or no auth if

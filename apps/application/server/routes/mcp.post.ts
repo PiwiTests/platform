@@ -1,5 +1,6 @@
 import { getRequestURL, type H3Event } from 'h3';
-import { requireAuth, isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { requireMcpAuth } from '../utils/mcp-oauth';
 import { getDatabase, type DbClient } from '../database';
 import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
 import type { McpContext, McpTool } from '../utils/mcp/tools';
@@ -59,15 +60,17 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // Implements the MCP Streamable HTTP transport for the protocol versions in
 // SUPPORTED_PROTOCOL_VERSIONS.
 // A single POST /mcp handles initialize, tools/list, tools/call, and ping.
-// Auth: same pd_<key> Bearer token as the REST API.
+// Auth: an OAuth access token (the client signs in through this instance's
+// authorization server, see utils/mcp-oauth.ts), or the same pd_<key> Bearer
+// token and session as the REST API.
 
 export default eventHandler(async (event) => {
-  // Authenticate using the same API-key / session mechanism as the REST API,
+  // Authenticate with an OAuth access token or the REST API's key / session,
   // then load the caller's access and project scope once. Every tool honors the
   // scope, so a key reads only the projects its owner holds a role on, and every
   // write tool checks its permission on the project it acts on — the same rules
   // the REST API enforces.
-  const user = await requireAuth(event);
+  const user = await requireMcpAuth(event);
   const db = await getDatabase();
   const access = await getRequestAccess(event);
   const scope = await getProjectScope(db, user);

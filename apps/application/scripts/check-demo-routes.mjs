@@ -83,6 +83,11 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/extension/connect/token',
   'GET /api/extension/connect/request',
   'POST /api/extension/connect/decision',
+  // An MCP client's OAuth sign-in: the consent page answers a request the
+  // authorize endpoint stored, and the client redeems a code for tokens. The
+  // demo has no server for an MCP client to reach.
+  'GET /api/oauth/authorizations/:id',
+  'POST /api/oauth/authorizations/:id/decision',
   // DOM-snapshot picker frame: serves a sandboxed HTML document over its own
   // CSP, not JSON — the browser demo renders snapshots through its own handler.
   'GET /api/test-run-cases/:id/dom-snapshot-frame',

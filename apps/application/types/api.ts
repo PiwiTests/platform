@@ -1217,6 +1217,8 @@ export interface ApiKeySummary {
   createdAt: Date;
   lastUsedAt?: Date | null;
   expiresAt?: Date | null;
+  /** The connection of an MCP client that signed in through OAuth: there is no key value to use. */
+  oauth: boolean;
 }
 
 /**

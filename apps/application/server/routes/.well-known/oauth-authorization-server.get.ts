@@ -1,0 +1,17 @@
+import { authorizationServerMetadata } from '../../utils/mcp-oauth-helpers';
+import { publicBaseUrl, requireMcpOAuthEnabled } from '../../utils/mcp-oauth';
+
+defineRouteMeta({
+  openAPI: {
+    tags: ['MCP OAuth'],
+    summary: 'Authorization server metadata',
+    description:
+      'OAuth 2.0 Authorization Server Metadata (RFC 8414) of the server MCP clients sign in through: the authorization, token, registration and revocation endpoints, the authorization code and refresh token grants, PKCE with S256, public clients or `client_secret_post` / `client_secret_basic`. 404 when authentication is off.',
+    security: [],
+  },
+});
+
+export default eventHandler((event) => {
+  requireMcpOAuthEnabled(event);
+  return authorizationServerMetadata(publicBaseUrl(event));
+});

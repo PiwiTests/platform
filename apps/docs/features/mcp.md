@@ -1,6 +1,6 @@
 ---
 title: MCP server
-description: "The MCP server built into the dashboard: what it gives an agent, how to authenticate, and the setup for each coding agent."
+description: "The MCP server built into the dashboard: what it gives an agent, how a client signs in through OAuth or an API key, and the setup for each coding agent."
 lang: en-US
 ---
 
@@ -44,21 +44,38 @@ the result; read tools never are. A cluster's **Activity** section shows the cal
 
 ## Authentication
 
-The MCP server takes the same API keys as the REST API: `pd_` keys, created in **Settings → Account → API keys**
-(administrators manage anyone's keys from **Settings → Users**). Pass the key as a Bearer token on every request:
+With authentication on, a client signs in through OAuth, as the
+[MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+describes and as remote servers such as Atlassian's work: you give the client the MCP URL only, and the first time
+it connects it opens this instance in your browser. Sign in if asked, check the client's name and where the answer
+goes, and click **Allow**. The client then holds an access token that lasts an hour and that it renews on its own, for 30 days after
+its last use. The tokens act with your role and project access, on the MCP server only: the REST API refuses them.
+Each connection is listed with your API keys in **Settings → Account → API keys**, named after the client, and
+revoking it there disconnects the client at its next request.
+
+Claude Code (`/mcp`, then **Authenticate**), Cursor, VS Code, Gemini CLI, Opencode and Claude Desktop through
+`mcp-remote` sign in this way. The instance is its own authorization server: clients register on their own (dynamic
+client registration), PKCE is required, and the API reference (`/docs` in your instance) lists the endpoints under
+**MCP OAuth**.
+
+A client that cannot sign in sends an API key instead, the same `pd_` keys as the REST API, created in **Settings →
+Account → API keys** (administrators manage anyone's keys from **Settings → Users**), as a Bearer token on every
+request:
 
 ```
 Authorization: Bearer pd_YOUR_API_KEY
 ```
 
-When `PIWI_AUTH_ENABLED` is not set, every request is accepted without a key, except in the desktop app, which
-requires its local access token as the Bearer value.
+When `PIWI_AUTH_ENABLED` is not set, every request is accepted without a key and there is nothing to sign in to,
+except in the desktop app, which requires its local access token as the Bearer value.
 
 ## Client setup
 
-Replace `<your-piwi-url>` with your dashboard base URL (for example `http://localhost:3000`) and `pd_YOUR_API_KEY`
-with a real API key. In the [desktop app](/features/desktop#connecting-ai-assistants), the MCP server page detects
-the installed clients and writes their entry in one click instead.
+Replace `<your-piwi-url>` with your dashboard base URL (for example `http://localhost:3000`). For a client that signs
+in through OAuth, leave out the `headers` entry (`--header` on a command line); otherwise replace `pd_YOUR_API_KEY`
+with a real API key. The **MCP server** page of the dashboard shows both forms. In the
+[desktop app](/features/desktop#connecting-ai-assistants), the MCP server page detects the installed clients and
+writes their entry in one click instead.
 
 ### Claude Code (CLI)
 

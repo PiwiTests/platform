@@ -1473,6 +1473,109 @@ export const extensionDeviceCodes = sqliteTable(
   }),
 );
 
+// MCP clients registered through OAuth dynamic client registration (RFC 7591).
+// A client that asked for one holds a secret, stored as a SHA-256 hash; a public
+// client (the usual case) has none and proves itself with PKCE alone.
+export const oauthClients = sqliteTable(
+  'oauth_clients',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: text('client_id').notNull(),
+    clientSecretHash: text('client_secret_hash'), // null for a public client
+    clientName: text('client_name').notNull(), // what the client calls itself; shown on the consent page
+    clientUri: text('client_uri'),
+    redirectUris: text('redirect_uris', { mode: 'json' }).$type<string[]>().notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }), // last authorization or token request
+  },
+  (t) => ({
+    clientIdIdx: uniqueIndex('idx_oauth_clients_client_id').on(t.clientId),
+  }),
+);
+
+// One MCP client connected for one user through OAuth. The grant owns an API key
+// row named after the client: it carries the user's access, appears in their API
+// keys, and revoking it there deletes the grant. That row's own key value is never
+// handed out, so the grant's tokens are the only way to use it. Tokens are stored
+// as SHA-256 hashes; each refresh replaces both and keeps the previous refresh
+// token's hash, so a replayed one revokes the grant.
+export const oauthGrants = sqliteTable(
+  'oauth_grants',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    apiKeyId: integer('api_key_id')
+      .notNull()
+      .references(() => apiKeys.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    resource: text('resource').notNull(), // the MCP endpoint URL the tokens were issued for
+    accessTokenHash: text('access_token_hash').notNull(),
+    accessExpiresAt: integer('access_expires_at', { mode: 'timestamp_ms' }).notNull(),
+    refreshTokenHash: text('refresh_token_hash').notNull(),
+    previousRefreshTokenHash: text('previous_refresh_token_hash'),
+    refreshExpiresAt: integer('refresh_expires_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    refreshedAt: integer('refreshed_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    accessIdx: uniqueIndex('idx_oauth_grants_access').on(t.accessTokenHash),
+    refreshIdx: uniqueIndex('idx_oauth_grants_refresh').on(t.refreshTokenHash),
+    previousRefreshIdx: index('idx_oauth_grants_previous_refresh').on(t.previousRefreshTokenHash),
+    apiKeyIdx: uniqueIndex('idx_oauth_grants_api_key').on(t.apiKeyId),
+    clientIdx: index('idx_oauth_grants_client').on(t.clientId),
+    userIdx: index('idx_oauth_grants_user').on(t.userId),
+    refreshExpiresIdx: index('idx_oauth_grants_refresh_expires').on(t.refreshExpiresAt),
+  }),
+);
+
+// Authorization requests of the OAuth authorization code flow. The authorize
+// endpoint stores the client's request and sends the browser to the consent
+// page with the request id; the signed-in user's answer moves the row
+// pending → approved or denied, and the token call that redeems the code
+// moves it to consumed and records the grant it created. The request id and
+// the code are stored as SHA-256 hashes.
+export const oauthAuthorizationRequests = sqliteTable(
+  'oauth_authorization_requests',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    requestIdHash: text('request_id_hash').notNull(),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: 'cascade' }),
+    redirectUri: text('redirect_uri').notNull(),
+    state: text('state'), // returned to the client unchanged
+    codeChallenge: text('code_challenge').notNull(), // PKCE, S256
+    scope: text('scope').notNull(),
+    resource: text('resource').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied' | 'consumed'
+    userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }), // who decided; null until then
+    codeHash: text('code_hash'), // set when approved
+    grantId: integer('grant_id').references(() => oauthGrants.id, { onDelete: 'set null' }), // the grant the code created
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    decidedAt: integer('decided_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    requestIdx: uniqueIndex('idx_oauth_authorization_requests_request').on(t.requestIdHash),
+    codeIdx: uniqueIndex('idx_oauth_authorization_requests_code').on(t.codeHash),
+    clientIdx: index('idx_oauth_authorization_requests_client').on(t.clientId),
+    userIdx: index('idx_oauth_authorization_requests_user').on(t.userId),
+    grantIdx: index('idx_oauth_authorization_requests_grant').on(t.grantId),
+    expiresIdx: index('idx_oauth_authorization_requests_expires').on(t.expiresAt),
+  }),
+);
+
 // The URLs a project's application is served at, as `*`/`**` globs over the
 // whole URL (`urlMatches` in @piwitests/core/function-match). The browser
 // extension resolves the project of the page it is on from them.
@@ -2048,6 +2151,9 @@ export type NewUser = typeof users.$inferInsert;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
 export type ExtensionDeviceCode = typeof extensionDeviceCodes.$inferSelect;
+export type OAuthClient = typeof oauthClients.$inferSelect;
+export type OAuthGrant = typeof oauthGrants.$inferSelect;
+export type OAuthAuthorizationRequest = typeof oauthAuthorizationRequests.$inferSelect;
 export type ProjectUrlPattern = typeof projectUrlPatterns.$inferSelect;
 export type AccountToken = typeof accountTokens.$inferSelect;
 export type NewAccountToken = typeof accountTokens.$inferInsert;

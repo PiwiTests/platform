@@ -3965,6 +3965,50 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...[
+    { name: 'mcp-oauth-consent', width: 1280 },
+    { name: 'mcp-oauth-consent-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `The consent page an MCP client's OAuth sign-in opens, with the client, where the answer goes and the account, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password>`,
+    async prepare({ base, request }) {
+      await signInForScene({ base, request });
+      const redirectUri = 'http://127.0.0.1:33418/callback';
+      const client = await (
+        await request.post(`${base}/oauth/register`, {
+          data: { client_name: 'Claude Code (piwi)', redirect_uris: [redirectUri] },
+        })
+      ).json();
+      const query = new URLSearchParams({
+        response_type: 'code',
+        client_id: client.client_id,
+        redirect_uri: redirectUri,
+        code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+        code_challenge_method: 'S256',
+        state: 'screenshot',
+      });
+      const res = await request.get(`${base}/oauth/authorize?${query}`, { maxRedirects: 0 });
+      this.consentPath = res.headers().location;
+    },
+    route: '/',
+    viewport: { width, height: 900 },
+    of: '[data-shot="mcp-oauth-consent"]',
+    async run({ shoot, settle, goto }) {
+      await goto(this.consentPath);
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'mcp-client-auth',
+    description:
+      'MCP page with authentication on: client setup signs in through OAuth, with the Use an API key switch. Pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password>',
+    route: '/mcp',
+    viewport: { width: 1280, height: 1400 },
+    of: '[data-shot="mcp-client-setup"]',
+    pad: 12,
+    prepare: signInForScene,
+  },
   {
     name: 'evidence-fixtures-footer',
     description: 'Execution page evidence card for a project with no captured fixtures: the footer names them',
