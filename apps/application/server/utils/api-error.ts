@@ -55,7 +55,10 @@ export function apiError(input: ApiErrorInput) {
     (dataObj?.errorCode as ErrorCode | undefined) ??
     (issues !== undefined && statusCode === 400 ? 'VALIDATION_ERROR' : errorCodeForStatus(statusCode));
 
-  const normalized: { errorCode: ErrorCode; issues?: unknown } = { errorCode: code };
+  const normalized: { errorCode: ErrorCode; issues?: unknown; [key: string]: unknown } = {
+    ...dataObj,
+    errorCode: code,
+  };
   if (issues !== undefined) normalized.issues = issues;
 
   return createError({ ...rest, statusCode, data: normalized });

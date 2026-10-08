@@ -1028,7 +1028,8 @@ export const users = pgTable(
   },
   (table) => ({
     oauthIdx: uniqueIndex('idx_users_oauth').on(table.oauthProvider, table.oauthProviderId),
-    emailIdx: uniqueIndex('idx_users_email').on(table.email),
+    // One account per email address, ignoring case: OAuth sign-in links accounts by email.
+    emailIdx: uniqueIndex('idx_users_email').on(sql`lower(${table.email})`),
   }),
 );
 

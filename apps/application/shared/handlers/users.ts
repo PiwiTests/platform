@@ -20,21 +20,24 @@ export async function listUsers(db: DrizzleDB) {
   return { users: allUsers };
 }
 
+/** The account that owns `email`, compared ignoring case as the `idx_users_email` unique index does. */
+export async function findUserByEmail(db: DrizzleDB, email: string) {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(sql`lower(${users.email}) = lower(${email})`)
+    .limit(1);
+  return user;
+}
+
 export async function createUserRecord(
   db: DrizzleDB,
   data: { username: string; password: string; role: string; name?: string; email?: string | null },
 ) {
   const existing = await db.select().from(users).where(eq(users.username, data.username));
   if (existing.length > 0) throw new Error('Username already exists');
-  // One account per address, ignoring case, as in updateUserRecord: OAuth sign-in links by email.
-  if (data.email) {
-    const taken = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(sql`lower(${users.email}) = lower(${data.email})`)
-      .limit(1);
-    if (taken.length > 0) throw new Error('Email already in use');
-  }
+  // One account per address, ignoring case: OAuth sign-in links by email.
+  if (data.email && (await findUserByEmail(db, data.email))) throw new Error('Email already in use');
   const [created] = await db
     .insert(users)
     .values({

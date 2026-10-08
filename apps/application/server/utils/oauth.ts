@@ -4,6 +4,8 @@ import { getDatabase } from '../database';
 import { users } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
 import type { InstanceRole } from '#shared/permissions';
+import type { DrizzleDB } from '#shared/handlers/db';
+import { findUserByEmail } from '#shared/handlers/users';
 import { setUserSession, isAuthEnabled, getCurrentUser } from './auth';
 import type { SessionData } from './auth';
 import type { User } from '../database/schema';
@@ -388,16 +390,16 @@ async function enforceAllowlists(
 // Find existing OAuth user or create a new one
 // ---------------------------------------------------------------------------
 
-async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
-  const db = await getDatabase();
+export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: DrizzleDB): Promise<User> {
+  const db = database ?? (await getDatabase());
   const { provider, providerId, email, emailVerified } = profile;
 
   // Look up the two candidate accounts the decision depends on: one already
-  // linked to this provider identity, and (only for a verified email) one that
-  // owns this email address. Matching email on the dedicated `email` column —
+  // linked to this provider identity, and one that owns the provider's email
+  // address. Matching email on the dedicated `email` column —
   // not `username` — lets accounts created with a non-email username still link,
   // and keeps linking symmetric with the account/admin UIs and notifications.
-  // `email` is unique (`idx_users_email`), so at most one account matches.
+  // `email` is unique ignoring case (`idx_users_email`), so at most one account matches.
   const identityMatch = (
     await db
       .select()
@@ -405,10 +407,9 @@ async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  const emailMatch =
-    !identityMatch && emailVerified && email
-      ? (await db.select().from(users).where(eq(users.email, email)))[0]
-      : undefined;
+  // With an identity match, the account holding the provider's address (which
+  // keeps it); without one, the account a verified address may link.
+  const emailMatch = email && (identityMatch || emailVerified) ? await findUserByEmail(db, email) : undefined;
 
   const action = resolveProvisioningAction(profile, identityMatch, emailMatch);
 
@@ -461,9 +462,9 @@ async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<User> {
 // Link a provider identity to an already-signed-in user
 // ---------------------------------------------------------------------------
 
-async function linkProviderToUser(userId: number, profile: OAuthProfile): Promise<User> {
-  const db = await getDatabase();
-  const { provider, providerId } = profile;
+export async function linkProviderToUser(userId: number, profile: OAuthProfile, database?: DrizzleDB): Promise<User> {
+  const db = database ?? (await getDatabase());
+  const { provider, providerId, email } = profile;
 
   const current = (await db.select().from(users).where(eq(users.id, userId)))[0];
   if (!current) {
@@ -478,7 +479,10 @@ async function linkProviderToUser(userId: number, profile: OAuthProfile): Promis
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  const action = resolveLinkAction(current, profile, identityTakenBy);
+  // Only an account without an email takes the provider's, and only if no other account owns it.
+  const emailOwner = !current.email && email ? await findUserByEmail(db, email) : undefined;
+
+  const action = resolveLinkAction(current, profile, identityTakenBy, emailOwner);
   if (action.kind === 'conflict') {
     throw apiError({
       statusCode: 409,

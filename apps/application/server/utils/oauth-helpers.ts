@@ -123,6 +123,18 @@ export interface OAuthProfile {
   avatar: string;
 }
 
+const asciiLowerCase = (value: string) => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+
+/**
+ * Email addresses are compared ignoring ASCII letter case only. A wider folding
+ * would let an address someone else controls pass for another account's:
+ * PostgreSQL's `lower()` maps `İ` to `i` and the Kelvin sign to `k`, so a match
+ * from `findUserByEmail` is checked again here before it grants anything.
+ */
+function sameEmailAddress(a: string | null, b: string | null): boolean {
+  return a !== null && b !== null && asciiLowerCase(a) === asciiLowerCase(b);
+}
+
 export type ProvisioningAction =
   | { kind: 'refresh'; userId: number; set: Record<string, unknown> }
   | { kind: 'link'; userId: number; set: Record<string, unknown> }
@@ -156,22 +168,29 @@ export function resolveProvisioningAction(
   const { provider, providerId, email, emailVerified, name, avatar } = profile;
 
   if (identityMatch) {
+    // `emailMatch` is then the account that holds the provider's address: when
+    // it is another one, the address stays with it and this account keeps its own.
+    const keepStored = !email || (emailMatch !== undefined && emailMatch.id !== identityMatch.id);
     // The verified flag belongs to an address: a changed address carries only
     // the provider's verdict, never the one earned by the previous address.
-    const sameEmail = !email || email === identityMatch.email;
+    const verified = keepStored
+      ? identityMatch.emailVerified
+      : sameEmailAddress(email, identityMatch.email)
+        ? emailVerified || identityMatch.emailVerified
+        : emailVerified;
     return {
       kind: 'refresh',
       userId: identityMatch.id,
       set: {
         avatarUrl: avatar || null,
         name: name || null,
-        email: email || identityMatch.email,
-        emailVerified: sameEmail ? emailVerified || identityMatch.emailVerified : emailVerified,
+        email: keepStored ? identityMatch.email : email,
+        emailVerified: verified,
       },
     };
   }
 
-  if (emailVerified && email && emailMatch) {
+  if (emailVerified && email && emailMatch && sameEmailAddress(email, emailMatch.email)) {
     const linkedElsewhere =
       Boolean(emailMatch.oauthProvider) &&
       Boolean(emailMatch.oauthProviderId) &&
@@ -220,16 +239,21 @@ export type LinkAction = { kind: 'conflict' } | { kind: 'link'; set: Record<stri
  * Decide how to link a provider to an already-signed-in user. Refuses when the
  * provider identity already belongs to a different account; otherwise backfills
  * only the profile fields the user is missing (never overwriting their values).
+ * `emailOwner` is the account that owns the provider's email address, if any:
+ * an address another account owns stays with it, and the provider is linked
+ * without it.
  */
 export function resolveLinkAction(
   currentUser: OAuthUserRow,
   profile: OAuthProfile,
   identityTakenBy?: OAuthUserRow,
+  emailOwner?: OAuthUserRow,
 ): LinkAction {
   if (identityTakenBy && identityTakenBy.id !== currentUser.id) {
     return { kind: 'conflict' };
   }
 
+  const adoptEmail = !currentUser.email && (!emailOwner || emailOwner.id === currentUser.id);
   return {
     kind: 'link',
     set: {
@@ -237,8 +261,8 @@ export function resolveLinkAction(
       oauthProviderId: profile.providerId,
       avatarUrl: currentUser.avatarUrl ?? (profile.avatar || null),
       name: currentUser.name ?? (profile.name || null),
-      email: currentUser.email ?? (profile.email || null),
-      emailVerified: currentUser.email ? currentUser.emailVerified : profile.emailVerified,
+      email: adoptEmail ? profile.email || null : currentUser.email,
+      emailVerified: adoptEmail ? profile.emailVerified : currentUser.emailVerified,
     },
   };
 }
