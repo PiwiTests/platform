@@ -3,8 +3,15 @@ import type { DbClient } from '../../database';
 import type { UnfurlResult } from '../unfurl/UnfurlProvider';
 import { unfurlUrl } from '../unfurl';
 import { createTracker } from './connections';
+import type { TrackerStatusCategory } from './types';
 
-const EMPTY: UnfurlResult = { title: null, statusText: null, statusColor: null };
+/** A link's enrichment; a tracker read also gives the status category and assignee. */
+export interface LinkUnfurlResult extends UnfurlResult {
+  statusCategory?: TrackerStatusCategory | null;
+  assignee?: string | null;
+}
+
+const EMPTY: LinkUnfurlResult = { title: null, statusText: null, statusColor: null };
 
 /**
  * Refresh a link's enrichment. A link bound to a connection reads its record
@@ -14,7 +21,7 @@ const EMPTY: UnfurlResult = { title: null, statusText: null, statusColor: null }
 export async function unfurlLink(
   db: DbClient,
   link: Pick<EntityLink, 'url' | 'connectionId' | 'externalId' | 'key'>,
-): Promise<UnfurlResult> {
+): Promise<LinkUnfurlResult> {
   if (link.connectionId) {
     const tracker = await createTracker(db, link.connectionId);
     if (!tracker) return EMPTY;
@@ -22,7 +29,15 @@ export async function unfurlLink(
     if (!idOrKey) return EMPTY;
     try {
       const issue = await tracker.getIssue(idOrKey);
-      if (issue) return { title: issue.title, statusText: issue.status, statusColor: issue.statusColor };
+      if (issue) {
+        return {
+          title: issue.title,
+          statusText: issue.status,
+          statusColor: issue.statusColor,
+          statusCategory: issue.statusCategory,
+          assignee: issue.assignee?.displayName ?? null,
+        };
+      }
     } catch {
       return EMPTY;
     }

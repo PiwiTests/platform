@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * A failure cluster's activity: the fix attempts reported on it, with each
- * outcome the runs gave them, and the writes agents made to it over MCP. Shown
- * only once there is something to show.
+ * outcome the runs gave them, the writes agents made to it over MCP, and what
+ * Piwi wrote to its tracker issue. Shown only once there is something to show.
  */
 import type { ClusterActivityItem } from '#shared/handlers/cluster-activity';
 import type { HelpTopicKey } from '~/utils/help-content';

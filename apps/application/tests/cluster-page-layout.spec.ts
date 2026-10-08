@@ -199,7 +199,7 @@ test.describe('Cluster situation block on seeded clusters', () => {
       test.skip(!res.ok(), `no cluster #${id} on this database`);
       const detail = (await res.json()) as {
         clusterState: { sentence: string; action: string | null };
-        nextStep: { title: string };
+        nextStep: { title: string; primary: { label: string; action: string } | null };
         occurrenceSeries: unknown[];
       };
 
@@ -213,13 +213,19 @@ test.describe('Cluster situation block on seeded clusters', () => {
       await expect.poll(async () => norm(await sentence.innerText())).toBe(norm(detail.clusterState.sentence));
 
       // Triage is always present for a writer; the one reconcile action is present
-      // exactly when the server reports one.
+      // exactly when the server reports one, on the state line unless the next step
+      // already offers it.
       const state = page.locator('[data-shot="cluster-state"]');
       await expect(state.getByRole('button', { name: 'Triage' })).toBeVisible();
       if (detail.clusterState.action) {
-        await expect(
-          state.getByRole('button', { name: RECONCILE_LABEL[detail.clusterState.action]!, exact: true }),
-        ).toHaveCount(1);
+        const reconcile = RECONCILE_LABEL[detail.clusterState.action]!;
+        const inNext = detail.nextStep.primary?.action === detail.clusterState.action;
+        await expect(state.getByRole('button', { name: reconcile, exact: true })).toHaveCount(inNext ? 0 : 1);
+        if (inNext) {
+          await expect(
+            page.locator('[data-shot="next-step"]').getByRole('button', { name: detail.nextStep.primary!.label }),
+          ).toHaveCount(1);
+        }
       }
 
       // The occurrence sparkline renders whenever the cluster has run history.

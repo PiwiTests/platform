@@ -3,50 +3,37 @@
  * A failure cluster's state as one sentence with one verb: a colored dot for the
  * kind, the sentence's typed spans as prose (run references linked), the single
  * reconcile action the machine verdict and the human status imply (mark resolved,
- * reopen, unsnooze, release), and one Triage panel — open / resolved / ignored,
- * a note, an assignee, and a snooze.
+ * reopen, unsnooze, release) unless the Next line already offers it, and one
+ * Triage panel — open / resolved / ignored, a note, an assignee, and a snooze.
  *
  * Every save toasts and asks the page to refresh. Each control shows to the
  * holders of the permission its route declares on the cluster's project
- * (`issue:create`, `triage:write`, `quarantine:write` for a release); a viewer
- * holding none sees the sentence alone.
+ * (`triage:write`, `quarantine:write` for a release); a viewer holding none sees
+ * the sentence alone. The cluster's ticket is the situation block's Issue line.
  */
 import type { FailureClusterDetail } from '~~/types/api';
 import type { ClusterState, ClusterStateAction } from '#shared/cluster-state';
 import { SNOOZE_OPTIONS, type SnoozeOption } from '#shared/inbox-queues';
-import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
   cluster: FailureClusterDetail;
   state: ClusterState;
+  /** The Next line already offers the reconcile action: the state line leaves it out. */
+  actionInNext?: boolean;
 }>();
 
 const emit = defineEmits<{ saved: [] }>();
 
 const toast = useToast();
-const { hasTracker } = useTrackerStatus();
 const { can } = useAuth();
 
 const projectId = computed(() => props.cluster.project?.id ?? null);
-const canCreateIssue = computed(() => can('issue:create', projectId.value));
 const canTriage = computed(() => can('triage:write', projectId.value));
 // Releasing the quarantined tests is a quarantine action; the other reconciles are triage.
 const canReconcile = computed(() =>
   props.state.action === 'release' ? can('quarantine:write', projectId.value) : canTriage.value,
 );
-const hasControls = computed(() => canCreateIssue.value || canTriage.value || canReconcile.value);
-
-// The tracker issue this cluster is already known by, if any — a link the
-// dashboard created or a person pinned that carries a key.
-const knownIssue = computed(() =>
-  (props.cluster.links ?? []).find((l) => (l.provider === 'jira' || l.connectionId != null) && l.key),
-);
-
-const issueModalOpen = ref(false);
-function onIssueCreated() {
-  issueModalOpen.value = false;
-  emit('saved');
-}
+const hasControls = computed(() => canTriage.value || canReconcile.value);
 
 // The dot reads the state at a glance, in the color the block's edge carries.
 const dotClass = computed(() => clusterStateColor(props.state.kind).dot);
@@ -196,55 +183,10 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
       </template>
     </span>
 
-    <!-- The known issue chip, shown to everyone once the cluster is tracked. -->
-    <span
-      v-if="knownIssue"
-      data-shot="cluster-issue-chip"
-      class="inline-flex items-center shrink-0"
-      :class="hasControls ? '' : 'ml-auto'"
-    >
-      <LinkChip :link="knownIssue" />
-    </span>
-
     <div v-if="hasControls" class="flex items-center gap-1.5 ml-auto shrink-0">
-      <!-- A filing the tracker has not answered yet: the outbox retries it, and Retry
-           sends it again now (the same queued filing, never a second one). -->
-      <UButton
-        v-if="canCreateIssue && hasTracker && !knownIssue && cluster.issueFilingQueued"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        data-shot="cluster-issue-queued"
-        title="Jira did not answer yet. Piwi retries and links the issue once it is created; Retry sends it again now."
-        @click="issueModalOpen = true"
-      >
-        Filing queued · Retry
-      </UButton>
-      <!-- Create issue is the primary action while the cluster has no ticket. -->
-      <UButton
-        v-else-if="canCreateIssue && hasTracker && !knownIssue"
-        size="xs"
-        icon="i-simple-icons-jira"
-        data-shot="cluster-create-issue"
-        @click="issueModalOpen = true"
-      >
-        Create issue
-      </UButton>
-      <UButton
-        v-else-if="canCreateIssue && knownIssue"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        icon="i-simple-icons-jira"
-        :to="safeHttpUrl(knownIssue.url) ?? undefined"
-        target="_blank"
-      >
-        Open in Jira
-      </UButton>
-
       <!-- The one reconcile action the state implies. -->
       <UButton
-        v-if="canReconcile && state.action && reconcileLabel"
+        v-if="canReconcile && state.action && reconcileLabel && !actionInNext"
         size="xs"
         color="neutral"
         variant="outline"
@@ -324,14 +266,5 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
         </template>
       </UPopover>
     </div>
-
-    <CreateIssueModal
-      v-model:open="issueModalOpen"
-      entity-type="failure_cluster"
-      :entity-id="cluster.id"
-      @created="onIssueCreated"
-      @linked="onIssueCreated"
-      @queued="onIssueCreated"
-    />
   </div>
 </template>

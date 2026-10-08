@@ -14,7 +14,7 @@ into a **failure inbox**: the problems you still owe a decision.
 ## How failures are grouped
 
 Failed executions that share the same **error fingerprint** join one cluster, so twenty stack traces read as
-*"20 failures, 3 root causes"*. Clustering is always on and needs no configuration.
+*"20 failures, 3 root causes"*. Clustering is always on, with no configuration.
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
   emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
@@ -22,7 +22,7 @@ Failed executions that share the same **error fingerprint** join one cluster, so
   role) still tells different failures apart.
 - It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
   cause reached from several spec files stays one cluster.
-- The fingerprint is always computed from the error the cluster was created from, so an improved normalization
+- The fingerprint is computed from the error the cluster was created from, so an improved normalization
   regroups clusters in place and keeps their triage, notes and diagnoses.
 - A run's **Tests** tab can group its failures by cluster, each group with its triage status; the
   `get_failure_groups` [MCP tool](/reference/mcp-tools#get_failure_groups) adds a **worker-correlation** flag: "the
@@ -72,7 +72,7 @@ and stay in sync, and you can **[file the issue from the failure](/features/issu
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
 cluster page (not the inbox) falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the cluster to a person:
 an assignee takes precedence over the derived owner, and the **Mine** queue matches either one against the
-signed-in user (by name or email, best effort).
+signed-in user (by name or email).
 
 ## The cluster page
 
@@ -97,9 +97,9 @@ the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
 
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a colored dot:
 *still failing*, *not seen for N runs*, *fixed and verified, still open*, *stopped failing*, *ticket Done*,
-*regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the runs or the
-tracker say an open cluster is done, the line offers the **one action** that reconciles them, *Mark resolved*; a
-snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
+*regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When an open
+cluster stopped failing, or its ticket is Done and the latest finished run no longer fails it, the page offers **one
+action**, *Mark resolved*; a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
 own. Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
 the cluster for a day, a week or until it recurs. Changing the status, from the inbox, a list, bulk triage or an
 agent, keeps the triage note and the lines Piwi added to it.

@@ -2067,10 +2067,11 @@ const SCENES = [
         });
       }
     },
-    route: '/failure-clusters/10',
+    // A cluster no scene links an issue to, so its Issue line keeps Create issue.
+    route: '/failure-clusters/4',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
-      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      await page.locator('[data-shot="issue-line-create"]').first().click();
       await page.getByRole('dialog').waitFor();
       // The preview renders once the draft resolves.
       await page
@@ -2083,25 +2084,16 @@ const SCENES = [
     },
   },
   {
-    name: 'cluster-issue-chip',
-    description: 'Cluster state line with the known-issue chip and the Open in Jira action',
+    name: 'cluster-issue-line',
+    description: "Cluster situation block with the Issue line naming the cluster's Jira issue and its status",
     tags: ['docs'],
     out: 'docs',
-    // Pin a Jira issue to the cluster so its key shows on the state line.
+    // Pin a Jira issue to the cluster so its key shows on the Issue line. The
+    // scene connection's host makes the URL a Jira issue on any database.
     async prepare({ base, request }) {
-      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
-      if (!list.connections?.some((c) => c.provider === 'jira')) {
-        await request.post(`${base}/api/integrations/connections`, {
-          data: {
-            provider: 'jira',
-            name: 'Jira',
-            baseUrl: 'http://127.0.0.1:9',
-            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
-          },
-        });
-      }
+      await prepareJiraSceneConnection({ base, request });
       const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=10`)).json();
-      if (!links.links?.some((l) => l.provider === 'jira')) {
+      if (!links.items?.some((l) => l.key === 'PROJ-128')) {
         await request.post(`${base}/api/links`, {
           data: {
             entityType: 'failure_cluster',
@@ -2113,8 +2105,8 @@ const SCENES = [
       }
     },
     route: '/failure-clusters/10',
-    viewport: { width: 1280, height: 700 },
-    of: '[data-shot="cluster-state"]',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
     pad: 12,
   },
   {
@@ -2166,7 +2158,7 @@ const SCENES = [
           },
         });
       });
-      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      await page.locator('[data-shot="issue-line-create"]').first().click();
       const dialog = page.getByRole('dialog');
       await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
       await dialog.getByTestId('create-issue-missing').waitFor();
@@ -3609,6 +3601,41 @@ const SCENES = [
     viewport: { width: 375, height: 812 },
     of: '[data-shot="situation-block"]',
     pad: 8,
+  },
+
+  // ── Issue line on the execution page (report artifacts) ──────────────────
+  {
+    name: 'execution-issue-line',
+    description: "Failing execution whose cluster is tracked: the Issue line names the cluster's issue",
+    tags: ['desktop'],
+    async prepare({ base, request }) {
+      await prepareJiraSceneConnection({ base, request });
+      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
+      if (!links.items?.some((l) => l.key === 'PROJ-131')) {
+        await request.post(`${base}/api/links`, {
+          data: {
+            entityType: 'failure_cluster',
+            entityId: 1,
+            url: 'http://127.0.0.1:9/browse/PROJ-131',
+            title: 'Pay button click times out',
+          },
+        });
+      }
+    },
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+  {
+    name: 'execution-issue-line-untracked',
+    description: 'Failing execution whose cluster has no issue: the Issue line offers to create or link one',
+    tags: ['desktop'],
+    prepare: prepareJiraSceneConnection,
+    route: '/test-run-cases/87',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
   },
 
   // ── Failure page clarity (report artifacts) ───────────────────────────────

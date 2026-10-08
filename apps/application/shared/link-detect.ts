@@ -114,3 +114,21 @@ export function getProviderIcon(provider: LinkProvider): string {
   };
   return icons[provider];
 }
+
+/** The tracker or tool a link points at, as a reader names it; null for a generic link. */
+export function getProviderName(provider: LinkProvider): string | null {
+  const names: Record<LinkProvider, string | null> = {
+    jira: 'Jira',
+    'github-issue': 'GitHub',
+    'github-pr': 'GitHub',
+    'gitlab-issue': 'GitLab',
+    'gitlab-mr': 'GitLab',
+    bitbucket: 'Bitbucket',
+    confluence: 'Confluence',
+    slack: 'Slack',
+    linear: 'Linear',
+    notion: 'Notion',
+    generic: null,
+  };
+  return names[provider] ?? null;
+}

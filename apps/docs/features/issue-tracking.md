@@ -22,34 +22,35 @@ none of the entry points appear.
 ## What it does, exactly
 
 - **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
-  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). It is the primary action while the cluster has no ticket; once one
-  exists, the chip shows the key and status and the action becomes *Open in Jira*.
+  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). On the cluster
+  and execution pages, the **Issue** line offers *Create issue* and *Link an issue* until the cluster has a ticket, then
+  names it; the ⋮ menu offers *Open PROJ-123*.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps) and *Links* back to Piwi. Every section
   degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer, so
-  a person or a JQL filter can find every Piwi-filed issue.
+  a JQL filter finds every Piwi-filed issue.
 - **Filing is deduped by cluster** — a second click, a duplicate event or a create from another of its executions
-  names the issue already filed; once that link is removed, the next create files a new one. Before creating, the
+  names the issue already filed; once that link is removed or the issue is Done, the next create files a new one. Before creating, the
   modal surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before*
   match) and leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
-  cluster and execution pages show *Filing queued*, with a retry), and recorded, and the REST API lists what Piwi wrote (see the
-  [API docs](https://piwitests.dev/demo/docs)). A create Jira refuses outright, such as a missing or invalid field,
+  cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
+  write Piwi makes to the issue. A create Jira refuses outright, such as a missing or invalid field,
   fails at once with Jira's reason at the top of the modal, and creating again replaces it.
 
 ## The key travels
 
-Once a cluster has a known issue, its key follows the failure everywhere:
+A cluster's **known issue** is its most recently linked ticket. Its key follows the failure everywhere:
 
-- the **cluster state line**, the **inbox row**, a failing **execution's page** and its row in the **run's test list**
-  show the key with its status color;
+- the **Issue** line of the cluster and of a failing execution, the **inbox row** and the execution's row in the
+  **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
 - `cluster.new`, `cluster.fixed` and `cluster.regressed` **Slack** messages name it, as does the `cluster.new` email;
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.
 
 <div class="doc-screenshot">
-  <img src="/screenshots/cluster-issue-chip.png" alt="A failure cluster's state line showing the linked Jira issue key with an Open in Jira action">
+  <img src="/screenshots/cluster-issue-line.png" alt="A failure cluster's situation block with its Issue line naming the Jira issue the cluster is tracked in">
 </div>
 
 ## Keep the ticket honest
@@ -66,7 +67,7 @@ write back as the cluster evolves:
 | A cluster **regresses** | Comments *Regressed in run #N …*, and optionally reopens the issue. |
 | **New occurrences** on an open ticket | At most one comment a day: *Still failing — +N occurrences in M runs …*. |
 | A cluster is **merged** | With *comment on merge*, notes it on both issues; the survivor inherits the links. |
-| The **ticket moves to Done** | With *resolve on close*, resolves the cluster unless its fix regressed; otherwise its state line offers *Mark resolved — PROJ-123 is Done* once the latest run no longer fails, and adds *PROJ-123 is marked Done* while it does. |
+| The **ticket moves to Done** | With *resolve on close*, resolves the cluster unless its fix regressed. Otherwise, once the latest finished run no longer fails and the fix did not regress, the next step is *Mark the cluster resolved — PROJ-123 is Done*; while it fails, the Issue line offers *File a new issue*. |
 | The **ticket is reopened** | With *reopen on ticket reopen*, reopens a resolved cluster with a note. |
 
 Both status policies act on a **move** of the ticket, so a cluster a person reopened or resolved stays as they set it.
@@ -82,7 +83,7 @@ A Project admin or an administrator binds the project under **Project → Settin
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route and fills the rest from the defaults, so a team's failures
-reach that team's destination. The **automatic-creation** fields are greyed out: stored, but inert (see
+reach that team's destination. The greyed-out **automatic-creation** fields are inert (see
 [Limits](#limits)).
 
 <div class="doc-screenshot">
@@ -138,9 +139,9 @@ prose follows the separate [AI response-language setting](/features/ai-diagnosis
 ## Limits
 
 - **Jira Cloud only** in this release (REST v3, email + API token); Server / Data Center, GitHub and GitLab Issues
-  follow as provider files.
-- **Creation stays manual** — Piwi files a ticket on a click, never on its own yet.
+  follow.
+- **Creation stays manual**: Piwi never files a ticket on its own yet.
 - A ticket's body is a **snapshot** at creation; the policies add comments and status changes rather than editing it.
-- The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates** that quote
-  locators and Playwright terms, so they stay English even in a French ticket.
+- The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates**, so they
+  stay English even in a French ticket.
 - Attachments honor the [export size budget](/features/offline-export); the trace is never attached.

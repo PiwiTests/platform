@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * The facts line under the cluster's situation block: a Details popover (owner
- * and known-issue editing) and the shared "Raw error ▸" disclosure (the sample
- * error and its fingerprint signature). `revealRawError()` lets a citation open
+ * and the links pinned to the cluster, its known issue among them) and the
+ * shared "Raw error ▸" disclosure (the sample error and its fingerprint
+ * signature). `revealRawError()` lets a citation open
  * the raw error from elsewhere on the page.
  */
 import type { FailureClusterDetail } from '~~/types/api';
@@ -44,8 +45,7 @@ defineExpose({ revealRawError });
           </div>
           <div class="space-y-1">
             <div class="flex items-center gap-1.5 text-xs">
-              <UIcon name="i-lucide-link" class="size-3.5 shrink-0 text-gray-400" />
-              <span class="text-muted uppercase tracking-wide font-medium">Known issue</span>
+              <span class="text-muted uppercase tracking-wide font-medium">Links</span>
               <HelpHint topic="cluster.known-issue" />
             </div>
             <EntityLinks

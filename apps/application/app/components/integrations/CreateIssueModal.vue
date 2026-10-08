@@ -123,6 +123,33 @@ const missingFields = computed(() =>
 const assigneeRequired = computed(() => missingFields.value.some((f) => f.id === 'assignee'));
 const missingNames = computed(() => joinFieldNames(missingFields.value.map((f) => f.name)));
 
+// Why Create is disabled, named in the footer next to the fields Jira still needs.
+const blockedReason = computed(() => {
+  const need = [
+    !title.value.trim() ? 'a title' : null,
+    !projectKey.value ? 'a Jira project' : null,
+    !issueType.value ? 'an issue type' : null,
+  ].filter((x): x is string => !!x);
+  if (!need.length) return null;
+  const list = need.length > 1 ? `${need.slice(0, -1).join(', ')} and ${need.at(-1)}` : need[0];
+  return `Pick ${list} to create the issue.`;
+});
+
+// What the issue is filed for: a cluster's issue shows on the cluster page and on
+// every execution of it, whichever page it was filed from.
+const description = computed(() => {
+  if (props.entityType === 'bug_report')
+    return 'File a Jira issue from this bug report, with its steps, evidence and failing test.';
+  const id = draft.value?.clusterId;
+  return id
+    ? `Files one issue for cluster #${id}, with its fix plan as the body. It shows on the cluster page and on each of its executions.`
+    : 'File a Jira issue from this failure, with the fix plan as its body.';
+});
+
+// Setting the project's default Jira project needs the binding's permission.
+const { can } = useAuth();
+const canBind = computed(() => (draft.value ? can('project:manage', draft.value.projectId) : false));
+
 const canCreate = computed(
   () =>
     !!connectionId.value &&
@@ -331,16 +358,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
 </script>
 
 <template>
-  <UModal
-    v-model:open="open"
-    title="Create issue"
-    :description="
-      entityType === 'bug_report'
-        ? 'File a Jira issue from this bug report, with its steps, evidence and failing test.'
-        : 'File a Jira issue from this failure, with the fix plan as its body.'
-    "
-    :ui="{ content: 'max-w-2xl' }"
-  >
+  <UModal v-model:open="open" title="Create issue" :description="description" :ui="{ content: 'max-w-2xl' }">
     <template #body>
       <LoadingState v-if="loading" text="Preparing the draft…" />
 
@@ -377,6 +395,16 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </UAlert>
 
         <template v-if="!existing.length || showAllCreate">
+          <!-- No default Jira project for this Piwi project: say so, and where to set one. -->
+          <p v-if="!draft.projectBound" class="text-xs text-muted" data-testid="create-issue-unbound">
+            This project has no default Jira project and issue type, so pick them for this issue.
+            <NuxtLink
+              v-if="canBind"
+              :to="`/projects/${draft.projectId}?tab=settings&section=issue-tracker`"
+              :class="SENTENCE_LINK_CLASS"
+              >Set the defaults</NuxtLink
+            ><template v-else> A project admin can set them in the project settings.</template>
+          </p>
           <UFormField label="Title">
             <UInput v-model="title" class="w-full" />
           </UFormField>
@@ -477,8 +505,16 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <div class="flex flex-wrap gap-4">
               <USwitch v-model="include.includeDiagnosis" label="Diagnosis" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includePatch" label="Patch" @update:model-value="refreshPreview" />
-              <USwitch v-model="include.includeShareLink" label="Share link" @update:model-value="refreshPreview" />
+              <USwitch
+                v-model="include.includeShareLink"
+                label="Share link"
+                :disabled="!draft.linksBack"
+                @update:model-value="refreshPreview"
+              />
             </div>
+            <p v-if="!draft.linksBack" class="mt-1 text-xs text-muted" data-testid="create-issue-no-links-back">
+              The issue cannot link back to Piwi: this instance has no public address (<code>PIWI_SITE_URL</code>).
+            </p>
           </UFormField>
 
           <div>
@@ -491,8 +527,13 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
 
     <template #footer>
       <div class="flex flex-wrap items-center justify-end gap-2 w-full">
-        <span v-if="draft && missingNames" class="mr-auto text-xs text-muted" data-testid="create-issue-missing">
-          Jira still needs {{ missingNames }}.
+        <span
+          v-if="draft && (!existing.length || showAllCreate) && (blockedReason || missingNames)"
+          class="mr-auto text-xs text-muted"
+          data-testid="create-issue-missing"
+        >
+          <template v-if="blockedReason">{{ blockedReason }}</template>
+          <template v-else>Jira still needs {{ missingNames }}.</template>
         </span>
         <UButton color="neutral" variant="ghost" @click="open = false">Cancel</UButton>
         <UButton

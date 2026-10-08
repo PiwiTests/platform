@@ -6,7 +6,7 @@
  * dedupe key makes a second click a no-op once an issue exists. The key is the
  * cluster's for a cluster and every one of its executions, so filing from the
  * cluster page and from an execution never files twice; an issue whose link was
- * removed no longer counts, and the next create files a new one.
+ * removed, or that is Done, no longer counts, and the next create files a new one.
  *
  * The fields the tracker requires are checked first: the project's field
  * defaults and the request's own values fill them, and a create that would still
@@ -30,7 +30,7 @@ import {
   type CreateIssueResult,
 } from './actions';
 import { forgetCreateFields, getCreateFields } from './fields';
-import { createdLinkExists } from './entity-links';
+import { filedIssueStillTracks } from './entity-links';
 import {
   fieldPayload,
   hasFieldValue,
@@ -224,10 +224,10 @@ interface IssueToFile {
 
 /**
  * File the issue: the one already filed for the cluster (or bug report) while
- * its link is still there, else a refusal naming the required fields still
- * empty, else a `create-issue` action enqueued and run now, its outcome mapped
- * for the caller. A filing whose link a person removed is retired first, so the
- * request files a new issue instead of answering with the unlinked one.
+ * it still tracks it, else a refusal naming the required fields still empty,
+ * else a `create-issue` action enqueued and run now, its outcome mapped for the
+ * caller. A filing whose link a person removed, or whose issue is Done, is
+ * retired first, so the request files a new issue instead of answering with it.
  */
 async function fileIssue(
   db: DbClient,
@@ -236,7 +236,7 @@ async function fileIssue(
   issue: IssueToFile,
 ): Promise<CreateIssueOutcome> {
   // An issue already filed for this cluster is the answer, whatever the request
-  // says, while its link is still on the cluster.
+  // says, while it still tracks the cluster.
   const dedupeKey = createIssueKey(issue.linkEntityType, issue.linkEntityId, params.connectionId);
   // A filing recorded against the execution it was asked from still answers for it.
   const filed =
@@ -248,7 +248,7 @@ async function fileIssue(
   if (filed?.status === 'skipped') await retireAction(db, filed.id);
   if (filed?.status === 'done') {
     const result = filed.result as CreateIssueResult | null;
-    if (await createdLinkExists(db, issue.linkEntityType, issue.linkEntityId, result)) {
+    if (await filedIssueStillTracks(db, issue.linkEntityType, issue.linkEntityId, result)) {
       return {
         actionId: filed.id,
         status: 'done',

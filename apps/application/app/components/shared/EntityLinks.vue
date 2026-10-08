@@ -67,6 +67,15 @@ async function addLink() {
 }
 
 async function removeLink(id: number) {
+  // An issue Piwi filed is synced and written to through its link: say so first.
+  const link = localLinks.value.find((l) => l.id === id);
+  if (
+    link?.origin === 'created' &&
+    !window.confirm(
+      `Unlink ${link.key ?? 'this issue'}? Piwi filed it: unlinking stops its status sync and the comments Piwi writes to it. The issue itself stays in the tracker.`,
+    )
+  )
+    return;
   try {
     await $fetch(`/api/links/${id}`, { method: 'DELETE' });
     localLinks.value = localLinks.value.filter((l) => l.id !== id);

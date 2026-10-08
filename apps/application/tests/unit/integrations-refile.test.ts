@@ -13,9 +13,9 @@ import type { DbClient } from '../../server/database';
 /**
  * Filing an issue for a cluster and keeping it, against a SQLite database and a
  * stubbed Jira: the cluster page and an execution of the cluster share one
- * filing, an issue whose link was removed no longer answers a new create, and
- * the sync's resolve and reopen policies act on a move of the ticket, never on
- * where it stands.
+ * filing, an issue whose link was removed or that is Done does not answer a
+ * new create, and the sync's resolve and reopen policies act on a move of the
+ * ticket, never on where it stands, for an issue filed or linked.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -26,6 +26,7 @@ const { writeProjectIntegration } = await import('../../server/utils/integration
 const { createIssue } = await import('../../server/utils/integrations/create');
 const { syncTrackerLinks } = await import('../../server/utils/integrations/sync');
 const { deleteLink } = await import('../../shared/handlers/links');
+const { createEnrichedLink } = await import('../../server/utils/integrations/link-create');
 
 const SITE = 'https://refile.atlassian.net';
 
@@ -204,6 +205,33 @@ describe('filing again after the link was removed', () => {
   });
 });
 
+describe('filing again once the issue is Done', () => {
+  test('files a new issue next to the Done one, which stays linked', async () => {
+    const [cluster] = await db
+      .insert(schema.failureClusters)
+      .values({
+        projectId: 1,
+        fingerprint: 'fp-done',
+        signature: 'Error: broken done',
+        errorType: 'unknown',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+      })
+      .returning({ id: schema.failureClusters.id });
+    const first = await file('failure_cluster', cluster!.id);
+    const [link] = await clusterLinks(cluster!.id);
+    await db
+      .update(schema.entityLinks)
+      .set({ metadata: { statusCategory: 'done' } as never })
+      .where(eq(schema.entityLinks.id, link!.id));
+
+    const again = await file('failure_cluster', cluster!.id);
+    expect(again?.alreadyFiled).toBeUndefined();
+    expect(again?.key).not.toBe(first!.key);
+    expect((await clusterLinks(cluster!.id)).map((l) => l.key).sort()).toEqual([first!.key, again!.key].sort());
+  });
+});
+
 describe('sync policies act on a move of the ticket', () => {
   async function linkOf(clusterId: number) {
     const [link] = await clusterLinks(clusterId);
@@ -253,5 +281,32 @@ describe('sync policies act on a move of the ticket', () => {
     categories.set(link.key!, 'indeterminate');
     await syncTrackerLinks(dbc, { now: new Date(Date.now() + 6 * 24 * 3600_000) });
     expect((await clusterRow(3)).status).toBe('open');
+  });
+
+  test("a linked issue's first move to Done resolves the cluster, as for a filed one", async () => {
+    await setPolicies({ resolveOnClose: true });
+    const [cluster] = await db
+      .insert(schema.failureClusters)
+      .values({
+        projectId: 1,
+        fingerprint: 'fp-pinned',
+        signature: 'Error: broken pinned',
+        errorType: 'unknown',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+      })
+      .returning({ id: schema.failureClusters.id });
+    categories.set('PROJ-900', 'indeterminate');
+    const link = await createEnrichedLink(dbc, {
+      entityType: 'failure_cluster',
+      entityId: cluster!.id,
+      url: `${SITE}/browse/PROJ-900`,
+    });
+    expect(link?.connectionId).toBe(connectionId);
+    expect((link?.metadata as { statusCategory?: string } | null)?.statusCategory).toBe('indeterminate');
+
+    categories.set('PROJ-900', 'done');
+    await syncTrackerLinks(dbc);
+    expect((await clusterRow(cluster!.id)).status).toBe('resolved');
   });
 });

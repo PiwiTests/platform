@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
+import { eq, inArray } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 
 /**
@@ -84,12 +85,15 @@ describe('clusterKnownIssues', () => {
   test('returns the newest tracker link with a key, per cluster, in one call', async () => {
     const issues = await clusterKnownIssues(db as never, [1, 2, 1]);
     expect([...issues.keys()]).toEqual([1]);
-    expect(issues.get(1)).toEqual({
+    expect(issues.get(1)).toMatchObject({
       key: 'PIWI-12',
       url: JIRA_URL,
       provider: 'jira',
       status: 'In Progress',
       statusColor: 'warning',
+      statusCategory: null,
+      assignee: null,
+      origin: 'created',
     });
   });
 
@@ -106,13 +110,15 @@ describe('clusterKnownIssues', () => {
 });
 
 describe('the surfaces around an execution carry its cluster issue', () => {
-  test('the execution detail names it in the cluster block and the situation', async () => {
+  test('the execution detail carries it for the Issue line, and the situation leaves it to that line', async () => {
     const execution = (await getTestRunCase(db as never, 10)) as {
-      failureCluster: { knownIssue: { key: string } | null } | null;
+      failureCluster: { knownIssue: { key: string } | null; failureGoesOn: boolean | null } | null;
       situation: { text: string } | null;
     } | null;
     expect(execution?.failureCluster?.knownIssue?.key).toBe('PIWI-12');
-    expect(execution?.situation?.text).toContain('Tracked in PIWI-12 (In Progress).');
+    // Only a Done issue needs to know whether the failure goes on.
+    expect(execution?.failureCluster?.failureGoesOn).toBeNull();
+    expect(execution?.situation?.text).not.toContain('PIWI-12');
 
     const untracked = (await getTestRunCase(db as never, 11)) as {
       failureCluster: { knownIssue: unknown } | null;
@@ -132,5 +138,33 @@ describe('the surfaces around an execution carry its cluster issue', () => {
       recentExecutions: Array<{ id: number; knownIssue: { key: string } | null }>;
     } | null;
     expect(detail?.recentExecutions.find((e) => e.id === 10)?.knownIssue?.key).toBe('PIWI-12');
+  });
+
+  test('a Done issue tells whether the failure goes on in the latest finished run', async () => {
+    const read = async () =>
+      ((await getTestRunCase(db as never, 10)) as { failureCluster: { failureGoesOn: boolean | null } | null } | null)
+        ?.failureCluster?.failureGoesOn;
+    const [link] = await db.select().from(schema.entityLinks).where(eq(schema.entityLinks.key, 'PIWI-12'));
+    await db
+      .update(schema.entityLinks)
+      .set({ metadata: { statusCategory: 'done' } as never })
+      .where(eq(schema.entityLinks.id, link!.id));
+    try {
+      // Run 1, the latest finished run, is where the cluster was last seen.
+      expect(await read()).toBe(true);
+
+      // A run still going does not count; a finished run without the failure does.
+      await db
+        .insert(schema.testRuns)
+        .values([{ id: 2, projectId: 1, status: 'running', startTime: new Date('2026-09-02T10:00:00Z') }]);
+      expect(await read()).toBe(true);
+      await db
+        .insert(schema.testRuns)
+        .values([{ id: 3, projectId: 1, status: 'passed', startTime: new Date('2026-09-01T12:00:00Z') }]);
+      expect(await read()).toBe(false);
+    } finally {
+      await db.delete(schema.testRuns).where(inArray(schema.testRuns.id, [2, 3]));
+      await db.update(schema.entityLinks).set({ metadata: null }).where(eq(schema.entityLinks.id, link!.id));
+    }
   });
 });

@@ -9,7 +9,7 @@
  * never duplicated.
  */
 import { eq } from 'drizzle-orm';
-import { failureClusters, testRuns, testRunsCases } from '../../database/schema';
+import { testRuns, testRunsCases } from '../../database/schema';
 import { buildFixPlan } from '../fix-plan';
 import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { describeCluster } from '#shared/describe-cluster';
@@ -81,7 +81,6 @@ async function gatherClusterFacts(
   db: DrizzleDB,
   clusterId: number,
   occurrenceExecutionId: number | null,
-  titleOverride: string | null,
   opts: DocumentBuildOpts,
 ): Promise<GatheredFacts | null> {
   const cluster = await getFailureCluster(db, clusterId);
@@ -143,7 +142,7 @@ async function gatherClusterFacts(
   const facts: IssueFacts = {
     clusterId,
     fingerprint: cluster.fingerprint,
-    title: titleOverride ?? describeCluster(cluster),
+    title: describeCluster(cluster),
     headline: headlineDesc?.headline ?? null,
     errorType: cluster.errorType ?? null,
     firstSeen: formatDate(locale, cluster.firstSeenAt),
@@ -181,7 +180,7 @@ export async function buildClusterIssue(
   clusterId: number,
   opts: DocumentBuildOpts = {},
 ): Promise<BuiltClusterIssue | null> {
-  const gathered = await gatherClusterFacts(db, clusterId, null, null, opts);
+  const gathered = await gatherClusterFacts(db, clusterId, null, opts);
   if (!gathered) return null;
   return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId };
 }
@@ -204,13 +203,9 @@ export async function buildExecutionIssue(
     .where(eq(testRunsCases.id, executionId));
   if (!execution?.failureClusterId) return null;
 
-  const [cluster] = await db
-    .select({ title: failureClusters.title, signature: failureClusters.signature })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, execution.failureClusterId));
-  const title = cluster?.title?.trim() || cluster?.signature || null;
-
-  const gathered = await gatherClusterFacts(db, execution.failureClusterId, executionId, title, opts);
+  // The cluster's own name titles the ticket, as on the cluster page, so the
+  // title is the same from either entry point.
+  const gathered = await gatherClusterFacts(db, execution.failureClusterId, executionId, opts);
   if (!gathered) return null;
   return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId };
 }

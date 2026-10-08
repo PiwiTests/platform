@@ -16,6 +16,14 @@ export interface KnownIssueRef {
   status: string | null;
   /** The badge color token resolved from the status category. */
   statusColor: string | null;
+  /** The tracker's status category as last synced (`new`, `indeterminate`, `done`). */
+  statusCategory: string | null;
+  /** The issue's assignee in the tracker, as last synced. */
+  assignee: string | null;
+  /** `created` when Piwi filed the issue, else a link a person pinned. */
+  origin: string | null;
+  /** When the link was made: the filing, or the pin. */
+  linkedAt: string | null;
 }
 
 /**
@@ -41,18 +49,26 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
       connectionId: entityLinks.connectionId,
       statusText: entityLinks.statusText,
       statusColor: entityLinks.statusColor,
+      metadata: entityLinks.metadata,
+      origin: entityLinks.origin,
+      createdAt: entityLinks.createdAt,
     })
     .from(entityLinks)
     .where(and(inArray(entityLinks.failureClusterId, ids), isNotNull(entityLinks.key)))
     .orderBy(desc(entityLinks.id));
   for (const row of rows) {
     if (row.clusterId == null || out.has(row.clusterId) || !isTrackerLink(row)) continue;
+    const meta = (row.metadata ?? null) as { statusCategory?: string | null; assignee?: string | null } | null;
     out.set(row.clusterId, {
       key: row.key!,
       url: row.url,
       provider: row.provider,
       status: row.statusText ?? null,
       statusColor: row.statusColor ?? null,
+      statusCategory: meta?.statusCategory ?? null,
+      assignee: meta?.assignee ?? null,
+      origin: row.origin ?? null,
+      linkedAt: row.createdAt ? new Date(row.createdAt as unknown as string | number | Date).toISOString() : null,
     });
   }
   return out;
@@ -60,8 +76,8 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
 
 /**
  * The clusters whose issue filing is queued: the tracker did not answer the
- * create yet and the outbox retries it. The pages show the filing rather than
- * offering a second Create that would wait on the same action.
+ * create yet and the outbox retries it. The pages show the queued filing; filing
+ * again re-runs the same action at once.
  */
 export async function clusterIssueFilingsQueued(db: DrizzleDB, clusterIds: number[]): Promise<Set<number>> {
   const ids = [...new Set(clusterIds.filter((id): id is number => typeof id === 'number'))];

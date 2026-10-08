@@ -1,0 +1,98 @@
+<script setup lang="ts">
+/**
+ * "Issue" — the ticket a failure cluster is tracked in, as one line of the
+ * situation block on the execution page and on the cluster page, so the ticket
+ * sits in the same place on both. A tracked cluster names its issue, the key a
+ * link to the tracker, and its status; an issue Done while the failure goes on
+ * says so and offers a new one (once the failure stopped, the cluster page
+ * offers to resolve the cluster instead). An untracked open cluster says it has none
+ * and offers to file or link one; a filing the tracker has not answered yet
+ * shows as queued. The page owns the create and link dialogs: this line emits.
+ * The block that renders this line provides its label.
+ */
+import { getProviderName, type LinkProvider } from '#shared/link-detect';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import type { IssueLineForm } from '~/utils/issue-line';
+
+const props = defineProps<{
+  form: IssueLineForm;
+  projectId: number | null;
+  /** The cluster's triage status, for the Done-while-open note. */
+  clusterStatus?: string | null;
+  /** The failure goes on in the project's latest finished run: a Done issue then calls for a new one. */
+  failureGoesOn?: boolean;
+  knownIssue?: {
+    key: string;
+    url: string;
+    provider: string;
+    status: string | null;
+    statusCategory?: string | null;
+  } | null;
+}>();
+
+const emit = defineEmits<{ create: []; link: [] }>();
+
+const { can } = useAuth();
+const { hasTracker } = useTrackerStatus();
+const canFile = computed(() => hasTracker.value && can('issue:create', props.projectId));
+const canLink = computed(() => can('link:write', props.projectId));
+
+const providerName = computed(() =>
+  props.knownIssue ? getProviderName(props.knownIssue.provider as LinkProvider) : null,
+);
+const doneWhileFailing = computed(
+  () =>
+    props.knownIssue?.statusCategory === 'done' &&
+    (props.clusterStatus ?? 'open') === 'open' &&
+    props.failureGoesOn === true,
+);
+</script>
+
+<template>
+  <div data-shot="issue-line" class="space-y-1">
+    <template v-if="form === 'tracked' && knownIssue">
+      <p>
+        Tracked in
+        <a
+          :href="safeHttpUrl(knownIssue.url) ?? undefined"
+          target="_blank"
+          rel="noopener noreferrer"
+          :class="SENTENCE_LINK_CLASS"
+          data-testid="issue-line-key"
+          >{{ knownIssue.key }}</a
+        ><template v-if="knownIssue.status"
+          >, {{ knownIssue.status }}<template v-if="providerName"> in {{ providerName }}</template></template
+        >.
+      </p>
+      <template v-if="doneWhileFailing">
+        <p class="text-xs text-muted">The issue is Done, but the failure goes on.</p>
+        <div v-if="canFile" class="flex flex-wrap items-center gap-2 pt-1">
+          <UButton size="xs" color="neutral" variant="outline" @click="emit('create')">File a new issue</UButton>
+        </div>
+      </template>
+    </template>
+
+    <p v-else-if="form === 'queued'" data-testid="issue-line-queued">
+      Filing queued: Jira did not answer yet. Piwi retries and links the issue once it is created.
+    </p>
+
+    <template v-else-if="form === 'untracked'">
+      <p>No issue yet.</p>
+      <div class="flex flex-wrap items-center gap-2 pt-1">
+        <UButton
+          v-if="canFile"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          data-shot="issue-line-create"
+          @click="emit('create')"
+        >
+          Create issue
+        </UButton>
+        <UButton v-if="canLink" size="xs" color="neutral" variant="outline" @click="emit('link')">
+          Link an issue
+        </UButton>
+      </div>
+    </template>
+  </div>
+</template>

@@ -18,6 +18,9 @@ import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
 import { commitUrl } from '#shared/scm-urls';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
+import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import { issueLineForm } from '~/utils/issue-line';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 
 const route = useRoute();
@@ -102,6 +105,8 @@ const failureCluster = computed(() => {
       summary?: string | null;
     } | null;
     knownIssue?: KnownIssueRef | null;
+    /** Read when the issue is Done: the failure goes on in the latest finished run. */
+    failureGoesOn?: boolean | null;
     issueFilingQueued?: boolean;
   } | null;
 });
@@ -432,9 +437,11 @@ function copyFailure() {
   const testCaseUrl = `${origin}/test-run-cases/${testCaseId}`;
   const stableUrl = testCase.value?.testCaseId ? `${origin}/test-cases/${testCase.value.testCaseId}` : null;
 
+  const issue = knownIssue.value;
   const plain = [
     `❌ Test failed: ${title}`,
     loc ? `Location: ${loc}` : null,
+    issue ? `Tracked in ${issue.key}${issue.status ? ` (${issue.status})` : ''}: ${issue.url}` : null,
     '',
     'Error:',
     rawError,
@@ -448,6 +455,9 @@ function copyFailure() {
 
   const html = [
     `<p><strong>❌ Test failed: ${esc(title)}</strong>${loc ? `<br><code>${esc(loc)}</code>` : ''}</p>`,
+    issue
+      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
+      : '',
     `<p><strong>Error:</strong></p><pre>${renderAnsi(tc.error)}</pre>`,
     `<p>🔗 ${clusterUrl ? `<a href="${clusterUrl}">View failure cluster</a> · ` : ''}<a href="${testCaseUrl}">Execution details</a>${stableUrl ? ` · <a href="${stableUrl}">Test history</a>` : ''}</p>`,
   ].join('');
@@ -455,17 +465,29 @@ function copyFailure() {
   copyRich(plain, html, { toast: 'Failure copied' });
 }
 
-// ── Link an issue ─────────────────────────────────────────────────────────
-const linksModalOpen = ref(false);
-
-// ── Create issue / link to the cluster's known issue ─────────────────────────
+// ── The cluster's issue: the Issue line, the menu, and their dialogs ─────────
 const { hasTracker } = useTrackerStatus();
 // The execution carries its cluster's issue, so it is current right after a create.
-const knownIssue = computed(() => failureCluster.value?.knownIssue ?? fixPlanData.value?.issue ?? null);
+const knownIssue = computed(() => failureCluster.value?.knownIssue ?? null);
+const canFileIssue = computed(() => hasTracker.value && canCreateIssue.value);
+const issueForm = computed(() =>
+  failureCluster.value
+    ? issueLineForm({
+        hasKnownIssue: Boolean(knownIssue.value),
+        filingQueued: Boolean(failureCluster.value.issueFilingQueued),
+        clusterStatus: failureCluster.value.status,
+        snoozed: false,
+        canFile: canFileIssue.value,
+        canLink: canEditLinks.value,
+      })
+    : null,
+);
 const issueModalOpen = ref(false);
+const linkIssueOpen = ref(false);
 
 function onIssueCreated() {
   issueModalOpen.value = false;
+  linkIssueOpen.value = false;
   void refresh();
 }
 
@@ -505,24 +527,26 @@ const moreMenuItems = computed(() => {
           },
     );
   }
+  // The cluster's ticket: open it, or file or link one. The links of the
+  // execution, its test and its run are edited in the facts line's Details.
   if (knownIssue.value) {
     items.push({
       label: `Open ${knownIssue.value.key}`,
-      icon: 'i-simple-icons-jira',
-      to: knownIssue.value.url,
+      icon: getProviderIcon(knownIssue.value.provider as LinkProvider),
+      to: safeHttpUrl(knownIssue.value.url) ?? undefined,
       target: '_blank',
     });
-  } else if (canCreateIssue.value && hasTracker.value && failureCluster.value?.issueFilingQueued) {
+  } else if (canFileIssue.value && failureCluster.value?.issueFilingQueued) {
     items.push({
       label: 'Filing queued · Retry',
-      icon: 'i-simple-icons-jira',
+      icon: 'i-lucide-clock',
       onSelect: () => (issueModalOpen.value = true),
     });
-  } else if (canCreateIssue.value && hasTracker.value && failureCluster.value) {
-    items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
+  } else if (canFileIssue.value && failureCluster.value) {
+    items.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
   }
-  if (canEditLinks.value) {
-    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
+  if (canEditLinks.value && failureCluster.value) {
+    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
   }
   if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
   items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
@@ -768,17 +792,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <template v-if="situation" #situation>
             <p data-shot="situation">
               <template v-for="(part, i) in situation.parts" :key="i">
-                <a
-                  v-if="part.kind === 'issue' && part.url"
-                  :href="part.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
-                  data-testid="situation-issue"
-                  >{{ part.text }}</a
-                >
                 <NuxtLink
-                  v-else-if="part.href"
+                  v-if="part.href"
                   :to="part.href"
                   :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? CODE_CHIP_CLASS : '']"
                   >{{ part.text }}</NuxtLink
@@ -798,6 +813,19 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
+          <!-- Issue: the ticket the cluster is tracked in, or the way to file or link one -->
+          <template v-if="isProblem && issueForm" #issue>
+            <IssueLine
+              :form="issueForm"
+              :project-id="executionProjectId"
+              :cluster-status="failureCluster?.status"
+              :failure-goes-on="failureCluster?.failureGoesOn === true"
+              :known-issue="knownIssue"
+              @create="issueModalOpen = true"
+              @link="linkIssueOpen = true"
+            />
+          </template>
+
           <!-- Line 5: the next step -->
           <template v-if="isProblem && nextStep" #next>
             <NextStepLine :next-step="nextStep" :retry-command="retryCommand" @action="handleNextStepAction" />
@@ -810,6 +838,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :test-case="testCase"
               :history="historyData"
               @copy-failure="copyFailure"
+              @links-changed="refresh()"
             />
           </template>
         </SituationBlock>
@@ -1008,18 +1037,13 @@ const { handle: handleNextStepAction } = useNextStepActions({
     </template>
   </UDashboardPanel>
 
-  <!-- Link an issue: view and add external links for this execution. -->
-  <UModal v-model:open="linksModalOpen" title="Links">
-    <template #body>
-      <EntityLinks
-        v-if="testCase?.testCaseId"
-        entity-type="test_case"
-        :entity-id="testCase.testCaseId"
-        :links="testCase.stableLinks ?? null"
-        @updated="refresh()"
-      />
-    </template>
-  </UModal>
+  <!-- Link an issue to the execution's cluster: its known issue, on every execution of it. -->
+  <LinkIssueModal
+    v-if="failureCluster && canEditLinks"
+    v-model:open="linkIssueOpen"
+    :cluster-id="failureCluster.id"
+    @linked="onIssueCreated"
+  />
 
   <CreateIssueModal
     v-if="testCase?.id"

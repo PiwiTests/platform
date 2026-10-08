@@ -4,11 +4,16 @@ import { entityLinks, type EntityLink } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { detectProviderWithConnections } from './link-resolve';
 import { unfurlLink } from './link-unfurl';
+import { mergeEntityLinkMetadata } from './entity-links';
 
 /**
  * Attach an external URL to an entity, matching it against the tracker
  * connections, then enrich it (title, status) on a best-effort basis. Throws
  * when the entity does not exist. The REST route and the MCP tool both call it.
+ *
+ * A tracker issue's status category is recorded as the link is made, as for an
+ * issue Piwi files, so the status pull counts the issue's first move (to Done,
+ * or out of it) and its policies act on it.
  */
 export async function createEnrichedLink(
   db: DbClient,
@@ -19,7 +24,8 @@ export async function createEnrichedLink(
 
   // Through the connection when the link matched one, otherwise the rich
   // provider / OpenGraph path.
-  const { title, statusText, statusColor } = await unfurlLink(db, link);
+  const { title, statusText, statusColor, statusCategory, assignee } = await unfurlLink(db, link);
+  if (statusCategory) await mergeEntityLinkMetadata(db, link.id, { statusCategory, assignee: assignee ?? null });
   if (!title && !statusText) return link;
   await db
     .update(entityLinks)

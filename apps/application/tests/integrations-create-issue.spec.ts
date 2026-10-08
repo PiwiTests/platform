@@ -249,7 +249,7 @@ test.describe.serial('Integrations — create an issue', () => {
     expect(execution.failureCluster.knownIssue.key).toBe(createdKey);
 
     await page.goto(`/test-run-cases/${executionId}`);
-    const tracked = page.getByTestId('situation-issue');
+    const tracked = page.getByTestId('issue-line-key');
     await expect(tracked).toHaveText(createdKey);
     await expect(tracked).toHaveAttribute('href', new RegExp(`/browse/${createdKey}$`));
 

@@ -1,10 +1,11 @@
 /**
  * A failure cluster's activity: the fix attempts reported on it, each step of
- * their outcome, and what agents wrote to it over MCP (the write log), newest
- * first. Shared by the REST route and the demo.
+ * their outcome, what agents wrote to it over MCP (the write log), and what Piwi
+ * wrote to its tracker issue (the issue it filed, its comments and moves),
+ * newest first. Shared by the REST route and the demo.
  */
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { apiKeys, mcpToolCalls, users } from '../../server/database/schema';
+import { apiKeys, integrationActions, mcpToolCalls, users } from '../../server/database/schema';
 import { listOutcomes } from '../../server/utils/outcomes';
 import { describeFixAttempt, type FixAttemptDetails } from '../fix-attempts';
 import { describeMcpCall } from '../mcp-write-log';
@@ -13,14 +14,14 @@ import type { DrizzleDB } from './db';
 
 /** One line of a cluster's activity. */
 export interface ClusterActivityItem {
-  /** `fix-attempt` for an attempt's outcome, `agent-call` for a logged MCP write. */
-  type: 'fix-attempt' | 'agent-call';
+  /** `fix-attempt` for an attempt's outcome, `agent-call` for a logged MCP write, `tracker-write` for a write to the issue. */
+  type: 'fix-attempt' | 'agent-call' | 'tracker-write';
   at: string;
   /** The sentence the timeline shows. */
   text: string;
   /** For an attempt: its outcome at this step. For a call: `ok`, `error` or `not-found`. */
   status: HandbackOutcome | string;
-  /** Where it came from: `mcp`, `ui`, `editor`, `inferred` (a run). */
+  /** Where it came from: `mcp`, `ui`, `editor`, `inferred` (a run), `tracker` (Piwi's write to the issue). */
   channel: string;
   /** Who: the user's name and the API key's name, when known. */
   user: string | null;
@@ -52,6 +53,38 @@ function attemptSentence(outcome: HandbackOutcome, details: FixAttemptDetails, c
   }
 }
 
+/** Why Piwi wrote to the issue, read from the write's dedupe key (see `#shared/integrations/action-keys`). */
+function trackerReason(dedupeKey: string): string | null {
+  if (dedupeKey.includes(':fixed:')) return 'the fix landed';
+  if (dedupeKey.includes(':regressed:') || dedupeKey.includes(':reopen:')) return 'the failure came back';
+  if (dedupeKey.includes(':occurrences:')) return 'new occurrences';
+  if (dedupeKey.includes(':merge:')) return 'the clusters were merged';
+  return null;
+}
+
+/** The sentence for one of Piwi's writes to the cluster's tracker issue. */
+function trackerSentence(row: typeof integrationActions.$inferSelect): string {
+  const payload = (row.payload ?? {}) as { issueKey?: string };
+  const result = (row.result ?? {}) as { key?: string };
+  const key = result.key ?? payload.issueKey ?? 'the issue';
+  const reason = trackerReason(row.dedupeKey);
+  const why = reason ? ` (${reason})` : '';
+  const error = row.error ? `: ${row.error}` : '';
+  const done = row.status === 'done';
+  const failed = row.status === 'failed' || row.status === 'skipped';
+  switch (row.kind) {
+    case 'create-issue':
+      if (done) return `Piwi filed ${key}`;
+      return failed ? `Filing an issue failed${error}` : 'Filing an issue is queued: the tracker did not answer yet';
+    case 'comment':
+      if (done) return `Piwi commented on ${key}${why}`;
+      return failed ? `Commenting on ${key} failed${error}` : `A comment on ${key} is queued${why}`;
+    default:
+      if (done) return `Piwi moved ${key}${why}`;
+      return failed ? `Moving ${key} failed${error}` : `Moving ${key} is queued${why}`;
+  }
+}
+
 function iso(value: unknown): string {
   return (value instanceof Date ? value : new Date(value as string | number)).toISOString();
 }
@@ -65,10 +98,26 @@ export async function getClusterActivity(db: DrizzleDB, clusterId: number): Prom
     .where(and(eq(mcpToolCalls.subjectType, 'cluster'), eq(mcpToolCalls.subjectId, clusterId)))
     .orderBy(desc(mcpToolCalls.createdAt), desc(mcpToolCalls.id))
     .limit(MAX_ITEMS);
+  const writes = await db
+    .select()
+    .from(integrationActions)
+    .where(
+      and(
+        eq(integrationActions.entityType, 'failure_cluster'),
+        eq(integrationActions.entityId, clusterId),
+        inArray(integrationActions.kind, ['create-issue', 'comment', 'transition']),
+      ),
+    )
+    .orderBy(desc(integrationActions.createdAt), desc(integrationActions.id))
+    .limit(MAX_ITEMS);
 
   const userIds = [
     ...new Set(
-      [...outcomes.map((o) => o.actorUserId), ...calls.map((c) => c.userId)].filter((id): id is number => !!id),
+      [
+        ...outcomes.map((o) => o.actorUserId),
+        ...calls.map((c) => c.userId),
+        ...writes.map((w) => w.requestedBy),
+      ].filter((id): id is number => !!id),
     ),
   ];
   const keyIds = [
@@ -126,6 +175,21 @@ export async function getClusterActivity(db: DrizzleDB, clusterId: number): Prom
       runId: null,
       commit: null,
       tool: call.tool,
+    });
+  }
+  for (const write of writes) {
+    const run = /:r(\d+)$/.exec(write.dedupeKey);
+    items.push({
+      type: 'tracker-write',
+      at: iso(write.finishedAt ?? write.createdAt),
+      text: trackerSentence(write),
+      status:
+        write.status === 'done' ? 'ok' : write.status === 'failed' || write.status === 'skipped' ? 'error' : 'pending',
+      channel: 'tracker',
+      user: write.requestedBy ? (userNames.get(write.requestedBy) ?? null) : null,
+      apiKey: null,
+      runId: run ? Number(run[1]) : null,
+      commit: null,
     });
   }
   return items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, MAX_ITEMS);

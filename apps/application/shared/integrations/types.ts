@@ -159,6 +159,12 @@ export interface IssueDraft {
   entityId: number;
   /** The cluster the created link attaches to (the entity's own cluster). */
   clusterId: number | null;
+  /** The Piwi project the entity belongs to. */
+  projectId: number;
+  /** The project binding names a Jira project and an issue type, so the pickers come prefilled. */
+  projectBound: boolean;
+  /** `PIWI_SITE_URL` is set, so the issue's body links back to Piwi (and can carry a share link). */
+  linksBack: boolean;
   title: string;
   connectionId: number | null;
   connections: TrackerSummary[];

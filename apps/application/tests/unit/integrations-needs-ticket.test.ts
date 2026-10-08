@@ -61,7 +61,7 @@ describe('cluster-state ticket-done reconcile', () => {
     expect(state.sentence).toContain('PROJ-123 is Done');
   });
 
-  test('a regression under a Done ticket keeps the regression and notes the ticket', () => {
+  test('a regression under a Done ticket keeps the regression, with no reconcile', () => {
     const state = computeClusterState(
       {
         ...base,
@@ -75,7 +75,6 @@ describe('cluster-state ticket-done reconcile', () => {
     expect(state.kind).toBe('regressed');
     expect(state.action).toBeNull();
     expect(state.sentence).toContain('the fix did not hold');
-    expect(state.sentence).toContain('PROJ-123 is marked Done.');
   });
 
   test('a cluster that failed in the latest run keeps failing under a Done ticket', () => {
@@ -86,7 +85,6 @@ describe('cluster-state ticket-done reconcile', () => {
     expect(state.kind).toBe('failing');
     expect(state.action).toBeNull();
     expect(state.sentence).toMatch(/^Still failing/);
-    expect(state.sentence).toContain('PROJ-123 is marked Done.');
   });
 
   test('a run still in progress never counts as one the failure skipped', () => {
@@ -96,7 +94,7 @@ describe('cluster-state ticket-done reconcile', () => {
       { runIdsNewestFirst: [40, 30, 20, 10], latestFinishedRunId: 30, now },
     );
     expect(state.kind).not.toBe('ticket-done');
-    expect(state.sentence).toContain('PROJ-123 is marked Done.');
+    expect(state.action).not.toBe('mark-resolved');
 
     // Once run 40 finished without the failure, the reconcile is offered.
     const after = computeClusterState(

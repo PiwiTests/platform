@@ -3,8 +3,9 @@
  * The one block at the top of a failure page: what broke, what is going on and
  * what to do next. An identity kicker and the page's `<h1>` on top, then a
  * labelled list — "Most likely", "Situation", "Occurrences", "What changed",
- * "State", "Next" — whose labels sit in one narrow column so the lines read as a
- * structured record rather than a paragraph, then the facts line under a divider.
+ * "State", "Issue", "Next" — whose labels sit in one narrow column so the lines
+ * read as a structured record rather than a paragraph, then the facts line under
+ * a divider.
  * Every line is an optional named slot; a line with no slot collapses, so the same
  * frame serves a failing execution, a passing one (identity and facts only) and
  * the cluster page, which adds its occurrence, what-changed and state lines.
@@ -32,6 +33,7 @@ const ROWS = [
   { slot: 'occurrences', label: 'Occurrences' },
   { slot: 'whatChanged', label: 'What changed' },
   { slot: 'state', label: 'State' },
+  { slot: 'issue', label: 'Issue' },
   { slot: 'suite', label: 'The suite' },
   { slot: 'next', label: 'Next' },
 ] as const;

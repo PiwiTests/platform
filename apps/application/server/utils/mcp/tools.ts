@@ -1812,7 +1812,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── search ─────────────────────────────────────────────────────────────────
   async search(db, params, ctx) {
     const q = String(params.q ?? '').trim();
-    if (q.length < 2) return { projects: [], runs: [], cases: [] };
+    if (q.length < 2) return { projects: [], runs: [], cases: [], clusters: [] };
     const res = await searchProjectsTestRunsCases(db, q, ctx.scope);
     return {
       projects: res.projects.map((p: any) => dropNulls({ id: p.id, name: p.name, label: p.label || null })),
@@ -1828,6 +1828,15 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       ),
       cases: res.cases.map((c: any) =>
         dropNulls({ testCaseId: c.id, title: c.title, filePath: c.filePath, projectId: c.projectId }),
+      ),
+      clusters: res.clusters.map((c) =>
+        dropNulls({
+          id: c.id,
+          name: c.name,
+          status: c.status,
+          projectId: c.projectId,
+          issueKey: c.issueKey,
+        }),
       ),
     };
   },

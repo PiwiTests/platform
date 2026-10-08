@@ -192,3 +192,23 @@ describe('computeNextStep — the Flake Lab rows', () => {
     expect(step({ diagnosisCompleted: true, patchAppliesCleanly: true, flakeLab: lab() }).kind).toBe('apply-patch');
   });
 });
+
+describe('a Done ticket on a cluster that stopped failing', () => {
+  test('marks the cluster resolved, ahead of a patch that still applies', () => {
+    const step = computeNextStep({
+      clusterStatus: 'open',
+      ticketDoneKey: 'CHK-7',
+      diagnosisCompleted: true,
+      patchAppliesCleanly: true,
+      clusterId: 10,
+    });
+    expect(step.kind).toBe('mark-resolved');
+    expect(step.title).toContain('CHK-7 is Done');
+    expect(step.primary.action).toBe('mark-resolved');
+  });
+
+  test('says nothing of the ticket once the cluster is resolved', () => {
+    const step = computeNextStep({ clusterStatus: 'resolved', ticketDoneKey: 'CHK-7', clusterId: 10 });
+    expect(step.kind).not.toBe('mark-resolved');
+  });
+});

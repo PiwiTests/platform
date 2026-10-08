@@ -593,7 +593,7 @@ export const MCP_TOOL_DEFS = [
     name: 'search',
     module: 'core',
     description:
-      'Global search across all in-scope projects, runs (by label or numeric id), and test cases (by title). Use to find a run by its label or locate an entity across projects.',
+      'Global search across all in-scope projects, runs (by label or numeric id), test cases (by title) and failure clusters (by title, signature, `#id`, or the key of a linked issue such as PROJ-123). Use to find a run by its label, the cluster a ticket tracks, or an entity across projects.',
     inputSchema: {
       type: 'object',
       properties: { q: { type: 'string', description: 'Search query (min 2 chars)' } },

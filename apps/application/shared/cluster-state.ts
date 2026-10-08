@@ -131,15 +131,13 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('snoozed', 'unsnooze');
   }
 
-  // The known ticket is closed while the cluster is still open. It is a fact the
-  // sentences below add; it offers the reconcile only once the failure stopped.
+  // The known ticket is closed while the cluster is still open: once the failure
+  // stopped, that is the reconcile to offer. While it goes on, the cluster keeps
+  // its own sentence; the pages' Issue line says the ticket is Done.
   const doneTicket =
     cluster.status === 'open' && cluster.knownIssue?.key && cluster.knownIssue.statusCategory === 'done'
       ? cluster.knownIssue.key
       : null;
-  const ticketDoneNote = () => {
-    if (doneTicket) t(` ${doneTicket} is marked Done.`);
-  };
 
   // Fix verification: a fix that regressed, held, or stopped the failures. It is
   // a stronger claim than the quarantine overlay below — a fix that landed
@@ -149,14 +147,13 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     t(commit ? `Fixed by ${commit}, back since ` : 'Fixed earlier, back since ');
     run(cluster.regressedSinceRunId ?? cluster.lastSeenRunId);
     t(' — the fix did not hold.');
-    ticketDoneNote();
     return done('regressed', cluster.status === 'resolved' ? 'reopen' : null);
   }
 
   // The ticket closed and the failure is not in the latest finished run: offer
   // to reconcile (the resolve-on-close policy does this automatically when it is
-  // on). A cluster that failed in it, or in a run since, keeps its own sentence,
-  // with the ticket noted.
+  // on). A cluster that failed in it, or in a run since, keeps its own sentence;
+  // the Issue line names the ticket.
   const latestFinished = project.latestFinishedRunId !== undefined ? project.latestFinishedRunId : latestRunId;
   const finishedIndex = latestFinished != null ? runs.indexOf(latestFinished) : -1;
   const failedSinceLatestFinished = finishedIndex < 0 || (seenIndex >= 0 && seenIndex <= finishedIndex);
@@ -170,14 +167,12 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     run(cluster.fixLandedRunId);
     const commit = cluster.fixCommit?.trim() ? shortCommit(cluster.fixCommit.trim()) : null;
     t(`${commit ? ` (${commit})` : ''} and verified, still marked open.`);
-    ticketDoneNote();
     return done('fix-verified-open', 'mark-resolved');
   }
   if (cluster.fixVerification === 'stopped-failing') {
     t('Stopped failing in ');
     run(cluster.fixLandedRunId);
     t(' — no fix identified, still open.');
-    ticketDoneNote();
     return done('stopped-failing-open', 'mark-resolved');
   }
 
@@ -188,7 +183,6 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
         cluster.affectedTests === 1 ? 'it is' : 'they are'
       } released.`,
     );
-    ticketDoneNote();
     return done('quarantined', 'release');
   }
 
@@ -207,7 +201,6 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
       const since = relativeTimeAgo(cluster.updatedAt, now);
       const sinceDur = since && since !== 'just now' ? ` since ${since.replace(/ ago$/, '')}` : '';
       t(`Still failing — ${cluster.assignee.trim()} is on it${sinceDur}.`);
-      ticketDoneNote();
       flakeEvidence();
       return done('failing-assigned', null);
     }
@@ -215,7 +208,6 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     t(`Still failing — last seen${rel ? ` ${rel}` : ''} in `);
     run(cluster.lastSeenRunId);
     t(', open, unassigned.');
-    ticketDoneNote();
     flakeEvidence();
     return done('failing', null);
   }

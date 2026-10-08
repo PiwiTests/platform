@@ -7,11 +7,12 @@
  *
  * Links on an open cluster refresh every sweep; links on a resolved or ignored
  * cluster refresh at most daily. When the ticket moves to Done the
- * resolve-on-close policy closes the cluster (otherwise its state line offers
+ * resolve-on-close policy closes the cluster (otherwise the cluster page offers
  * the reconcile), and a ticket moved out of Done under a resolved cluster
- * reopens it. Only a move counts, against the category the last sync saw, so a
- * cluster a person reopened or that regressed under a closed ticket is not
- * pulled back on every sweep; a regressed cluster is never closed by its ticket.
+ * reopens it. Only a move counts, against the category last recorded for the
+ * link (as it was filed or linked, or by the previous sync), so a cluster a
+ * person reopened or that regressed under a closed ticket is not pulled back on
+ * every sweep; a regressed cluster is never closed by its ticket.
  * Work is bounded per sweep and a connection's failure is recorded on its
  * `last_error` rather than failing the whole sweep.
  */
@@ -106,8 +107,8 @@ async function syncOneLink(
   const binding = await bindingFor(cluster.projectId);
 
   // Ticket moved to Done → resolve the cluster when the policy is on, unless the
-  // failure came back after its fix. Without the policy, the cluster page's state
-  // line offers the reconcile instead.
+  // failure came back after its fix. Without the policy, the cluster page offers
+  // the reconcile instead.
   if (
     move === 'done' &&
     cluster.status === 'open' &&
@@ -148,8 +149,8 @@ export interface SyncResult {
 /**
  * A bug report follows its ticket's moves: closed when the ticket moves to Done
  * (`resolveOnClose`), open again when it moves out of Done
- * (`reopenOnTicketReopen`). Only a move counts, against the category the last
- * sync saw: a report its own passing test closed while the ticket is still in
+ * (`reopenOnTicketReopen`). Only a move counts, against the category last
+ * recorded for the link: a report its own passing test closed while the ticket is still in
  * progress stays closed. A dismissed report stays dismissed.
  */
 async function syncBugReport(

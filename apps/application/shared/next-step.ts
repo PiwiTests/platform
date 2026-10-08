@@ -54,6 +54,8 @@ export interface NextStepInput {
   fixVerification?: string | null;
   fixLandedRunId?: number | null;
   fixCommit?: string | null;
+  /** The cluster's known ticket is Done and the newest finished run no longer fails: its key. */
+  ticketDoneKey?: string | null;
 
   /** Locator healing has a usable recommendation for a locator-resolution failure. */
   hasHealingRecommendation?: boolean;
@@ -130,6 +132,18 @@ export function computeNextStep(input: NextStepInput): NextStep {
       kind: 'mark-resolved',
       title: `Mark the cluster resolved — the fix held${run}`,
       why: 'The failures stopped and the fix was verified, but the cluster is still marked open.',
+      primary: { label: 'Mark resolved', action: 'mark-resolved', payload: withCluster },
+      secondary: [{ label: 'Reopen if it comes back', action: 'reopen', payload: withCluster }],
+    };
+  }
+
+  // 2b — the ticket closed and the failure stopped: mark the cluster resolved, as
+  // the state line offers.
+  if (input.ticketDoneKey && input.clusterStatus === 'open') {
+    return {
+      kind: 'mark-resolved',
+      title: `Mark the cluster resolved — ${input.ticketDoneKey} is Done`,
+      why: 'The ticket is Done and the latest run no longer fails, but the cluster is still marked open.',
       primary: { label: 'Mark resolved', action: 'mark-resolved', payload: withCluster },
       secondary: [{ label: 'Reopen if it comes back', action: 'reopen', payload: withCluster }],
     };

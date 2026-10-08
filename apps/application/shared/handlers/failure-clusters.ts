@@ -17,7 +17,7 @@ import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
-import { clusterIssueFilingsQueued, isTrackerLink } from './known-issues';
+import { clusterIssueFilingsQueued, clusterKnownIssues, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
   getQuarantinedCaseIds,
@@ -166,19 +166,17 @@ export async function getFailureCluster(
 
   // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.), and
   // whether a filing for it is waiting on the tracker.
-  const [links, filingsQueued] = await Promise.all([
-    db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId)),
+  // Newest first, so every reader that takes the first agrees with the known issue.
+  const [links, filingsQueued, knownIssues] = await Promise.all([
+    db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId)).orderBy(desc(entityLinks.id)),
     clusterIssueFilingsQueued(db, [clusterId]),
+    clusterKnownIssues(db, [clusterId]),
   ]);
 
-  // The newest tracker link's status drives the "ticket is Done — reconcile?"
-  // state line: a link the sync can write back through (Jira, or one with a connection).
-  const reconcileLink = links
-    .filter((l: any) => l.key && (l.provider === 'jira' || l.connectionId != null))
-    .sort((a: any, b: any) => b.id - a.id)[0];
-  const reconcileKnownIssue = reconcileLink?.key
-    ? { key: reconcileLink.key as string, statusCategory: (reconcileLink.metadata as any)?.statusCategory ?? null }
-    : null;
+  // The cluster's known issue — the newest tracker link, one rule for every
+  // surface — and its status, which drives the "ticket is Done — reconcile?" state.
+  const knownIssue = knownIssues.get(clusterId) ?? null;
+  const reconcileKnownIssue = knownIssue ? { key: knownIssue.key, statusCategory: knownIssue.statusCategory } : null;
 
   // The cluster's owner from the representative test's `piwi:owner` annotation
   // (the most-affected test wins). The server route layers CODEOWNERS on top when
@@ -290,6 +288,7 @@ export async function getFailureCluster(
     fixVerification: cluster.fixVerification ?? null,
     fixLandedRunId: cluster.fixLandedRunId ?? null,
     fixCommit: cluster.fixCommit ?? null,
+    ticketDoneKey: clusterState.kind === 'ticket-done' ? (knownIssue?.key ?? null) : null,
     hasHealingRecommendation,
     diagnosisCompleted: patchFacts.diagnosisCompleted,
     diagnosisSummary: patchFacts.summary,
@@ -329,6 +328,7 @@ export async function getFailureCluster(
       quarantined: quarantinedIds.has(t.testCaseId),
     })),
     links,
+    knownIssue,
     issueFilingQueued: filingsQueued.has(clusterId),
     owner,
     clusterState,

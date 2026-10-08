@@ -44,7 +44,7 @@ export const HELP_TOPICS = {
   // ── Issue tracking ──────────────────────────────────────────────────────
   'integrations.create-issue': {
     title: 'Create issue',
-    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links the issue back as the known issue, so the key travels to the inbox, Slack, email and PR comments. Filing twice for the same cluster is a no-op — the modal offers to link an existing issue instead.',
+    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links it to the failure’s cluster as its known issue, so the key shows on the cluster page, on every execution of the cluster, in the inbox, Slack, email and PR comments. Filing again for the same cluster, from its page or one of its executions, names the issue already filed; the modal offers to link an existing issue instead.',
     doc: 'features/issue-tracking#what-it-does-exactly',
   },
   'integrations.required-fields': {
@@ -54,7 +54,7 @@ export const HELP_TOPICS = {
   },
   'integrations.known-issue': {
     title: 'Known issue',
-    text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
+    text: 'The tracker issue this cluster is tracked by: the newest Jira issue, or issue on a connected tracker, linked to it. Its key and status show on the Issue line of the cluster and execution pages, and wherever the cluster is listed.',
     doc: 'features/issue-tracking#the-key-travels',
   },
 
@@ -586,7 +586,7 @@ export const HELP_TOPICS = {
   },
   'cluster.activity': {
     title: 'Activity',
-    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it.',
+    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it, and what Piwi wrote to the cluster’s tracker issue: the issue it filed, its comments and its moves.',
     doc: 'features/agent-skills#what-agents-report-back',
   },
   'fix.toolbox': {
@@ -684,7 +684,7 @@ export const HELP_TOPICS = {
   },
   'cluster.known-issue': {
     title: 'Known issue',
-    text: 'Pin the Jira ticket, GitHub issue or PR that tracks this cluster. The link’s key travels with the cluster wherever it is listed, so a triaged cluster shows what is already being done about it.',
+    text: 'Every link pinned to this cluster. A Jira issue, or an issue on a connected tracker, becomes the cluster’s known issue and travels with it wherever it is listed; other links, such as a GitHub issue or a pull request, stay listed here.',
   },
   'cluster.scm': {
     title: 'What changed',

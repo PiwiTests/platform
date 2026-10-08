@@ -3,13 +3,15 @@
  * The facts line under an execution's situation block: the source path (open in
  * IDE), the run facts that collapse to Details on mobile (browser, duration,
  * attempts, branch, build, age), the Details popover with everything else, and
- * the shared "Raw error ▸" disclosure with its Copy failure action.
+ * the shared "Raw error ▸" disclosure with its Copy failure action. Its Links
+ * section lists the links pinned to this execution, to its test and to its run,
+ * each group named by its owner and editable by a viewer who may write links.
  *
  * The secondary facts render once and are hidden below `sm`; the Details popover
  * repeats the mobile-critical ones so the phone layout keeps them reachable.
  * `revealRawError()` opens the raw error from a citation elsewhere on the page.
  */
-import type { AttemptOutcome, TestCaseHistoryPoint } from '~~/types/api';
+import type { AttemptOutcome, EntityLinkInfo, TestCaseHistoryPoint } from '~~/types/api';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 
 const props = defineProps<{
@@ -19,7 +21,49 @@ const props = defineProps<{
   history?: TestCaseHistoryPoint[];
 }>();
 
-const emit = defineEmits<{ copyFailure: [] }>();
+const emit = defineEmits<{ copyFailure: []; linksChanged: [] }>();
+
+// The links around this execution, by what they are pinned to. The cluster's
+// issue is not among them: the situation block's Issue line shows it.
+const { can } = useAuth();
+const canWriteLinks = computed(() => can('link:write', props.testCase?.testRun?.project?.id ?? null));
+const linkGroups = computed(() => {
+  const tc = props.testCase;
+  if (!tc) return [];
+  const groups: {
+    key: string;
+    label: string;
+    entityType: 'test_runs_case' | 'test_case' | 'test_run';
+    entityId: number;
+    links: EntityLinkInfo[];
+  }[] = [];
+  if (tc.id)
+    groups.push({
+      key: 'execution',
+      label: 'This execution',
+      entityType: 'test_runs_case',
+      entityId: tc.id,
+      links: tc.links ?? [],
+    });
+  if (tc.testCaseId)
+    groups.push({
+      key: 'test',
+      label: 'This test',
+      entityType: 'test_case',
+      entityId: tc.testCaseId,
+      links: tc.stableLinks ?? [],
+    });
+  if (tc.testRun?.id)
+    groups.push({
+      key: 'run',
+      label: `Run #${tc.testRun.id}`,
+      entityType: 'test_run',
+      entityId: tc.testRun.id,
+      links: tc.testRun.links ?? [],
+    });
+  // A reader sees only the groups that hold links; a writer sees every group, to add one.
+  return canWriteLinks.value ? groups : groups.filter((g) => g.links.length > 0);
+});
 
 const metadata = computed(() => props.testCase?.testRun?.metadata as Record<string, unknown> | null | undefined);
 const scmInfo = computed(() => {
@@ -172,7 +216,7 @@ defineExpose({ revealRawError });
         class="shrink-0"
       />
       <template #content>
-        <div class="p-3 space-y-2 text-sm max-w-sm">
+        <div class="p-3 space-y-2 text-sm max-w-sm overflow-y-auto max-h-(--reka-popover-content-available-height)">
           <!-- The facts that collapse on mobile, kept reachable here. -->
           <div class="space-y-1 sm:hidden">
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Run</p>
@@ -247,14 +291,18 @@ defineExpose({ revealRawError });
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Tags</p>
             <TestMetaBadges :tags="testCase?.tags" :meta="testCase?.testMeta" />
           </div>
-          <div v-if="testCase?.testCaseId && testCase?.stableLinks?.length" class="space-y-1">
+          <div v-if="linkGroups.length" class="space-y-1.5" data-shot="execution-links">
             <p class="text-xs font-medium text-muted uppercase tracking-wide">Links</p>
-            <EntityLinks
-              entity-type="test_case"
-              :entity-id="testCase.testCaseId"
-              :links="testCase.stableLinks"
-              readonly
-            />
+            <div v-for="group in linkGroups" :key="group.key" class="space-y-0.5">
+              <p class="text-xs text-muted">{{ group.label }}</p>
+              <EntityLinks
+                :entity-type="group.entityType"
+                :entity-id="group.entityId"
+                :links="group.links"
+                :readonly="!canWriteLinks"
+                @updated="emit('linksChanged')"
+              />
+            </div>
           </div>
         </div>
       </template>

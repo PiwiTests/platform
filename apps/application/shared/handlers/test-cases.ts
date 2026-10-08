@@ -10,7 +10,7 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, isNull, isNotNull, notInArray } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
@@ -20,7 +20,7 @@ import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
 import { getClusterPatchFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, UNFINISHED_RUN_STATUSES } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
@@ -320,6 +320,27 @@ export async function getTestRunCase(
         .from(failureDiagnoses)
         .where(eq(failureDiagnoses.clusterId, cluster.id));
 
+      // A Done issue on a failure that goes on (it failed in the project's latest
+      // finished run, or in one since) calls for a new issue; the rule the
+      // cluster state follows. Read only when the issue is Done.
+      const knownIssue = (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null;
+      let failureGoesOn: boolean | null = null;
+      if (knownIssue?.statusCategory === 'done') {
+        const [latestFinished] = await db
+          .select({ startTime: testRuns.startTime })
+          .from(testRuns)
+          .where(
+            and(eq(testRuns.projectId, cluster.projectId), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
+          )
+          .orderBy(desc(testRuns.startTime))
+          .limit(1);
+        const [lastSeen] = await db
+          .select({ startTime: testRuns.startTime })
+          .from(testRuns)
+          .where(eq(testRuns.id, cluster.lastSeenRunId));
+        failureGoesOn = !latestFinished || (!!lastSeen && lastSeen.startTime >= latestFinished.startTime);
+      }
+
       failureCluster = {
         id: cluster.id,
         signature: cluster.signature,
@@ -339,16 +360,18 @@ export async function getTestRunCase(
         fixLandedRunId: cluster.fixLandedRunId ?? null,
         fixLandedAt: cluster.fixLandedAt ?? null,
         assignee: cluster.assignee ?? null,
-        knownIssue: (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null,
+        knownIssue,
+        failureGoesOn,
         issueFilingQueued: (await clusterIssueFilingsQueued(db, [cluster.id])).has(cluster.id),
       };
     }
   }
 
-  const [networkRequestRows, linksForCaseRun, linksForTestCase, quarantineRows] = await Promise.all([
+  const [networkRequestRows, linksForCaseRun, linksForTestCase, linksForRun, quarantineRows] = await Promise.all([
     db.select().from(networkRequests).where(eq(networkRequests.testRunsCaseId, trc.id)),
     db.select().from(entityLinks).where(eq(entityLinks.testRunsCaseId, trc.id)),
     testCase ? db.select().from(entityLinks).where(eq(entityLinks.testCaseId, testCase.id)) : Promise.resolve([]),
+    db.select().from(entityLinks).where(eq(entityLinks.testRunId, trc.testRunId)),
     db
       .select({ id: quarantinedTests.id })
       .from(quarantinedTests)
@@ -478,7 +501,6 @@ export async function getTestRunCase(
         owner: verdict.owner,
         clusterStatus: failureCluster?.status ?? null,
         assignee: failureCluster?.assignee ?? null,
-        knownIssue: failureCluster?.knownIssue ?? null,
         now: opts.now,
       })
     : null;
@@ -578,7 +600,7 @@ export async function getTestRunCase(
     situation,
     nextStep,
     quarantined,
-    testRun: testRun ? { ...testRunPublic, project, reports: reportList } : testRun,
+    testRun: testRun ? { ...testRunPublic, project, reports: reportList, links: linksForRun } : testRun,
     attachments: attachmentList,
     links: linksForCaseRun,
     stableLinks: linksForTestCase,

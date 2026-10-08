@@ -17,6 +17,8 @@ import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-time';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
+import { issueLineForm } from '~/utils/issue-line';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
@@ -204,8 +206,29 @@ const occurrenceAria = computed(() =>
   [occurrenceCountText.value, lastSeenAgo.value ? `last ${lastSeenAgo.value}` : null].filter(Boolean).join(' · '),
 );
 
-// The newest known-issue link, shown compactly on the facts line.
-const knownIssue = computed(() => cluster.value?.links?.[0] ?? null);
+// The cluster's known issue (the newest tracker link), one rule for every place
+// that names it, and the Issue line's form.
+const knownIssue = computed(() => cluster.value?.knownIssue ?? null);
+const { hasTracker } = useTrackerStatus();
+const canFileIssue = computed(() => hasTracker.value && can('issue:create', clusterProjectId.value));
+const canLinkIssue = computed(() => can('link:write', clusterProjectId.value));
+const issueForm = computed(() =>
+  issueLineForm({
+    hasKnownIssue: Boolean(knownIssue.value),
+    filingQueued: Boolean(cluster.value?.issueFilingQueued),
+    clusterStatus: cluster.value?.status,
+    snoozed: clusterState.value?.kind === 'snoozed',
+    canFile: canFileIssue.value,
+    canLink: canLinkIssue.value,
+  }),
+);
+const issueModalOpen = ref(false);
+const linkIssueOpen = ref(false);
+function onIssueChanged() {
+  issueModalOpen.value = false;
+  linkIssueOpen.value = false;
+  refresh();
+}
 
 // The facts line carries the raw-error disclosure; a citation reveals it through
 // the exposed method.
@@ -233,10 +256,14 @@ function copyCluster() {
       ? `AI diagnosis (${c.diagnosis.category ?? 'unknown'}, ${c.diagnosis.confidence ?? '?'} confidence): ${c.diagnosis.summary}`
       : null;
 
+  const issue = knownIssue.value;
+  const tracked = issue ? `Tracked in ${issue.key}${issue.status ? ` (${issue.status})` : ''}: ${issue.url}` : null;
+
   const plain = [
     `❌ Failure cluster: ${clusterName.value}`,
     ...(clusterName.value !== c.signature ? [`Signature: ${c.signature}`] : []),
     meta,
+    ...(tracked ? [tracked] : []),
     '',
     ...(c.sampleError ? ['Sample error:', stripAnsi(c.sampleError), ''] : []),
     ...(aiSummary ? [aiSummary, ''] : []),
@@ -247,6 +274,9 @@ function copyCluster() {
     `<p><strong>❌ Failure cluster</strong>: ${esc(clusterName.value)}</p>`,
     clusterName.value !== c.signature ? `<p><code>${esc(c.signature)}</code></p>` : '',
     `<p><em>${esc(meta)}</em></p>`,
+    issue
+      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
+      : '',
     c.sampleError ? `<p><strong>Sample error:</strong></p><pre>${renderAnsi(c.sampleError)}</pre>` : '',
     aiSummary
       ? `<p><strong>AI diagnosis</strong> (${esc(c.diagnosis?.category ?? 'unknown')}, ${esc(c.diagnosis?.confidence ?? '?')} confidence):<br>${esc(c.diagnosis!.summary!)}</p>`
@@ -369,7 +399,35 @@ const quarantineAll = ref<{ trigger: () => void } | null>(null);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
 
 const moreMenuItems = computed(() => {
-  const items: { label: string; icon: string; color?: 'warning'; onSelect: () => void }[] = [];
+  const items: {
+    label: string;
+    icon: string;
+    color?: 'warning';
+    to?: string;
+    target?: '_blank';
+    disabled?: boolean;
+    onSelect?: () => void;
+  }[] = [];
+  // The ticket first: open it, or file or link one, from any scroll depth.
+  if (knownIssue.value) {
+    items.push({
+      label: `Open ${knownIssue.value.key}`,
+      icon: getProviderIcon(knownIssue.value.provider as LinkProvider),
+      to: safeHttpUrl(knownIssue.value.url) ?? undefined,
+      target: '_blank',
+    });
+  } else if (canFileIssue.value && cluster.value?.issueFilingQueued) {
+    items.push({
+      label: 'Filing queued · Retry',
+      icon: 'i-lucide-clock',
+      onSelect: () => (issueModalOpen.value = true),
+    });
+  } else if (canFileIssue.value) {
+    items.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
+  }
+  if (canLinkIssue.value) {
+    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
+  }
   if (canQuarantine.value && pendingQuarantine.value.length > 0)
     items.push({
       label: 'Quarantine all affected tests',
@@ -518,6 +576,16 @@ const breadcrumbItems = computed(() => [
             :endpoint="`/api/failure-clusters/${cluster.id}/export`"
             :base-name="`piwi-cluster-${cluster.id}`"
           />
+          <UDropdownMenu v-if="cluster" :items="moreMenuItems">
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-ellipsis-vertical"
+              aria-label="More actions"
+              title="More actions"
+            />
+          </UDropdownMenu>
         </template>
       </UDashboardNavbar>
     </template>
@@ -526,7 +594,7 @@ const breadcrumbItems = computed(() => [
       <div v-if="cluster" class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
         <!-- ── One block: identity, name, most likely, occurrences, what changed, state, next ── -->
         <SituationBlock help="cluster.state" :edge="stateEdge">
-          <!-- Line 1: identity kicker — cluster #, error type, project, owner, known issue -->
+          <!-- Line 1: identity kicker — cluster #, error type, project, owner -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="text-highlighted">Failure cluster #{{ clusterId }}</span>
@@ -544,32 +612,7 @@ const breadcrumbItems = computed(() => [
                 <span aria-hidden="true">·</span>
                 <span :title="`Owner from ${cluster.owner.source}`">{{ cluster.owner.name }}</span>
               </template>
-              <span v-if="knownIssue" aria-hidden="true">·</span>
-              <a
-                v-if="knownIssue"
-                :href="safeHttpUrl(knownIssue.url) ?? undefined"
-                target="_blank"
-                rel="noopener noreferrer"
-                :class="SENTENCE_LINK_CLASS"
-                :title="knownIssue.title ?? knownIssue.url"
-              >
-                {{ knownIssue.key || knownIssue.provider }}
-              </a>
             </div>
-          </template>
-
-          <!-- Actions: the More menu -->
-          <template #actions>
-            <UDropdownMenu :items="moreMenuItems">
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-ellipsis-vertical"
-                aria-label="More actions"
-                title="More actions"
-              />
-            </UDropdownMenu>
           </template>
 
           <!-- Line 2: the cluster name as the h1; the latest headline as a second line only when it adds value -->
@@ -619,7 +662,25 @@ const breadcrumbItems = computed(() => [
 
           <!-- State: one sentence with one verb, and the control that changes it -->
           <template v-if="clusterState" #state>
-            <ClusterStateLine :cluster="cluster" :state="clusterState" @saved="refresh" />
+            <ClusterStateLine
+              :cluster="cluster"
+              :state="clusterState"
+              :action-in-next="!!clusterState.action && nextStep?.primary?.action === clusterState.action"
+              @saved="refresh"
+            />
+          </template>
+
+          <!-- Issue: the ticket the cluster is tracked in, or the way to file or link one -->
+          <template v-if="issueForm" #issue>
+            <IssueLine
+              :form="issueForm"
+              :project-id="clusterProjectId"
+              :cluster-status="cluster.status"
+              :failure-goes-on="clusterState?.kind !== 'ticket-done'"
+              :known-issue="knownIssue"
+              @create="issueModalOpen = true"
+              @link="linkIssueOpen = true"
+            />
           </template>
 
           <!-- Line 5: the next step -->
@@ -786,6 +847,23 @@ const breadcrumbItems = computed(() => [
       </ErrorState>
     </template>
   </UDashboardPanel>
+
+  <!-- The ticket dialogs, opened from the Issue line and the More menu. -->
+  <CreateIssueModal
+    v-if="cluster && canFileIssue"
+    v-model:open="issueModalOpen"
+    entity-type="failure_cluster"
+    :entity-id="cluster.id"
+    @created="onIssueChanged"
+    @linked="onIssueChanged"
+    @queued="onIssueChanged"
+  />
+  <LinkIssueModal
+    v-if="cluster && canLinkIssue"
+    v-model:open="linkIssueOpen"
+    :cluster-id="cluster.id"
+    @linked="onIssueChanged"
+  />
 
   <!-- Bulk actions triggered from the More menu. -->
   <QuarantineAllButton

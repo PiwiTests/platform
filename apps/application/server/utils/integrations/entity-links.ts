@@ -43,11 +43,13 @@ function fkColumnFor(entityType: LinkEntityType) {
 }
 
 /**
- * Whether the link to an issue Piwi filed is still on its entity: a person can
- * remove it, and the filing then no longer answers a new create. A filing whose
- * result names neither key nor URL cannot be checked and counts as linked.
+ * Whether an issue Piwi filed still tracks its entity: its link is still there
+ * (a person can remove it) and the issue is not Done (a closed issue on a
+ * failure that goes on calls for a new one). Otherwise the filing no longer
+ * answers a new create. A filing whose result names neither key nor URL cannot
+ * be checked and counts as tracking.
  */
-export async function createdLinkExists(
+export async function filedIssueStillTracks(
   db: DbClient,
   entityType: LinkEntityType,
   entityId: number,
@@ -59,11 +61,12 @@ export async function createdLinkExists(
   ].filter((m) => m !== undefined);
   if (matches.length === 0) return true;
   const [row] = await db
-    .select({ id: entityLinks.id })
+    .select({ metadata: entityLinks.metadata })
     .from(entityLinks)
     .where(and(eq(fkColumnFor(entityType), entityId), or(...matches)))
     .limit(1);
-  return Boolean(row);
+  if (!row) return false;
+  return (row.metadata as { statusCategory?: string | null } | null)?.statusCategory !== 'done';
 }
 
 export interface CreatedIssueLink {

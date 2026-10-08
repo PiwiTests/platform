@@ -178,6 +178,10 @@ export async function demoIssueDraft(
     entityType,
     entityId,
     clusterId,
+    projectId: built.projectId,
+    projectBound: true,
+    // The static demo has no public address to link back to.
+    linksBack: false,
     title: built.title,
     connectionId: DEMO_CONNECTION.id,
     connections: [DEMO_TRACKER],
