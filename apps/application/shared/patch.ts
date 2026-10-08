@@ -44,6 +44,16 @@ export interface PatchValidation {
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
+/**
+ * The validation stored with a diagnosis' suggested patch: at the top of its
+ * details, or inside its suggested fix on the agent diagnoses stored that way.
+ */
+export function storedPatchValidation(details: unknown): PatchValidation | null {
+  const d = details as { patchValidation?: unknown; suggestedFix?: { patchValidation?: unknown } | null } | null;
+  const v = d?.patchValidation ?? d?.suggestedFix?.patchValidation;
+  return v && typeof v === 'object' ? (v as PatchValidation) : null;
+}
+
 /** Strip a leading `a/` or `b/` diff prefix; leave other paths untouched. `/dev/null` → null. */
 export function stripAbPrefix(path: string | null | undefined): string | null {
   if (!path) return null;

@@ -74,9 +74,10 @@ const LINK_ENTITY_SUBJECTS: Record<string, McpCallSubjectType> = {
 /**
  * What a write call acted on, read from its arguments: one subject, one per
  * cluster for a call on several clusters, or none when the arguments name
- * nothing the log can point at.
+ * nothing the log can point at. A call that creates a cluster also names it,
+ * read from its `output`.
  */
-export function mcpCallSubjects(tool: string, args: Record<string, unknown>): McpCallSubject[] {
+export function mcpCallSubjects(tool: string, args: Record<string, unknown>, output?: unknown): McpCallSubject[] {
   if (tool === 'triage_cluster' && Array.isArray(args.clusterIds)) {
     const ids = [...new Set(args.clusterIds.map(positiveInt).filter((id): id is number => id != null))];
     return ids.slice(0, MAX_SUBJECTS_PER_CALL).map((id) => ({ type: 'cluster', id }));
@@ -90,6 +91,10 @@ export function mcpCallSubjects(tool: string, args: Record<string, unknown>): Mc
     const id = positiveInt(raw);
     return id ? [{ type, id }] : [];
   };
+  if (tool === 'move_tests_to_new_cluster') {
+    const created = (output as { clusterId?: unknown } | null | undefined)?.clusterId;
+    return [...pick('cluster', args.clusterId), ...pick('cluster', created)];
+  }
   if (args.clusterId != null) return pick('cluster', args.clusterId);
   if (args.executionId != null) return pick('execution', args.executionId);
   if (tool === 'triage_gap') return pick('gap', args.gapId);

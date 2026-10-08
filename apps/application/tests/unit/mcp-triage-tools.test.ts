@@ -443,6 +443,14 @@ describe('unlink_issue', () => {
     expect(links.map((l) => l.failureClusterId)).toEqual([2]);
   });
 
+  test('removes a link stored with spaces around its URL', async () => {
+    await db.insert(schema.entityLinks).values({ failureClusterId: 1, url: `${url} `, provider: 'jira' });
+    expect(
+      await tool('unlink_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, maintainer),
+    ).toMatchObject({ removed: 1 });
+    expect(await db.select().from(schema.entityLinks)).toHaveLength(0);
+  });
+
   test('fails when the entity has no link to the URL', async () => {
     await expect(
       tool('unlink_issue')(db as never, { entityType: 'failure_cluster', entityId: 1, url }, maintainer),
@@ -470,11 +478,14 @@ describe('set_test_quarantine', () => {
         maintainer,
       ),
     ).toEqual({ testCaseId: 1, quarantined: true, changed: true, reason: 'Flaky on CI' });
-    expect(await tool('set_test_quarantine')(db as never, { testCaseId: 1, quarantined: true }, maintainer)).toEqual({
-      testCaseId: 1,
-      quarantined: true,
-      changed: false,
-    });
+    // A test already in quarantine keeps its reason, and the answer does not claim another.
+    expect(
+      await tool('set_test_quarantine')(
+        db as never,
+        { testCaseId: 1, quarantined: true, reason: 'Timeout in checkout' },
+        maintainer,
+      ),
+    ).toEqual({ testCaseId: 1, quarantined: true, changed: false });
     const quarantined = await db.select().from(schema.quarantinedTests);
     expect(quarantined).toEqual([
       expect.objectContaining({ testCaseId: 1, reason: 'Flaky on CI', createdBy: 2, releasedAt: null }),

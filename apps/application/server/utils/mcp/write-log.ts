@@ -53,7 +53,10 @@ export async function writeLogEnabled(db: DbClient): Promise<boolean> {
   return (await getInstanceDecisions(db))['agent-write-log'] !== 'declined';
 }
 
-/** Log one call of a write tool. Read tools, and every call on an instance that declined the log, write nothing. */
+/**
+ * Log one call of a write tool, with what it answered (`output`) when it did.
+ * Read tools, and every call on an instance that declined the log, write nothing.
+ */
 export async function logMcpToolCall(
   db: DbClient,
   ctx: McpContext,
@@ -61,11 +64,12 @@ export async function logMcpToolCall(
   args: Record<string, unknown>,
   result: McpCallResult,
   error?: string | null,
+  output?: unknown,
 ): Promise<number> {
   if (!isMcpWriteTool(tool)) return 0;
   try {
     if (!(await writeLogEnabled(db))) return 0;
-    const subjects: Array<McpCallSubject | null> = mcpCallSubjects(tool, args);
+    const subjects: Array<McpCallSubject | null> = mcpCallSubjects(tool, args, output);
     if (subjects.length === 0) subjects.push(null);
     const named = mcpCallProjectId(args);
     const at = new Date();

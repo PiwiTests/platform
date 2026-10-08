@@ -6,7 +6,7 @@ import {
   failureClusters,
   bugReports,
 } from '../../server/database/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { safeHttpUrl } from '../utils/safe-url';
 import { detectProvider, extractKey, type LinkProvider } from '../link-detect';
@@ -179,6 +179,24 @@ export async function deleteLink(db: DrizzleDB, id: number) {
   if (!existing[0]) throw new Error('Link not found');
   await db.delete(entityLinks).where(eq(entityLinks.id, id));
   return { success: true };
+}
+
+/**
+ * Remove every link of an entity to a URL, in one statement. Surrounding spaces
+ * are ignored on both sides: a link may have been stored with them. Returns how
+ * many links were removed.
+ */
+export async function deleteLinksTo(
+  db: DrizzleDB,
+  entityType: LinkEntityType,
+  entityId: number,
+  url: string,
+): Promise<number> {
+  const removed = await db
+    .delete(entityLinks)
+    .where(and(eq(fkColumnFor(entityType), entityId), eq(sql`trim(${entityLinks.url})`, url.trim())))
+    .returning({ id: entityLinks.id });
+  return removed.length;
 }
 
 export async function refreshLinkMeta(db: DrizzleDB, id: number, resolver?: LinkConnectionResolver) {

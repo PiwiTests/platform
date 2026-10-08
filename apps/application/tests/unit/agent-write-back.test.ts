@@ -11,9 +11,11 @@ import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissio
 delete process.env.PIWI_DATABASE_URL;
 
 const emitted: string[] = [];
+const emittedPayloads: Array<Record<string, unknown>> = [];
 vi.mock('../../server/utils/notifications/emit', () => ({
-  emitNotification: async (_db: unknown, event: string) => {
+  emitNotification: async (_db: unknown, event: string, payload: Record<string, unknown>) => {
     emitted.push(event);
+    emittedPayloads.push(payload);
   },
 }));
 
@@ -98,6 +100,7 @@ async function insertRun(id: number, status: 'passed' | 'failed', commit: string
 beforeEach(async () => {
   ({ db, close } = await openTempDb());
   emitted.length = 0;
+  emittedPayloads.length = 0;
   scm.files = new Map([['src/cart.ts', SOURCE]]);
   scm.commits = [];
   await db.insert(schema.users).values([
@@ -228,8 +231,11 @@ describe('record_diagnosis on a failure', () => {
     expect(rows).toEqual([
       expect.objectContaining({ scope: 'execution', testRunsCaseId: 1, clusterId: null, provider: 'agent' }),
     ]);
-    // The execution is in cluster 1, which the notification points at.
+    // The diagnosis panel reads the validation at the top of the details.
+    expect((rows[0]!.details as { patchValidation: { status: string } }).patchValidation.status).toBe('applies');
+    // The notification is about cluster 1, and opens the failure.
     expect(emitted).toEqual(['diagnosis.completed']);
+    expect(emittedPayloads[0]).toMatchObject({ clusterId: 1, executionId: 1, projectId: 1 });
 
     expect(await tool('get_execution_diagnosis')(db as never, { executionId: 1 }, viewer)).toMatchObject({
       executionId: 1,
@@ -267,6 +273,18 @@ describe('record_diagnosis on a failure', () => {
     expect(second.replacedPrevious).toBe(true);
     const versions = await db.select().from(schema.failureDiagnosisVersions);
     expect(versions).toEqual([expect.objectContaining({ scope: 'execution', testRunsCaseId: 1, model: 'model-a' })]);
+  });
+
+  test('refuses an execution that did not fail', async () => {
+    await insertRun(2, 'passed', 'bbb2222');
+    const [passed] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 2, testCaseId: 1, status: 'passed' })
+      .returning({ id: schema.testRunsCases.id });
+    await expect(
+      tool('record_diagnosis')(db as never, { executionId: passed!.id, model: 'm', diagnosis: DIAGNOSIS }, maintainer),
+    ).rejects.toThrow('This test run case did not fail');
+    expect(await db.select().from(schema.failureDiagnoses)).toHaveLength(0);
   });
 
   test('takes a clusterId or an executionId, one of them', async () => {
@@ -334,6 +352,49 @@ describe('report_fix_attempt', () => {
     await expect(
       tool('report_fix_attempt')(db as never, { clusterId: 1, kind: 'rewrite', branch: 'fix' }, maintainer),
     ).rejects.toThrow(/kind/);
+  });
+
+  test("takes the diagnosis of one of the cluster's failures", async () => {
+    const recorded = (await tool('record_diagnosis')(
+      db as never,
+      { executionId: 1, model: 'm', diagnosis: DIAGNOSIS },
+      maintainer,
+    )) as { diagnosisId: number };
+    await expect(
+      tool('report_fix_attempt')(
+        db as never,
+        { clusterId: 1, kind: 'patch', commit: 'bbb2222', diagnosisId: recorded.diagnosisId },
+        maintainer,
+      ),
+    ).resolves.toMatchObject({ clusterId: 1, outcome: 'applied', recorded: true });
+  });
+
+  test('refuses the diagnosis of a failure in another cluster', async () => {
+    await db.insert(schema.failureClusters).values({
+      id: 2,
+      projectId: 1,
+      fingerprint: 'fp-2',
+      signature: 'other',
+      errorType: 'assertion',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+    });
+    const [other] = await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 1, status: 'failed', failureClusterId: 2 })
+      .returning({ id: schema.testRunsCases.id });
+    const recorded = (await tool('record_diagnosis')(
+      db as never,
+      { executionId: other!.id, model: 'm', diagnosis: DIAGNOSIS },
+      maintainer,
+    )) as { diagnosisId: number };
+    await expect(
+      tool('report_fix_attempt')(
+        db as never,
+        { clusterId: 1, kind: 'fix-plan', branch: 'fix', diagnosisId: recorded.diagnosisId },
+        maintainer,
+      ),
+    ).rejects.toThrow('diagnosisId is not a diagnosis of this cluster or of one of its failures');
   });
 
   test('refuses a diagnosis of another cluster', async () => {
@@ -498,6 +559,34 @@ describe('the write log', () => {
       ['unlink_issue', 'execution', 1, 1],
       ['set_test_quarantine', 'test-case', 1, 1],
     ]);
+  });
+
+  test('logs a move of tests on the cluster it left and on the cluster it created', async () => {
+    await db.insert(schema.failureClusters).values({
+      id: 2,
+      projectId: 1,
+      fingerprint: 'split:x',
+      signature: 'expected 30, got -10',
+      errorType: 'assertion',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+    });
+    await logMcpToolCall(
+      db as never,
+      maintainer,
+      'move_tests_to_new_cluster',
+      { clusterId: 1, testCaseIds: [1] },
+      'ok',
+      null,
+      { sourceClusterId: 1, clusterId: 2, movedTests: 1 },
+    );
+    const rows = await db.select().from(schema.mcpToolCalls).orderBy(schema.mcpToolCalls.id);
+    expect(rows.map((r) => [r.subjectType, r.subjectId, r.projectId])).toEqual([
+      ['cluster', 1, 1],
+      ['cluster', 2, 1],
+    ]);
+    const activity = await getClusterActivity(db as never, 2);
+    expect(activity.map((a) => a.text)).toEqual(['An agent moved tests to a new cluster']);
   });
 
   test('writes nothing when the instance declined it', async () => {

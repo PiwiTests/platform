@@ -68,6 +68,7 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
+import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import { getLocatorAlternatives } from '~~/server/utils/locator-alternatives';
 import { branchFailuresOrError } from '~~/server/utils/branch-failures';
@@ -236,12 +237,12 @@ import {
 import { buildExecutionReproduce } from '#shared/handlers/reproduce';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
 import {
-  AGENT_DIAGNOSIS_ERRORS,
   AGENT_DIAGNOSIS_STATUS,
+  agentDiagnosisErrorMessage,
   parseAgentDiagnosis,
   type AgentDiagnosisTarget,
 } from '#shared/agent-diagnosis';
-import { recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
+import { agentDiagnosisEvent, recordAgentDiagnosis } from '#shared/handlers/agent-diagnosis';
 import { parseFixAttempt } from '#shared/fix-attempts';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
 import { getClusterActivity } from '#shared/handlers/cluster-activity';
@@ -549,8 +550,10 @@ async function recordDemoAgentDiagnosis(target: AgentDiagnosisTarget, body: unkn
     actor: { channel: parsed.value.channel ?? 'ui', userId: ctx?.actingUserId ?? null },
   });
   if (!result.ok) {
-    throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], AGENT_DIAGNOSIS_ERRORS[target.scope][result.error]);
+    throw demoHttpError(AGENT_DIAGNOSIS_STATUS[result.error], agentDiagnosisErrorMessage(result.error, target.scope));
   }
+  const event = agentDiagnosisEvent(target, result, parsed.value);
+  if (event) publishDemoNotificationEvent({ type: 'diagnosis.completed', ...event });
   return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
 }
 
@@ -1783,9 +1786,9 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-run-cases\/(\d+)\/diagnose$/,
     permission: 'ai:run',
-    handler: async (m, body, _q, ctx) => {
+    handler: async (m, body, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return apiDiagnoseExecution(+m[1]!, body as Record<string, unknown> | undefined);
+      return apiDiagnoseExecution(+m[1]!, body as Record<string, unknown> | undefined, q);
     },
   },
   {

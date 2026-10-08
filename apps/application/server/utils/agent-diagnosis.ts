@@ -8,7 +8,12 @@ import { eq } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { AgentDiagnosisInput, AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import type { HandbackActor } from '#shared/handback-outcomes';
-import { recordAgentDiagnosis, type RecordAgentDiagnosisResult } from '#shared/handlers/agent-diagnosis';
+import {
+  agentDiagnosisEvent,
+  recordAgentDiagnosis,
+  type RecordAgentDiagnosisResult,
+  type ResolvedDiagnosisTarget,
+} from '#shared/handlers/agent-diagnosis';
 import { isDiagnosisRunning, isDiagnosisRunningForExecution } from './ai-diagnosis';
 import { createScmProvider } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
@@ -35,12 +40,16 @@ async function loadRunSources(db: DbClient, runId: number, paths: string[]): Pro
   return files;
 }
 
-/** Record an agent's diagnosis on a cluster or a failure and send `diagnosis.completed`. */
+/**
+ * Record an agent's diagnosis on a cluster or a failure and send
+ * `diagnosis.completed`; `resolved` is the target when the caller already resolved it.
+ */
 export async function recordAgentDiagnosisOn(
   db: DbClient,
   target: AgentDiagnosisTarget,
   input: AgentDiagnosisInput,
   actor: HandbackActor,
+  resolved?: ResolvedDiagnosisTarget,
 ): Promise<RecordAgentDiagnosisResult> {
   const running =
     target.scope === 'cluster'
@@ -50,18 +59,9 @@ export async function recordAgentDiagnosisOn(
   const result = await recordAgentDiagnosis(db, target, input, {
     actor,
     loadSources: (runId, paths) => loadRunSources(db, runId, paths),
+    resolved,
   });
-  // The event points at a cluster, so a failure in no cluster sends none.
-  if (result.ok && result.clusterId != null) {
-    emitNotification(db, 'diagnosis.completed', {
-      clusterId: result.clusterId,
-      projectId: result.projectId,
-      completedAt: Date.now(),
-      summary: input.diagnosis.summary,
-      rootCause: input.diagnosis.rootCause,
-      category: input.diagnosis.category,
-      confidence: input.diagnosis.confidence,
-    });
-  }
+  const event = result.ok ? agentDiagnosisEvent(target, result, input) : null;
+  if (event) emitNotification(db, 'diagnosis.completed', event);
   return result;
 }

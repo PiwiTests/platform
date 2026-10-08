@@ -21,8 +21,15 @@ import {
   testRuns,
   testRunsCases,
 } from '../../server/database/schema';
-import { AGENT_DIAGNOSIS_PROVIDER, type AgentDiagnosisInput, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
+import {
+  AGENT_DIAGNOSIS_PROVIDER,
+  type AgentDiagnosisError,
+  type AgentDiagnosisInput,
+  type AgentDiagnosisTarget,
+} from '#shared/agent-diagnosis';
+import { hasFailureToDiagnose } from '#shared/ai-diagnosis';
 import type { HandbackActor } from '#shared/handback-outcomes';
+import type { DiagnosisCompletedPayload } from '#shared/notification-events';
 import { parseUnifiedDiff, stripAbPrefix, validatePatch, type PatchValidation } from '#shared/patch';
 import { buildDiagnosisVersionValues } from './diagnosis-versions';
 import { isPassiveCapabilityDeclined } from './capabilities';
@@ -50,7 +57,17 @@ export type RecordAgentDiagnosisResult =
       patchValidation: PatchValidation | null;
       replacedVersion: boolean;
     }
-  | { ok: false; error: 'not-found' | 'declined' | 'running' };
+  | { ok: false; error: AgentDiagnosisError };
+
+/** What a diagnosis is about, resolved: its project, its cluster, the run it failed in, and whether it failed. */
+export interface ResolvedDiagnosisTarget {
+  projectId: number;
+  /** The cluster, or the execution's cluster; null for a failure in no cluster. */
+  clusterId: number | null;
+  runId: number;
+  /** Always true for a cluster; for an execution, whether it has a failure to diagnose. */
+  failed: boolean;
+}
 
 /** The repo-relative files a unified diff changes. */
 export function patchTargetFiles(patch: string): string[] {
@@ -77,24 +94,32 @@ export async function validateAgentPatch(
   return validatePatch(patch, sources ?? new Map());
 }
 
-/** The project, cluster and failing run of what a diagnosis is about; null when it does not exist. */
-async function resolveTarget(
+/** Resolve what a diagnosis is about; null when it does not exist. */
+export async function resolveAgentDiagnosisTarget(
   db: DrizzleDB,
   target: AgentDiagnosisTarget,
-): Promise<{ projectId: number; clusterId: number | null; runId: number } | null> {
+): Promise<ResolvedDiagnosisTarget | null> {
   if (target.scope === 'cluster') {
     const [cluster] = await db
       .select({ projectId: failureClusters.projectId, runId: failureClusters.lastSeenRunId })
       .from(failureClusters)
       .where(eq(failureClusters.id, target.clusterId));
-    return cluster ? { ...cluster, clusterId: target.clusterId } : null;
+    return cluster ? { ...cluster, clusterId: target.clusterId, failed: true } : null;
   }
   const [execution] = await db
-    .select({ projectId: testRuns.projectId, clusterId: testRunsCases.failureClusterId, runId: testRuns.id })
+    .select({
+      projectId: testRuns.projectId,
+      clusterId: testRunsCases.failureClusterId,
+      runId: testRuns.id,
+      status: testRunsCases.status,
+      error: testRunsCases.error,
+    })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
     .where(eq(testRunsCases.id, target.executionId));
-  return execution ?? null;
+  if (!execution) return null;
+  const { status, error, ...rest } = execution;
+  return { ...rest, failed: hasFailureToDiagnose({ status, error }) };
 }
 
 /** The diagnosis row a target owns: the cluster's, or the execution's. */
@@ -104,15 +129,20 @@ function targetWhere(target: AgentDiagnosisTarget) {
     : and(eq(failureDiagnoses.testRunsCaseId, target.executionId), eq(failureDiagnoses.scope, 'execution'));
 }
 
-/** Record an agent's diagnosis on a cluster or an execution, replacing the current one after snapshotting it. */
+/**
+ * Record an agent's diagnosis on a cluster or an execution, replacing the
+ * current one after snapshotting it. `resolved` skips resolving the target
+ * again when the caller already did.
+ */
 export async function recordAgentDiagnosis(
   db: DrizzleDB,
   target: AgentDiagnosisTarget,
   input: AgentDiagnosisInput,
-  opts: { actor: HandbackActor; loadSources?: PatchSourceLoader; now?: Date },
+  opts: { actor: HandbackActor; loadSources?: PatchSourceLoader; now?: Date; resolved?: ResolvedDiagnosisTarget },
 ): Promise<RecordAgentDiagnosisResult> {
-  const resolved = await resolveTarget(db, target);
+  const resolved = opts.resolved ?? (await resolveAgentDiagnosisTarget(db, target));
   if (!resolved) return { ok: false, error: 'not-found' };
+  if (!resolved.failed) return { ok: false, error: 'not-failed' };
   const { projectId, clusterId, runId } = resolved;
   if (await isPassiveCapabilityDeclined(db, projectId, 'agent-diagnoses')) {
     return { ok: false, error: 'declined' };
@@ -138,7 +168,8 @@ export async function recordAgentDiagnosis(
     rootCause: diagnosis.rootCause,
     details: {
       evidence: diagnosis.evidence,
-      suggestedFix: { ...diagnosis.suggestedFix, patchValidation },
+      suggestedFix: diagnosis.suggestedFix,
+      patchValidation,
       preventionTips: diagnosis.preventionTips,
       confidenceScore: diagnosis.confidenceScore,
       severity: diagnosis.severity,
@@ -177,4 +208,27 @@ export async function recordAgentDiagnosis(
     .values({ ...owner, ...values })
     .returning({ id: failureDiagnoses.id });
   return { ...recorded, diagnosisId: inserted!.id, replacedVersion: false };
+}
+
+/**
+ * The `diagnosis.completed` event a recorded diagnosis sends: about its cluster,
+ * or the cluster of the failure it diagnoses (then opening that failure); null
+ * for a failure in no cluster. Shared by the server and the demo.
+ */
+export function agentDiagnosisEvent(
+  target: AgentDiagnosisTarget,
+  recorded: { projectId: number; clusterId: number | null },
+  input: AgentDiagnosisInput,
+): DiagnosisCompletedPayload | null {
+  if (recorded.clusterId == null) return null;
+  return {
+    clusterId: recorded.clusterId,
+    ...(target.scope === 'execution' ? { executionId: target.executionId } : {}),
+    projectId: recorded.projectId,
+    completedAt: Date.now(),
+    summary: input.diagnosis.summary,
+    rootCause: input.diagnosis.rootCause,
+    category: input.diagnosis.category,
+    confidence: input.diagnosis.confidence,
+  };
 }

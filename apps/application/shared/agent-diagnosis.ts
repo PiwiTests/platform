@@ -113,19 +113,22 @@ export function parseAgentDiagnosis(
   };
 }
 
-/** The message each refusal of recording an agent's diagnosis carries, by what the diagnosis is about. */
-export const AGENT_DIAGNOSIS_ERRORS = {
-  cluster: {
-    'not-found': 'Failure cluster not found',
-    declined: 'Agent diagnoses are declined for this project',
-    running: 'A diagnosis is already running for this cluster',
-  },
-  execution: {
-    'not-found': 'Test run case not found',
-    declined: 'Agent diagnoses are declined for this project',
-    running: 'A diagnosis is already running for this failure',
-  },
-} as const;
+/** Why recording an agent's diagnosis was refused. */
+export type AgentDiagnosisError = 'not-found' | 'declined' | 'running' | 'not-failed';
+
+/** The message a refusal of recording an agent's diagnosis carries, worded for what the diagnosis is about. */
+export function agentDiagnosisErrorMessage(error: AgentDiagnosisError, scope: AgentDiagnosisTarget['scope']): string {
+  switch (error) {
+    case 'not-found':
+      return scope === 'cluster' ? 'Failure cluster not found' : 'Test run case not found';
+    case 'declined':
+      return 'Agent diagnoses are declined for this project';
+    case 'running':
+      return `A diagnosis is already running for this ${scope === 'cluster' ? 'cluster' : 'failure'}`;
+    case 'not-failed':
+      return 'This test run case did not fail';
+  }
+}
 
 /** The HTTP status of each refusal. */
-export const AGENT_DIAGNOSIS_STATUS = { 'not-found': 404, declined: 403, running: 409 } as const;
+export const AGENT_DIAGNOSIS_STATUS = { 'not-found': 404, declined: 403, running: 409, 'not-failed': 400 } as const;

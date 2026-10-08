@@ -1,7 +1,7 @@
 // Record a diagnosis an agent wrote on a failure cluster: the same JSON a model
 // returns to Piwi, stored with the provider `agent` and the model the agent
 // names. The MCP tool `record_diagnosis` calls the same handler.
-import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { AGENT_DIAGNOSIS_STATUS, agentDiagnosisErrorMessage, parseAgentDiagnosis } from '#shared/agent-diagnosis';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 import { recordAgentDiagnosisOn } from '../../../utils/agent-diagnosis';
 
@@ -46,7 +46,7 @@ export default eventHandler(async (event) => {
   if (!result.ok) {
     throw apiError({
       statusCode: AGENT_DIAGNOSIS_STATUS[result.error],
-      message: AGENT_DIAGNOSIS_ERRORS.cluster[result.error],
+      message: agentDiagnosisErrorMessage(result.error, 'cluster'),
     });
   }
   return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };

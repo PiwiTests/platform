@@ -1,7 +1,7 @@
 // Record a diagnosis an agent wrote on one failing execution: the same JSON a
 // model returns to Piwi, stored with the provider `agent` and the model the
 // agent names. The MCP tool `record_diagnosis` calls the same handler.
-import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { AGENT_DIAGNOSIS_STATUS, agentDiagnosisErrorMessage, parseAgentDiagnosis } from '#shared/agent-diagnosis';
 import {
   requireResolvedProjectAccess,
   requireRouteId,
@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Test Run Cases'],
     summary: "Record an agent's diagnosis of a failure",
     description:
-      "Stores a diagnosis an agent wrote as the execution's current diagnosis (execution scope), after snapshotting the previous one into its history. The body carries the `model` the agent ran on and the `diagnosis` in the JSON schema Piwi asks a model for (summary, confidenceScore, severity, affectedArea, hypotheses, suggestedFix, investigationSteps, preventionTips). The suggested patch is validated against the source at the commit of the execution's run when source control is connected. Works with no AI provider configured; 403 when the `agent-diagnoses` capability is declined, 409 while a diagnosis of the execution is running. `channel` names the surface reporting it (ui, editor, desktop, cli, ci; default ui).",
+      "Stores a diagnosis an agent wrote as the execution's current diagnosis (execution scope), after snapshotting the previous one into its history. The body carries the `model` the agent ran on and the `diagnosis` in the JSON schema Piwi asks a model for (summary, confidenceScore, severity, affectedArea, hypotheses, suggestedFix, investigationSteps, preventionTips). The suggested patch is validated against the source at the commit of the execution's run when source control is connected. Works with no AI provider configured; 400 when the test run case did not fail, 403 when the `agent-diagnoses` capability is declined, 409 while a diagnosis of the execution is running. `channel` names the surface reporting it (ui, editor, desktop, cli, ci; default ui).",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'Test run case id' },
     ],
@@ -52,7 +52,7 @@ export default eventHandler(async (event) => {
   if (!result.ok) {
     throw apiError({
       statusCode: AGENT_DIAGNOSIS_STATUS[result.error],
-      message: AGENT_DIAGNOSIS_ERRORS.execution[result.error],
+      message: agentDiagnosisErrorMessage(result.error, 'execution'),
     });
   }
   return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };

@@ -30,17 +30,22 @@ const config: AiConfig = {
   roles: { diagnosis: role, research: null, embedding: null },
 };
 
-const ai = vi.hoisted(() => ({ configured: true, calls: 0 }));
-const emitted = vi.hoisted(() => [] as Array<{ event: string; clusterId: number }>);
+// `hold`, when set, keeps the next model call waiting until it resolves: a diagnosis in flight.
+const ai = vi.hoisted(() => ({ configured: true, calls: 0, waiting: 0, hold: null as Promise<void> | null }));
+const emitted = vi.hoisted(() => [] as Array<{ event: string; clusterId: number; executionId?: number }>);
 vi.mock('../../server/utils/notifications/emit', () => ({
-  emitNotification: (_db: unknown, event: string, payload: { clusterId: number }) => {
-    emitted.push({ event, clusterId: payload.clusterId });
+  emitNotification: (_db: unknown, event: string, payload: { clusterId: number; executionId?: number }) => {
+    emitted.push({ event, clusterId: payload.clusterId, executionId: payload.executionId });
   },
 }));
 vi.mock('../../server/utils/ai-provider', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../server/utils/ai-provider')>()),
   resolveAiConfig: async () => (ai.configured ? config : null),
   callAiProvider: async () => {
+    const hold = ai.hold;
+    ai.hold = null;
+    ai.waiting += 1;
+    if (hold) await hold;
     ai.calls += 1;
     return {
       text: JSON.stringify({ summary: `Diagnosis ${ai.calls}`, category: 'test-bug', confidence: 'medium' }),
@@ -82,6 +87,8 @@ beforeEach(async () => {
   ({ db, close } = await openTempDb());
   ai.configured = true;
   ai.calls = 0;
+  ai.waiting = 0;
+  ai.hold = null;
   emitted.length = 0;
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'totals' });
@@ -117,7 +124,14 @@ describe('run_execution_diagnosis', () => {
       string,
       unknown
     >;
-    expect(first).toMatchObject({ executionId: 1, status: 'completed', category: 'test-bug', summary: 'Diagnosis 1' });
+    expect(first).toMatchObject({
+      executionId: 1,
+      status: 'completed',
+      provider: 'openai',
+      model: 'main-model',
+      category: 'test-bug',
+      summary: 'Diagnosis 1',
+    });
 
     const again = await tool('run_execution_diagnosis')(db as never, { executionId: 1 }, maintainer);
     expect(again).toMatchObject({ diagnosisId: first.diagnosisId, summary: 'Diagnosis 1' });
@@ -129,10 +143,10 @@ describe('run_execution_diagnosis', () => {
 
     const [row] = await db.select().from(schema.failureDiagnoses);
     expect(row).toMatchObject({ scope: 'execution', testRunsCaseId: 1, clusterId: null });
-    // The execution's cluster is the one the notifications point at.
+    // The notifications are about the execution's cluster, and open the failure.
     expect(emitted).toEqual([
-      { event: 'diagnosis.completed', clusterId: 1 },
-      { event: 'diagnosis.completed', clusterId: 1 },
+      { event: 'diagnosis.completed', clusterId: 1, executionId: 1 },
+      { event: 'diagnosis.completed', clusterId: 1, executionId: 1 },
     ]);
     expect(await tool('get_execution_diagnosis')(db as never, { executionId: 1 }, viewer)).toMatchObject({
       executionId: 1,
@@ -156,6 +170,53 @@ describe('run_execution_diagnosis', () => {
     expect(emitted).toEqual([]);
   });
 
+  test('refuses an execution that did not fail, without calling the model', async () => {
+    await db.insert(schema.testRunsCases).values({ id: 3, testRunId: 1, testCaseId: 1, status: 'passed' });
+    await expect(tool('run_execution_diagnosis')(db as never, { executionId: 3 }, maintainer)).rejects.toThrow(
+      'Execution 3 did not fail: there is nothing to diagnose',
+    );
+    expect(ai.waiting).toBe(0);
+  });
+
+  test('returns the stored diagnosis without an AI provider', async () => {
+    await db.insert(schema.failureDiagnoses).values({
+      scope: 'execution',
+      testRunsCaseId: 1,
+      status: 'completed',
+      provider: 'agent',
+      model: 'claude-opus-5-5',
+      summary: 'Recorded by an agent',
+    });
+    ai.configured = false;
+    expect(await tool('run_execution_diagnosis')(db as never, { executionId: 1 }, maintainer)).toMatchObject({
+      executionId: 1,
+      provider: 'agent',
+      summary: 'Recorded by an agent',
+    });
+  });
+
+  test("runs while the cluster's own diagnosis is in flight, and refuses a second run of the same failure", async () => {
+    let release!: () => void;
+    ai.hold = new Promise<void>((resolve) => (release = resolve));
+    const clusterRun = tool('run_cluster_diagnosis')(db as never, { clusterId: 1, force: true }, maintainer);
+    await vi.waitFor(() => expect(ai.waiting).toBe(1));
+    await expect(tool('run_execution_diagnosis')(db as never, { executionId: 1 }, maintainer)).resolves.toMatchObject({
+      status: 'completed',
+    });
+
+    let releaseFailure!: () => void;
+    ai.hold = new Promise<void>((resolve) => (releaseFailure = resolve));
+    const failureRun = tool('run_execution_diagnosis')(db as never, { executionId: 1, force: true }, maintainer);
+    await vi.waitFor(() => expect(ai.waiting).toBe(3));
+    await expect(
+      tool('run_execution_diagnosis')(db as never, { executionId: 1, force: true }, maintainer),
+    ).rejects.toThrow('A diagnosis is already running for this failure');
+    release();
+    releaseFailure();
+    await expect(clusterRun).resolves.toMatchObject({ clusterId: 1, status: 'completed' });
+    await expect(failureRun).resolves.toMatchObject({ executionId: 1, status: 'completed' });
+  });
+
   test('says to record a diagnosis when no AI provider is configured', async () => {
     ai.configured = false;
     await expect(tool('run_execution_diagnosis')(db as never, { executionId: 1 }, maintainer)).rejects.toThrow(
@@ -173,6 +234,23 @@ describe('run_execution_diagnosis', () => {
 });
 
 describe('run_cluster_diagnosis', () => {
+  test('returns the stored diagnosis without an AI provider', async () => {
+    await db.insert(schema.failureDiagnoses).values({
+      clusterId: 1,
+      scope: 'cluster',
+      status: 'completed',
+      provider: 'agent',
+      model: 'claude-opus-5-5',
+      summary: 'Recorded by an agent',
+    });
+    ai.configured = false;
+    expect(await tool('run_cluster_diagnosis')(db as never, { clusterId: 1 }, maintainer)).toMatchObject({
+      clusterId: 1,
+      provider: 'agent',
+      summary: 'Recorded by an agent',
+    });
+  });
+
   test('refuses with an error, not a result, when no AI provider is configured', async () => {
     ai.configured = false;
     await expect(tool('run_cluster_diagnosis')(db as never, { clusterId: 1 }, maintainer)).rejects.toThrow(

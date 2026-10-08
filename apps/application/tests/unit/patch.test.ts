@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { parseUnifiedDiff, stripAbPrefix, validatePatch } from '#shared/patch';
+import { parseUnifiedDiff, storedPatchValidation, stripAbPrefix, validatePatch } from '#shared/patch';
 
 const SAMPLE = `--- a/src/foo.ts
 +++ b/src/foo.ts
@@ -109,5 +109,20 @@ describe('validatePatch', () => {
     const res = validatePatch(patch, { 'a.ts': 'x\n', 'b.ts': 'DIFFERENT\n' });
     expect(res.filesChecked).toBe(2);
     expect(res.status).toBe('stale-file');
+  });
+});
+
+describe('storedPatchValidation', () => {
+  const applies = { status: 'applies', filesChecked: 1, filesInPatch: 1, errors: [] };
+
+  test('reads the validation at the top of the details, or inside the suggested fix', () => {
+    expect(storedPatchValidation({ patchValidation: applies })).toEqual(applies);
+    expect(storedPatchValidation({ suggestedFix: { patch: 'x', patchValidation: applies } })).toEqual(applies);
+  });
+
+  test('answers null when none is stored', () => {
+    expect(storedPatchValidation(null)).toBeNull();
+    expect(storedPatchValidation({ suggestedFix: { patch: 'x' } })).toBeNull();
+    expect(storedPatchValidation({ patchValidation: 'applies' })).toBeNull();
   });
 });

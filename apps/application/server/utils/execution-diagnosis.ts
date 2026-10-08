@@ -7,15 +7,19 @@
 import { and, eq } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, testRuns, testRunsCases } from '../database/schema';
 import type { FailureCluster, FailureDiagnosis } from '../database/schema';
+import { hasFailureToDiagnose } from '#shared/ai-diagnosis';
 import { resolveAiConfig, type AiAttachedImage } from './ai-provider';
-import {
-  runClusterDiagnosis,
-  isDiagnosisRunning,
-  isDiagnosisRunningForExecution,
-  isDiagnosisStale,
-  NO_CLUSTER_ID,
-} from './ai-diagnosis';
+import { runExecutionDiagnosis, isDiagnosisRunningForExecution, isDiagnosisStale } from './ai-diagnosis';
 import type { DbClient } from '../database';
+
+/** An execution as its diagnosis reads it: its project, its cluster and whether it failed. */
+export interface ExecutionForDiagnosis {
+  id: number;
+  projectId: number;
+  clusterId: number | null;
+  status: string;
+  error: string | null;
+}
 
 export interface ExecutionDiagnosisOptions {
   /** Re-run even when a completed diagnosis exists. */
@@ -28,79 +32,68 @@ export interface ExecutionDiagnosisOptions {
 
 export type ExecutionDiagnosisOutcome =
   | { ok: true; diagnosis: FailureDiagnosis }
-  | { ok: false; error: 'not-found' | 'not-configured' | 'running' };
+  | { ok: false; error: 'not-failed' | 'not-configured' | 'running' };
 
-/**
- * Diagnose a failing execution, or return its completed diagnosis unless
- * `force` is set. Refuses while a diagnosis of the execution, or of its
- * cluster, is running.
- */
-export async function diagnoseExecution(
+/** Load an execution for its diagnosis; null when it does not exist. */
+export async function loadExecutionForDiagnosis(
   db: DbClient,
   executionId: number,
-  opts: ExecutionDiagnosisOptions = {},
-): Promise<ExecutionDiagnosisOutcome> {
-  const [trc] = await db
+): Promise<ExecutionForDiagnosis | null> {
+  const [execution] = await db
     .select({
-      testRunId: testRunsCases.testRunId,
-      failureClusterId: testRunsCases.failureClusterId,
+      id: testRunsCases.id,
       projectId: testRuns.projectId,
+      clusterId: testRunsCases.failureClusterId,
+      status: testRunsCases.status,
+      error: testRunsCases.error,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
     .where(eq(testRunsCases.id, executionId))
     .limit(1);
-  if (!trc) return { ok: false, error: 'not-found' };
+  return execution ?? null;
+}
 
-  const config = await resolveAiConfig(db);
-  if (!config) return { ok: false, error: 'not-configured' };
-
-  let cluster: FailureCluster | null = null;
-  if (trc.failureClusterId) {
-    [cluster = null] = await db.select().from(failureClusters).where(eq(failureClusters.id, trc.failureClusterId));
-  }
-
-  // Execution scope runs under its own key, so executions of one cluster do not share a slot.
-  if (cluster && isDiagnosisRunning(cluster.id)) return { ok: false, error: 'running' };
-  if (!cluster && isDiagnosisRunningForExecution(executionId)) return { ok: false, error: 'running' };
+/**
+ * Diagnose a failing execution, or return its completed diagnosis unless
+ * `force` is set. Refuses an execution that did not fail, and while a
+ * diagnosis of the execution is running.
+ */
+export async function diagnoseExecution(
+  db: DbClient,
+  execution: ExecutionForDiagnosis,
+  opts: ExecutionDiagnosisOptions = {},
+): Promise<ExecutionDiagnosisOutcome> {
+  if (!hasFailureToDiagnose(execution)) return { ok: false, error: 'not-failed' };
+  if (isDiagnosisRunningForExecution(execution.id)) return { ok: false, error: 'running' };
 
   if (!opts.force) {
     const [existing] = await db
       .select()
       .from(failureDiagnoses)
-      .where(and(eq(failureDiagnoses.testRunsCaseId, executionId), eq(failureDiagnoses.scope, 'execution')))
+      .where(and(eq(failureDiagnoses.testRunsCaseId, execution.id), eq(failureDiagnoses.scope, 'execution')))
       .limit(1);
     if (existing?.status === 'running' && !isDiagnosisStale(existing)) return { ok: false, error: 'running' };
     if (existing?.status === 'completed') return { ok: true, diagnosis: existing };
   }
 
-  const diagnosis = await runClusterDiagnosis(
+  const config = await resolveAiConfig(db);
+  if (!config) return { ok: false, error: 'not-configured' };
+
+  let cluster: FailureCluster | null = null;
+  if (execution.clusterId) {
+    [cluster = null] = await db.select().from(failureClusters).where(eq(failureClusters.id, execution.clusterId));
+  }
+
+  const diagnosis = await runExecutionDiagnosis(
     db,
-    cluster ??
-      ({
-        id: NO_CLUSTER_ID,
-        projectId: trc.projectId,
-        signature: 'execution-scoped',
-        errorType: null,
-        selector: null,
-        sampleError: null,
-        firstSeenRunId: trc.testRunId,
-        lastSeenRunId: trc.testRunId,
-        status: 'open',
-        triageNote: null,
-        manualBaseCommit: null,
-        occurrences: 1,
-        fingerprint: '',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as FailureCluster),
+    { id: execution.id, projectId: execution.projectId, cluster },
     config,
     {
       additionalContext: opts.additionalContext,
       images: opts.images,
       baseCommit: opts.baseCommit,
       selectedCommitShas: opts.selectedCommitShas,
-      testRunsCaseId: executionId,
     },
   );
   return { ok: true, diagnosis };

@@ -189,7 +189,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       try {
         const data = await tool.handler(db, args, ctx);
         // Write tools are logged with what they acted on; read tools never are.
-        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok');
+        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok', null, data);
         return ok(id, toContent(data));
       } catch (err) {
         // A tool that throws surfaces as a tool result with `isError: true`, not
