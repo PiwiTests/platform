@@ -2982,14 +2982,14 @@ const SCENES = [
 
   {
     name: 'step-params',
-    description: "Whole-test steps table: a step's muted subtitle and its open Parameters disclosure",
+    description: "Whole-test steps table: a step's muted subtitle and its parameters, opened from its title",
     route: '/projects',
     viewport: { width: 1280, height: 2400 },
     of: 'table',
     pad: 12,
     async run({ page, base, goto, shoot }) {
       // Find a failing execution whose steps carry the 1.63 params shape, then
-      // open its Timeline tab, expand every step, and open a Parameters disclosure.
+      // open its Timeline tab on the whole test and open the first step's parameters.
       const projects = await (await page.request.get(`${base}/api/projects`)).json();
       const projectList = Array.isArray(projects) ? projects : (projects.items ?? projects.projects ?? []);
       let execId = null;
@@ -3012,8 +3012,8 @@ const SCENES = [
       await page.getByRole('tab', { name: /^Timeline/ }).click();
       const whole = page.getByRole('button', { name: 'Whole test' });
       if (await whole.count()) await whole.click();
-      const disclosure = page.locator('table [data-testid="step-params"]:visible').first();
-      await disclosure.getByText(/Parameters/).click();
+      await page.locator('table button[aria-controls^="step-params-"]:visible').first().click();
+      await page.locator('table [data-testid="step-params"]:visible').first().waitFor({ timeout: 10_000 });
       await page.evaluate(() => document.fonts.ready);
       await page.waitForTimeout(300);
       await shoot();
@@ -3271,6 +3271,23 @@ const SCENES = [
     pad: suffix === '-mobile' ? 8 : 12,
     async run({ openTab, settle, shoot }) {
       await openTab(/^Source/);
+      await settle();
+      await shoot();
+    },
+  })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `timeline-durations${suffix}`,
+    description: suffix
+      ? 'The timeline at phone width: the step and request cards, only the 28.4 s request colored'
+      : 'Timeline tab: durations colored only where they stand out (the 28.4 s request), the cut bar ending in an arrow',
+    // Execution 37: five sub-second steps and one 28.4 s request, which the
+    // window around the failure cuts.
+    route: '/test-run-cases/37',
+    viewport: suffix ? { width: 375, height: 2400 } : { width: 1280, height: 1400 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async run({ openTab, settle, shoot }) {
+      await openTab('Timeline');
       await settle();
       await shoot();
     },

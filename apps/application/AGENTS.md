@@ -284,7 +284,8 @@ text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts,
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated
   element the reader is meant to click. Every other button is `color="neutral"` — `variant="outline"` for a secondary
   action, `variant="ghost"` for a disclosure or a menu trigger. No `warning`, `success` or `soft` buttons for ordinary
-  actions.
+  actions. A selected tab or a pressed switch is neutral too: `SELECTED_TAB_CLASS` (`app/utils/index.ts`) for a tab,
+  the segmented look of the timeline's window switch for a switch, never `primary`.
 - **Links inside a sentence keep the sentence's color**: `underline decoration-dotted underline-offset-2
 hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
 - **Badges are for exceptions, at most two per screen** — the status chip and one exceptional state (_Quarantined_, a
@@ -340,6 +341,9 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
 
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
+- **A duration on an execution's evidence** is a `DurationValue`, never `Math.round(ms) + ' ms'`, and is colored only
+  when `durationStandout` (`#shared/duration-standout`) says it stands out in its test, in the one tone of
+  `app/utils/duration-tone.ts`. Never color a duration by a fixed threshold at the call site.
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale

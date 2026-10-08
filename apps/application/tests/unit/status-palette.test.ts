@@ -48,6 +48,12 @@ describe('STATUS_PALETTE', () => {
     }
   });
 
+  test('every entry has a row tint, light and dark', () => {
+    for (const entry of Object.values(STATUS_PALETTE)) {
+      expect(entry.tint).toMatch(/^bg-\w+-(50|100) dark:bg-\w+-\d+\/\d+$/);
+    }
+  });
+
   test('every entry has its token defined in main.css', () => {
     const css = readFileSync(new URL('../../app/assets/css/main.css', import.meta.url), 'utf8');
     for (const key of Object.keys(STATUS_PALETTE)) expect(css).toContain(`--color-status-${key}:`);

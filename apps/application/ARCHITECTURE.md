@@ -241,7 +241,9 @@ shared mode for every copy button on the page), IDE preferences (`useOpenInIde`)
 `performance-hints.ts`, `ide-links.ts`, `help-content.ts`, `settings-metadata.ts`, `openapi.ts` / `openapi-console.ts`,
 `status-palette.ts` (`STATUS_PALETTE` / `statusPalette` — the test outcome colors every bar, chart, history cell,
 timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `pass-rate.ts`
-(the one threshold set and color scale for every colored pass rate, heatmap cells included), `chart.ts` (the
+(the one threshold set and color scale for every colored pass rate, heatmap cells included), `duration-tone.ts` (the
+one tone of a duration on an execution's evidence that stands out in its test, by the rule of
+`shared/duration-standout.ts`: at least 1 s and a third of the test), `chart.ts` (the
 per-chart series definitions the plots and their legends share, and the tick/stack/bar geometry behind the SVG
 charts). `retry-command.ts` (`buildRetryCommand` — `file-line` / `grep` / `file` modes,
 shell-escaped, capped at 4096 chars; `buildTitleGrepFlag` — the regex-escaped, shell-quoted `-g` flag the fix plan and

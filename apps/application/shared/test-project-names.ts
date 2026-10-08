@@ -182,6 +182,7 @@ export const PROJECT = {
   TEST_PROJECT: 'test-project',
   TEST_RUN_CASE_PAGE: 'test-run-case-page-test',
   TEST_TAGS: 'test-tags-metadata-test',
+  TIMELINE_DURATIONS: 'timeline-durations-test',
   TIMELINE_TYPE_FILTER: 'timeline-type-filter-test',
   TRACE_DEDUP: 'trace-dedup-test',
   TRACE_INSIGHTS: 'trace-insights-test',

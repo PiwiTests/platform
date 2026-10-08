@@ -2,8 +2,10 @@
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
  * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
- * an execution. A tab shows a count or a dot when it holds data and is dimmed
- * when empty; a dimmed tab still opens and states why it is empty. The default
+ * an execution. A tab that lists items shows their count as plain text, an
+ * empty tab is dimmed and still opens to state why it is empty, and the open
+ * tab is marked in neutral tones: the primary color belongs to the page's
+ * primary action. The default
  * tab is the one the strongest clue cites, else Timeline when it can place two
  * or more items, else Screen. The Screen tab is one strip of views of the page
  * at the failure (`FailingStepSnapshot`), over the execution's files. A clue or
@@ -431,17 +433,14 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :aria-selected="activeTab === tab.value ? 'true' : 'false'"
           class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-primary transition-colors"
           :class="[
-            activeTab === tab.value ? 'bg-primary/10 text-primary font-medium' : 'text-muted hover:bg-elevated/60',
+            activeTab === tab.value ? SELECTED_TAB_CLASS : 'text-muted hover:bg-elevated/60',
             !tab.hasData && activeTab !== tab.value ? 'opacity-50' : '',
           ]"
           @click="activeTab = tab.value"
         >
           <UIcon :name="tab.icon" class="size-4 shrink-0" />
           {{ tab.label }}
-          <UBadge v-if="tab.count" color="neutral" variant="soft" size="xs" class="tabular-nums">{{
-            tab.count
-          }}</UBadge>
-          <span v-else-if="tab.hasData" class="size-1.5 rounded-full bg-primary/70" aria-hidden="true" />
+          <span v-if="tab.count" class="text-xs font-normal text-muted tabular-nums">{{ tab.count }}</span>
         </button>
       </div>
     </div>

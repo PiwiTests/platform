@@ -202,8 +202,8 @@ export function stepLabelParts(step: { title?: unknown; subtitle?: unknown }): {
 /**
  * A step's params in display order: the rendered `locator` first (it is the
  * step's subject), then the remaining keys in insertion order. Used by the
- * params disclosure and the analysis lines so every surface lists them the same
- * way. Returns an empty array when the step carries none.
+ * timeline's parameter list and the analysis lines so every surface lists them
+ * the same way. Returns an empty array when the step carries none.
  */
 export function orderedStepParams(
   params: Record<string, string | number | boolean> | null | undefined,

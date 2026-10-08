@@ -25,6 +25,13 @@ export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset
  */
 export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
 
+/**
+ * The selected tab of a content-level tab strip: a neutral raised surface and the
+ * strongest text, never the primary color, which belongs to the page's primary
+ * action. The evidence card's tab strip uses it.
+ */
+export const SELECTED_TAB_CLASS = 'bg-elevated text-highlighted font-medium';
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;

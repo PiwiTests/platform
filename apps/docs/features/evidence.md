@@ -29,16 +29,16 @@ explained](/guide/first-failure). Traces stream in while the run is still runnin
   <figcaption>A failing execution: the situation block, then one evidence card whose tabs hold everything captured.</figcaption>
 </figure>
 
-Below the block, one **evidence card** holds tabs, each with a count or a dot when it holds data. It opens on **Source** or
+Below the block, one **evidence card** holds tabs, a count on those that list items, empty ones dimmed. It opens on **Source** or
 **Performance** when a strong or medium leading clue cites it, else on **Timeline** when it can place two or more items,
 else on the cited tab, else on **Screen** when a screenshot or video exists, else on **Source**; never on **State**.
 
 - **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
-  browser dialogs, with the failure marked, over a steps table giving each step's offset (`t-1.1s`) and duration.
-  **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
-  **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the step that raised
-  the test's error shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed
-  out.
+  browser dialogs, with the failure marked, over a table giving each step's and request's offset (`t-1.1s`) and
+  duration, colored only when it lasts at least 1 s and a third of the test. **Around the failure** / **Whole test**
+  and one chip per item type filter both. Hooks and fixtures fold into **Setup** and **Teardown** rows, open when the
+  failure is there; a `test.step` holds its steps; the failing step shows its error and its page's Screenshot, DOM and
+  Accessibility tree; a caught error is greyed out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **Open in picker** finds a locator on that
@@ -99,7 +99,7 @@ that needs no green baseline: the structure at the failure against the last diff
 ## Trace-powered deep views
 
 ::: tip Screenshots are Playwright's to record
-Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`: with the option unset, the evidence has video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
+Failure screenshots come from Playwright's `screenshot: 'only-on-failure'` `use` option. Playwright's default is `'off'`: the evidence has video and traces but no screenshot. See [Basic configuration](/guide/reporter#basic-configuration).
 :::
 
 With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two views go deeper:
@@ -133,8 +133,8 @@ block uses the same words.
 
 ## Trace viewer
 
-**Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer, the same UI as
-`npx playwright show-trace`; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
+**Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer
+(`npx playwright show-trace`); the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
 third party, with or without [authentication](/operate/authentication). The hosted
 `trace.playwright.dev` cannot send your session cookie, so it only works against a dashboard with authentication off.
 

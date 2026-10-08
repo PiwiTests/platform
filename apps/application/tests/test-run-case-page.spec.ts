@@ -153,6 +153,8 @@ test.describe('Test-run-case page', () => {
     for (const name of ['Timeline', 'Screen', 'Source', 'Network', 'Console', 'State', 'Performance']) {
       await expect(tablist.getByRole('tab', { name: new RegExp(`^${name}`) })).toBeVisible();
     }
+    // A tab that lists items carries its count as plain text, never a badge.
+    await expect(tablist.getByRole('tab', { name: /^Network/ })).toHaveText(/^\s*Network\s*2\s*$/);
 
     // The Fix card gathers what to do (diagnosis, verify, …) below the evidence.
     // With no AI provider its diagnosis is one line, not a placeholder block.
@@ -236,9 +238,13 @@ test.describe('Test-run-case page', () => {
 
     // The tab is the heading — the block does not repeat "Failure timeline".
     await expect(page.getByRole('heading', { name: 'Failure timeline' })).toHaveCount(0);
-    // Both window controls drive the axis and the table together.
-    await expect(page.getByRole('button', { name: 'Around the failure' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Whole test' })).toBeVisible();
+    // One switch of two pressed-state buttons drives the axis and the table
+    // together, opening on the window around the failure.
+    const windowSwitch = page.getByRole('group', { name: 'Timeline window' });
+    const around = windowSwitch.getByRole('button', { name: 'Around the failure' });
+    const whole = windowSwitch.getByRole('button', { name: 'Whole test' });
+    await expect(around).toHaveAttribute('aria-pressed', 'true');
+    await expect(whole).toHaveAttribute('aria-pressed', 'false');
     // This run recorded no step start times, so the estimated note shows.
     await expect(page.getByText(/Step positions are derived from durations/)).toBeVisible();
 
@@ -250,12 +256,35 @@ test.describe('Test-run-case page', () => {
     await expect(table.getByText("getByRole('button', { name: 'Pay' }).click()")).toBeVisible();
 
     // Whole test keeps every step in the table.
-    await page.getByRole('button', { name: 'Whole test' }).click();
+    await whole.click();
+    await expect(whole).toHaveAttribute('aria-pressed', 'true');
+    await expect(around).toHaveAttribute('aria-pressed', 'false');
     await expect(table.getByText("page.goto('/checkout')")).toBeVisible();
     await expect(table.getByText("getByRole('button', { name: 'Pay' }).click()")).toBeVisible();
   });
 
-  test('the steps table renders the 1.63 subtitle and a params disclosure', async ({ page }) => {
+  test('a duration is colored only when it stands out in the test', async ({ page }) => {
+    await page.goto(`/test-run-cases/${failedCaseId}`);
+    await waitForHydration(page);
+    await page.getByRole('tab', { name: /^Timeline/ }).click();
+    await page.getByRole('button', { name: 'Whole test' }).click();
+
+    const table = page.getByRole('table');
+    const row = (text: string) => table.locator('tr', { hasText: text });
+    // The 5 s click takes 63% of the 8 s test: it stands out, and says why on hover.
+    const pay = row("getByRole('button', { name: 'Pay' }).click()").locator('[data-standout]');
+    await expect(pay).toHaveAttribute('data-standout', 'share');
+    await expect(pay).toHaveAttribute('title', /63% of the test/);
+    await expect(pay).toContainText('5s');
+    // The 800 ms navigation is under 1 s: neutral.
+    await expect(row("page.goto('/checkout')").locator('[data-standout]')).toHaveCount(0);
+    await expect(row("page.goto('/checkout')")).toContainText('800ms');
+    // No category column and no "slowest" tag compete with that one color.
+    await expect(table.getByRole('columnheader', { name: 'Category' })).toHaveCount(0);
+    await expect(page.locator('[data-shot="evidence-card"]').getByText('slowest')).toHaveCount(0);
+  });
+
+  test("the steps table renders the 1.63 subtitle, and a step's title opens its parameters", async ({ page }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
     await page.getByRole('tab', { name: /^Timeline/ }).click();
@@ -263,17 +292,33 @@ test.describe('Test-run-case page', () => {
 
     const table = page.getByRole('table');
     // The Fill step's title reads first; its target renders as a muted subtitle
-    // (a <span>, distinct from the same string in the params disclosure's <dd>).
+    // (a <span>, distinct from the same string in the parameter list's <dd>).
     await expect(table.getByText('Fill "ada@example.com"')).toBeVisible();
     await expect(table.locator('span').filter({ hasText: /^getByLabel\('Email'\)$/ })).toBeVisible();
 
-    // The params disclosure is collapsed until opened, and lists the locator first.
-    const disclosure = table.locator('[data-testid="step-params"]').first();
-    await expect(disclosure).toContainText('Parameters');
-    await expect(disclosure.getByText('ada@example.com')).toBeHidden();
-    await disclosure.getByText(/Parameters/).click();
-    await expect(disclosure.getByText('ada@example.com')).toBeVisible();
-    await expect(disclosure.getByText('locator', { exact: true })).toBeVisible();
+    // Every step starts closed, the failing one too: no parameter list shows.
+    await expect(table.locator('[data-testid="step-params"]')).toHaveCount(0);
+    // A step without parameters has a plain title, not a button.
+    await expect(table.getByRole('button', { name: /page\.goto/ })).toHaveCount(0);
+
+    // The title opens the list, the locator first, and closes it again.
+    const fill = table.getByRole('button', { name: /Fill "ada@example\.com"/ });
+    await expect(fill).toHaveAttribute('aria-expanded', 'false');
+    await fill.click();
+    await expect(fill).toHaveAttribute('aria-expanded', 'true');
+    const params = table.locator('[data-testid="step-params"]');
+    await expect(params).toHaveCount(1);
+    await expect(params).toContainText('Parameters (2)');
+    await expect(params.getByText('locator', { exact: true })).toBeVisible();
+    await expect(params.getByText('ada@example.com')).toBeVisible();
+    await fill.click();
+    await expect(fill).toHaveAttribute('aria-expanded', 'false');
+    await expect(params).toHaveCount(0);
+
+    // The keyboard opens it the same way.
+    await fill.focus();
+    await page.keyboard.press('Enter');
+    await expect(fill).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('the story line folds every clue under a "more" disclosure titled "All clues"', async ({ page }) => {
