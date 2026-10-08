@@ -775,15 +775,29 @@
     {
       "idx": 110,
       "version": "6",
-      "when": 1791440392266,
-      "tag": "0110_oauth_mcp_authorization",
+      "when": 1791458166336,
+      "tag": "0110_check_email_case_duplicates",
       "breakpoints": true
     },
     {
       "idx": 111,
       "version": "6",
-      "when": 1791449737278,
-      "tag": "0111_oauth_refresh_grace",
+      "when": 1791458208082,
+      "tag": "0111_users_email_ignore_case",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "6",
+      "when": 1791463628106,
+      "tag": "0112_numerous_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "6",
+      "when": 1791472424956,
+      "tag": "0113_oauth_mcp_authorization",
       "breakpoints": true
     }
   ]

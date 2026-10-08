@@ -28,12 +28,32 @@ export async function listUsers(db: DrizzleDB) {
   return { users: allUsers };
 }
 
+/**
+ * The account, other than `exceptUserId`, whose email is `email` ignoring
+ * letter case. `idx_users_email` (on `lower(email)`) keeps one account per
+ * address, so at most one matches.
+ */
+export async function findUserByEmail(db: DrizzleDB, email: string, exceptUserId?: number) {
+  const [owner] = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        sql`lower(${users.email}) = lower(${email})`,
+        exceptUserId === undefined ? undefined : ne(users.id, exceptUserId),
+      ),
+    )
+    .limit(1);
+  return owner;
+}
+
 export async function createUserRecord(
   db: DrizzleDB,
   data: { username: string; password: string; role: string; name?: string; email?: string | null },
 ) {
   const existing = await db.select().from(users).where(eq(users.username, data.username));
   if (existing.length > 0) throw new Error('Username already exists');
+  if (data.email && (await findUserByEmail(db, data.email))) throw new Error('Email already in use');
   const [created] = await db
     .insert(users)
     .values({
@@ -111,14 +131,8 @@ export async function updateUserRecord(
   const userResults = await db.select().from(users).where(eq(users.id, id));
   if (!userResults[0]) throw new Error('User not found');
   const emailChanged = data.email !== undefined && data.email !== userResults[0].email;
-  // One account per address, ignoring case: OAuth sign-in links by email.
-  if (emailChanged && data.email) {
-    const taken = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(sql`lower(${users.email}) = lower(${data.email})`, ne(users.id, id)))
-      .limit(1);
-    if (taken.length > 0) throw new Error('Email already in use');
+  if (emailChanged && data.email && (await findUserByEmail(db, data.email, id))) {
+    throw new Error('Email already in use');
   }
   // A new address has not been proven yet: drop the verified flag so it is not
   // carried over from the old one (the personal email channel and OAuth

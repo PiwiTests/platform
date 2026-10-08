@@ -40,7 +40,8 @@ CREATE TABLE "oauth_grants" (
 	"previous_refresh_token_hash" text,
 	"refresh_expires_at" timestamp NOT NULL,
 	"created_at" timestamp NOT NULL,
-	"refreshed_at" timestamp
+	"refreshed_at" timestamp,
+	"previous_token_response" text
 );
 --> statement-breakpoint
 ALTER TABLE "oauth_authorization_requests" ADD CONSTRAINT "oauth_authorization_requests_client_id_oauth_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."oauth_clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

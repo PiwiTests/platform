@@ -41,6 +41,27 @@ on the projects it could open, and each User account into a Member with the View
 right (see [Upgrading from the three roles](./project-access#upgrading-from-the-three-roles)). A database from before
 project access existed gets the same roles on all projects, as that upgrade granted.
 
+On the upgrade that makes email addresses unique ignoring case, a migration first looks for users whose addresses
+differ only by letter case (`Bob@corp.com` and `bob@corp.com`), such as a second account an OAuth sign-in created for
+someone who already had one. Piwi never merges accounts on its own: if it finds any, the migration fails like any
+other (see above) with an error that says so, lists the user ids on PostgreSQL, and changes nothing. Fix it in the
+database, then restart:
+
+```sql
+-- The users that share an address
+SELECT id, username, email FROM users
+WHERE lower(email) IN (SELECT lower(email) FROM users GROUP BY lower(email) HAVING count(*) > 1);
+
+-- For every user but one of each address
+UPDATE users SET email = NULL, email_verified = 0 WHERE id = <id>;
+```
+
+When one is an account an OAuth sign-in created by mistake, clear its address, then delete it from **Settings →
+Users** once the server runs: the person's next sign-in with that provider links their original account, if it verified
+its address.
+
+The same upgrade refuses invite, password reset and verification links emailed before it: send them again.
+
 ## A database that ran another build
 
 Releases only ever add migrations, in date order. A database that also ran a build from outside the

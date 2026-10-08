@@ -1,1 +1,0 @@
-ALTER TABLE `oauth_grants` ADD `previous_token_response` text;

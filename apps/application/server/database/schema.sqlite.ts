@@ -1019,7 +1019,8 @@ export const users = sqliteTable(
   },
   (table) => ({
     oauthIdx: uniqueIndex('idx_users_oauth').on(table.oauthProvider, table.oauthProviderId),
-    emailIdx: uniqueIndex('idx_users_email').on(table.email),
+    // One account per email address, ignoring case: OAuth sign-in links accounts by email.
+    emailIdx: uniqueIndex('idx_users_email').on(sql`lower(${table.email})`),
   }),
 );
 
@@ -1033,6 +1034,8 @@ export const accountTokens = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     purpose: text('purpose').notNull(), // 'reset' | 'verify' | 'invite'
     tokenHash: text('token_hash').notNull(), // SHA-256 of the emailed token
+    // The address the token was sent to: it acts only while the account still holds it.
+    email: text('email'),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     usedAt: integer('used_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })

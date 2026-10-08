@@ -51,6 +51,7 @@ CREATE TABLE `oauth_grants` (
 	`refresh_expires_at` integer NOT NULL,
 	`created_at` integer NOT NULL,
 	`refreshed_at` integer,
+	`previous_token_response` text,
 	FOREIGN KEY (`client_id`) REFERENCES `oauth_clients`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`api_key_id`) REFERENCES `api_keys`(`id`) ON UPDATE no action ON DELETE cascade
