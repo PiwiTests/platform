@@ -169,7 +169,7 @@ async function saveStartCommand() {
 </script>
 
 <template>
-  <div class="space-y-3" data-shot="fix-reproduce-body">
+  <div class="space-y-3" data-shot="fix-reproduce-body" data-copies="copy-recipe">
     <div class="space-y-1.5">
       <!-- The run line first — the exact test invocation. -->
       <PlatformCodeBlock

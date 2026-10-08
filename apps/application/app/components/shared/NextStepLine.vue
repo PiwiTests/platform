@@ -47,7 +47,7 @@ const overflowSecondary = computed<DropdownMenuItem[]>(() => [
 </script>
 
 <template>
-  <div data-shot="next-step" class="space-y-1">
+  <div data-shot="next-step" :data-next-kind="nextStep.kind" class="space-y-1">
     <p>{{ nextStep.title }}</p>
     <p v-if="nextStep.why" class="text-xs text-muted">{{ nextStep.why }}</p>
     <div class="flex flex-wrap items-center gap-2 pt-1">
@@ -55,6 +55,7 @@ const overflowSecondary = computed<DropdownMenuItem[]>(() => [
         size="xs"
         color="primary"
         variant="solid"
+        :data-next-action="nextStep.primary.action"
         @click="emit('action', nextStep.primary.action, nextStep.primary.payload)"
       >
         {{ nextStep.primary.label }}

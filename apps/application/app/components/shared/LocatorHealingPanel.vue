@@ -571,7 +571,11 @@ defineExpose({
       </div>
 
       <!-- Ready-to-apply one-line edit, when the failing source line is known -->
-      <div v-if="suggestedEdit" class="rounded border border-default overflow-hidden bg-default">
+      <div
+        v-if="suggestedEdit"
+        data-copies="copy-patch"
+        class="rounded border border-default overflow-hidden bg-default"
+      >
         <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />
       </div>
       <template v-else>

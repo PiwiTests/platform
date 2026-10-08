@@ -297,9 +297,12 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   it (`<LocatorCode chip>`, `<FailureHeadline chip>`), a commit keeps the sentence's color (`CODE_CHIP_CLASS`).
   Elsewhere in prose a locator stays plain mono (`<LocatorCode plain>`).
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
-- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block, a code chip
-  counting once whatever its token colors. Keep it at or under 15 on the execution page and 12 on the cluster page; a
-  change that raises it needs a reason in the PR.
+- **Measure it.** `npm run app:measure -- --check` fails when a failure page breaks a budget at 1280×800: at most 15
+  text styles in the execution page's situation block and 12 in the cluster page's (a code chip counts once, whatever
+  its token colors), at most 25 controls above the fold (navbar included), at most one solid primary button above the
+  fold, and a Next step that copies a code change shows that change in the same block. The measure finds the Next
+  action by `data-next-action` and what it copies by `data-copies`: keep both when you move either. Run it before
+  committing a change to either page; raising a budget needs a reason in the PR.
 
 ### Filters (MUST follow)
 

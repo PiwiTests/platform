@@ -89,7 +89,7 @@ function citationLabel(section: string): string {
 </script>
 
 <template>
-  <div v-if="sentence" class="space-y-1">
+  <div v-if="sentence" data-shot="most-likely" class="space-y-1">
     <p>
       <template v-for="(part, i) in sentenceParts" :key="i">
         <code v-if="part.code" class="font-mono text-[0.92em]">{{ part.text }}</code>

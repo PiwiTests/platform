@@ -393,6 +393,9 @@ test.describe('Situation block on seeded cases', () => {
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Apply the diagnosed fix');
     await expect(next.getByRole('button', { name: 'Copy git apply' })).toBeVisible();
+    // `app:measure` finds the step and its action by these ids, never by the label.
+    await expect(next).toHaveAttribute('data-next-kind', 'apply-patch');
+    await expect(next.locator('[data-next-action]')).toHaveAttribute('data-next-action', 'copy-git-apply');
     await next.getByRole('button', { name: 'More next-step actions' }).click();
     await expect(page.getByRole('menuitem', { name: 'Copy retry command' })).toBeVisible();
     await page.keyboard.press('Escape');

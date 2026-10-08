@@ -494,6 +494,7 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
 
         <PatchBlock
           v-if="details.suggestedFix.patch"
+          data-copies="copy-git-apply"
           class="mt-2"
           :patch="details.suggestedFix.patch"
           :validation="patchValidation"

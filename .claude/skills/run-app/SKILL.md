@@ -19,10 +19,10 @@ first run, opens the route, waits for hydration and for the page to settle, scre
 `.screens/` (gitignored) and tears the server down:
 
 ```bash
-npm run app:screens -- --route /test-run-cases/37?tab=diagnosis --expand --height 2400
+npm run app:screens -- --route /test-run-cases/37 --expand --height 2400
 ```
 
-- `--expand` unfolds every collapsed section first (evidence cards start folded).
+- `--expand` unfolds every collapsed section first (the More ways to fix sections start folded).
 - `--height` is how you see more of a page: the dashboard scrolls inside a panel, so a full-page
   screenshot of the document only ever shows one viewport. Use 2000–3000 for a detail page.
 - `--width` sets the viewport width (default 1280), `--name` the file stem.
@@ -68,16 +68,30 @@ Authentication is off on a plain dev server, so no key is needed.
 
 ```bash
 npm run app:measure -- --url http://localhost:3000        # against a running server
-npm run app:measure -- --json                             # boots + seeds its own server
+npm run app:measure -- --check                            # boots + seeds its own server, exits 1 on a breach
+npm run app:measure -- --json                             # one object per route, with its budgets
 ```
 
 `measure-detail-pages.mjs` reads the execution page (`/test-run-cases/:id`) and the failure
-cluster page (`/failure-clusters/:id`) after hydration and settle, and reports — inside the detail
-panel — the scroll offset of each block (header, headline, clues, evidence, the fix sections, what
-changed, affected tests, history), the panel's total scroll height, the interactive controls and
-help hints above the fold, the open code blocks and their height, the word count, the active
-evidence tab and the clue strengths. Default routes cover #37, #13 and clusters #10, #2, #5, #1;
-`--routes` overrides them, `--width`/`--height` the viewport, `--json` prints one object per route.
+cluster page (`/failure-clusters/:id`) after hydration, a bounded settle and the page's last API
+answer, and reports — inside the detail panel — the scroll offset of each block (header, most
+likely, situation, issue, next step, evidence, the fix sections, what changed, affected tests,
+occurrences trend, activity, history), the panel's total scroll height, the interactive controls
+above the fold split into navbar, situation block and below, the solid primary buttons and help
+hints above the fold, the open code blocks and their height, the word count, the active evidence
+tab, the Most likely grade, the Next step's action and how far below its button the content it
+copies sits, and the text styles of the situation block.
+
+Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
+at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution
+page's block and 12 on the cluster page's, at most 25 controls above the fold with the navbar
+included, at most one solid primary button above the fold, and a Next step that copies a code
+change (`copy-git-apply`, `copy-patch`) shows that change in the block. The script finds the action
+by `data-next-action` and the content by `data-copies`, never by a label. The report ends with every
+breach; `--check` exits 1 when there is one, and a route that answers an error fails it too.
+
+Default routes: executions #37, #13, #87, #768, #748 and clusters #10, #2, #5, #1. `--routes`
+overrides them, `--width`/`--height` the viewport, `--port` the port of the server it boots (3050).
 Without `--url` it boots and seeds a throwaway server the same way the screenshot harness does.
 
 ## Seeded entry points
@@ -88,14 +102,16 @@ use the same ones and are the reference when in doubt.
 
 | Want to see | Route |
 |---|---|
-| A failing execution with screenshot, source, locators, console, network | `/test-run-cases/37?tab=diagnosis` |
+| A failing execution with screenshot, source, locators, console, network | `/test-run-cases/37` |
 | A broken locator with ranked replacements | `/test-run-cases/13` |
 | A cluster with a stored, fix-verified AI diagnosis | `/failure-clusters/10` |
 | A cluster whose captured locator name looks renamed | `/failure-clusters/2` |
 | A run with insights, failure clusters and a workers timeline | `/test-runs/2` |
 | A project with flaky tests, quarantine and performance tabs | `/projects/1` |
 | A test case's history across runs | `/test-cases/1` |
-| An execution's history tab | `/test-run-cases/229?tab=history` |
+| An execution's History block | `/test-run-cases/229` |
+| An execution that passed on retry | `/test-run-cases/768` |
+| A test that did not run (the run hit its max failures) | `/test-run-cases/748` |
 
 AI is not configured on the dev server: the diagnosis panels show their "not configured" state, and
 clusters without a stored title fall back to the deterministic one.
