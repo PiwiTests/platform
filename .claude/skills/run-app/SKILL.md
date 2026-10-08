@@ -68,7 +68,7 @@ Authentication is off on a plain dev server, so no key is needed.
 
 ```bash
 npm run app:measure -- --url http://localhost:3000        # against a running server
-npm run app:measure -- --check                            # boots + seeds its own server, exits 1 on a breach
+npm run app:measure -- --check                            # seeds .data/measure/, boots a server, exits 1 on a breach
 npm run app:measure -- --json                             # one object per route, with its budgets
 ```
 
@@ -92,7 +92,12 @@ breach; `--check` exits 1 when there is one, and a route that answers an error f
 
 Default routes: executions #37, #13, #87, #768, #748 and clusters #10, #2, #5, #1. `--routes`
 overrides them, `--width`/`--height` the viewport, `--port` the port of the server it boots (3050).
-Without `--url` it boots and seeds a throwaway server the same way the screenshot harness does.
+
+Without `--url` it seeds a throwaway database in `.data/measure/` from the demo seed (regenerating
+`public/demo/seed.sql` first when it no longer matches `seed.version.json`) and boots its own server
+on it, so two runs give the same numbers whatever your dev database holds; this is the run to quote
+in a PR. With `--url` the report says it measured that server's own data: a dev database with a
+connected issue tracker or extra links counts differently, and the budgets do not cover that state.
 
 ## Seeded entry points
 

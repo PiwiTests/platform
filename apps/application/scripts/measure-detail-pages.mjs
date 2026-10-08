@@ -23,20 +23,23 @@
  * label. The report prints a verdict per route; `--check` exits 1 on a breach.
  *
  * Usage (from application/):
- *   node scripts/measure-detail-pages.mjs                       # boot + seed a server on --port (3050)
+ *   node scripts/measure-detail-pages.mjs                       # seed .data/measure/, boot a server on --port (3050)
  *   node scripts/measure-detail-pages.mjs --url http://localhost:3000
  *   node scripts/measure-detail-pages.mjs --routes /test-run-cases/37,/failure-clusters/10
  *   node scripts/measure-detail-pages.mjs --width 1280 --height 800
  *   node scripts/measure-detail-pages.mjs --json
  *   node scripts/measure-detail-pages.mjs --check               # exit 1 when a budget breaks
  *
- * Without --url the script boots its own dev server and seeds a missing dev DB,
- * exactly like `take-feature-screenshots.mjs --route`; with --url it drives the
- * server you point it at.
+ * Without --url the script seeds a throwaway database in `.data/measure/` from
+ * the demo seed and boots its own dev server on it, so two runs read the same
+ * data whatever the local dev database holds; the seeded data connects no
+ * issue tracker. With --url it drives the server you point it at and measures
+ * that server's own data, which the report says.
  */
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 
-import { startServer, resolveChromium, waitForPortFree } from './lib/dev-server.mjs';
+import { APP_DIR, startServer, resolveChromium, seedThrowawayDb, waitForPortFree } from './lib/dev-server.mjs';
 import { waitForHydration, settlePage } from './lib/page-waits.mjs';
 import {
   NEXT_STEP_COPIES,
@@ -383,7 +386,9 @@ async function main() {
   const flags = parseMeasureArgs(process.argv.slice(2));
   const viewport = { width: flags.width, height: flags.height };
 
-  const server = flags.url ? { base: flags.url, stop: () => {} } : await startServer({ mode: 'web', port: flags.port });
+  const server = flags.url
+    ? { base: flags.url, stop: () => {} }
+    : await startServer({ mode: 'web', port: flags.port, env: seedThrowawayDb(join(APP_DIR, '.data', 'measure')) });
   const browser = await chromium.launch({
     executablePath: resolveChromium(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -406,9 +411,15 @@ async function main() {
     if (!flags.url) await waitForPortFree(server.base);
   }
 
+  const source = flags.url
+    ? `Measured against the server's own data at ${flags.url}. The budgets assume the seeded data, ` +
+      'with no issue tracker connected: what a connected tracker adds is not covered.'
+    : 'Measured against a freshly seeded database (.data/measure/), with no issue tracker connected.';
   if (flags.json) {
+    console.error(source);
     for (const result of results) console.log(JSON.stringify(result));
   } else {
+    console.log(source);
     printTable(results, flags);
     printSummary(results);
   }

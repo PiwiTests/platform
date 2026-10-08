@@ -6,7 +6,8 @@
  * (`--url`) never imports it.
  */
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,6 +25,47 @@ export function resolveChromium() {
   const provided = process.env.PLAYWRIGHT_BROWSERS_PATH;
   if (provided && existsSync(join(provided, 'chromium'))) return join(provided, 'chromium');
   return undefined;
+}
+
+/** The demo seed `app:seed:dev` loads, and the hash of it the repository records. */
+const SEED_SQL = join(APP_DIR, 'public', 'demo', 'seed.sql');
+const SEED_VERSION = join(APP_DIR, 'public', 'demo', 'seed.version.json');
+
+/** Whether `public/demo/seed.sql` exists and hashes to what `seed.version.json` records. */
+function demoSeedIsCurrent() {
+  if (!existsSync(SEED_SQL) || !existsSync(SEED_VERSION)) return false;
+  const recorded = JSON.parse(readFileSync(SEED_VERSION, 'utf8')).hash;
+  return createHash('sha256').update(readFileSync(SEED_SQL)).digest('hex') === recorded;
+}
+
+/**
+ * Seed a throwaway database in `dir` from the demo seed, so a measurement reads
+ * the same data on every run whatever the local dev database holds. It empties
+ * `dir`, regenerates `public/demo/seed.sql` when the seed is missing or no
+ * longer hashes to `seed.version.json` (into `dir` first, so the tracked
+ * version file stays as it is), and loads it with `app:seed:dev` into
+ * `<dir>/piwi.db` with the evidence media under `<dir>/storage`. Returns the
+ * environment a server needs to run on that database. Progress goes to stderr,
+ * so a script printing JSON on stdout stays parseable.
+ */
+export function seedThrowawayDb(dir) {
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const stdio = ['ignore', 2, 2];
+  if (!demoSeedIsCurrent()) {
+    console.error('The demo seed is missing or stale — regenerating public/demo/seed.sql…');
+    const output = join(dir, 'demo-seed');
+    execSync('npm run app:seed:demo', {
+      cwd: APP_DIR,
+      stdio,
+      env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: output },
+    });
+    copyFileSync(join(output, 'seed.sql'), SEED_SQL);
+  }
+  const env = { PIWI_DATABASE_PATH: join(dir, 'piwi.db'), PIWI_STORAGE_PATH: join(dir, 'storage') };
+  console.error(`Seeding a throwaway database in ${dir}…`);
+  execSync('npm run app:seed:dev', { cwd: APP_DIR, stdio, env: { ...process.env, ...env } });
+  return env;
 }
 
 export function ensureDevDb() {
@@ -72,14 +114,17 @@ export async function waitForPortFree(base, timeoutMs = 30_000) {
 /**
  * Boot a dev server in `mode`; returns { base, stop }. The desktop UI is enabled
  * for `desktop` only — the sidebar's back/forward pair exists in the Tauri shell
- * alone, and would misrepresent the web app in a full-viewport capture.
+ * alone, and would misrepresent the web app in a full-viewport capture. `env`
+ * is added to the server's environment; when it names its own database
+ * (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns) the dev database is left
+ * alone, otherwise a missing one is created and seeded first.
  */
-export async function startServer({ mode = 'web', port = DEFAULT_PORT } = {}) {
-  ensureDevDb();
+export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} } = {}) {
+  if (!env.PIWI_DATABASE_PATH) ensureDevDb();
   const desktop = mode === 'desktop';
   const child = spawn('npx', ['nuxt', 'dev', '--port', String(port)], {
     cwd: APP_DIR,
-    env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...(desktop ? { NUXT_PUBLIC_DESKTOP: 'true' } : {}) },
+    env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...(desktop ? { NUXT_PUBLIC_DESKTOP: 'true' } : {}), ...env },
     stdio: 'ignore',
     // Detached puts nuxt in its own process group so stop() can kill the whole
     // tree; on Windows npx needs a shell and group-kill is unsupported anyway.
@@ -105,7 +150,7 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT } = {}) {
     process.exit(130);
   });
   const base = `http://localhost:${port}`;
-  console.log(`Starting dev server at ${base}${desktop ? ' (desktop UI enabled)' : ''}…`);
+  console.error(`Starting dev server at ${base}${desktop ? ' (desktop UI enabled)' : ''}…`);
   try {
     await waitForHealth(base);
   } catch (err) {
