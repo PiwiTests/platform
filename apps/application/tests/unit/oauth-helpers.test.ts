@@ -194,6 +194,19 @@ describe('resolveProvisioningAction', () => {
     if (action.kind === 'refresh') expect(action.set.emailVerified).toBe(true);
   });
 
+  test('refresh: an address that differs only by case is the same address', () => {
+    const existing = row({
+      id: 7,
+      email: 'Alice@Example.com',
+      emailVerified: true,
+      oauthProvider: 'google',
+      oauthProviderId: 'pid-1',
+    });
+    const action = resolveProvisioningAction(profile({ emailVerified: false }), existing);
+    expect(action.kind).toBe('refresh');
+    if (action.kind === 'refresh') expect(action.set.emailVerified).toBe(true);
+  });
+
   test('refresh: keeps stored email when provider sends none', () => {
     const existing = row({
       id: 7,
@@ -449,6 +462,21 @@ describe('resolveLinkAction', () => {
     if (action.kind !== 'link') throw new Error(`expected link, got ${action.kind}`);
     expect(action.set.email).toBeNull();
     expect(action.set.emailVerified).toBe(false);
+  });
+
+  test('leaves the provider email to the account that owns it', () => {
+    const me = row({ id: 1, email: null, emailVerified: false, password: 'hash' });
+    const owner = row({ id: 2, email: 'Alice@example.com', emailVerified: true });
+    const action = resolveLinkAction(
+      me,
+      profile({ email: 'alice@example.com', emailVerified: true }),
+      undefined,
+      owner,
+    );
+    expect(action.kind).toBe('link');
+    if (action.kind === 'link') {
+      expect(action.set).toMatchObject({ oauthProvider: 'google', email: null, emailVerified: false });
+    }
   });
 });
 

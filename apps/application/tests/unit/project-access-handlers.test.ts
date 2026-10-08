@@ -352,10 +352,16 @@ describe('users', () => {
     ]);
   });
 
-  test('a new user joins their groups; a taken username is a 409, an unknown group a 400 that creates nobody', async () => {
+  test('a new user joins their groups; a taken username or email is a 409, an unknown group a 400 that creates nobody', async () => {
     const created = await createUserAccount(
       db,
-      { username: 'jordan', password: 'x', role: InstanceRole.MEMBER, groupIds: [100, 101] },
+      {
+        username: 'jordan',
+        password: 'x',
+        role: InstanceRole.MEMBER,
+        email: 'jordan@example.com',
+        groupIds: [100, 101],
+      },
       1,
     );
     expect(created).toMatchObject({ username: 'jordan', instanceRole: InstanceRole.MEMBER, groupIds: [100, 101] });
@@ -364,27 +370,18 @@ describe('users', () => {
     ).toEqual({ statusCode: 409, message: 'Username already exists' });
     expect(
       await refusal(
-        createUserAccount(db, { username: 'kim', password: 'x', role: InstanceRole.MEMBER, groupIds: [7] }, 1),
-      ),
-    ).toEqual({ statusCode: 400, message: 'Group(s) not found: 7' });
-    expect((await listUserSummaries(db)).some((u) => u.username === 'kim')).toBe(false);
-  });
-
-  test('an email another account uses, in any letter case, is a 409 that creates nobody', async () => {
-    await createUserAccount(
-      db,
-      { username: 'jordan', password: 'x', role: InstanceRole.MEMBER, email: 'jordan@example.com' },
-      1,
-    );
-    expect(
-      await refusal(
         createUserAccount(
           db,
-          { username: 'kim', password: 'x', role: InstanceRole.MEMBER, email: 'Jordan@Example.com' },
+          { username: 'kim', password: 'x', role: InstanceRole.MEMBER, email: 'Jordan@example.com' },
           1,
         ),
       ),
     ).toEqual({ statusCode: 409, message: 'Email already in use' });
+    expect(
+      await refusal(
+        createUserAccount(db, { username: 'kim', password: 'x', role: InstanceRole.MEMBER, groupIds: [7] }, 1),
+      ),
+    ).toEqual({ statusCode: 400, message: 'Group(s) not found: 7' });
     expect((await listUserSummaries(db)).some((u) => u.username === 'kim')).toBe(false);
   });
 

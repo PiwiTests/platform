@@ -104,7 +104,7 @@ Rejected sign-ins are returned to the login page with an explanatory message.
 
 ### Account linking
 
-A first sign-in with a provider either links an existing account or creates a new one:
+A first sign-in with a provider either links an existing account or creates a new one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
 
 - If a user with the same **verified** email exists, ignoring letter case (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
@@ -121,7 +121,7 @@ The dashboard does not keep the provider's tokens: the access token is used once
 
 Signed-in users can link a provider explicitly from **Settings → Account → Connected accounts**:
 
-- **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account (rather than creating a new one). A provider identity already linked to another account is refused.
+- **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account (rather than creating a new one). A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
 - **Disconnect** removes the link. It's only allowed when the account also has a password set, so a provider-only user can't lock themselves out — set a password first.
 
 ## User management
@@ -131,9 +131,9 @@ username, password, instance role and optional display name and email. Each row 
 [groups](./project-access#groups) they belong to.
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
-account already uses is refused, and **Forgot password?** finds the account whatever the case typed. When an upgrade
-finds the same address on several accounts, differing only in case, the oldest account that verified it keeps it (the
-oldest account, when none did); the others are left without an email.
+account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that
+finds the same address on several accounts, differing only in case, stops without changing anything until an
+administrator fixes them: see [What happens when a new version starts](./upgrading#what-happens-when-a-new-version-starts).
 
 A link Piwi emails, to verify an address, accept an invite or reset a password, works only while the account still
 holds the address it was sent to. Once the address changes, by its owner, an administrator or a provider sign-in, the

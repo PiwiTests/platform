@@ -475,8 +475,8 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB
 // Link a provider identity to an already-signed-in user
 // ---------------------------------------------------------------------------
 
-async function linkProviderToUser(userId: number, profile: OAuthProfile): Promise<User> {
-  const db = await getDatabase();
+export async function linkProviderToUser(userId: number, profile: OAuthProfile, database?: DrizzleDB): Promise<User> {
+  const db = database ?? (await getDatabase());
   const { provider, providerId } = profile;
 
   const current = (await db.select().from(users).where(eq(users.id, userId)))[0];

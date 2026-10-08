@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Create a user',
     description:
-      "Creates a user with a username, an optional password (without one, the user sets their own from an invite email), an optional name and email, an instance role and optional groups. `role` is `administrator` or `member`; a new member holds no project role until one is granted (`PUT /api/users/{id}/projects`, the permission grid, or a group in `groupIds`). Deprecated: `role: 'reporter'` and `role: 'user'`, the roles of earlier versions, are still accepted for this release and stored as `member`, with no project role. 409 when the username is taken or another account already uses the email, in any letter case; 400 for an unknown group.",
+      "Creates a user with a username, an optional password (without one, the user sets their own from an invite email), an optional name and email, an instance role and optional groups. `role` is `administrator` or `member`; a new member holds no project role until one is granted (`PUT /api/users/{id}/projects`, the permission grid, or a group in `groupIds`). Deprecated: `role: 'reporter'` and `role: 'user'`, the roles of earlier versions, are still accepted for this release and stored as `member`, with no project role. 409 when the username or the email is taken (the email ignoring case), 400 for an unknown group.",
     'x-required-permission': 'users:manage',
     requestBody: {
       content: {

@@ -154,6 +154,11 @@ export function firstFreeUsername(candidates: string[], taken: Iterable<string>)
   return candidates.find((candidate) => !used.has(candidate)) ?? candidates.at(-1)!;
 }
 
+/** Email addresses are compared ignoring case, as the `idx_users_email` unique index does. */
+function sameEmailAddress(a: string | null, b: string | null): boolean {
+  return a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
+}
+
 export type ProvisioningAction =
   | { kind: 'refresh'; userId: number; set: Record<string, unknown> }
   | { kind: 'link'; userId: number; set: Record<string, unknown> }
@@ -267,7 +272,7 @@ function refreshedEmail(
     const stored = validEmailAddress(current.email ?? '');
     return { email: stored || null, emailVerified: Boolean(stored) && current.emailVerified };
   }
-  if (email === current.email) {
+  if (sameEmailAddress(email, current.email)) {
     return { email, emailVerified: emailVerified || current.emailVerified };
   }
   return { email, emailVerified };

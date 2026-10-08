@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a8b1de1f-1e67-46fa-b8dc-ea3868748840",
-  "prevId": "097e2cc3-8573-4771-8ff3-2374ead7b5dc",
+  "id": "dfd1f365-a36b-431e-b417-4784fca70ca6",
+  "prevId": "79a671e0-3ab4-4dc4-b327-77c605bc56df",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",

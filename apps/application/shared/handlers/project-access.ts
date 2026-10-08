@@ -234,9 +234,9 @@ export async function createUserAccount(
       email: input.email || null,
     });
   } catch (error) {
-    if (error instanceof Error && ['Username already exists', 'Email already in use'].includes(error.message)) {
+    if (error instanceof Error && error.message === 'Username already exists')
       throw new AccessError(409, error.message);
-    }
+    if (error instanceof Error && error.message === 'Email already in use') throw new AccessError(409, error.message);
     throw error;
   }
   if (!created) throw new Error('Failed to create user');
