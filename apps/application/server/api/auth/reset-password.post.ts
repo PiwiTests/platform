@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
 import { validateAccountToken, consumeAccountToken } from '../../utils/account-tokens';
@@ -11,7 +11,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Reset password using token',
-    description: 'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions.',
+    description:
+      'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions. A token sent to an address the account no longer holds is refused (400).',
     security: [],
   },
 });
@@ -43,24 +44,23 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
 
-  const userRows = await db.select().from(users).where(eq(users.id, validated.userId));
-  const user = userRows[0];
-  if (!user) throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
-
   const hashedPassword = await hashPassword(password);
   const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};
-  await db
+  // The write matches the address again: one changed since the validation sets nothing.
+  const updated = await db
     .update(users)
     .set({ password: hashedPassword, updatedAt: new Date(), ...extraFields })
-    .where(eq(users.id, user.id));
+    .where(and(eq(users.id, validated.userId), eq(users.email, validated.email)))
+    .returning({ id: users.id });
+  if (!updated.length) throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
 
   await consumeAccountToken(db, validated.tokenId);
 
   // Revoke every existing session for this account so a stolen session cannot
   // outlive the reset, then clear the current cookie for good measure.
-  await revokeUserSessions(user.id);
+  await revokeUserSessions(validated.userId);
   await clearUserSession(event).catch(() => {});
 
-  console.info('[auth/reset-password] Password reset for user %d', user.id);
+  console.info('[auth/reset-password] Password reset for user %d', validated.userId);
   return { success: true };
 });

@@ -2,7 +2,7 @@ import type { H3Event } from 'h3';
 import { apiError } from './api-error';
 import { getDatabase } from '../database';
 import { users } from '../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import type { InstanceRole } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { findUserByEmail } from '#shared/handlers/users';
@@ -23,12 +23,24 @@ import {
   resolveProvisioningAction,
   resolveLinkAction,
   resolveUnlink,
+  validEmailAddress,
+  firstFreeUsername,
   type OAuthProfile,
 } from './oauth-helpers';
 
 // ---------------------------------------------------------------------------
 // Provider configurations
 // ---------------------------------------------------------------------------
+
+/** A provider's profile, as read from its user info endpoint. */
+interface ProviderUser {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+  avatar: string;
+  login?: string;
+}
 
 interface OAuthProviderConfig {
   clientId: string;
@@ -42,13 +54,7 @@ interface OAuthProviderConfig {
   // provider can verify it.
   pkce: boolean;
   extraParams?: Record<string, string>;
-  mapUser: (raw: Record<string, unknown>) => {
-    id: string;
-    email: string;
-    emailVerified: boolean;
-    name: string;
-    avatar: string;
-  };
+  mapUser: (raw: Record<string, unknown>) => ProviderUser;
 }
 
 function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfig | null {
@@ -96,10 +102,11 @@ function getProviderConfig(event: H3Event, provider: string): OAuthProviderConfi
         pkce: false,
         mapUser: (raw) => ({
           id: String(raw.id),
-          email: String(raw.email ?? raw.login ?? ''),
+          email: typeof raw.email === 'string' ? raw.email : '',
           emailVerified: false, // Overridden by /user/emails call in fetchProviderUser
           name: String(raw.name ?? raw.login ?? ''),
           avatar: String(raw.avatar_url ?? ''),
+          login: typeof raw.login === 'string' ? raw.login : undefined,
         }),
       };
     }
@@ -290,11 +297,7 @@ async function exchangeCode(
 // Fetch user info from the provider
 // ---------------------------------------------------------------------------
 
-async function fetchProviderUser(
-  event: H3Event,
-  provider: string,
-  accessToken: string,
-): Promise<{ id: string; email: string; emailVerified: boolean; name: string; avatar: string }> {
+async function fetchProviderUser(event: H3Event, provider: string, accessToken: string): Promise<ProviderUser> {
   const providerCfg = getProviderConfig(event, provider);
   if (!providerCfg) {
     throw apiError({ statusCode: 400, message: `Unknown OAuth provider: ${provider}` });
@@ -390,16 +393,19 @@ async function enforceAllowlists(
 // Find existing OAuth user or create a new one
 // ---------------------------------------------------------------------------
 
-export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: DrizzleDB): Promise<User> {
-  const db = database ?? (await getDatabase());
-  const { provider, providerId, email, emailVerified } = profile;
+/**
+ * The account a provider sign-in opens: the one linked to this identity, the
+ * one linked by a verified email, or a new one (`resolveProvisioningAction`
+ * decides which). A new account takes the first free username.
+ */
+export async function findOrCreateOAuthUser(profile: OAuthProfile, db: DrizzleDB): Promise<User> {
+  const { provider, providerId } = profile;
 
   // Look up the two candidate accounts the decision depends on: one already
-  // linked to this provider identity, and one that owns the provider's email
-  // address. Matching email on the dedicated `email` column —
-  // not `username` — lets accounts created with a non-email username still link,
-  // and keeps linking symmetric with the account/admin UIs and notifications.
-  // `email` is unique ignoring case (`idx_users_email`), so at most one account matches.
+  // linked to this provider identity, and another one that owns the provider's
+  // address. Matching email on the dedicated `email` column — not `username` —
+  // lets accounts created with a non-email username still link, and keeps
+  // linking symmetric with the account/admin UIs and notifications.
   const identityMatch = (
     await db
       .select()
@@ -407,9 +413,8 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: Dr
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  // With an identity match, the account holding the provider's address (which
-  // keeps it); without one, the account a verified address may link.
-  const emailMatch = email && (identityMatch || emailVerified) ? await findUserByEmail(db, email) : undefined;
+  const email = validEmailAddress(profile.email);
+  const emailMatch = email ? await findUserByEmail(db, email, identityMatch?.id) : undefined;
 
   const action = resolveProvisioningAction(profile, identityMatch, emailMatch);
 
@@ -443,9 +448,17 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: Dr
     }
 
     case 'create': {
+      const taken = await db
+        .select({ username: users.username })
+        .from(users)
+        .where(inArray(users.username, action.usernames));
+      const username = firstFreeUsername(
+        action.usernames,
+        taken.map((row) => row.username),
+      );
       const result = await db
         .insert(users)
-        .values(action.values as typeof users.$inferInsert)
+        .values({ ...action.values, username } as typeof users.$inferInsert)
         .returning();
       const user = result[0];
       if (!user) {
@@ -464,7 +477,7 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile, database?: Dr
 
 export async function linkProviderToUser(userId: number, profile: OAuthProfile, database?: DrizzleDB): Promise<User> {
   const db = database ?? (await getDatabase());
-  const { provider, providerId, email } = profile;
+  const { provider, providerId } = profile;
 
   const current = (await db.select().from(users).where(eq(users.id, userId)))[0];
   if (!current) {
@@ -479,10 +492,10 @@ export async function linkProviderToUser(userId: number, profile: OAuthProfile, 
       .where(and(eq(users.oauthProvider, provider), eq(users.oauthProviderId, providerId)))
   )[0];
 
-  // Only an account without an email takes the provider's, and only if no other account owns it.
-  const emailOwner = !current.email && email ? await findUserByEmail(db, email) : undefined;
+  const email = validEmailAddress(profile.email);
+  const emailTakenBy = email ? await findUserByEmail(db, email, userId) : undefined;
 
-  const action = resolveLinkAction(current, profile, identityTakenBy, emailOwner);
+  const action = resolveLinkAction(current, profile, identityTakenBy, emailTakenBy);
   if (action.kind === 'conflict') {
     throw apiError({
       statusCode: 409,
@@ -586,6 +599,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
       emailVerified: providerUser.emailVerified,
       name: providerUser.name,
       avatar: providerUser.avatar,
+      login: providerUser.login,
     };
 
     if (isLink) {
@@ -599,7 +613,7 @@ export async function handleOAuthCallback(event: H3Event, provider: string): Pro
     }
 
     // Find or create local user
-    const user = await findOrCreateOAuthUser(profile);
+    const user = await findOrCreateOAuthUser(profile, await getDatabase());
 
     // Set session
     const sessionData: SessionData = {

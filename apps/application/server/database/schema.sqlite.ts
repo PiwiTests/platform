@@ -1034,6 +1034,8 @@ export const accountTokens = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     purpose: text('purpose').notNull(), // 'reset' | 'verify' | 'invite'
     tokenHash: text('token_hash').notNull(), // SHA-256 of the emailed token
+    // The address the token was sent to: it acts only while the account still holds it.
+    email: text('email'),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     usedAt: integer('used_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })

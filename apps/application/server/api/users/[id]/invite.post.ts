@@ -30,7 +30,7 @@ export default eventHandler(async (event) => {
   if (!isEmailConfigured())
     throw apiError({ statusCode: 503, errorCode: 'SMTP_NOT_CONFIGURED', message: 'SMTP is not configured' });
 
-  const token = await mintAccountToken(db, user.id, 'invite');
+  const token = await mintAccountToken(db, user.id, 'invite', user.email);
   const { html, text } = renderInviteEmail(token, admin.name || admin.username);
 
   try {

@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Update a user',
     description:
-      "Updates a user's name, email, instance role (`role`: `administrator` or `member`) or groups (`groupIds`, replacing the current ones). Administrators can update any user; anyone else only their own name and email (403 otherwise). Demoting the last administrator is refused (400), and so is an email another account already uses (409). Changing the email clears its verified flag. Changing the instance role signs the user out everywhere; group changes apply on their next request.",
+      "Updates a user's name, email, instance role (`role`: `administrator` or `member`) or groups (`groupIds`, replacing the current ones). Administrators can update any user; anyone else only their own name and email (403 otherwise). Demoting the last administrator is refused (400), and so is an email another account already uses, in any letter case (409). Changing the email clears its verified flag. Changing the instance role signs the user out everywhere; group changes apply on their next request.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'signed-in',
     requestBody: {

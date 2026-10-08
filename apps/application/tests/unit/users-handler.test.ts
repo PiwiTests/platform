@@ -9,7 +9,8 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler module (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
-const { createUserRecord, updateUserRecord, deleteUserRecord } = await import('../../shared/handlers/users');
+const { createUserRecord, deleteUserRecord, findUserByEmail, updateUserRecord } =
+  await import('../../shared/handlers/users');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -82,17 +83,32 @@ describe('updateUserRecord — email ownership', () => {
 });
 
 describe('createUserRecord — email ownership', () => {
-  test('refuses an address another account already uses, ignoring case, and creates nobody', async () => {
-    await expect(
-      createUserRecord(db as any, { username: 'bob', password: 'x', role: 'member', email: 'ALICE@example.com' }),
-    ).rejects.toThrow('Email already in use');
-    expect(await db.select().from(schema.users).where(eq(schema.users.username, 'bob'))).toHaveLength(0);
+  const account = (username: string, email: string | null) => ({ username, password: 'x', role: 'member', email });
+
+  test('refuses an address another account already uses, ignoring case', async () => {
+    await expect(createUserRecord(db as any, account('alice2', 'ALICE@example.com'))).rejects.toThrow(
+      'Email already in use',
+    );
+    expect(await db.select().from(schema.users)).toHaveLength(1);
   });
 
-  test('accounts without an email never collide', async () => {
-    await createUserRecord(db as any, { username: 'bob', password: 'x', role: 'member', email: null });
-    const created = await createUserRecord(db as any, { username: 'carol', password: 'x', role: 'member' });
-    expect(created?.email).toBeNull();
+  test('creates an account with a free address', async () => {
+    const created = await createUserRecord(db as any, account('bob', 'bob@example.com'));
+    expect(created).toMatchObject({ username: 'bob', email: 'bob@example.com', emailVerified: false });
+  });
+
+  test('creates any number of accounts without an email', async () => {
+    await createUserRecord(db as any, account('bob', null));
+    await createUserRecord(db as any, account('carol', null));
+    expect(await db.select().from(schema.users)).toHaveLength(3);
+  });
+});
+
+describe('findUserByEmail', () => {
+  test('finds the account ignoring case, except the one excluded', async () => {
+    expect((await findUserByEmail(db as any, 'Alice@EXAMPLE.com'))?.id).toBe(1);
+    expect(await findUserByEmail(db as any, 'alice@example.com', 1)).toBeUndefined();
+    expect(await findUserByEmail(db as any, 'nobody@example.com')).toBeUndefined();
   });
 });
 

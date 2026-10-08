@@ -56,9 +56,11 @@ WHERE lower(email) IN (SELECT lower(email) FROM users GROUP BY lower(email) HAVI
 UPDATE users SET email = NULL, email_verified = 0 WHERE id = <id>;
 ```
 
-When one of them is an account an OAuth sign-in created by mistake, clear its address, then delete it from
-**Settings → Users** once the server runs: the person's next sign-in with that provider links it to their original
-account, provided that account verified its address.
+When one is an account an OAuth sign-in created by mistake, clear its address, then delete it from **Settings →
+Users** once the server runs: the person's next sign-in with that provider links their original account, if it verified
+its address.
+
+The same upgrade refuses invite, password reset and verification links emailed before it: send them again.
 
 ## A database that ran another build
 

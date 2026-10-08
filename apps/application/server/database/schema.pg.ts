@@ -1043,6 +1043,8 @@ export const accountTokens = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     purpose: text('purpose').notNull(), // 'reset' | 'verify' | 'invite'
     tokenHash: text('token_hash').notNull(), // SHA-256 of the emailed token
+    // The address the token was sent to: it acts only while the account still holds it.
+    email: text('email'),
     expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
     usedAt: timestamp('used_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })

@@ -14,6 +14,7 @@ import type { OAuthProfile } from '../../server/utils/oauth-helpers';
 // so clear it before oauth.ts (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
 const { findOrCreateOAuthUser, linkProviderToUser } = await import('../../server/utils/oauth');
+const { mintAccountToken, validateAccountToken } = await import('../../server/utils/account-tokens');
 
 const MIGRATIONS = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
 
@@ -68,7 +69,7 @@ describe('findOrCreateOAuthUser — email compared ignoring case', () => {
     expect(await db.select().from(schema.users)).toHaveLength(1);
   });
 
-  test('a later sign-in whose address differs only by case keeps the account verified', async () => {
+  test('a later sign-in whose address differs only by case keeps the account verified, its spelling and its links', async () => {
     const bob = await addUser({
       username: 'bob',
       email: 'Bob@corp.com',
@@ -76,6 +77,7 @@ describe('findOrCreateOAuthUser — email compared ignoring case', () => {
       oauthProvider: 'github',
       oauthProviderId: 'github-bob',
     });
+    const reset = await mintAccountToken(db, bob.id, 'reset', 'Bob@corp.com');
 
     const signedIn = await findOrCreateOAuthUser(
       profile({ provider: 'github', providerId: 'github-bob', emailVerified: false }),
@@ -84,6 +86,8 @@ describe('findOrCreateOAuthUser — email compared ignoring case', () => {
 
     expect(signedIn.id).toBe(bob.id);
     expect(signedIn.emailVerified).toBe(true);
+    expect(signedIn.email).toBe('Bob@corp.com');
+    expect(await validateAccountToken(db, reset, 'reset')).toMatchObject({ userId: bob.id });
   });
 });
 
@@ -174,5 +178,142 @@ describe('upgrading a database whose users share an address that differs only by
     await migrate(db, { migrationsFolder: MIGRATIONS });
 
     await expect(addUser({ username: 'bob2', email: 'BOB@corp.com' })).rejects.toThrow();
+  });
+});
+
+// A GitHub identity whose address the provider has not verified, the case the
+// tests below cover; `profile` above is a verified Google identity.
+const githubProfile = (over: Partial<OAuthProfile> = {}): OAuthProfile => ({
+  provider: 'github',
+  providerId: '583231',
+  email: 'alice@example.com',
+  emailVerified: false,
+  name: 'Alice',
+  avatar: '',
+  login: 'octocat',
+  ...over,
+});
+
+async function allUsers() {
+  return db.select().from(schema.users).orderBy(schema.users.id);
+}
+
+describe('findOrCreateOAuthUser — unverified provider email', () => {
+  test('an address no account holds is stored, unverified, and becomes the username', async () => {
+    const user = await findOrCreateOAuthUser(githubProfile(), db);
+    expect(user).toMatchObject({ username: 'alice@example.com', email: 'alice@example.com', emailVerified: false });
+  });
+
+  test.each(['alice@example.com', 'Alice@Example.COM'])(
+    'an address another account holds as %s gives a new account without an email',
+    async (stored) => {
+      await addUser({ id: 1, username: 'alice', email: stored, emailVerified: true });
+
+      const user = await findOrCreateOAuthUser(githubProfile(), db);
+
+      expect(user.id).not.toBe(1);
+      expect(user).toMatchObject({
+        username: 'octocat',
+        email: null,
+        emailVerified: false,
+        oauthProvider: 'github',
+        oauthProviderId: '583231',
+      });
+      const [existing] = await db.select().from(schema.users).where(eq(schema.users.id, 1));
+      expect(existing).toMatchObject({ email: stored, oauthProvider: null });
+    },
+  );
+
+  test('a taken username gets the first free numbered one', async () => {
+    await addUser({ id: 1, username: 'alice@example.com', email: null });
+    await addUser({ id: 2, username: 'alice@example.com-2', email: null });
+
+    const user = await findOrCreateOAuthUser(githubProfile(), db);
+
+    expect(user).toMatchObject({ username: 'alice@example.com-3', email: 'alice@example.com' });
+  });
+
+  test('without a login, a held address gives a username from the provider id', async () => {
+    await addUser({ id: 1, username: 'alice', email: 'alice@example.com' });
+
+    const user = await findOrCreateOAuthUser(githubProfile({ provider: 'google', login: undefined }), db);
+
+    expect(user).toMatchObject({ username: 'google-583231', email: null });
+  });
+
+  test('a second identity with the same unverified address gets an account without it', async () => {
+    const first = await findOrCreateOAuthUser(githubProfile(), db);
+    const second = await findOrCreateOAuthUser(githubProfile({ providerId: '999', login: 'octocat2' }), db);
+
+    expect(first.email).toBe('alice@example.com');
+    expect(second).toMatchObject({ username: 'octocat2', email: null });
+  });
+});
+
+describe('findOrCreateOAuthUser — no email address from the provider', () => {
+  test('a GitHub profile without an email takes its login as username and stores no email', async () => {
+    await addUser({ id: 1, username: 'octocat', email: null });
+
+    const user = await findOrCreateOAuthUser(githubProfile({ email: '' }), db);
+
+    expect(user).toMatchObject({ username: 'octocat-2', email: null, emailVerified: false });
+  });
+
+  test('a value that is not an address is never written to users.email', async () => {
+    const user = await findOrCreateOAuthUser(githubProfile({ email: 'octocat', emailVerified: true }), db);
+
+    expect(user).toMatchObject({ username: 'octocat', email: null, emailVerified: false });
+  });
+
+  test('a later sign-in clears a stored value that is not an address', async () => {
+    await addUser({
+      id: 1,
+      username: 'octocat',
+      email: 'octocat',
+      password: '',
+      oauthProvider: 'github',
+      oauthProviderId: '583231',
+    });
+
+    const user = await findOrCreateOAuthUser(githubProfile({ email: '' }), db);
+
+    expect(user).toMatchObject({ id: 1, email: null, emailVerified: false });
+  });
+});
+
+describe('findOrCreateOAuthUser — linked and verified accounts', () => {
+  test('a verified address links the account that verified it, ignoring case', async () => {
+    await addUser({ id: 1, username: 'alice', email: 'Alice@Example.com', emailVerified: true });
+
+    const user = await findOrCreateOAuthUser(githubProfile({ emailVerified: true }), db);
+
+    expect(user).toMatchObject({ id: 1, oauthProvider: 'github', oauthProviderId: '583231' });
+    expect(await allUsers()).toHaveLength(1);
+  });
+
+  test('a returning identity signs in to its account even when its new address is held elsewhere', async () => {
+    await addUser({
+      id: 1,
+      username: 'alice@example.com',
+      email: 'alice@example.com',
+      emailVerified: true,
+      password: '',
+      oauthProvider: 'github',
+      oauthProviderId: '583231',
+    });
+    await addUser({ id: 2, username: 'bob', email: 'bob@example.com' });
+
+    const user = await findOrCreateOAuthUser(githubProfile({ email: 'BOB@example.com', emailVerified: true }), db);
+
+    expect(user).toMatchObject({ id: 1, email: 'alice@example.com', emailVerified: true });
+    expect(await allUsers()).toHaveLength(2);
+  });
+
+  test('a returning identity signs in to the same account', async () => {
+    const first = await findOrCreateOAuthUser(githubProfile(), db);
+    const again = await findOrCreateOAuthUser(githubProfile(), db);
+
+    expect(again.id).toBe(first.id);
+    expect(await allUsers()).toHaveLength(1);
   });
 });
