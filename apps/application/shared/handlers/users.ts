@@ -26,6 +26,15 @@ export async function createUserRecord(
 ) {
   const existing = await db.select().from(users).where(eq(users.username, data.username));
   if (existing.length > 0) throw new Error('Username already exists');
+  // One account per address, ignoring case, as in updateUserRecord: OAuth sign-in links by email.
+  if (data.email) {
+    const taken = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(sql`lower(${users.email}) = lower(${data.email})`)
+      .limit(1);
+    if (taken.length > 0) throw new Error('Email already in use');
+  }
   const [created] = await db
     .insert(users)
     .values({

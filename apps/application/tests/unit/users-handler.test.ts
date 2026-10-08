@@ -9,7 +9,7 @@ import * as schema from '../../server/database/schema.sqlite';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler module (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
-const { updateUserRecord, deleteUserRecord } = await import('../../shared/handlers/users');
+const { createUserRecord, updateUserRecord, deleteUserRecord } = await import('../../shared/handlers/users');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -78,6 +78,21 @@ describe('updateUserRecord — email ownership', () => {
     await updateUserRecord(db as any, 2, { email: null });
     const updated = await updateUserRecord(db as any, 1, { email: null });
     expect(updated?.email).toBeNull();
+  });
+});
+
+describe('createUserRecord — email ownership', () => {
+  test('refuses an address another account already uses, ignoring case, and creates nobody', async () => {
+    await expect(
+      createUserRecord(db as any, { username: 'bob', password: 'x', role: 'member', email: 'ALICE@example.com' }),
+    ).rejects.toThrow('Email already in use');
+    expect(await db.select().from(schema.users).where(eq(schema.users.username, 'bob'))).toHaveLength(0);
+  });
+
+  test('accounts without an email never collide', async () => {
+    await createUserRecord(db as any, { username: 'bob', password: 'x', role: 'member', email: null });
+    const created = await createUserRecord(db as any, { username: 'carol', password: 'x', role: 'member' });
+    expect(created?.email).toBeNull();
   });
 });
 
