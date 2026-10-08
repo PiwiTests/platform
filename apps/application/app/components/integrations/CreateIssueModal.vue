@@ -31,6 +31,8 @@ const emit = defineEmits<{
   /** A ticket was created (key, url) or an existing one linked. */
   created: [{ key: string; url: string }];
   linked: [{ key: string; url: string }];
+  /** The tracker did not answer yet: the filing is queued and the page shows it. */
+  queued: [];
 }>();
 
 const toast = useToast();
@@ -39,6 +41,21 @@ const loading = ref(false);
 const creating = ref(false);
 const error = ref<string | null>(null);
 const draft = ref<IssueDraft | null>(null);
+/** The error line at the top of the body, scrolled into view when a create or a link fails. */
+const errorEl = ref<HTMLElement | null>(null);
+
+/** What failed, as the error alert's title. */
+const errorTitle = ref('Could not create the issue');
+
+/** Show a failure where the reader is looking: the top of the body, scrolled into view. */
+function showError(message: string, title = 'Could not create the issue') {
+  error.value = message;
+  errorTitle.value = title;
+  void nextTick(() => errorEl.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+}
+
+/** What an already-filed issue was filed for, in the toast that names it. */
+const filedFor = computed(() => (props.entityType === 'bug_report' ? 'this bug report' : 'this cluster'));
 
 // The editable form, seeded from the draft.
 const title = ref('');
@@ -132,6 +149,7 @@ function applyDraft(d: IssueDraft) {
 async function loadDraft() {
   loading.value = true;
   error.value = null;
+  draft.value = null;
   try {
     const params = new URLSearchParams({ entityType: props.entityType, entityId: String(props.entityId) });
     if (connectionId.value) params.set('connectionId', String(connectionId.value));
@@ -241,6 +259,7 @@ watch(locale, () => void refreshPreview());
 async function create() {
   if (!canCreate.value) return;
   creating.value = true;
+  error.value = null;
   try {
     const res = await $fetch<CreateIssueResponse>('/api/integrations/issues', {
       method: 'POST',
@@ -260,8 +279,8 @@ async function create() {
     });
     if (res.status === 'done' && res.key && res.url) {
       toast.add({
-        title: `${res.key} created`,
-        color: 'success',
+        title: res.alreadyFiled ? `${res.key} was already filed for ${filedFor.value}` : `${res.key} created`,
+        color: res.alreadyFiled ? 'info' : 'success',
         actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
       });
       emit('created', { key: res.key, url: res.url });
@@ -269,18 +288,19 @@ async function create() {
     } else if (res.status === 'pending') {
       toast.add({
         title: 'Filing queued',
-        description: 'Jira did not answer immediately; Piwi will retry and link the issue when it lands.',
+        description: 'Jira did not answer yet. Piwi retries and links the issue once it is created.',
         color: 'info',
       });
+      emit('queued');
       open.value = false;
     } else {
-      error.value = res.error || 'Could not create the issue';
+      showError(res.error || 'The tracker gave no reason.');
       fieldProblems.value = [...(res.missingFields ?? []), ...(res.fieldErrors ?? [])];
       // The screen may have changed since it was read: read it again.
       if (fieldProblems.value.length) void reloadFields();
     }
   } catch (err) {
-    error.value = errorMessage(err);
+    showError(errorMessage(err));
   } finally {
     creating.value = false;
   }
@@ -288,6 +308,7 @@ async function create() {
 
 async function linkExisting(candidate: ExistingIssueCandidate) {
   creating.value = true;
+  error.value = null;
   try {
     await $fetch('/api/links', {
       method: 'POST',
@@ -302,7 +323,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
     emit('linked', { key: candidate.key, url: candidate.url });
     open.value = false;
   } catch (err) {
-    error.value = errorMessage(err);
+    showError(errorMessage(err), `Could not link ${candidate.key}`);
   } finally {
     creating.value = false;
   }
@@ -331,6 +352,12 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
       <div v-else class="space-y-4">
         <div class="flex justify-end -mb-2">
           <HelpHint topic="integrations.create-issue" />
+        </div>
+        <!-- A failed create or link shows first, where the reader looks. -->
+        <div v-if="error" ref="errorEl" class="scroll-mt-2" data-testid="create-issue-error">
+          <UAlert color="error" variant="subtle" icon="i-lucide-circle-alert" :title="errorTitle">
+            <template #description><ErrorText :text="error" mode="block" /></template>
+          </UAlert>
         </div>
         <!-- Dedupe: lead with an issue that already tracks this failure. -->
         <UAlert
@@ -458,8 +485,6 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <p class="text-xs font-medium text-gray-500 mb-1.5">Preview</p>
             <MarkdownPreview :text="draft.markdown" max-height="16rem" />
           </div>
-
-          <ErrorText v-if="error" :text="error" />
         </template>
       </div>
     </template>

@@ -1946,9 +1946,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (outcome.fieldErrors?.length) {
       throw new Error(`${outcome.error} Pass values Jira accepts in \`fields\`, keyed by field id.`);
     }
-    if (outcome.status !== 'done') {
-      throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
+    if (outcome.status === 'pending') {
+      throw new Error(
+        `Filing the issue is queued: the tracker did not answer${outcome.error ? ` (${outcome.error})` : ''}. Piwi retries it and links the issue to the cluster once it is created.`,
+      );
     }
+    if (outcome.status !== 'done') throw new Error(outcome.error || 'Filing the issue did not complete');
     return dropNulls({
       key: outcome.key,
       url: outcome.url,

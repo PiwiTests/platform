@@ -5,7 +5,7 @@
  * serves the user-pinned link CRUD) because these rows carry a `connection_id`
  * and an `origin` a person never sets by hand.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { entityLinks } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { LinkEntityType } from '#shared/handlers/links';
@@ -26,6 +26,46 @@ function fkFieldFor(entityType: LinkEntityType, entityId: number): Record<string
   }
 }
 
+/** The `entity_links` column holding the given entity type's id. */
+function fkColumnFor(entityType: LinkEntityType) {
+  switch (entityType) {
+    case 'test_run':
+      return entityLinks.testRunId;
+    case 'test_runs_case':
+      return entityLinks.testRunsCaseId;
+    case 'failure_cluster':
+      return entityLinks.failureClusterId;
+    case 'bug_report':
+      return entityLinks.bugReportId;
+    default:
+      return entityLinks.testCaseId;
+  }
+}
+
+/**
+ * Whether the link to an issue Piwi filed is still on its entity: a person can
+ * remove it, and the filing then no longer answers a new create. A filing whose
+ * result names neither key nor URL cannot be checked and counts as linked.
+ */
+export async function createdLinkExists(
+  db: DbClient,
+  entityType: LinkEntityType,
+  entityId: number,
+  issue: { key?: string | null; url?: string | null } | null,
+): Promise<boolean> {
+  const matches = [
+    issue?.key ? eq(entityLinks.key, issue.key) : undefined,
+    issue?.url ? eq(entityLinks.url, issue.url) : undefined,
+  ].filter((m) => m !== undefined);
+  if (matches.length === 0) return true;
+  const [row] = await db
+    .select({ id: entityLinks.id })
+    .from(entityLinks)
+    .where(and(eq(fkColumnFor(entityType), entityId), or(...matches)))
+    .limit(1);
+  return Boolean(row);
+}
+
 export interface CreatedIssueLink {
   provider: string;
   url: string;
@@ -34,6 +74,8 @@ export interface CreatedIssueLink {
   title: string | null;
   statusText: string | null;
   statusColor: string | null;
+  /** The tracker's status category at creation, so the first sync can tell a move from it. */
+  statusCategory?: string | null;
 }
 
 /**
@@ -66,6 +108,7 @@ export async function writeCreatedIssueLink(
       externalId: input.issue.externalId,
       origin: 'created',
       createdBy: input.createdBy,
+      metadata: input.issue.statusCategory ? ({ statusCategory: input.issue.statusCategory } as never) : null,
       unfurledAt: new Date(),
     })
     .returning({ id: entityLinks.id });

@@ -1,5 +1,5 @@
-import { and, desc, inArray, isNotNull } from 'drizzle-orm';
-import { entityLinks } from '../../server/database/schema';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { entityLinks, integrationActions, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 
 /**
@@ -56,4 +56,35 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
     });
   }
   return out;
+}
+
+/**
+ * The clusters whose issue filing is queued: the tracker did not answer the
+ * create yet and the outbox retries it. The pages show the filing rather than
+ * offering a second Create that would wait on the same action.
+ */
+export async function clusterIssueFilingsQueued(db: DrizzleDB, clusterIds: number[]): Promise<Set<number>> {
+  const ids = [...new Set(clusterIds.filter((id): id is number => typeof id === 'number'))];
+  if (ids.length === 0) return new Set();
+  const queued = and(
+    eq(integrationActions.kind, 'create-issue'),
+    inArray(integrationActions.status, ['pending', 'processing']),
+  );
+  const [onCluster, onExecution] = await Promise.all([
+    db
+      .select({ clusterId: integrationActions.entityId })
+      .from(integrationActions)
+      .where(
+        and(queued, eq(integrationActions.entityType, 'failure_cluster'), inArray(integrationActions.entityId, ids)),
+      ),
+    // A filing recorded against one of the cluster's executions counts for the cluster.
+    db
+      .select({ clusterId: testRunsCases.failureClusterId })
+      .from(integrationActions)
+      .innerJoin(testRunsCases, eq(testRunsCases.id, integrationActions.entityId))
+      .where(
+        and(queued, eq(integrationActions.entityType, 'test_runs_case'), inArray(testRunsCases.failureClusterId, ids)),
+      ),
+  ]);
+  return new Set([...onCluster, ...onExecution].map((r) => r.clusterId).filter((id): id is number => id != null));
 }

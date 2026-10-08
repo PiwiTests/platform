@@ -48,7 +48,7 @@ import type { FlatStep } from '@piwitests/core/step-analysis';
 import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
-import { clusterKnownIssues } from './known-issues';
+import { clusterIssueFilingsQueued, clusterKnownIssues } from './known-issues';
 
 /**
  * A test case with its header stats, recent executions and clusters. Executions
@@ -340,6 +340,7 @@ export async function getTestRunCase(
         fixLandedAt: cluster.fixLandedAt ?? null,
         assignee: cluster.assignee ?? null,
         knownIssue: (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null,
+        issueFilingQueued: (await clusterIssueFilingsQueued(db, [cluster.id])).has(cluster.id),
       };
     }
   }

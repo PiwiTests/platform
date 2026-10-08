@@ -978,6 +978,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       :entity-id="issueModalClusterId"
       @created="onIssueCreated"
       @linked="onIssueCreated"
+      @queued="onIssueCreated"
     />
   </SectionCard>
 </template>

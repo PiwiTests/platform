@@ -102,6 +102,7 @@ const failureCluster = computed(() => {
       summary?: string | null;
     } | null;
     knownIssue?: KnownIssueRef | null;
+    issueFilingQueued?: boolean;
   } | null;
 });
 
@@ -510,6 +511,12 @@ const moreMenuItems = computed(() => {
       icon: 'i-simple-icons-jira',
       to: knownIssue.value.url,
       target: '_blank',
+    });
+  } else if (canCreateIssue.value && hasTracker.value && failureCluster.value?.issueFilingQueued) {
+    items.push({
+      label: 'Filing queued · Retry',
+      icon: 'i-simple-icons-jira',
+      onSelect: () => (issueModalOpen.value = true),
     });
   } else if (canCreateIssue.value && hasTracker.value && failureCluster.value) {
     items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
@@ -1021,5 +1028,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
     :entity-id="testCase.id"
     @created="onIssueCreated"
     @linked="onIssueCreated"
+    @queued="onIssueCreated"
   />
 </template>

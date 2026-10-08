@@ -1087,6 +1087,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   }>;
   /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
   links: EntityLinkInfo[];
+  /** An issue filing for this cluster waits on the tracker; the outbox retries it. */
+  issueFilingQueued: boolean;
   /** Effective owner of the cluster's tests: `piwi:owner` annotation or CODEOWNERS. */
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   /** Inbox triage: assignee (overrides the owner) and snooze state. */

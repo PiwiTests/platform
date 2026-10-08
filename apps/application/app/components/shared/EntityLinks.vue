@@ -15,7 +15,7 @@ const emit = defineEmits<{
   updated: [];
 }>();
 
-const { copy } = useCopy();
+const toast = useToast();
 
 const localLinks = ref<EntityLinkInfo[]>(props.links ?? []);
 const newUrl = ref('');
@@ -34,6 +34,11 @@ const previewIcon = computed(() => {
   return previewProvider.value ? getProviderIcon(previewProvider.value as any) : null;
 });
 
+// The server takes a full http(s) URL; a bare key ("PROJ-12") is caught here
+// with a hint rather than refused after Add.
+const isUrl = computed(() => /^https?:\/\/\S+$/i.test(newUrl.value.trim()));
+const showUrlHint = computed(() => newUrl.value.trim().length > 0 && !isUrl.value);
+
 async function loadLinks() {
   const data = await $fetch<{ items: EntityLinkInfo[] }>('/api/links', {
     params: { entityType: props.entityType, entityId: props.entityId },
@@ -42,19 +47,20 @@ async function loadLinks() {
 }
 
 async function addLink() {
-  if (!newUrl.value || adding.value) return;
+  if (!isUrl.value || adding.value) return;
   adding.value = true;
   try {
     const data = await $fetch<{ link: EntityLinkInfo }>('/api/links', {
       method: 'POST',
-      body: { entityType: props.entityType, entityId: props.entityId, url: newUrl.value },
+      body: { entityType: props.entityType, entityId: props.entityId, url: newUrl.value.trim() },
     });
     localLinks.value.push(data.link);
     newUrl.value = '';
     addLinkOpen.value = false;
+    toast.add({ title: data.link.key ? `Linked ${data.link.key}` : 'Link added', color: 'success' });
     emit('updated');
-  } catch (e: any) {
-    copy(e?.data?.message || 'Failed to add link', { toast: true });
+  } catch (e) {
+    toast.add({ title: 'Could not add the link', description: errorMessage(e), color: 'error' });
   } finally {
     adding.value = false;
   }
@@ -65,8 +71,8 @@ async function removeLink(id: number) {
     await $fetch(`/api/links/${id}`, { method: 'DELETE' });
     localLinks.value = localLinks.value.filter((l) => l.id !== id);
     emit('updated');
-  } catch {
-    copy('Failed to remove link', { toast: true });
+  } catch (e) {
+    toast.add({ title: 'Could not remove the link', description: errorMessage(e), color: 'error' });
   }
 }
 
@@ -112,11 +118,13 @@ watch(
             />
           </div>
 
+          <p v-if="showUrlHint" class="text-xs text-muted" data-testid="link-url-hint">
+            Paste the full URL, for example https://acme.atlassian.net/browse/PROJ-12.
+          </p>
+
           <div class="flex justify-end gap-2">
             <UButton size="xs" variant="ghost" color="neutral" @click="addLinkOpen = false"> Cancel </UButton>
-            <UButton size="xs" color="primary" type="submit" :loading="adding" :disabled="!newUrl.trim()">
-              Add
-            </UButton>
+            <UButton size="xs" color="primary" type="submit" :loading="adding" :disabled="!isUrl"> Add </UButton>
           </div>
         </form>
       </template>

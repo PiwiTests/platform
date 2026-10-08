@@ -3,7 +3,10 @@
  * queued action and one immediate attempt, so a click resolves in a single
  * round-trip when Jira is up. The body and labels are rebuilt server-side from
  * the entity — the client's edits pick the fields, never the evidence — and the
- * dedupe key makes a second click a no-op once an issue exists.
+ * dedupe key makes a second click a no-op once an issue exists. The key is the
+ * cluster's for a cluster and every one of its executions, so filing from the
+ * cluster page and from an execution never files twice; an issue whose link was
+ * removed no longer counts, and the next create files a new one.
  *
  * The fields the tracker requires are checked first: the project's field
  * defaults and the request's own values fill them, and a create that would still
@@ -21,11 +24,13 @@ import { clusterShareTokenMinter } from './share-url';
 import {
   enqueueOrReplaceAction,
   findActionByKey,
+  retireAction,
   runActionNow,
   type CreateIssueActionPayload,
   type CreateIssueResult,
 } from './actions';
 import { forgetCreateFields, getCreateFields } from './fields';
+import { createdLinkExists } from './entity-links';
 import {
   fieldPayload,
   hasFieldValue,
@@ -64,6 +69,8 @@ export interface CreateIssueOutcome {
   status: 'done' | 'pending' | 'failed' | 'skipped';
   key?: string;
   url?: string;
+  /** The issue was filed earlier for the same cluster (or bug report); nothing new was filed. */
+  alreadyFiled?: boolean;
   error?: string;
   /** Required fields the create would leave empty — nothing was sent to the tracker. */
   missingFields?: IssueFieldProblem[];
@@ -172,7 +179,8 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
     labels,
     componentId: route?.componentId ?? null,
     // The created known-issue link always attaches to the cluster, so the chip
-    // shows on the cluster page and the inbox regardless of the entity clicked.
+    // shows on the cluster page and the inbox regardless of the entity clicked,
+    // and the filing is deduplicated on the cluster for the same reason.
     linkEntityType: 'failure_cluster',
     linkEntityId: target.clusterId,
   });
@@ -209,14 +217,17 @@ interface IssueToFile {
   document: CreateIssueActionPayload['document'];
   labels: string[];
   componentId: string | null;
+  /** The entity the issue is filed for and linked to: the cluster, or the bug report. */
   linkEntityType: CreateIssueActionPayload['linkEntityType'];
   linkEntityId: number;
 }
 
 /**
- * File the issue: the one already filed for this entity when there is one,
- * else a refusal naming the required fields still empty, else a `create-issue`
- * action enqueued and run now, its outcome mapped for the caller.
+ * File the issue: the one already filed for the cluster (or bug report) while
+ * its link is still there, else a refusal naming the required fields still
+ * empty, else a `create-issue` action enqueued and run now, its outcome mapped
+ * for the caller. A filing whose link a person removed is retired first, so the
+ * request files a new issue instead of answering with the unlinked one.
  */
 async function fileIssue(
   db: DbClient,
@@ -224,12 +235,30 @@ async function fileIssue(
   binding: ResolvedProjectIntegration,
   issue: IssueToFile,
 ): Promise<CreateIssueOutcome> {
-  // An issue already filed for this entity is the answer, whatever the request says.
-  const dedupeKey = createIssueKey(params.entityType, params.entityId, params.connectionId);
-  const filed = await findActionByKey(db, dedupeKey);
+  // An issue already filed for this cluster is the answer, whatever the request
+  // says, while its link is still on the cluster.
+  const dedupeKey = createIssueKey(issue.linkEntityType, issue.linkEntityId, params.connectionId);
+  // A filing recorded against the execution it was asked from still answers for it.
+  const filed =
+    (await findActionByKey(db, dedupeKey)) ??
+    (params.entityType === 'test_runs_case'
+      ? await findActionByKey(db, createIssueKey('test_runs_case', params.entityId, params.connectionId))
+      : null);
+  // A filing skipped for want of a usable connection never blocks a new one.
+  if (filed?.status === 'skipped') await retireAction(db, filed.id);
   if (filed?.status === 'done') {
     const result = filed.result as CreateIssueResult | null;
-    return { actionId: filed.id, status: 'done', key: result?.key, url: result?.url, projectId: issue.projectId };
+    if (await createdLinkExists(db, issue.linkEntityType, issue.linkEntityId, result)) {
+      return {
+        actionId: filed.id,
+        status: 'done',
+        key: result?.key,
+        url: result?.url,
+        alreadyFiled: true,
+        projectId: issue.projectId,
+      };
+    }
+    await retireAction(db, filed.id);
   }
 
   // Required fields: refuse before calling Jira when the defaults and the
@@ -270,8 +299,8 @@ async function fileIssue(
     connectionId: params.connectionId,
     projectId: issue.projectId,
     kind: 'create-issue',
-    entityType: params.entityType,
-    entityId: params.entityId,
+    entityType: issue.linkEntityType,
+    entityId: issue.linkEntityId,
     dedupeKey,
     payload,
     requestedBy: params.requestedBy ?? null,
@@ -283,6 +312,10 @@ async function fileIssue(
   if (outcome.status === 'done') {
     const result = outcome.result as CreateIssueResult | undefined;
     return { ...base, status: 'done', key: result?.key, url: result?.url };
+  }
+  // The tracker did not answer and the outbox tries again: the filing is queued.
+  if (outcome.status === 'failed' && outcome.retrying && !outcome.fieldErrors) {
+    return { ...base, status: 'pending', error: outcome.error };
   }
   if (outcome.status === 'failed') {
     // A refusal naming fields means the cached screen may be stale.

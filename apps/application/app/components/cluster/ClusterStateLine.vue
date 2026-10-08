@@ -207,9 +207,22 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
     </span>
 
     <div v-if="hasControls" class="flex items-center gap-1.5 ml-auto shrink-0">
+      <!-- A filing the tracker has not answered yet: the outbox retries it, and Retry
+           sends it again now (the same queued filing, never a second one). -->
+      <UButton
+        v-if="canCreateIssue && hasTracker && !knownIssue && cluster.issueFilingQueued"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        data-shot="cluster-issue-queued"
+        title="Jira did not answer yet. Piwi retries and links the issue once it is created; Retry sends it again now."
+        @click="issueModalOpen = true"
+      >
+        Filing queued · Retry
+      </UButton>
       <!-- Create issue is the primary action while the cluster has no ticket. -->
       <UButton
-        v-if="canCreateIssue && hasTracker && !knownIssue"
+        v-else-if="canCreateIssue && hasTracker && !knownIssue"
         size="xs"
         icon="i-simple-icons-jira"
         data-shot="cluster-create-issue"
@@ -318,6 +331,7 @@ async function snoozeFromTriage(option: SnoozeOption | null) {
       :entity-id="cluster.id"
       @created="onIssueCreated"
       @linked="onIssueCreated"
+      @queued="onIssueCreated"
     />
   </div>
 </template>

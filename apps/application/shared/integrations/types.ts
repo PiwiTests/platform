@@ -192,6 +192,8 @@ export interface CreateIssueResponse {
   status: 'done' | 'pending' | 'failed' | 'skipped';
   key?: string;
   url?: string;
+  /** The issue was filed earlier for the same cluster (or bug report); nothing new was filed. */
+  alreadyFiled?: boolean;
   error?: string;
   /** Required fields the create would leave empty — nothing was sent to the tracker. */
   missingFields?: IssueFieldProblem[];

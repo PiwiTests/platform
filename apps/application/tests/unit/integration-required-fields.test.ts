@@ -230,7 +230,9 @@ describe('refusals', () => {
   test('a server error is retried later, not failed', async () => {
     failNextWith = 503;
     const outcome = await create(4, { fields: { customfield_10050: { value: { id: '10100' }, label: 'Critical' } } });
-    expect(outcome?.status).toBe('failed');
+    // The filing is queued, with the tracker's answer, rather than failed.
+    expect(outcome?.status).toBe('pending');
+    expect(outcome?.error).toMatch(/503/);
     const [row] = await db.select().from(schema.integrationActions).where(eq(schema.integrationActions.entityId, 4));
     expect(row).toMatchObject({ status: 'pending', attempts: 1 });
 

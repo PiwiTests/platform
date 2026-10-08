@@ -61,6 +61,51 @@ describe('cluster-state ticket-done reconcile', () => {
     expect(state.sentence).toContain('PROJ-123 is Done');
   });
 
+  test('a regression under a Done ticket keeps the regression and notes the ticket', () => {
+    const state = computeClusterState(
+      {
+        ...base,
+        fixVerification: 'regressed',
+        fixCommit: 'abc1234def',
+        regressedSinceRunId: 10,
+        knownIssue: { key: 'PROJ-123', statusCategory: 'done' },
+      },
+      project,
+    );
+    expect(state.kind).toBe('regressed');
+    expect(state.action).toBeNull();
+    expect(state.sentence).toContain('the fix did not hold');
+    expect(state.sentence).toContain('PROJ-123 is marked Done.');
+  });
+
+  test('a cluster that failed in the latest run keeps failing under a Done ticket', () => {
+    const state = computeClusterState(
+      { ...base, lastSeenRunId: 30, lastSeenAt: days(0), knownIssue: { key: 'PROJ-123', statusCategory: 'done' } },
+      project,
+    );
+    expect(state.kind).toBe('failing');
+    expect(state.action).toBeNull();
+    expect(state.sentence).toMatch(/^Still failing/);
+    expect(state.sentence).toContain('PROJ-123 is marked Done.');
+  });
+
+  test('a run still in progress never counts as one the failure skipped', () => {
+    // Run 40 is running; the cluster failed in run 30, the newest finished one.
+    const state = computeClusterState(
+      { ...base, lastSeenRunId: 30, lastSeenAt: days(0), knownIssue: { key: 'PROJ-123', statusCategory: 'done' } },
+      { runIdsNewestFirst: [40, 30, 20, 10], latestFinishedRunId: 30, now },
+    );
+    expect(state.kind).not.toBe('ticket-done');
+    expect(state.sentence).toContain('PROJ-123 is marked Done.');
+
+    // Once run 40 finished without the failure, the reconcile is offered.
+    const after = computeClusterState(
+      { ...base, lastSeenRunId: 30, lastSeenAt: days(1), knownIssue: { key: 'PROJ-123', statusCategory: 'done' } },
+      { runIdsNewestFirst: [40, 30, 20, 10], latestFinishedRunId: 40, now },
+    );
+    expect(after.kind).toBe('ticket-done');
+  });
+
   test('a non-done ticket does not trigger the reconcile', () => {
     const state = computeClusterState(
       { ...base, knownIssue: { key: 'PROJ-123', statusCategory: 'indeterminate' } },

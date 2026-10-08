@@ -17,7 +17,7 @@ import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
 import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
-import { isTrackerLink } from './known-issues';
+import { clusterIssueFilingsQueued, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
   getQuarantinedCaseIds,
@@ -31,6 +31,7 @@ import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { computeClusterState, type ClusterState } from '#shared/cluster-state';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
@@ -163,8 +164,12 @@ export async function getFailureCluster(
   // chip and the per-test / "Quarantine all affected" actions on the page.
   const quarantinedIds = await getQuarantinedCaseIds(db, cluster.projectId);
 
-  // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.).
-  const links = await db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId));
+  // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.), and
+  // whether a filing for it is waiting on the tracker.
+  const [links, filingsQueued] = await Promise.all([
+    db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId)),
+    clusterIssueFilingsQueued(db, [clusterId]),
+  ]);
 
   // The newest tracker link's status drives the "ticket is Done — reconcile?"
   // state line: a link the sync can write back through (Jira, or one with a connection).
@@ -186,7 +191,7 @@ export async function getFailureCluster(
   // The project's recent runs, newest first — the frame for both the occurrence
   // sparkline (last 20) and the "still failing / quiet" decision.
   const projectRuns = await db
-    .select({ id: testRuns.id, startedAt: testRuns.startTime })
+    .select({ id: testRuns.id, startedAt: testRuns.startTime, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, cluster.projectId))
     .orderBy(desc(testRuns.startTime))
@@ -227,7 +232,12 @@ export async function getFailureCluster(
       quarantinedTests: quarantinedCount,
       knownIssue: reconcileKnownIssue,
     },
-    { runIdsNewestFirst: projectRuns.map((r) => r.id), now: opts.now },
+    {
+      runIdsNewestFirst: projectRuns.map((r) => r.id),
+      latestFinishedRunId:
+        projectRuns.find((r) => !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(r.status))?.id ?? null,
+      now: opts.now,
+    },
   );
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
@@ -319,6 +329,7 @@ export async function getFailureCluster(
       quarantined: quarantinedIds.has(t.testCaseId),
     })),
     links,
+    issueFilingQueued: filingsQueued.has(clusterId),
     owner,
     clusterState,
     occurrenceSeries,

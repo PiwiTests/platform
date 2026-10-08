@@ -298,6 +298,7 @@ async function setStatus(status: 'open' | 'dismissed') {
         :entity-id="report.id"
         @created="onIssueCreated"
         @linked="onIssueCreated"
+        @queued="onIssueCreated"
       />
     </template>
   </UDashboardPanel>

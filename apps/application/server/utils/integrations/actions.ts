@@ -155,6 +155,23 @@ export async function findActionByKey(db: DbClient, dedupeKey: string): Promise<
 }
 
 /**
+ * Free a done action's dedupe key, so the same write can be made again: the
+ * issue it filed was unlinked, and a new filing is wanted. The row stays, with
+ * its result, as the record of what was filed.
+ */
+export async function retireAction(db: DbClient, id: number): Promise<void> {
+  const [row] = await db
+    .select({ dedupeKey: integrationActions.dedupeKey })
+    .from(integrationActions)
+    .where(eq(integrationActions.id, id));
+  if (!row) return;
+  await db
+    .update(integrationActions)
+    .set({ dedupeKey: `${row.dedupeKey}:retired:${id}` })
+    .where(eq(integrationActions.id, id));
+}
+
+/**
  * Enqueue an action, or give an earlier one with the same dedupe key a new
  * payload when it has already failed: a person who changes the request after a
  * refusal (another issue type, a filled-in field) sends the new request, not
@@ -263,6 +280,7 @@ async function applyCreateIssue(
         title: issue.title,
         statusText: issue.status,
         statusColor: issue.statusColor,
+        statusCategory: issue.statusCategory ?? null,
       },
     });
     await tx
@@ -351,7 +369,14 @@ async function applyTransition(tracker: IssueTracker, action: IntegrationAction)
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
   | { status: 'skipped'; reason: string }
-  | { status: 'failed'; error: string; final?: boolean; fieldErrors?: Record<string, string> };
+  | {
+      status: 'failed';
+      error: string;
+      final?: boolean;
+      /** The attempt failed but the action stays queued: the outbox tries it again. */
+      retrying?: boolean;
+      fieldErrors?: Record<string, string>;
+    };
 
 /**
  * Run one action once, after the caller has claimed its row. Marks the row
@@ -424,7 +449,13 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       .where(eq(integrationActions.id, action.id));
     console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
     const fieldErrors = errorFields(err);
-    return { status: 'failed', error: message, final, ...(fieldErrors ? { fieldErrors } : {}) };
+    return {
+      status: 'failed',
+      error: message,
+      final,
+      retrying: next.status !== 'failed',
+      ...(fieldErrors ? { fieldErrors } : {}),
+    };
   }
 }
 

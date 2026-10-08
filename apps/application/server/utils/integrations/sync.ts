@@ -6,9 +6,12 @@
  * in the inbox as open.
  *
  * Links on an open cluster refresh every sweep; links on a resolved or ignored
- * cluster refresh at most daily. When the ticket has moved to Done the
+ * cluster refresh at most daily. When the ticket moves to Done the
  * resolve-on-close policy closes the cluster (otherwise its state line offers
- * the reconcile), and a ticket reopened under a resolved cluster reopens it.
+ * the reconcile), and a ticket moved out of Done under a resolved cluster
+ * reopens it. Only a move counts, against the category the last sync saw, so a
+ * cluster a person reopened or that regressed under a closed ticket is not
+ * pulled back on every sweep; a regressed cluster is never closed by its ticket.
  * Work is bounded per sweep and a connection's failure is recorded on its
  * `last_error` rather than failing the whole sweep.
  */
@@ -31,6 +34,7 @@ interface LinkCluster {
   projectId: number;
   status: string;
   triageNote: string | null;
+  fixVerification: string | null;
 }
 
 /** Load the cluster (if any) each link is scoped to, keyed by link id. */
@@ -44,6 +48,7 @@ async function clustersForLinks(db: DbClient, links: EntityLink[]): Promise<Map<
       projectId: failureClusters.projectId,
       status: failureClusters.status,
       triageNote: failureClusters.triageNote,
+      fixVerification: failureClusters.fixVerification,
     })
     .from(failureClusters)
     .where(inArray(failureClusters.id, clusterIds));
@@ -96,11 +101,19 @@ async function syncOneLink(
     return;
   }
   if (!cluster) return;
+  const move = ticketMove(previousCategory, issue.statusCategory);
+  if (!move) return;
   const binding = await bindingFor(cluster.projectId);
 
-  // Ticket moved to Done → resolve the cluster when the policy is on. Without
-  // it, the cluster page's state line offers the reconcile instead.
-  if (issue.statusCategory === 'done' && cluster.status === 'open' && binding.policies.resolveOnClose) {
+  // Ticket moved to Done → resolve the cluster when the policy is on, unless the
+  // failure came back after its fix. Without the policy, the cluster page's state
+  // line offers the reconcile instead.
+  if (
+    move === 'done' &&
+    cluster.status === 'open' &&
+    cluster.fixVerification !== 'regressed' &&
+    binding.policies.resolveOnClose
+  ) {
     await db
       .update(failureClusters)
       .set({
@@ -112,9 +125,9 @@ async function syncOneLink(
     return;
   }
 
-  // Ticket reopened while the cluster is resolved → reopen it with a note,
-  // mirroring the regression reopen.
-  if (issue.statusCategory !== 'done' && cluster.status === 'resolved' && binding.policies.reopenOnTicketReopen) {
+  // Ticket moved out of Done while the cluster is resolved → reopen it with a
+  // note, mirroring the regression reopen.
+  if (move === 'reopened' && cluster.status === 'resolved' && binding.policies.reopenOnTicketReopen) {
     await db
       .update(failureClusters)
       .set({

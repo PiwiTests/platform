@@ -218,6 +218,14 @@ export async function demoCreateIssue(
   }
 
   const clusterId = (await resolveClusterId(db, entityType, entityId)) ?? entityId;
+
+  // Like the server, the cluster and its executions share one filing while its link is there.
+  const [filed] = await db
+    .select()
+    .from(entityLinks)
+    .where(and(eq(entityLinks.failureClusterId, clusterId), eq(entityLinks.origin, 'created')));
+  if (filed?.key) return { actionId: filed.id, status: 'done', key: filed.key, url: filed.url, alreadyFiled: true };
+
   const built =
     entityType === 'failure_cluster'
       ? await buildClusterIssue(db, entityId, {})

@@ -8,9 +8,8 @@ lang: en-US
 
 <Needs reporter admin />
 
-Piwi already ends an investigation with everything a ticket needs — a headline, the affected tests and their owners,
-the diagnosis, a validated patch, the failing locator, the verify command. **Create issue** turns that into a Jira
-issue in one click: the body is the fix plan, the issue is linked back as the cluster's *known issue*, and from then on
+Piwi already ends an investigation with everything a ticket needs: a headline, the affected tests and owners, the
+diagnosis, a validated patch, the verify command. **Create issue** turns that into a Jira issue in one click: the body is the fix plan, the issue is linked back as the cluster's *known issue*, and from then on
 the key travels wherever the failure appears.
 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**; with no connection,
@@ -30,13 +29,14 @@ none of the entry points appear.
   degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer, so
   a person or a JQL filter can find every Piwi-filed issue.
-- **Filing is deduped by cluster** — a second click or a duplicate event is a no-op — and before creating, the modal
-  surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before* match) and
-  leads with *link it instead*.
-- Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down, and
-  recorded, and the REST API lists what Piwi wrote (see the [API docs](https://piwitests.dev/demo/docs)). A create
-  Jira refuses outright, such as a missing or invalid field, fails at once rather than being retried, and creating
-  again replaces it.
+- **Filing is deduped by cluster** — a second click, a duplicate event or a create from another of its executions
+  names the issue already filed; once that link is removed, the next create files a new one. Before creating, the
+  modal surfaces any issue that already tracks the failure (a pinned link, a matching label, or a *fixed-before*
+  match) and leads with *link it instead*.
+- Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
+  cluster and execution pages show *Filing queued*, with a retry), and recorded, and the REST API lists what Piwi wrote (see the
+  [API docs](https://piwitests.dev/demo/docs)). A create Jira refuses outright, such as a missing or invalid field,
+  fails at once with Jira's reason at the top of the modal, and creating again replaces it.
 
 ## The key travels
 
@@ -66,8 +66,10 @@ write back as the cluster evolves:
 | A cluster **regresses** | Comments *Regressed in run #N …*, and optionally reopens the issue. |
 | **New occurrences** on an open ticket | At most one comment a day: *Still failing — +N occurrences in M runs …*. |
 | A cluster is **merged** | With *comment on merge*, notes it on both issues; the survivor inherits the links. |
-| The **ticket moves to Done** | With *resolve on close*, resolves the cluster; otherwise its state line offers *Mark resolved — PROJ-123 is Done*. |
+| The **ticket moves to Done** | With *resolve on close*, resolves the cluster unless its fix regressed; otherwise its state line offers *Mark resolved — PROJ-123 is Done* once the latest run no longer fails, and adds *PROJ-123 is marked Done* while it does. |
 | The **ticket is reopened** | With *reopen on ticket reopen*, reopens a resolved cluster with a note. |
+
+Both status policies act on a **move** of the ticket, so a cluster a person reopened or resolved stays as they set it.
 
 Every comment is written in the [ticket's language](#language). A Jira admin can also register an optional
 [inbound webhook](/operate/integrations#registering-the-inbound-webhook) so a close or reopen reflects immediately; it
@@ -99,12 +101,9 @@ the issue type's create screen and asks for every required field Jira does not f
 - The [`create_issue` MCP tool](/reference/mcp-tools#create_issue) refuses early, naming each missing field, its id and
   what it takes; an agent passes them in `fields`.
 
-A transition's screen can require fields too, such as a *Resolution* on the move to Done. Under *transition on fix*
-and the reopen transition, the binding checks the transition against an issue in the project, suggests the ones it
-offers, and asks for its fields. A move that would still leave one empty fails at once, naming it.
-
-A requirement no screen shows, such as a workflow validator, comes back as Jira's refusal naming the field, and the
-modal asks for it.
+Transitions are checked the same way: for *transition on fix* and the reopen transition, the binding suggests the
+transitions an issue offers and asks for their required fields, such as a *Resolution*. A requirement no screen shows,
+such as a workflow validator, comes back as Jira's refusal naming the field.
 
 <div class="doc-screenshot">
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal with a Required by Jira block: Severity prefilled with Major from the project settings, an empty Team field, and the footer saying Jira still needs Team">
@@ -119,9 +118,8 @@ modal asks for it.
 
 ## Enable it
 
-There is nothing to switch on beyond the connection. The modal prefills the Jira project, issue type, labels and
-assignee from the [project binding](#the-project-binding) when one exists, else offers pickers over the connected site;
-toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
+The modal prefills its fields from the [project binding](#the-project-binding), else offers pickers over the
+connected site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
 From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket once the
 binding names a Jira project and issue type.
 
@@ -130,13 +128,12 @@ binding names a Jira project and issue type.
 A ticket is written for a team, so its language is a property of its **destination**. It resolves from the **project
 binding**'s language, else the **connection**'s default (a French Atlassian site can default every ticket to French),
 else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
-`locale`. **English and French ship today**; another language is a catalog file in `shared/integrations/messages/` plus its entry in the locale lists.
+`locale`. **English and French ship today.**
 
-Only the copy **Piwi authors** is translated — headings, fact labels, policy comments, dates and counts (via `Intl`).
-Your data (test titles, error text, locators, paths, the verify command, the patch) is **never** translated. The model's
+Only the copy **Piwi authors** is translated: headings, fact labels, policy comments, dates and counts. Your data
+(test titles, errors, locators, paths, commands, the patch) is **never** translated. The model's
 prose follows the separate [AI response-language setting](/features/ai-diagnosis#response-language), so a French ticket's
-*Most likely* section reads in French too. Jira's issue types, priorities and statuses are addressed by id, so a
-French-configured site works unchanged.
+*Most likely* section reads in French too.
 
 ## Limits
 
