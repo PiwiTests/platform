@@ -1,13 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, inArray, lt, notExists, or } from 'drizzle-orm';
+import { and, eq, inArray, lt, ne, notExists, or } from 'drizzle-orm';
 import type { H3Event } from 'h3';
 import { apiKeys, oauthAuthorizationRequests, oauthClients, oauthGrants, users } from '../database/schema';
-import type { OAuthClient, User } from '../database/schema';
+import type { OAuthClient, OAuthGrant, User } from '../database/schema';
 import type { DbClient } from '../database';
 import { generateApiKey, getUserAccessCached, isAuthEnabled, requireAuth } from './auth';
 import { getDatabase } from '../database';
-import { resolvePublicBaseUrl } from './oauth-helpers';
+import { publicBaseUrl } from './public-base-url';
 import { timingSafeEqualStr } from './timing-safe';
+import { hashToken } from './token-hash';
 import {
   ACCESS_TOKEN_PREFIX,
   ACCESS_TOKEN_TTL_MS,
@@ -19,6 +20,7 @@ import {
   IDLE_CLIENT_TTL_MS,
   MCP_OAUTH_SCOPE,
   REFRESH_TOKEN_PREFIX,
+  REFRESH_GRACE_MS,
   REFRESH_TOKEN_TTL_MS,
   cleanClientName,
   cleanClientUri,
@@ -29,10 +31,11 @@ import {
   pkceVerifies,
   redirectUriMatches,
   resourceMatches,
-  hashSecret,
   wantsClientSecret,
   withQueryParams,
   mcpWwwAuthenticate,
+  openWithToken,
+  sealWithToken,
   type ClientCredentials,
   type RedirectTarget,
 } from './mcp-oauth-helpers';
@@ -45,11 +48,12 @@ import {
  * page of this instance, signed in as usual. Each grant owns an API key row
  * named after the client, which is what carries the user's access, what the
  * agents' write log names and what the user revokes. Codes, tokens and client
- * secrets are stored as SHA-256 hashes only. Access tokens authenticate the MCP
- * endpoint and nothing else.
+ * secrets are stored as SHA-256 hashes; the one copy of a token response, kept
+ * for the refresh grace period, is sealed with a key only the replaced refresh
+ * token derives. Access tokens authenticate the MCP endpoint and nothing else.
  */
 
-/** Expired authorization requests older than this are deleted on the next authorization. */
+/** Expired authorization requests older than this are deleted by {@link pruneMcpOAuth}. */
 const PRUNE_AFTER_MS = 24 * 60 * 60 * 1000;
 /** The longest `state` an authorization request may carry. */
 const MAX_STATE_LENGTH = 2000;
@@ -57,13 +61,6 @@ const MAX_STATE_LENGTH = 2000;
 const LAST_USED_WRITE_INTERVAL_MS = 60 * 60 * 1000;
 
 const randomToken = (prefix: string) => `${prefix}${randomBytes(32).toString('hex')}`;
-
-/** The public base URL of this instance: `PIWI_SITE_URL`, else the request's origin. */
-export function publicBaseUrl(event: H3Event): string {
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const url = getRequestURL(event);
-  return resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);
-}
 
 /** An OAuth error answer (RFC 6749 §5.2): the code a client branches on and a sentence for its logs. */
 export interface OAuthError {
@@ -97,9 +94,10 @@ export interface ClientRegistration {
 }
 
 /**
- * Registers a client and deletes the ones idle for {@link IDLE_CLIENT_TTL_MS}
- * with no grant. A client that asks for `client_secret_post` or
- * `client_secret_basic` receives a secret; any other is public.
+ * Registers a client, after {@link pruneMcpOAuth}: registration is open to
+ * anyone, so it is what keeps the client table bounded. A client that asks
+ * for `client_secret_post` or `client_secret_basic` receives a secret; any
+ * other is public.
  */
 export async function registerClient(
   db: DbClient,
@@ -120,14 +118,7 @@ export async function registerClient(
     return oauthError('invalid_client_metadata', 'only the code response type is supported');
   }
 
-  await db
-    .delete(oauthClients)
-    .where(
-      and(
-        lt(oauthClients.lastUsedAt, new Date(now.getTime() - IDLE_CLIENT_TTL_MS)),
-        notExists(db.select({ id: oauthGrants.id }).from(oauthGrants).where(eq(oauthGrants.clientId, oauthClients.id))),
-      ),
-    );
+  await pruneMcpOAuth(db, now);
 
   const clientId = `${CLIENT_ID_PREFIX}${randomBytes(16).toString('hex')}`;
   const secret = wantsClientSecret(metadata.token_endpoint_auth_method) ? randomToken(CLIENT_SECRET_PREFIX) : null;
@@ -135,7 +126,7 @@ export async function registerClient(
   const clientUri = cleanClientUri(metadata.client_uri);
   await db.insert(oauthClients).values({
     clientId,
-    clientSecretHash: secret ? hashSecret(secret) : null,
+    clientSecretHash: secret ? hashToken(secret) : null,
     clientName,
     clientUri,
     redirectUris: redirect.uris,
@@ -171,7 +162,7 @@ async function authenticateClient(db: DbClient, creds: ClientCredentials): Promi
   const client = await findClient(db, creds.clientId);
   if (!client) return oauthError('invalid_client', 'Unknown client; register again', 401);
   if (client.clientSecretHash) {
-    if (!creds.clientSecret || !timingSafeEqualStr(hashSecret(creds.clientSecret), client.clientSecretHash)) {
+    if (!creds.clientSecret || !timingSafeEqualStr(hashToken(creds.clientSecret), client.clientSecretHash)) {
       return oauthError('invalid_client', 'Client authentication failed', 401);
     }
   }
@@ -186,19 +177,27 @@ async function touchClient(db: DbClient, client: OAuthClient, now: Date): Promis
 // Authorization request and consent
 // ---------------------------------------------------------------------------
 
+/** Why the authorize endpoint refuses a request; the consent page explains each one. */
+export type AuthorizationStartError =
+  | 'invalid_client'
+  | 'invalid_redirect_uri'
+  | 'unsupported_response_type'
+  | 'invalid_request'
+  | 'invalid_target';
+
 /** What the authorize endpoint does with a request. */
 export type AuthorizationStart =
   /** Ask the user: send the browser to the consent page with this request id. */
   | { kind: 'consent'; requestId: string }
-  /** Answer the client: send the browser back to its redirect URI with an error. */
-  | { kind: 'redirect'; url: string }
-  /** The client or its redirect URI is not known, so there is nowhere safe to send an answer. */
-  | { kind: 'refused'; error: 'invalid_client' | 'invalid_redirect_uri' };
+  /** Show the error on the consent page. */
+  | { kind: 'refused'; error: AuthorizationStartError };
 
 /**
  * Checks an authorization request (RFC 6749 §4.1.1, PKCE required) and stores
- * it for the consent page. Deletes the requests expired for more than a day and
- * the grants whose refresh token expired, with their API keys.
+ * it for the consent page. A request it refuses is never sent back to the
+ * client's redirect URI: anyone can register one, so redirecting there before
+ * the user answers would turn this instance into an open redirector
+ * (RFC 9700 §4.11.2). The consent page shows the error instead.
  */
 export async function startAuthorization(
   db: DbClient,
@@ -206,8 +205,6 @@ export async function startAuthorization(
   baseUrl: string,
   now = new Date(),
 ): Promise<AuthorizationStart> {
-  await pruneExpired(db, now);
-
   const client = await findClient(db, query.client_id);
   if (!client) return { kind: 'refused', error: 'invalid_client' };
   const requested = typeof query.redirect_uri === 'string' ? query.redirect_uri : null;
@@ -216,29 +213,20 @@ export async function startAuthorization(
     return { kind: 'refused', error: 'invalid_redirect_uri' };
   }
 
-  // The state goes back unchanged, so one too long to store is refused rather than cut.
-  const state = typeof query.state === 'string' && query.state.length <= MAX_STATE_LENGTH ? query.state : null;
   const urls = mcpOAuthUrls(baseUrl);
-  const refuse = (error: string, description: string): AuthorizationStart => ({
-    kind: 'redirect',
-    url: withQueryParams(redirectUri, { error, error_description: description, state, iss: urls.issuer }),
-  });
-  if (typeof query.state === 'string' && state === null) {
-    return refuse('invalid_request', `state is at most ${MAX_STATE_LENGTH} characters`);
-  }
-  if (query.response_type !== 'code') {
-    return refuse('unsupported_response_type', 'Only response_type=code is supported');
-  }
+  const refuse = (error: AuthorizationStartError): AuthorizationStart => ({ kind: 'refused', error });
+  // The state goes back unchanged, so one too long to store is refused rather than cut.
+  const state = typeof query.state === 'string' ? query.state : null;
+  if (state !== null && state.length > MAX_STATE_LENGTH) return refuse('invalid_request');
+  if (query.response_type !== 'code') return refuse('unsupported_response_type');
   if (query.code_challenge_method !== 'S256' || !isCodeChallenge(query.code_challenge)) {
-    return refuse('invalid_request', 'PKCE is required: send code_challenge with code_challenge_method=S256');
+    return refuse('invalid_request');
   }
-  if (query.resource !== undefined && !resourceMatches(query.resource, urls.resource)) {
-    return refuse('invalid_target', `This server issues tokens for ${urls.resource} only`);
-  }
+  if (query.resource !== undefined && !resourceMatches(query.resource, urls.resource)) return refuse('invalid_target');
 
   const requestId = randomBytes(32).toString('hex');
   await db.insert(oauthAuthorizationRequests).values({
-    requestIdHash: hashSecret(requestId),
+    requestIdHash: hashToken(requestId),
     clientId: client.id,
     redirectUri,
     state,
@@ -253,19 +241,36 @@ export async function startAuthorization(
   return { kind: 'consent', requestId };
 }
 
-async function pruneExpired(db: DbClient, now: Date): Promise<void> {
+/**
+ * Deletes what can no longer be used: authorization requests expired for more
+ * than a day, grants whose refresh token expired (with their API keys, so the
+ * connection leaves the user's list), and clients idle for
+ * {@link IDLE_CLIENT_TTL_MS} with no grant. Runs at each registration and in
+ * the nightly retention sweep. Returns how many grants it ended.
+ */
+export async function pruneMcpOAuth(db: DbClient, now = new Date()): Promise<number> {
   await db
     .delete(oauthAuthorizationRequests)
     .where(lt(oauthAuthorizationRequests.expiresAt, new Date(now.getTime() - PRUNE_AFTER_MS)));
   // Deleting the API key deletes its grant.
-  await db
+  const ended = await db
     .delete(apiKeys)
     .where(
       inArray(
         apiKeys.id,
         db.select({ id: oauthGrants.apiKeyId }).from(oauthGrants).where(lt(oauthGrants.refreshExpiresAt, now)),
       ),
+    )
+    .returning({ id: apiKeys.id });
+  await db
+    .delete(oauthClients)
+    .where(
+      and(
+        lt(oauthClients.lastUsedAt, new Date(now.getTime() - IDLE_CLIENT_TTL_MS)),
+        notExists(db.select({ id: oauthGrants.id }).from(oauthGrants).where(eq(oauthGrants.clientId, oauthClients.id))),
+      ),
     );
+  return ended.length;
 }
 
 export type AuthorizationStatus = 'pending' | 'approved' | 'denied' | 'consumed';
@@ -288,7 +293,7 @@ async function findRequest(db: DbClient, requestId: unknown) {
     .select({ request: oauthAuthorizationRequests, client: oauthClients })
     .from(oauthAuthorizationRequests)
     .innerJoin(oauthClients, eq(oauthAuthorizationRequests.clientId, oauthClients.id))
-    .where(eq(oauthAuthorizationRequests.requestIdHash, hashSecret(requestId)));
+    .where(eq(oauthAuthorizationRequests.requestIdHash, hashToken(requestId)));
   return row ?? null;
 }
 
@@ -339,7 +344,7 @@ export async function decideAuthorization(
       status: opts.allow ? 'approved' : 'denied',
       userId: opts.userId,
       decidedAt: now,
-      ...(code ? { codeHash: hashSecret(code), expiresAt: new Date(now.getTime() + AUTHORIZATION_CODE_TTL_MS) } : {}),
+      ...(code ? { codeHash: hashToken(code), expiresAt: new Date(now.getTime() + AUTHORIZATION_CODE_TTL_MS) } : {}),
     })
     .where(and(eq(oauthAuthorizationRequests.id, request.id), eq(oauthAuthorizationRequests.status, 'pending')))
     .returning({ id: oauthAuthorizationRequests.id });
@@ -376,9 +381,9 @@ function newTokens(now: Date) {
   const refreshToken = randomToken(REFRESH_TOKEN_PREFIX);
   return {
     columns: {
-      accessTokenHash: hashSecret(accessToken),
+      accessTokenHash: hashToken(accessToken),
       accessExpiresAt: new Date(now.getTime() + ACCESS_TOKEN_TTL_MS),
-      refreshTokenHash: hashSecret(refreshToken),
+      refreshTokenHash: hashToken(refreshToken),
       refreshExpiresAt: new Date(now.getTime() + REFRESH_TOKEN_TTL_MS),
     },
     body: (scope: string): TokenResponse => ({
@@ -428,7 +433,7 @@ async function redeemCode(
   const [request] = await db
     .select()
     .from(oauthAuthorizationRequests)
-    .where(eq(oauthAuthorizationRequests.codeHash, hashSecret(params.code)));
+    .where(eq(oauthAuthorizationRequests.codeHash, hashToken(params.code)));
   if (!request || request.clientId !== client.id) return invalid;
   // A code presented twice was intercepted, or replayed: the grant it created goes too (RFC 6749 §4.1.2).
   if (request.status === 'consumed') {
@@ -447,40 +452,81 @@ async function redeemCode(
     return oauthError('invalid_target', `This server issues tokens for ${mcpOAuthUrls(baseUrl).resource} only`);
   }
 
-  const claimed = await db
-    .update(oauthAuthorizationRequests)
-    .set({ status: 'consumed' })
-    .where(and(eq(oauthAuthorizationRequests.id, request.id), eq(oauthAuthorizationRequests.status, 'approved')))
-    .returning({ id: oauthAuthorizationRequests.id });
-  if (claimed.length === 0) return invalid;
-
   const [owner] = await db.select({ id: users.id }).from(users).where(eq(users.id, request.userId));
   if (!owner) return invalid;
 
-  // The grant's API key: it names the client and carries the user's access. Its own value is never handed out.
+  // The grant is created first and the code claimed with it in one conditional
+  // update, so a code presented again always finds the grant to revoke. The
+  // grant's API key names the client and carries the user's access; its own
+  // value is never handed out.
   const key = generateApiKey();
   const [apiKey] = await db
     .insert(apiKeys)
     .values({ userId: owner.id, name: client.clientName, keyHash: key.hash, keyPrefix: key.prefix, createdAt: now })
     .returning({ id: apiKeys.id });
+  const dropKey = () => db.delete(apiKeys).where(eq(apiKeys.id, apiKey!.id));
   const tokens = newTokens(now);
-  const [grant] = await db
-    .insert(oauthGrants)
-    .values({
-      clientId: client.id,
-      userId: owner.id,
-      apiKeyId: apiKey!.id,
-      scope: request.scope,
-      resource: request.resource,
-      ...tokens.columns,
-      createdAt: now,
-    })
-    .returning({ id: oauthGrants.id });
-  await db
+  let grantId: number;
+  try {
+    const [grant] = await db
+      .insert(oauthGrants)
+      .values({
+        clientId: client.id,
+        userId: owner.id,
+        apiKeyId: apiKey!.id,
+        scope: request.scope,
+        resource: request.resource,
+        ...tokens.columns,
+        createdAt: now,
+      })
+      .returning({ id: oauthGrants.id });
+    grantId = grant!.id;
+  } catch (err) {
+    await dropKey();
+    throw err;
+  }
+  const claimed = await db
     .update(oauthAuthorizationRequests)
-    .set({ grantId: grant!.id })
-    .where(eq(oauthAuthorizationRequests.id, request.id));
+    .set({ status: 'consumed', grantId })
+    .where(and(eq(oauthAuthorizationRequests.id, request.id), eq(oauthAuthorizationRequests.status, 'approved')))
+    .returning({ id: oauthAuthorizationRequests.id });
+  if (claimed.length === 0) {
+    // Another request redeemed the code first.
+    await dropKey();
+    return invalid;
+  }
+
+  // Signing in again replaces this client's earlier connection for the user.
+  await db.delete(apiKeys).where(
+    inArray(
+      apiKeys.id,
+      db
+        .select({ id: oauthGrants.apiKeyId })
+        .from(oauthGrants)
+        .where(and(eq(oauthGrants.clientId, client.id), eq(oauthGrants.userId, owner.id), ne(oauthGrants.id, grantId))),
+    ),
+  );
   return tokens.body(request.scope);
+}
+
+/**
+ * The response a refresh token already exchanged still gets during
+ * {@link REFRESH_GRACE_MS}: the tokens it was exchanged for, opened from the
+ * sealed copy only that token opens. Null once the period is over.
+ */
+function graceResponse(grant: OAuthGrant, refreshToken: string, now: Date): TokenResponse | null {
+  if (!grant.previousTokenResponse || !grant.refreshedAt) return null;
+  if (now.getTime() - grant.refreshedAt.getTime() > REFRESH_GRACE_MS) return null;
+  const opened = openWithToken(refreshToken, grant.previousTokenResponse);
+  if (!opened) return null;
+  const { access_token, refresh_token } = JSON.parse(opened) as { access_token: string; refresh_token: string };
+  return {
+    access_token,
+    token_type: 'Bearer',
+    expires_in: Math.max(0, Math.round((grant.accessExpiresAt.getTime() - now.getTime()) / 1000)),
+    refresh_token,
+    scope: grant.scope,
+  };
 }
 
 async function refreshGrant(
@@ -490,17 +536,20 @@ async function refreshGrant(
   now: Date,
 ): Promise<TokenResponse | OAuthError> {
   const invalid = oauthError('invalid_grant', 'The refresh token is invalid, expired or revoked');
-  if (typeof params.refresh_token !== 'string' || !params.refresh_token.startsWith(REFRESH_TOKEN_PREFIX)) {
-    return invalid;
-  }
-  const hash = hashSecret(params.refresh_token);
+  const token = params.refresh_token;
+  if (typeof token !== 'string' || !token.startsWith(REFRESH_TOKEN_PREFIX)) return invalid;
+  const hash = hashToken(token);
   const [grant] = await db
     .select()
     .from(oauthGrants)
     .where(or(eq(oauthGrants.refreshTokenHash, hash), eq(oauthGrants.previousRefreshTokenHash, hash)));
   if (!grant || grant.clientId !== client.id) return invalid;
-  // A refresh token already exchanged for a new one was copied: the grant ends, for whoever holds it (OAuth 2.1 §4.3.1).
   if (grant.refreshTokenHash !== hash) {
+    // The token was exchanged a moment ago (two requests refreshing at once, or a
+    // lost response): answer as that exchange did. Later, it was copied, and the
+    // grant ends for whoever holds it (OAuth 2.1 §4.3.1).
+    const replay = graceResponse(grant, token, now);
+    if (replay) return replay;
     await revokeGrant(db, grant.id);
     return invalid;
   }
@@ -510,13 +559,20 @@ async function refreshGrant(
   }
 
   const tokens = newTokens(now);
+  const body = tokens.body(grant.scope);
+  const sealed = sealWithToken(
+    token,
+    JSON.stringify({ access_token: body.access_token, refresh_token: body.refresh_token }),
+  );
   const rotated = await db
     .update(oauthGrants)
-    .set({ ...tokens.columns, previousRefreshTokenHash: hash, refreshedAt: now })
+    .set({ ...tokens.columns, previousRefreshTokenHash: hash, previousTokenResponse: sealed, refreshedAt: now })
     .where(and(eq(oauthGrants.id, grant.id), eq(oauthGrants.refreshTokenHash, hash)))
     .returning({ id: oauthGrants.id });
-  if (rotated.length === 0) return invalid;
-  return tokens.body(grant.scope);
+  if (rotated.length > 0) return body;
+  // Another request exchanged the same token between the read and the update.
+  const [current] = await db.select().from(oauthGrants).where(eq(oauthGrants.id, grant.id));
+  return (current?.previousRefreshTokenHash === hash ? graceResponse(current, token, now) : null) ?? invalid;
 }
 
 /**
@@ -529,7 +585,7 @@ export async function revokeToken(db: DbClient, token: unknown, creds: ClientCre
   if (typeof token !== 'string' || token.length === 0) {
     return oauthError('invalid_request', 'token is required');
   }
-  const hash = hashSecret(token);
+  const hash = hashToken(token);
   const [grant] = await db
     .select({ id: oauthGrants.id, clientId: oauthGrants.clientId })
     .from(oauthGrants)
@@ -563,7 +619,7 @@ export async function resolveOAuthAccessToken(
     .from(oauthGrants)
     .innerJoin(users, eq(oauthGrants.userId, users.id))
     .innerJoin(apiKeys, eq(oauthGrants.apiKeyId, apiKeys.id))
-    .where(eq(oauthGrants.accessTokenHash, hashSecret(token)));
+    .where(eq(oauthGrants.accessTokenHash, hashToken(token)));
   if (!row || row.grant.accessExpiresAt.getTime() <= now.getTime()) return null;
   if (!row.keyLastUsedAt || now.getTime() - row.keyLastUsedAt.getTime() > LAST_USED_WRITE_INTERVAL_MS) {
     await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.grant.apiKeyId));

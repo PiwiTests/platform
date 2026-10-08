@@ -23,13 +23,15 @@ The instance is both the MCP server (the protected resource) and its authorizati
    server, then its authorization server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`.
 3. It registers through dynamic client registration (RFC 7591), `POST /oauth/register`, and receives a `client_id`.
 4. It opens `GET /oauth/authorize` in the browser with a PKCE challenge (S256), its `state` and the `resource`
-   (RFC 8707). The instance checks the request, stores it, and sends the browser to `/oauth/consent?request=<id>`.
+   (RFC 8707). The instance checks the request, stores it, and sends the browser to `/oauth/consent?request=<id>`;
+   a request it refuses goes to `/oauth/consent?error=<code>` instead, never back to the client.
 5. That page requires a session: signing in, with a password or through Google or GitHub, comes back to it. It shows
    the name the client registered, where the answer is sent and the account, with **Allow** and **Deny**.
 6. The answer sends the browser back to the client's redirect URI with a code (or `access_denied`), its `state`, and
    `iss` (RFC 9207).
 7. The client redeems the code at `POST /oauth/token` with the PKCE verifier and receives an access token (`pdo_`,
-   one hour) and a refresh token (`pdr_`, 30 days from its last use, replaced on each use).
+   one hour) and a refresh token (`pdr_`, 30 days from its last use, replaced on each use). A client that signs in
+   again replaces its earlier connection for the same user.
 8. It calls `/mcp` with the access token. An expired one answers 401 with `error="invalid_token"`, and the client
    refreshes.
 
@@ -40,7 +42,7 @@ The instance is both the MCP server (the protected resource) and its authorizati
 | `GET /.well-known/oauth-protected-resource[/mcp]` | public | RFC 9728 metadata of `/mcp` |
 | `GET /.well-known/oauth-authorization-server` | public | RFC 8414 metadata |
 | `POST /oauth/register` | public | RFC 7591 registration |
-| `GET /oauth/authorize` | public (a browser navigation) | Checks and stores the request, redirects to the consent page |
+| `GET /oauth/authorize` | public (a browser navigation) | Checks and stores the request, redirects to the consent page, or there with the error |
 | `POST /oauth/token` | the client (PKCE, or its secret) | `authorization_code` and `refresh_token` grants |
 | `POST /oauth/revoke` | the client | RFC 7009 revocation: ends the connection |
 | `GET /api/oauth/authorizations/:id` | any signed-in user | What the consent page shows |
@@ -54,15 +56,17 @@ accepts every request, so there is nothing to sign in to.
 ## Tables
 
 - **`oauth_clients`**: `client_id`, the secret's hash when the client asked for one, the self-asserted name and
-  `client_uri`, the registered redirect URIs, `last_used_at`. A client idle for 30 days with no connection is deleted
-  at the next registration.
+  `client_uri`, the registered redirect URIs, `last_used_at`.
 - **`oauth_authorization_requests`**: one row per authorization request, `pending` → `approved` or `denied` →
   `consumed`, with the request id's hash, the client, the redirect URI, `state`, the PKCE challenge, the resource,
-  who decided, the code's hash and the grant the code created. Rows expired for more than a day are deleted at the next
-  authorization.
+  who decided, the code's hash and the grant the code created.
 - **`oauth_grants`**: one connection of one client for one user: the hashes of the current access and refresh tokens
-  and of the previous refresh token, their expiries, and the API key row that represents it. A grant whose refresh
-  token expired is deleted, with its key, at the next authorization.
+  and of the previous refresh token, their expiries, the response of the last refresh (sealed, see the grace period
+  below), and the API key row that represents it.
+
+`pruneMcpOAuth` runs in the nightly retention sweep and at each registration (which is open, so it is what keeps the
+client table bounded): it deletes requests expired for more than a day, grants whose refresh token expired (with their
+keys, so the connection leaves the user's list), and clients idle for 30 days with no connection.
 
 ## The connection is an API key
 
@@ -79,15 +83,25 @@ kind of credential.
 - **Audience.** Access tokens authenticate `/mcp` and nothing else: `requireMcpAuth` accepts them, `requireAuth`
   never does, so the REST API answers 401. A `resource` that is not this instance's `/mcp` is refused
   (`invalid_target`); its query, such as `?modules=core`, is ignored.
-- **Hashes only.** The request id, the code, both tokens and a client secret are stored as SHA-256 hashes.
+- **Hashes only.** The request id, the code, both tokens and a client secret are stored as SHA-256 hashes. The one
+  exception is the grace period's copy of the last token response, sealed with AES-256-GCM under a key derived from
+  the refresh token it replaced (an HMAC, not the stored SHA-256): the database holds nothing that opens it.
 - **Lifetimes.** A request waits ten minutes for an answer; a code is redeemable for five minutes, once.
-- **Replay.** A code presented twice is refused and ends the grant it created (RFC 6749 §4.1.2). A refresh token
-  already exchanged ends the grant, for whoever holds the newer one (OAuth 2.1 refresh token rotation). Two refreshes
-  racing with the same token: the conditional update lets one through.
+- **Replay.** A code presented twice is refused and ends the grant it created (RFC 6749 §4.1.2). The grant is created
+  before the code is claimed, and the claim records it in the same conditional update, so a replay always finds the
+  grant to end. A refresh token already exchanged ends the grant, for whoever holds the newer one (OAuth 2.1 refresh
+  token rotation), once its **grace period** of one minute is over. Within that minute it answers with the tokens it
+  was exchanged for: a client with several requests in flight when its access token expires refreshes them all with
+  the same token, and ending the grant then would sign the user out every hour. A thief holding a copied token gains
+  nothing in that minute that the client did not just receive.
 - **Redirect URIs.** `https`, `http` on a loopback host, or an application's own scheme (`cursor://`, `vscode://`);
-  never a fragment, never `javascript:`, `data:`, `file:` and the like. A loopback URI matches on any port
-  (RFC 8252 §7.3), since a native client listens where it can. An unknown client or an unregistered redirect URI is
-  never redirected to: the browser lands on the consent page with the error.
+  never a fragment, never `javascript:`, `data:`, `file:` and the like, nor an operating system handler that opens
+  files or runs programs (`search-ms:`, `intent:`, every `ms-` scheme). A loopback URI matches on any port
+  (RFC 8252 §7.3), since a native client listens where it can.
+- **No redirect before the user answers.** Anyone can register a redirect URI, so the authorize endpoint never sends
+  an error there (RFC 9700 §4.11.2): it would turn the instance into an open redirector to any site or application.
+  Every refusal (an unknown client, an unregistered redirect URI, no PKCE, another resource) lands on the consent page,
+  which explains it; only the user's Allow or Deny sends the browser to the client.
 - **Consent.** Every authorization asks; nothing is remembered per client. The page never answers on load: Allow is a
   POST from a signed-in page, with the session cookie's `SameSite=Lax` keeping another site from sending it. Since
   anyone can register a client under any name, the page labels the name as the client's own and says where the answer

@@ -1,3 +1,4 @@
+import { publicBaseUrl } from './public-base-url';
 import type { H3Event } from 'h3';
 import { apiError } from './api-error';
 import { getDatabase } from '../database';
@@ -12,7 +13,6 @@ import {
   generateState,
   generateCodeVerifier,
   codeChallengeS256,
-  resolvePublicBaseUrl,
   buildRedirectUri,
   parseAllowList,
   isEmailDomainAllowed,
@@ -158,9 +158,7 @@ function clearEphemeralCookie(event: H3Event, name: string): void {
  * Falls back to the request URL when PIWI_SITE_URL is unset.
  */
 function getRedirectUri(event: H3Event, provider: string): string {
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const url = getRequestURL(event);
-  const base = resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);
+  const base = publicBaseUrl(event);
   return buildRedirectUri(base, provider);
 }
 

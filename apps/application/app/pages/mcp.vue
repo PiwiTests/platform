@@ -23,16 +23,16 @@ const bearerToken = computed(() => reporterConfig.value?.token ?? apiKeyPlacehol
 // With authentication on, a client signs in through OAuth on its first
 // connection, so the snippets carry only the URL; "Use an API key" puts the
 // Bearer header back for clients that cannot sign in that way. The desktop
-// app keeps its local access token.
-const oauthAvailable = config.public.authEnabled && !isDesktop;
+// app keeps its local access token, and the demo, which has no server to
+// sign in to, shows the API-key form.
+const oauthAvailable = config.public.authEnabled && !isDesktop && !isDemo;
 const useApiKey = ref(false);
 const withKey = computed(() => !oauthAvailable || useApiKey.value);
 const authHeaders = computed(() =>
   withKey.value ? { headers: { Authorization: `Bearer ${bearerToken.value}` } } : {},
 );
-const headerFlag = computed(() =>
-  withKey.value ? ` \\\n  --header "Authorization: Bearer ${bearerToken.value}"` : '',
-);
+// One line, so the command pastes into PowerShell and cmd as well as a Unix shell.
+const headerFlag = computed(() => (withKey.value ? ` --header "Authorization: Bearer ${bearerToken.value}"` : ''));
 
 // "Core tools only" appends ?modules=core to the URL and every client snippet,
 // so a client can connect with just the core module's tools for a tighter token
@@ -562,7 +562,7 @@ const windsurfSnippet = computed(() =>
           </SectionCard>
 
           <!-- Authentication -->
-          <SectionCard icon="i-lucide-key" title="Authentication" help="mcp.auth">
+          <SectionCard icon="i-lucide-key" title="Authentication" help="mcp.auth" data-shot="mcp-authentication">
             <div class="space-y-3 text-sm text-gray-600 dark:text-gray-400">
               <template v-if="oauthAvailable">
                 <p>
@@ -579,19 +579,21 @@ const windsurfSnippet = computed(() =>
                   <strong>Use an API key</strong> above.
                 </p>
               </template>
-              <p v-else>
-                MCP requests are authenticated with the same API keys used by the REST API. API keys start with
-                <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_</code>.
-              </p>
-              <p v-if="!isDesktop && !oauthAvailable">
-                Generate a key in <strong>Settings → Account → API keys</strong>, then replace
-                <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_YOUR_API_KEY</code> in the snippets
-                above.
-              </p>
-              <p v-else>
-                This app provides a local access token automatically — shown in <strong>Client setup</strong> above and
-                already filled into every snippet, so there is nothing to replace.
-              </p>
+              <template v-else>
+                <p>
+                  MCP requests are authenticated with the same API keys used by the REST API. API keys start with
+                  <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_</code>.
+                </p>
+                <p v-if="!isDesktop">
+                  Generate a key in <strong>Settings → Account → API keys</strong>, then replace
+                  <code class="px-1 py-0.5 bg-muted rounded text-xs font-mono">pd_YOUR_API_KEY</code> in the snippets
+                  above.
+                </p>
+                <p v-else>
+                  This app provides a local access token automatically — shown in <strong>Client setup</strong> above
+                  and already filled into every snippet, so there is nothing to replace.
+                </p>
+              </template>
               <p v-if="!isDesktop" class="text-xs text-gray-400">
                 When authentication is disabled (<code class="font-mono">PIWI_AUTH_ENABLED</code> not set), any request
                 is accepted without a key.

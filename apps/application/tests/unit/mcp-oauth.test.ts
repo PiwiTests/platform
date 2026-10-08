@@ -112,6 +112,27 @@ describe('helpers', () => {
     expect(helpers.redirectUriProblem('/relative')).toMatch(/absolute/);
   });
 
+  test('operating system handlers that open files or run programs are refused', () => {
+    for (const uri of [
+      'search-ms:query=x&crumb=location:\\\\attacker\\share',
+      'ms-msdt:/id PCWDiagnostic',
+      'ms-officecmd:{}',
+      'intent://scan/#Intent;scheme=zxing;end',
+      'view-source:https://claude.ai/',
+    ]) {
+      expect(helpers.redirectUriProblem(uri), uri).toMatch(/scheme|fragment/);
+    }
+    expect(helpers.redirectUriProblem('vscode://anthropic.claude-code/callback')).toBeNull();
+  });
+
+  test('a response sealed with a refresh token opens with that token only', () => {
+    const sealed = helpers.sealWithToken('pdr_one', '{"access_token":"pdo_a"}');
+    expect(sealed).not.toContain('pdo_a');
+    expect(helpers.openWithToken('pdr_one', sealed)).toBe('{"access_token":"pdo_a"}');
+    expect(helpers.openWithToken('pdr_two', sealed)).toBeNull();
+    expect(helpers.openWithToken('pdr_one', 'not.a.seal')).toBeNull();
+  });
+
   test('a loopback redirect URI matches on any port, any other only exactly', () => {
     expect(helpers.redirectUriMatches([REDIRECT], 'http://127.0.0.1:51000/callback')).toBe(true);
     expect(helpers.redirectUriMatches([REDIRECT], 'http://127.0.0.1:51000/other')).toBe(false);
@@ -210,7 +231,8 @@ describe('registration', () => {
   test('a client idle for 30 days with no grant is deleted at the next registration', async () => {
     const idle = await register();
     const connected = await register();
-    await tokens(connected.client_id);
+    // Signed in later, so its grant is still alive at the next registration.
+    await tokens(connected.client_id, at(29 * 24 * 3600));
     await oauth.registerClient(anyDb(), { redirect_uris: [REDIRECT] }, at(31 * 24 * 3600));
     const ids = (await db.select().from(schema.oauthClients)).map((c) => c.clientId);
     expect(ids).not.toContain(idle.client_id);
@@ -236,45 +258,30 @@ describe('authorization request', () => {
     ).toEqual({ kind: 'refused', error: 'invalid_redirect_uri' });
   });
 
-  test('a request without PKCE, or for another resource, goes back to the client with an error', async () => {
-    const client = await register();
-    const noPkce = await oauth.startAuthorization(
-      anyDb(),
-      { response_type: 'code', client_id: client.client_id, redirect_uri: REDIRECT, state: 's1' },
-      BASE,
-      T0,
-    );
-    expect(noPkce.kind).toBe('redirect');
-    const url = new URL((noPkce as { url: string }).url);
-    expect(url.origin + url.pathname).toBe(REDIRECT);
-    expect(url.searchParams.get('error')).toBe('invalid_request');
-    expect(url.searchParams.get('state')).toBe('s1');
-    expect(url.searchParams.get('iss')).toBe(BASE);
-
-    const other = await oauth.startAuthorization(
-      anyDb(),
-      {
-        response_type: 'code',
-        client_id: client.client_id,
-        redirect_uri: REDIRECT,
-        code_challenge: CHALLENGE,
-        code_challenge_method: 'S256',
-        resource: 'https://other.example/mcp',
-      },
-      BASE,
-      T0,
-    );
-    expect(new URL((other as { url: string }).url).searchParams.get('error')).toBe('invalid_target');
-
+  test('a malformed request is shown on the consent page, never redirected to the client', async () => {
+    // Anyone can register a redirect URI: sending the browser there before the user answers
+    // would make this instance an open redirector.
+    const client = await register({ redirect_uris: ['https://evil.example/phish'] });
+    const start = (query: Record<string, unknown>) =>
+      oauth.startAuthorization(
+        anyDb(),
+        { response_type: 'code', client_id: client.client_id, redirect_uri: 'https://evil.example/phish', ...query },
+        BASE,
+        T0,
+      );
+    const pkce = { code_challenge: CHALLENGE, code_challenge_method: 'S256' };
+    expect(await start({ state: 's1' })).toEqual({ kind: 'refused', error: 'invalid_request' });
+    expect(await start({ ...pkce, response_type: 'token' })).toEqual({
+      kind: 'refused',
+      error: 'unsupported_response_type',
+    });
+    expect(await start({ ...pkce, resource: 'https://other.example/mcp' })).toEqual({
+      kind: 'refused',
+      error: 'invalid_target',
+    });
     // A state too long to return unchanged is refused, not cut.
-    const longState = await oauth.startAuthorization(
-      anyDb(),
-      { response_type: 'code', client_id: client.client_id, redirect_uri: REDIRECT, state: 's'.repeat(2001) },
-      BASE,
-      T0,
-    );
-    const refused = new URL((longState as { url: string }).url).searchParams;
-    expect([refused.get('error'), refused.get('state')]).toEqual(['invalid_request', null]);
+    expect(await start({ ...pkce, state: 's'.repeat(2001) })).toEqual({ kind: 'refused', error: 'invalid_request' });
+    expect(await db.select().from(schema.oauthAuthorizationRequests)).toEqual([]);
   });
 
   test('the consent page reads the client, where the answer goes, and the status', async () => {
@@ -411,7 +418,81 @@ describe('tokens', () => {
     expect(await oauth.resolveOAuthAccessToken(anyDb(), refreshed.access_token, at(3100))).toBeNull();
   });
 
-  test('a refresh token expires 30 days after its last use, and the expired grant is pruned', async () => {
+  test('two refreshes with the same token within the grace period both get the same tokens', async () => {
+    const client = await register();
+    const first = await tokens(client.client_id);
+    const refresh = (now: Date) =>
+      oauth.exchangeToken(
+        anyDb(),
+        { grant_type: 'refresh_token', refresh_token: first.refresh_token },
+        publicClient(client.client_id),
+        BASE,
+        now,
+      );
+    // Two requests of one client hit 401 together and both refresh.
+    const [a, b] = await Promise.all([refresh(at(3600)), refresh(at(3600))]);
+    if ('error' in a || 'error' in b) throw new Error('a refresh was refused');
+    expect(b.access_token).toBe(a.access_token);
+    expect(b.refresh_token).toBe(a.refresh_token);
+    // A retry 50 seconds later still gets them, with the time the access token has left.
+    const retry = await refresh(at(3650));
+    if ('error' in retry) throw new Error(retry.description);
+    expect(retry).toMatchObject({ access_token: a.access_token, refresh_token: a.refresh_token, expires_in: 3550 });
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), a.access_token, at(3650))).not.toBeNull();
+    // The grant is intact: the new refresh token renews it as usual.
+    const next = await oauth.exchangeToken(
+      anyDb(),
+      { grant_type: 'refresh_token', refresh_token: a.refresh_token },
+      publicClient(client.client_id),
+      BASE,
+      at(3700),
+    );
+    expect('access_token' in next).toBe(true);
+  });
+
+  test('the grace period answers only the refresh token that was exchanged, and only for a minute', async () => {
+    const client = await register();
+    const first = await tokens(client.client_id);
+    const refresh = (token: string, now: Date) =>
+      oauth.exchangeToken(
+        anyDb(),
+        { grant_type: 'refresh_token', refresh_token: token },
+        publicClient(client.client_id),
+        BASE,
+        now,
+      );
+    const rotated = await refresh(first.refresh_token, at(100));
+    if ('error' in rotated) throw new Error(rotated.description);
+    // The stored copy is sealed: the database holds neither token in clear.
+    const [grant] = await db.select().from(schema.oauthGrants);
+    expect(grant!.previousTokenResponse).not.toContain(rotated.refresh_token);
+    expect(grant!.previousTokenResponse).not.toContain(rotated.access_token);
+    // Past the minute, the old token is a copy: the grant ends.
+    expect(await refresh(first.refresh_token, at(161))).toMatchObject({ error: 'invalid_grant' });
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), rotated.access_token, at(161))).toBeNull();
+  });
+
+  test('signing in again replaces the client’s earlier connection for the user', async () => {
+    const client = await register();
+    const other = await register();
+    const first = await tokens(client.client_id);
+    const kept = await tokens(other.client_id);
+    const second = await tokens(client.client_id, at(60));
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), first.access_token, at(60))).toBeNull();
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), second.access_token, at(60))).not.toBeNull();
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), kept.access_token, at(60))).not.toBeNull();
+    expect((await listUserApiKeys(anyDb(), userId)).apiKeys).toHaveLength(2);
+  });
+
+  test('a redeemed code records the grant it created in the same update', async () => {
+    const client = await register();
+    await tokens(client.client_id);
+    const [request] = await db.select().from(schema.oauthAuthorizationRequests);
+    const [grant] = await db.select().from(schema.oauthGrants);
+    expect(request).toMatchObject({ status: 'consumed', grantId: grant!.id });
+  });
+
+  test('a refresh token expires 30 days after its last use, and the nightly sweep ends the grant', async () => {
     const client = await register();
     const issued = await tokens(client.client_id);
     const day = 24 * 3600;
@@ -427,8 +508,9 @@ describe('tokens', () => {
 
     const other = await tokens(client.client_id);
     expect((await db.select().from(schema.oauthGrants)).length).toBe(1);
-    await consent(client.client_id, {}, at(31 * day));
+    expect(await oauth.pruneMcpOAuth(anyDb(), at(31 * day))).toBe(1);
     expect(await db.select().from(schema.oauthGrants)).toEqual([]);
+    expect(await db.select().from(schema.apiKeys)).toEqual([]);
     expect(await oauth.resolveOAuthAccessToken(anyDb(), other.access_token, T0)).toBeNull();
   });
 

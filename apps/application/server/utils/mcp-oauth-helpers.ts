@@ -3,7 +3,8 @@
 // resource checks, PKCE, and the `WWW-Authenticate` challenge. Free of h3 and
 // database context so they can be unit-tested; `mcp-oauth.ts` owns the I/O.
 
-import { createHash } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
+import { cleanClientLabel } from './client-label';
 import { base64url } from './oauth-helpers';
 import { timingSafeEqualStr } from './timing-safe';
 
@@ -23,6 +24,12 @@ export const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000;
 export const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
 /** Each refresh starts the period again, so a client used at least monthly never signs in twice. */
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * How long a refresh token that was just exchanged still answers, with the
+ * tokens it was exchanged for: two requests of one client refreshing at once,
+ * or a retry after a lost response. Presented later, it ends the grant.
+ */
+export const REFRESH_GRACE_MS = 60 * 1000;
 /** A registered client that has no grant and made no request for this long is deleted. */
 export const IDLE_CLIENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -33,10 +40,6 @@ export const MCP_OAUTH_RATE_LIMITS = {
   token: { limit: 120, windowMs: 10 * 60 * 1000 },
   lookupMiss: { limit: 20, windowMs: 10 * 60 * 1000 },
 } as const;
-
-export function hashSecret(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
 
 // ---------------------------------------------------------------------------
 // Endpoints and metadata
@@ -107,7 +110,12 @@ export function mcpWwwAuthenticate(baseUrl: string, invalidToken?: string): stri
 const MAX_REDIRECT_URI_LENGTH = 2000;
 const MAX_REDIRECT_URIS = 10;
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
-/** Schemes a browser runs or reads locally instead of handing them to an application. */
+/**
+ * Schemes a browser runs or reads locally instead of handing them to an
+ * application, and operating system handlers that open files or run programs
+ * (Windows search, Android intents). Every `ms-` scheme (the troubleshooters,
+ * Office, the settings) is refused too.
+ */
 const REFUSED_SCHEMES = new Set([
   'javascript:',
   'data:',
@@ -118,6 +126,21 @@ const REFUSED_SCHEMES = new Set([
   'ws:',
   'wss:',
   'ftp:',
+  'view-source:',
+  'jar:',
+  'mhtml:',
+  'its:',
+  'mk:',
+  'res:',
+  'shell:',
+  'search:',
+  'search-ms:',
+  'intent:',
+  'chrome:',
+  'filesystem:',
+  'mailto:',
+  'tel:',
+  'sms:',
 ]);
 
 /**
@@ -139,7 +162,9 @@ export function redirectUriProblem(value: unknown): string | null {
   if (url.protocol === 'http:') {
     return LOOPBACK_HOSTS.has(url.hostname) ? null : `${value} uses http on a host other than this computer`;
   }
-  if (REFUSED_SCHEMES.has(url.protocol)) return `${value} uses a scheme that cannot receive a code`;
+  if (REFUSED_SCHEMES.has(url.protocol) || url.protocol.startsWith('ms-')) {
+    return `${value} uses a scheme that cannot receive a code`;
+  }
   return null;
 }
 
@@ -246,19 +271,45 @@ export function pkceVerifies(verifier: unknown, challenge: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// The refresh grace period: the last response, sealed with the replaced token
+// ---------------------------------------------------------------------------
+
+/**
+ * AES-256-GCM key derived from a refresh token. It is an HMAC, unlike the
+ * plain SHA-256 stored as the token's hash, so the database holds nothing
+ * that opens the sealed response: only the token itself does.
+ */
+function graceKey(refreshToken: string): Buffer {
+  return createHmac('sha256', refreshToken).update('piwi-oauth-refresh-grace').digest();
+}
+
+/** `plaintext` sealed so that only `refreshToken` opens it: `iv.tag.ciphertext`, base64url. */
+export function sealWithToken(refreshToken: string, plaintext: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', graceKey(refreshToken), iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), ciphertext].map(base64url).join('.');
+}
+
+/** What {@link sealWithToken} sealed, or null when `refreshToken` is not the one it was sealed with. */
+export function openWithToken(refreshToken: string, sealed: string): string | null {
+  const [iv, tag, ciphertext] = sealed.split('.').map((part) => Buffer.from(part, 'base64url'));
+  if (!iv || !tag || !ciphertext) return null;
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', graceKey(refreshToken), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Client registration and authentication
 // ---------------------------------------------------------------------------
 
 /** A self-asserted client name, as the consent page and the API key show it. */
-export function cleanClientName(value: unknown): string {
-  if (typeof value !== 'string') return 'MCP client';
-  const cleaned = value
-    .replace(/[^\p{L}\p{N} ._()-]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 60);
-  return cleaned || 'MCP client';
-}
+export const cleanClientName = (value: unknown) => cleanClientLabel(value, 'MCP client', 60);
 
 /** A registered `client_uri`, kept only when it is an `https` URL. */
 export function cleanClientUri(value: unknown): string | null {

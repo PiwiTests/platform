@@ -1500,7 +1500,7 @@ export const oauthClients = sqliteTable(
 // keys, and revoking it there deletes the grant. That row's own key value is never
 // handed out, so the grant's tokens are the only way to use it. Tokens are stored
 // as SHA-256 hashes; each refresh replaces both and keeps the previous refresh
-// token's hash, so a replayed one revokes the grant.
+// token's hash, so a replayed one revokes the grant once its short grace period is over.
 export const oauthGrants = sqliteTable(
   'oauth_grants',
   {
@@ -1525,6 +1525,9 @@ export const oauthGrants = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
     refreshedAt: integer('refreshed_at', { mode: 'timestamp_ms' }),
+    // The response of the last refresh, sealed with a key only the refresh token it replaced derives:
+    // a client that presents that token again within seconds gets the same tokens back.
+    previousTokenResponse: text('previous_token_response'),
   },
   (t) => ({
     accessIdx: uniqueIndex('idx_oauth_grants_access').on(t.accessTokenHash),

@@ -37,6 +37,22 @@ async function tokenRequest(params: Record<string, string>) {
   return { status: res.status, body: (await res.json()) as Record<string, string | number> };
 }
 
+async function register(clientName: string, redirectUri = REDIRECT) {
+  const res = await fetch(`${AUTH_BASE}/oauth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_name: clientName, redirect_uris: [redirectUri] }),
+  });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { client_id: string }).client_id;
+}
+
+/** Signs the page's browser context in as the administrator. */
+async function signIn(page: import('@playwright/test').Page) {
+  const res = await page.request.post(`${AUTH_BASE}/api/auth/login`, { data: ADMIN });
+  expect(res.ok(), `signing in as ${ADMIN.username}`).toBeTruthy();
+}
+
 async function mcp(token: string, method: string, params?: unknown) {
   return fetch(`${AUTH_BASE}/mcp`, {
     method: 'POST',
@@ -48,13 +64,17 @@ async function mcp(token: string, method: string, params?: unknown) {
 test.describe.serial('MCP OAuth, authentication on', () => {
   test.skip(!process.env.CI, 'The auth-enabled server runs in CI only (see playwright.config.ts webServer)');
 
-  test('a client signs in through the consent page and calls the MCP server with its tokens', async ({ page }) => {
+  // Every test signs in as this administrator, so each one can run alone. The
+  // setup is refused once the instance has a user, which is the case after the first run.
+  test.beforeAll(async () => {
     await fetch(`${AUTH_BASE}/api/auth/setup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...ADMIN, name: 'Admin' }),
     });
+  });
 
+  test('a client signs in through the consent page and calls the MCP server with its tokens', async ({ page }) => {
     // 1. The unauthenticated call names the resource metadata, which names the authorization server.
     const challenge = await mcp('', 'ping');
     expect(challenge.status).toBe(401);
@@ -161,13 +181,7 @@ test.describe.serial('MCP OAuth, authentication on', () => {
   });
 
   test('Deny sends the client access_denied', async ({ page }) => {
-    const { client_id: clientId } = (await (
-      await fetch(`${AUTH_BASE}/oauth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_name: 'E2E denied client', redirect_uris: [REDIRECT] }),
-      })
-    ).json()) as { client_id: string };
+    const clientId = await register('E2E denied client');
     const seen: { callback?: URL } = {};
     await page.route(
       (url) => url.href.startsWith(REDIRECT),
@@ -176,7 +190,7 @@ test.describe.serial('MCP OAuth, authentication on', () => {
         await route.fulfill({ body: 'ok' });
       },
     );
-    await page.request.post(`${AUTH_BASE}/api/auth/login`, { data: ADMIN });
+    await signIn(page);
     const query = new URLSearchParams({
       response_type: 'code',
       client_id: clientId,
@@ -192,8 +206,32 @@ test.describe.serial('MCP OAuth, authentication on', () => {
   });
 
   test('an unknown client lands on the consent page with an explanation', async ({ page }) => {
-    await page.request.post(`${AUTH_BASE}/api/auth/login`, { data: ADMIN });
+    await signIn(page);
     await page.goto(`${AUTH_BASE}/oauth/authorize?client_id=mcpc_unknown&response_type=code`);
     await expect(page.getByText('This MCP client is not registered on this instance')).toBeVisible();
+  });
+
+  test('a malformed request is explained on the consent page, never redirected to the client', async ({ page }) => {
+    // Anyone can register a redirect URI, so an error must not send the browser there unasked.
+    const phishing = 'https://evil.example/phish';
+    const clientId = await register('E2E open redirect probe', phishing);
+    const authorize = await fetch(
+      `${AUTH_BASE}/oauth/authorize?${new URLSearchParams({ client_id: clientId, redirect_uri: phishing })}`,
+      { redirect: 'manual' },
+    );
+    expect(authorize.status).toBe(302);
+    expect(authorize.headers.get('location')).toBe('/oauth/consent?error=unsupported_response_type');
+    await signIn(page);
+    await page.goto(`${AUTH_BASE}${authorize.headers.get('location')}`);
+    await expect(page.getByText('asked for a kind of authorization this instance does not offer')).toBeVisible();
+  });
+
+  test('the MCP page tells a hosted instance to sign in, with no desktop wording', async ({ page }) => {
+    await signIn(page);
+    await page.goto(`${AUTH_BASE}/mcp`);
+    const authentication = page.locator('[data-shot="mcp-authentication"]');
+    await expect(authentication.getByText('A client signs in through OAuth')).toBeVisible();
+    await expect(authentication.getByText('This app provides a local access token')).toHaveCount(0);
+    await expect(page.locator('[data-shot="mcp-client-setup"]').getByText('No key to paste')).toBeVisible();
   });
 });

@@ -6,7 +6,7 @@ import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
 import type { McpContext, McpTool } from '../utils/mcp/tools';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { getProjectScope } from '../utils/project-access';
-import { resolvePublicBaseUrl } from '../utils/oauth-helpers';
+import { publicBaseUrl } from '../utils/public-base-url';
 import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
@@ -222,9 +222,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       }
       // The URL the client used to reach this dashboard is the URL its reporter
       // should point at; PIWI_SITE_URL overrides it when set (reverse proxy).
-      const requestUrl = getRequestURL(event);
-      const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-      const baseUrl = resolvePublicBaseUrl(siteUrl, `${requestUrl.protocol}//${requestUrl.host}`);
+      const baseUrl = publicBaseUrl(event);
       const result = await getPrompt(p.name, {
         db,
         ctx,

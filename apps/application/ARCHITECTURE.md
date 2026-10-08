@@ -193,6 +193,9 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `#folded` peek slot), `FoldableSummary`, `DetailPageLayout` (summary + tabs + panels with correct flex height at `lg`+,
   single-document scroll below).
 - **States** — `EmptyState`, `LoadingState`, `ErrorState` (with an `action` slot).
+- **Connection requests** — `ConnectRequestCard` (the logo-and-card page, with its loading and error states) and
+  `ConnectRequestButtons` (Deny / Allow), driven by `useConnectRequest`: the page a signed-in user answers a client's
+  request on, Piwi Picker's and the editors' (`/extension/connect`) and an MCP client's OAuth sign-in (`/oauth/consent`).
 - **Filters** — `FiltersBlock` (the bordered _Filters_ block every page's filters sit in, folding to a summary on a
   phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
   `HiddenRunsNote` (what the filters hide, with the action that shows it).

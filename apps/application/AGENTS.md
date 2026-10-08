@@ -88,7 +88,9 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it; keep it that way. Each grant owns
   an `api_keys` row named after the client, whose value is never handed out: it carries the access, the write log
   names it, and deleting it ends the grant (foreign-key cascade). Every 401 from `/mcp` carries the
-  `WWW-Authenticate` challenge clients discover the server from.
+  `WWW-Authenticate` challenge clients discover the server from. **The authorize endpoint never redirects an error
+  to the client's redirect URI**: registration is open, so that would make the instance an open redirector; every
+  refusal lands on the consent page, and only the user's Allow or Deny sends the browser to the client.
 - **The model lives in `#shared/permissions`** (pure, shared by the server, the MCP tools, the demo and the UI; design
   record `proposals/roles-and-groups.md`): instance roles `InstanceRole` (`administrator`, `member`; stored in
   `users.role`), project roles `ProjectRole` (`viewer`, `contributor`, `maintainer`, `project_admin`, `uploader`),

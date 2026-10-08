@@ -15,6 +15,7 @@ import { reclaimOrphanTraceResources } from '../../utils/delete-run-files';
 import { reconcileRecentRollups } from '#shared/handlers/analytics/rollups';
 import { pruneOutcomesOlderThan } from '../../utils/outcomes';
 import { pruneMcpToolCalls } from '../../utils/mcp/write-log';
+import { pruneMcpOAuth } from '../../utils/mcp-oauth';
 
 /** Days of retained rollup rows the sweep recomputes before pruning. */
 const RECONCILE_DAYS = 7;
@@ -30,7 +31,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, and excess diagnosis versions',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, report snapshots older than PIWI_RETENTION_REPORT_DAYS, excess diagnosis versions, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -106,6 +107,10 @@ export default defineTask({
       const pruned = await pruneMcpToolCalls(db, notificationDays);
       if (pruned > 0) result.mcpToolCallsPruned = pruned;
     }
+
+    // MCP clients' OAuth connections whose refresh token expired, with their API keys.
+    const oauthEnded = await pruneMcpOAuth(db);
+    if (oauthEnded > 0) result.mcpOAuthGrantsEnded = oauthEnded;
 
     const space = await reclaimSpace(db);
     if (space.attempted) result.spaceReclaim = space.note;

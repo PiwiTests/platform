@@ -1,8 +1,10 @@
-import { randomBytes, randomInt, createHash } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
 import { apiKeys, extensionDeviceCodes, users, type ExtensionDeviceCode } from '../database/schema';
 import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
+import { hashToken } from './token-hash';
+import { cleanClientLabel } from './client-label';
 
 /**
  * Connecting the browser extension, or the VS Code extension and JetBrains
@@ -37,10 +39,6 @@ export const CONNECT_RATE_LIMITS = {
 
 export type DeviceCodeStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 /** A new user code, `ABCD-EFGH`. */
 export function generateUserCode(): string {
   let code = '';
@@ -65,16 +63,8 @@ export function formatUserCode(normalized: string): string {
   return `${normalized.slice(0, 4)}-${normalized.slice(4)}`;
 }
 
-/** One word of the client description: letters, digits, spaces, dots and dashes, at most 40 characters. */
-function clientWord(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback;
-  const cleaned = value
-    .replace(/[^\p{L}\p{N} .-]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 40);
-  return cleaned || fallback;
-}
+/** One word of the client description, at most 40 characters. */
+const clientWord = (value: unknown, fallback: string) => cleanClientLabel(value, fallback, 40);
 
 const EDITOR_CLIENT_PREFIX = 'Piwi in ';
 
@@ -119,8 +109,8 @@ export async function startDeviceConnect(
     const userCode = generateUserCode();
     try {
       await db.insert(extensionDeviceCodes).values({
-        deviceCodeHash: sha256(deviceCode),
-        userCodeHash: sha256(normalizeUserCode(userCode)!),
+        deviceCodeHash: hashToken(deviceCode),
+        userCodeHash: hashToken(normalizeUserCode(userCode)!),
         clientName: extensionClientName(client),
         status: 'pending',
         intervalSeconds: DEFAULT_POLL_INTERVAL_SECONDS,
@@ -145,7 +135,7 @@ async function findByUserCode(db: DbClient, userCode: unknown): Promise<Extensio
   const [row] = await db
     .select()
     .from(extensionDeviceCodes)
-    .where(eq(extensionDeviceCodes.userCodeHash, sha256(normalized)));
+    .where(eq(extensionDeviceCodes.userCodeHash, hashToken(normalized)));
   return row ?? null;
 }
 
@@ -226,7 +216,7 @@ export async function pollDeviceConnect(
   const [row] = await db
     .select()
     .from(extensionDeviceCodes)
-    .where(eq(extensionDeviceCodes.deviceCodeHash, sha256(deviceCode)));
+    .where(eq(extensionDeviceCodes.deviceCodeHash, hashToken(deviceCode)));
   if (!row || row.status === 'consumed') return { status: 'expired' };
   if (row.status === 'denied') return { status: 'denied' };
   if (row.expiresAt.getTime() <= now.getTime()) return { status: 'expired' };

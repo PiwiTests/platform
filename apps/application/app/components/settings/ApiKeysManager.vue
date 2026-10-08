@@ -112,8 +112,8 @@ function confirmRevokeApiKey(key: ApiKeySummary) {
 async function handleRevokeApiKey() {
   const key = keyToRevoke.value;
   if (!key) return;
+  // keyToRevoke stays set: the closing modal still renders its text.
   isRevokeKeyConfirmOpen.value = false;
-  keyToRevoke.value = null;
 
   try {
     await $fetch(`/api/users/${props.userId}/api-keys/${key.id}`, {

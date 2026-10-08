@@ -1,5 +1,6 @@
 import { authorizationServerMetadata } from '../../utils/mcp-oauth-helpers';
-import { publicBaseUrl, requireMcpOAuthEnabled } from '../../utils/mcp-oauth';
+import { requireMcpOAuthEnabled } from '../../utils/mcp-oauth';
+import { publicBaseUrl } from '../../utils/public-base-url';
 
 defineRouteMeta({
   openAPI: {

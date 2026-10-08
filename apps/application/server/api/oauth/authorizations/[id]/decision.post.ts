@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { getDatabase } from '../../../../database';
 import { requireAuth } from '../../../../utils/auth';
 import { MCP_OAUTH_RATE_LIMITS } from '../../../../utils/mcp-oauth-helpers';
-import { decideAuthorization, publicBaseUrl, requireMcpOAuthEnabled } from '../../../../utils/mcp-oauth';
+import { decideAuthorization, requireMcpOAuthEnabled } from '../../../../utils/mcp-oauth';
+import { publicBaseUrl } from '../../../../utils/public-base-url';
 import { isRateLimited, rateLimitClientIp, rateLimitedError, recordRateLimitHit } from '../../../../utils/rate-limit';
 
 defineRouteMeta({
