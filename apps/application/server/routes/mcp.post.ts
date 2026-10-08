@@ -1,11 +1,12 @@
 import { getRequestURL, type H3Event } from 'h3';
-import { requireAuth, isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { requireMcpAuth } from '../utils/mcp-oauth';
 import { getDatabase, type DbClient } from '../database';
 import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
 import type { McpContext, McpTool } from '../utils/mcp/tools';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { getProjectScope } from '../utils/project-access';
-import { resolvePublicBaseUrl } from '../utils/oauth-helpers';
+import { publicBaseUrl } from '../utils/public-base-url';
 import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
@@ -59,15 +60,17 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // Implements the MCP Streamable HTTP transport for the protocol versions in
 // SUPPORTED_PROTOCOL_VERSIONS.
 // A single POST /mcp handles initialize, tools/list, tools/call, and ping.
-// Auth: same pd_<key> Bearer token as the REST API.
+// Auth: an OAuth access token (the client signs in through this instance's
+// authorization server, see utils/mcp-oauth.ts), or the same pd_<key> Bearer
+// token and session as the REST API.
 
 export default eventHandler(async (event) => {
-  // Authenticate using the same API-key / session mechanism as the REST API,
+  // Authenticate with an OAuth access token or the REST API's key / session,
   // then load the caller's access and project scope once. Every tool honors the
   // scope, so a key reads only the projects its owner holds a role on, and every
   // write tool checks its permission on the project it acts on — the same rules
   // the REST API enforces.
-  const user = await requireAuth(event);
+  const user = await requireMcpAuth(event);
   const db = await getDatabase();
   const access = await getRequestAccess(event);
   const scope = await getProjectScope(db, user);
@@ -219,9 +222,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       }
       // The URL the client used to reach this dashboard is the URL its reporter
       // should point at; PIWI_SITE_URL overrides it when set (reverse proxy).
-      const requestUrl = getRequestURL(event);
-      const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-      const baseUrl = resolvePublicBaseUrl(siteUrl, `${requestUrl.protocol}//${requestUrl.host}`);
+      const baseUrl = publicBaseUrl(event);
       const result = await getPrompt(p.name, {
         db,
         ctx,

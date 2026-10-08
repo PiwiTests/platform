@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
 import { mintShareLink, resolveShareLinkMaxTtlDays, shareLinksEnabled } from '../../../utils/share-links';
-import { resolvePublicBaseUrl } from '../../../utils/oauth-helpers';
+import { publicBaseUrl } from '../../../utils/public-base-url';
 
 defineRouteMeta({
   openAPI: {
@@ -45,9 +45,7 @@ export default eventHandler(async (event) => {
     ttlDays: validation.data.ttlDays,
   });
 
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const requestUrl = getRequestURL(event);
-  const base = resolvePublicBaseUrl(siteUrl, `${requestUrl.protocol}//${requestUrl.host}`);
+  const base = publicBaseUrl(event);
 
   return {
     token: minted.token,

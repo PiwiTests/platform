@@ -5,7 +5,7 @@ import { getDatabase } from '../database';
 import { users, apiKeys, appSettings } from '../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { User } from '../database/schema';
-import { scrypt, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
+import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import {
   ADMIN_ACCESS,
@@ -18,6 +18,7 @@ import {
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getUserAccess } from '#shared/handlers/role-bindings';
 import { getRouteRequiredPermissions } from './route-required-permission';
+import { hashToken } from './token-hash';
 
 declare module 'h3' {
   interface H3EventContext {
@@ -293,17 +294,8 @@ const API_KEY_BYTES = 32; // 256 bits of entropy → 64-char hex string
 export function generateApiKey(): { plaintext: string; hash: string; prefix: string } {
   const raw = randomBytes(API_KEY_BYTES).toString('hex');
   const plaintext = `${API_KEY_PREFIX}${raw}`;
-  const hash = createHash('sha256').update(plaintext).digest('hex');
   const prefix = raw.slice(0, 8);
-  return { plaintext, hash, prefix };
-}
-
-/**
- * Hash a plaintext API key the same way generateApiKey does.
- * Used for verification.
- */
-function hashApiKey(plaintext: string): string {
-  return createHash('sha256').update(plaintext).digest('hex');
+  return { plaintext, hash: hashToken(plaintext), prefix };
 }
 
 /**
@@ -324,7 +316,7 @@ export async function resolveApiKey(plaintext: string): Promise<{ user: User; ke
     return null;
   }
 
-  const hash = hashApiKey(plaintext);
+  const hash = hashToken(plaintext);
   const db = await getDatabase();
 
   const keyResults = await db.select().from(apiKeys).where(eq(apiKeys.keyHash, hash));
@@ -349,18 +341,20 @@ export async function resolveApiKey(plaintext: string): Promise<{ user: User; ke
   return userResults[0] ? { user: userResults[0], keyId: key.id } : null;
 }
 
+/** The value of an `Authorization: Bearer` header, whatever kind of token it is; null without one. */
+export function bearerToken(event: H3Event): string | null {
+  return getRequestHeader(event, 'authorization')?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
+}
+
 /**
  * Extract the Bearer token from the Authorization header, or the value of the
  * X-API-Key header.  Returns null if neither is present or if the value does
  * not start with the API key prefix.
  */
 export function extractApiKey(event: H3Event): string | null {
-  const authHeader = getRequestHeader(event, 'authorization');
-  if (authHeader) {
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (match?.[1]?.startsWith(API_KEY_PREFIX)) {
-      return match[1];
-    }
+  const bearer = bearerToken(event);
+  if (bearer?.startsWith(API_KEY_PREFIX)) {
+    return bearer;
   }
 
   const xApiKey = getRequestHeader(event, 'x-api-key');

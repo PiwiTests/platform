@@ -3,7 +3,7 @@ import { apiError } from './api-error';
 import { buildExport } from '#shared/export/build';
 import { EXPORT_FORMATS, type ExportBundle, type ExportFormat } from '#shared/export/types';
 import { sanitizeFilename } from './sanitize-filename';
-import { resolvePublicBaseUrl } from './oauth-helpers';
+import { publicBaseUrl } from './public-base-url';
 import { resolveExportBudget, serverAssetReader } from './export-assets';
 
 /** The requested format, defaulting to HTML. */
@@ -22,9 +22,7 @@ export function requireExportFormat(event: H3Event): ExportFormat {
 
 /** Absolute URL of the page this export came from, recorded in the report. */
 export function exportSourceUrl(event: H3Event, path: string): string {
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const url = getRequestURL(event);
-  return `${resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`)}${path}`;
+  return `${publicBaseUrl(event)}${path}`;
 }
 
 export function exportPiwiVersion(event: H3Event): string | null {

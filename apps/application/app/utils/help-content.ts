@@ -995,7 +995,7 @@ export const HELP_TOPICS = {
   },
   'mcp.auth': {
     title: 'Authentication',
-    text: 'How an MCP client authenticates to this server — uses the same API keys as the rest of the dashboard.',
+    text: 'A client signs in through OAuth: it opens this instance in the browser and you allow it. It can also send an API key (`pd_`), the same keys as the rest of the dashboard.',
     doc: 'features/mcp#authentication',
   },
   'mcp.client-setup': {

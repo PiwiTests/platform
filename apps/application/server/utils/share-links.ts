@@ -1,7 +1,8 @@
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { shareLinks, type ShareLink } from '../database/schema';
 import type { DbClient } from '../database';
+import { hashToken } from './token-hash';
 import type { ExportKind } from '#shared/export/types';
 
 export const SHARE_TOKEN_PREFIX = 'psl_';
@@ -34,11 +35,6 @@ export function resolveShareLinkMaxTtlDays(): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_SHARE_LINK_MAX_TTL_DAYS;
   return Math.min(Math.floor(parsed), MAX_SHARE_LINK_MAX_TTL_DAYS);
-}
-
-/** SHA-256 hex of the full token (including the `psl_` prefix). */
-function hashShareToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
 }
 
 /**
@@ -97,7 +93,7 @@ export async function mintShareLink(
       projectId: input.projectId,
       entityKind: input.entityKind,
       entityId: input.entityId,
-      tokenHash: hashShareToken(token),
+      tokenHash: hashToken(token),
       tokenPrefix: secret.slice(0, 8),
       createdBy: input.createdBy,
       expiresAt: input.expiresAt ? capShareLinkExpiry(input.expiresAt) : resolveShareLinkExpiry(input.ttlDays),
@@ -119,7 +115,7 @@ export async function resolveShareToken(db: DbClient, token: string): Promise<Re
   const rows = await db
     .select()
     .from(shareLinks)
-    .where(eq(shareLinks.tokenHash, hashShareToken(token)));
+    .where(eq(shareLinks.tokenHash, hashToken(token)));
   const link = rows[0];
   if (!link) return { state: 'missing' };
   if (link.revokedAt || (link.expiresAt && link.expiresAt.getTime() <= Date.now())) return { state: 'gone' };

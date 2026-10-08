@@ -12,7 +12,7 @@ import { users, type ShareLink } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from './rate-limit';
 import { resolveShareLinkMaxTtlDays, resolveShareToken, shareLinksEnabled, type MintedShareLink } from './share-links';
-import { resolvePublicBaseUrl } from './oauth-helpers';
+import { publicBaseUrl } from './public-base-url';
 import { getUserAccessCached, isAuthEnabled } from './auth';
 import { TtlCache } from './ttl-cache';
 import { reportBaseUrl, reportPiwiVersion, reportScheduleTimeZone } from './reports/context';
@@ -179,9 +179,7 @@ export async function shareLinkReport(
 
 /** The public address share links are served under, as the request or `siteUrl` gives it. */
 export function shareBaseUrl(event: H3Event): string {
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const requestUrl = getRequestURL(event);
-  return resolvePublicBaseUrl(siteUrl, `${requestUrl.protocol}//${requestUrl.host}`);
+  return publicBaseUrl(event);
 }
 
 /**

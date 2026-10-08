@@ -2,13 +2,11 @@ import type { H3Event } from 'h3';
 import { buildPerfettoTrace } from '#shared/perfetto/build';
 import type { PerfettoRunInput } from '#shared/perfetto/types';
 import { sanitizeFilename } from './sanitize-filename';
-import { resolvePublicBaseUrl } from './oauth-helpers';
+import { publicBaseUrl } from './public-base-url';
 
 /** The dashboard origin recorded in the trace's execution and attachment URLs. */
 export function perfettoBaseUrl(event: H3Event): string {
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const url = getRequestURL(event);
-  return resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);
+  return publicBaseUrl(event);
 }
 
 function perfettoPiwiVersion(event: H3Event): string | null {

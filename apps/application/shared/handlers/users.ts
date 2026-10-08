@@ -1,4 +1,12 @@
-import { users, apiKeys, scenarioGaps, testRuns, roleBindings, groupMembers } from '../../server/database/schema';
+import {
+  users,
+  apiKeys,
+  oauthGrants,
+  scenarioGaps,
+  testRuns,
+  roleBindings,
+  groupMembers,
+} from '../../server/database/schema';
 import { eq, and, ne, sql } from 'drizzle-orm';
 
 import type { DrizzleDB } from './db';
@@ -91,10 +99,13 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
       createdAt: apiKeys.createdAt,
       lastUsedAt: apiKeys.lastUsedAt,
       expiresAt: apiKeys.expiresAt,
+      oauthGrantId: oauthGrants.id,
     })
     .from(apiKeys)
+    .leftJoin(oauthGrants, eq(oauthGrants.apiKeyId, apiKeys.id))
     .where(eq(apiKeys.userId, userId));
-  return { apiKeys: keys };
+  // A key that belongs to an OAuth grant is an MCP client's connection: its own value was never shown.
+  return { apiKeys: keys.map(({ oauthGrantId, ...key }) => ({ ...key, oauth: oauthGrantId != null })) };
 }
 
 export async function createUserApiKeyRecord(
