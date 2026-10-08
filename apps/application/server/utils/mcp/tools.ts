@@ -344,6 +344,10 @@ export function assertPermission(ctx: McpContext, permission: Permission, projec
   if (!can(ctx.access, permission, projectId)) throw new Error(permissionRefusal(permission, projectId));
 }
 
+/** The refusal of a diagnosis run on an instance with no AI provider, naming the way that still works. */
+const AI_NOT_CONFIGURED =
+  'AI diagnosis is not configured on this instance; write the diagnosis and call record_diagnosis';
+
 /** The cluster or the failure a diagnosis tool names: exactly one of `clusterId` and `executionId`. */
 function diagnosisTarget(params: Record<string, unknown>): AgentDiagnosisTarget {
   const named = (params.clusterId != null ? 1 : 0) + (params.executionId != null ? 1 : 0);
@@ -2362,7 +2366,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!cluster) return null;
 
     const config = await resolveAiConfig(db);
-    if (!config) return { error: 'AI diagnosis is not configured' };
+    if (!config) throw new Error(AI_NOT_CONFIGURED);
 
     const force = params.force === true || params.force === 'true';
     const baseCommit = typeof params.baseCommit === 'string' ? params.baseCommit : undefined;
@@ -2407,11 +2411,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     });
     if (!outcome.ok) {
       if (outcome.error === 'not-found') return null;
-      if (outcome.error === 'not-configured') {
-        throw new Error(
-          'AI diagnosis is not configured on this instance; write the diagnosis and call record_diagnosis',
-        );
-      }
+      if (outcome.error === 'not-configured') throw new Error(AI_NOT_CONFIGURED);
       throw new Error('A diagnosis is already running for this failure');
     }
     const diag = outcome.diagnosis;

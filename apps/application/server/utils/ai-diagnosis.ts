@@ -30,6 +30,9 @@ import type { DbClient } from '../database';
 
 const STALE_RUNNING_MS = 5 * 60 * 1000;
 
+/** The id of the placeholder cluster a failure in no cluster is diagnosed on. */
+export const NO_CLUSTER_ID = 0;
+
 /** Max clusters auto-diagnosed per finished run (env-overridable budget cap). */
 const DEFAULT_AUTO_DIAGNOSE_MAX = 3;
 function autoDiagnoseBudget(): number {
@@ -426,15 +429,19 @@ async function persistCompletedDiagnosis(
 
   const completed = updated[0]!;
 
-  emitNotification(db, 'diagnosis.completed', {
-    clusterId: cluster.id,
-    projectId: cluster.projectId,
-    completedAt: completed.updatedAt?.getTime() ?? Date.now(),
-    summary: diagnosis.summary,
-    rootCause: diagnosis.rootCause,
-    category: diagnosis.category,
-    confidence: diagnosis.confidence,
-  });
+  // A failure in no cluster is diagnosed on a placeholder cluster whose id is 0, and
+  // the event points at a cluster, so that diagnosis sends none.
+  if (cluster.id !== NO_CLUSTER_ID) {
+    emitNotification(db, 'diagnosis.completed', {
+      clusterId: cluster.id,
+      projectId: cluster.projectId,
+      completedAt: completed.updatedAt?.getTime() ?? Date.now(),
+      summary: diagnosis.summary,
+      rootCause: diagnosis.rootCause,
+      category: diagnosis.category,
+      confidence: diagnosis.confidence,
+    });
+  }
 
   return completed;
 }

@@ -253,9 +253,8 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'get_cluster_diagnosis',
     module: 'agents',
-    capability: 'ai',
     description:
-      'Get the stored AI diagnosis for a failure cluster. Returns category, confidence, root cause, evidence, and suggested fix. Returns null if no diagnosis has been run yet.',
+      "Get the stored diagnosis of a failure cluster, written by Piwi's AI (run_cluster_diagnosis) or by an agent (record_diagnosis). Returns category, confidence, root cause, evidence, and suggested fix. Returns null if the cluster has no diagnosis yet.",
     inputSchema: {
       type: 'object',
       properties: {

@@ -13,6 +13,7 @@ import {
   isDiagnosisRunning,
   isDiagnosisRunningForExecution,
   isDiagnosisStale,
+  NO_CLUSTER_ID,
 } from './ai-diagnosis';
 import type { DbClient } from '../database';
 
@@ -77,7 +78,7 @@ export async function diagnoseExecution(
     db,
     cluster ??
       ({
-        id: 0,
+        id: NO_CLUSTER_ID,
         projectId: trc.projectId,
         signature: 'execution-scoped',
         errorType: null,

@@ -31,7 +31,6 @@ describe('MCP tool modules', () => {
   it('the diagnosis, healing, scm, fixtures and integrations tools carry their capability', () => {
     const byName = new Map(ALL_TOOLS.map((t) => [t.name, t]));
     const expected: Record<string, string> = {
-      get_cluster_diagnosis: 'ai',
       run_cluster_diagnosis: 'ai',
       run_execution_diagnosis: 'ai',
       submit_diagnosis_feedback: 'ai',
@@ -53,6 +52,14 @@ describe('MCP tool modules', () => {
     };
     for (const [name, capability] of Object.entries(expected)) {
       expect(byName.get(name)?.capability, name).toBe(capability);
+    }
+  });
+
+  it('the diagnosis read tools carry no capability: they read what an agent recorded as well', () => {
+    const byName = new Map(ALL_TOOLS.map((t) => [t.name, t]));
+    for (const name of ['get_cluster_diagnosis', 'get_execution_diagnosis']) {
+      expect(byName.get(name), name).toBeDefined();
+      expect(byName.get(name)!.capability, name).toBeUndefined();
     }
   });
 });

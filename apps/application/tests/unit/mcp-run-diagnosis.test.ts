@@ -1,7 +1,8 @@
 /**
  * `run_execution_diagnosis` runs Piwi's AI diagnosis on one failing execution,
  * through the same handler as the failure page's Diagnose, and
- * `get_execution_diagnosis` reads the stored result back.
+ * `get_execution_diagnosis` reads the stored result back. Both run tools refuse
+ * with the same answer on an instance with no AI provider.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
@@ -30,7 +31,12 @@ const config: AiConfig = {
 };
 
 const ai = vi.hoisted(() => ({ configured: true, calls: 0 }));
-vi.mock('../../server/utils/notifications/emit', () => ({ emitNotification: () => {} }));
+const emitted = vi.hoisted(() => [] as Array<{ event: string; clusterId: number }>);
+vi.mock('../../server/utils/notifications/emit', () => ({
+  emitNotification: (_db: unknown, event: string, payload: { clusterId: number }) => {
+    emitted.push({ event, clusterId: payload.clusterId });
+  },
+}));
 vi.mock('../../server/utils/ai-provider', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../server/utils/ai-provider')>()),
   resolveAiConfig: async () => (ai.configured ? config : null),
@@ -76,6 +82,7 @@ beforeEach(async () => {
   ({ db, close } = await openTempDb());
   ai.configured = true;
   ai.calls = 0;
+  emitted.length = 0;
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'totals' });
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
@@ -122,11 +129,31 @@ describe('run_execution_diagnosis', () => {
 
     const [row] = await db.select().from(schema.failureDiagnoses);
     expect(row).toMatchObject({ scope: 'execution', testRunsCaseId: 1, clusterId: null });
+    // The execution's cluster is the one the notifications point at.
+    expect(emitted).toEqual([
+      { event: 'diagnosis.completed', clusterId: 1 },
+      { event: 'diagnosis.completed', clusterId: 1 },
+    ]);
     expect(await tool('get_execution_diagnosis')(db as never, { executionId: 1 }, viewer)).toMatchObject({
       executionId: 1,
       summary: 'Diagnosis 2',
       model: 'main-model',
     });
+  });
+
+  test('diagnoses a failure in no cluster, which sends no notification', async () => {
+    await db.insert(schema.testRunsCases).values({
+      id: 2,
+      testRunId: 1,
+      testCaseId: 1,
+      status: 'failed',
+      error: 'Error: page crashed',
+    });
+    expect(await tool('run_execution_diagnosis')(db as never, { executionId: 2 }, maintainer)).toMatchObject({
+      executionId: 2,
+      status: 'completed',
+    });
+    expect(emitted).toEqual([]);
   });
 
   test('says to record a diagnosis when no AI provider is configured', async () => {
@@ -142,5 +169,15 @@ describe('run_execution_diagnosis', () => {
     );
     expect(await tool('run_execution_diagnosis')(db as never, { executionId: 99 }, maintainer)).toBeNull();
     expect(ai.calls).toBe(0);
+  });
+});
+
+describe('run_cluster_diagnosis', () => {
+  test('refuses with an error, not a result, when no AI provider is configured', async () => {
+    ai.configured = false;
+    await expect(tool('run_cluster_diagnosis')(db as never, { clusterId: 1 }, maintainer)).rejects.toThrow(
+      'AI diagnosis is not configured on this instance; write the diagnosis and call record_diagnosis',
+    );
+    expect(await db.select().from(schema.failureDiagnoses)).toHaveLength(0);
   });
 });

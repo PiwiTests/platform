@@ -10,16 +10,18 @@ function statesWith(overrides: Partial<Record<CapabilityId, CapabilityState>>): 
   return { ...states, ...overrides };
 }
 
-const DIAGNOSIS = ['get_cluster_diagnosis', 'run_cluster_diagnosis', 'submit_diagnosis_feedback'];
+const DIAGNOSIS = ['run_cluster_diagnosis', 'run_execution_diagnosis', 'submit_diagnosis_feedback'];
 
 describe('filterServeableTools', () => {
   it('drops every tool whose capability is declined', () => {
     const names = filterServeableTools(MCP_TOOL_DEFS, statesWith({ ai: 'declined' })).map((t) => t.name);
     for (const name of DIAGNOSIS) expect(names).not.toContain(name);
+    // Reading a diagnosis needs no AI: an agent may have recorded it.
+    expect(names).toContain('get_cluster_diagnosis');
     // A different declined capability drops its own tools, not the ai ones.
     const scmDeclined = filterServeableTools(MCP_TOOL_DEFS, statesWith({ scm: 'declined' })).map((t) => t.name);
     expect(scmDeclined).not.toContain('get_repo_commits');
-    expect(scmDeclined).toContain('get_cluster_diagnosis');
+    expect(scmDeclined).toContain('run_cluster_diagnosis');
   });
 
   it('drops the scenario-gap tools when test-map is declined, keeping the scm-backed one', () => {
