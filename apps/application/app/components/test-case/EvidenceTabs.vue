@@ -21,6 +21,7 @@ import type { CapabilityState } from '#shared/capabilities';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { EVIDENCE_SECTION_TAB, type EvidenceTabValue } from '~/utils/evidence-sections';
 import { extractStepLocatorUses } from '#shared/locator-chain';
+import type { LightboxSubject } from '~/utils/lightbox';
 
 const props = defineProps<{
   /** The fetched execution — every tab reads its evidence off this object. */
@@ -64,6 +65,13 @@ const projectName = computed(() => props.testCase?.testRun?.project?.name ?? und
 const testRunsCaseId = computed<number>(() => Number(props.testCase?.id ?? props.testCase?.executionId ?? 0));
 const status = computed<string | null>(() => props.testCase?.status ?? null);
 const hasError = computed(() => Boolean(props.testCase?.error));
+// The test an enlarged screenshot belongs to, named in the lightbox's details.
+const imageSubject = computed<LightboxSubject>(() => ({
+  title: props.testCase?.title ?? null,
+  location: props.testCase?.location ?? null,
+  projectKey: projectKey.value ?? null,
+  projectName: projectName.value ?? null,
+}));
 
 const steps = computed<PerformanceStep[]>(() => (props.testCase?.steps as PerformanceStep[]) ?? []);
 const webVitals = computed<WebVitals | null>(() => (props.testCase?.webVitals as unknown as WebVitals | null) ?? null);
@@ -457,6 +465,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :project-name="projectName"
           :attachments="attachments"
           :aria-snapshot="ariaSnapshot"
+          :subject="imageSubject"
         />
       </div>
 
@@ -479,12 +488,16 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             :aria-state="ariaState"
             :aria-derived="ariaDerived"
             :extra-views="screenExtraViews"
+            :error="testCase?.error ?? null"
+            :subject="imageSubject"
           >
             <template #visual-diff>
               <VisualDiffCard
                 v-if="runId"
                 embedded
                 :test-runs-case-id="testRunsCaseId"
+                :error="testCase?.error ?? null"
+                :subject="imageSubject"
                 @available="visualDiffAvailable = $event"
               />
             </template>

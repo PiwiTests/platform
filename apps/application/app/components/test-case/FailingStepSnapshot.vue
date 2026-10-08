@@ -10,7 +10,9 @@
  * - Screenshot: with Playwright 1.63 per-action snapshots, the page before the
  *   failing action beside the page at the failure; otherwise the run's failure
  *   screenshot. The Screen tab adds every other screenshot the execution
- *   attached. Each opens full-screen in the shared lightbox.
+ *   attached. Each opens full-screen in the shared lightbox, whose details
+ *   name the test, the failing step and, beside the page at the failure, the
+ *   error raised on it.
  * - DOM: the trace's DOM snapshot of the moment the screenshot at the failure
  *   shows (the failing action's after-phase, its before-phase when that is the
  *   only screenshot), else the failure-time snapshot, rendered as the page.
@@ -30,6 +32,7 @@
 import type { AttachmentInfo } from '~~/types/api';
 import type { EvidenceState } from '#shared/evidence-state';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
+import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
 import { isImageFile } from '~/utils/text-format';
 import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
 import { useDomSnapshot, type DomSnapshotMoment } from '~/composables/useDomSnapshot';
@@ -49,6 +52,12 @@ const props = defineProps<{
   full?: boolean;
   /** Views listed after the page's own; each renders the slot named by its `value`. */
   extraViews?: Array<{ value: string; label: string; shown: boolean }>;
+  /** The failing step's label; the trace's action title stands in without it. */
+  step?: string | null;
+  /** The error raised at the failure, shown beside the enlarged page at the failure. */
+  error?: string | null;
+  /** The test, named in the enlarged screenshot's details. */
+  subject?: LightboxSubject | null;
 }>();
 
 /** The view on show; null lets the component open on the first view with content. */
@@ -63,11 +72,10 @@ const {
 } = useTraceSnapshots(() => props.testRunsCaseId);
 
 // ── Screenshot ──────────────────────────────────────────────────────────────
-interface Shot {
-  src: string;
-  name: string;
-  failed: boolean;
-}
+type Shot = LightboxImage & { failed: boolean };
+
+const stepLabel = computed(() => props.step || failingStep.value?.title || null);
+const errorText = computed(() => props.error || null);
 
 const traceShots = computed<Shot[]>(() => {
   const step = failingStep.value;
@@ -78,10 +86,17 @@ const traceShots = computed<Shot[]>(() => {
       src: snapshotUrl(step.callId, 'screen', 'before'),
       name: 'Before the failing action',
       failed: false,
+      step: stepLabel.value,
     });
   }
   if (step.screen.after) {
-    list.push({ src: snapshotUrl(step.callId, 'screen', 'after'), name: 'At the failure', failed: true });
+    list.push({
+      src: snapshotUrl(step.callId, 'screen', 'after'),
+      name: 'At the failure',
+      failed: true,
+      step: stepLabel.value,
+      error: errorText.value,
+    });
   }
   return list;
 });
@@ -104,7 +119,7 @@ const shots = computed<Shot[]>(() => {
   const [first, ...rest] = attachedShots.value;
   if (traceShots.value.length) return props.full ? [...traceShots.value, ...attachedShots.value] : traceShots.value;
   if (!first) return [];
-  const atFailure = { ...first, name: 'At the failure', failed: true };
+  const atFailure = { ...first, name: 'At the failure', failed: true, step: stepLabel.value, error: errorText.value };
   return props.full ? [atFailure, ...rest] : [atFailure];
 });
 const lightboxIndex = ref<number | null>(null);
@@ -332,7 +347,7 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
       <slot :name="extra.value" />
     </div>
 
-    <ScreenshotLightbox v-model="lightboxIndex" :images="shots" />
+    <ScreenshotLightbox v-model="lightboxIndex" :images="shots" :subject="subject" />
     <SnapshotLocatorPicker
       v-if="pickerOpen && canPick"
       v-model:open="pickerOpen"

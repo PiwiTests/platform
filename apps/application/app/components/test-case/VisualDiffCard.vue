@@ -8,6 +8,7 @@
 
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
+import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
 
 const props = defineProps<{
   testRunsCaseId: number;
@@ -15,6 +16,10 @@ const props = defineProps<{
   storageKey?: string;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
+  /** The execution's error, shown beside the enlarged failing screenshot. */
+  error?: string | null;
+  /** The test, named in the enlarged screenshots' details. */
+  subject?: LightboxSubject | null;
 }>();
 
 interface VisualDiffResponse {
@@ -85,16 +90,30 @@ const foldedText = computed(() => {
   return `${changedPct.value}% of pixels changed vs visual baseline`;
 });
 
-// Lightbox over the three views (failing / baseline / overlay)
-const lightboxImages = computed(() =>
-  diff.value
-    ? [
-        { src: failingSrc.value, name: 'Failing screenshot' },
-        { src: baselineSrc.value, name: 'Last passing screenshot' },
-        { src: overlaySrc.value, name: 'Diff overlay' },
-      ]
-    : [],
-);
+// Lightbox over the three views (failing / baseline / overlay), each with the
+// comparison's facts in its details.
+const lightboxImages = computed<LightboxImage[]>(() => {
+  const d = diff.value;
+  if (!d) return [];
+  const changed = [
+    `${changedPct.value}% of pixels changed against the visual baseline`,
+    ...(d.dimensionMismatch ? ['Dimensions differ: the changed-pixel ratio is unreliable'] : []),
+  ];
+  const baselineNote = d.baselineNote ? [d.baselineNote] : [];
+  return [
+    { src: failingSrc.value, name: 'Failing screenshot', failed: true, error: props.error || null, facts: changed },
+    {
+      src: baselineSrc.value,
+      name: 'Last passing screenshot',
+      facts: [`From run #${d.baselineRunId}`, ...baselineNote],
+    },
+    {
+      src: overlaySrc.value,
+      name: 'Diff overlay (red = changed pixels)',
+      facts: [...changed, `Baseline from run #${d.baselineRunId}`, ...baselineNote],
+    },
+  ];
+});
 const lightboxIndex = ref<number | null>(null);
 
 // Forward reveal so a diagnosis citation can unfold + scroll to this card.
@@ -201,6 +220,6 @@ defineExpose({ reveal: () => card.value?.reveal?.() });
       </div>
     </div>
 
-    <ScreenshotLightbox v-model="lightboxIndex" :images="lightboxImages" />
+    <ScreenshotLightbox v-model="lightboxIndex" :images="lightboxImages" :subject="subject" />
   </component>
 </template>

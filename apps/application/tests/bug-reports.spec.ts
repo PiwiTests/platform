@@ -193,6 +193,12 @@ test.describe.serial('Bug reports', () => {
     await page.getByRole('button', { name: 'Evidence' }).click();
     await expect(page.getByText('POST /api/cart/coupon')).toBeVisible();
     await expect(page.getByRole('img', { name: 'Screenshot 1' })).toBeVisible();
+    // Enlarged, a screenshot names the step it was taken after.
+    await page.getByRole('button', { name: 'Enlarge Screenshot 1' }).click();
+    const viewer = page.getByRole('dialog', { name: 'Screenshot 1: When a step was marked' });
+    await expect(viewer.getByRole('complementary', { name: 'Screenshot details' })).toContainText('After step 4');
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
 
     await page.getByRole('button', { name: 'Spec' }).click();
     await expect(page.getByText('tests/bugs/coupon-not-applied-to-the-total.spec.ts')).toBeVisible();
