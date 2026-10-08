@@ -165,6 +165,15 @@ describe('the surfaces around an execution carry its cluster issue', () => {
         .insert(schema.testRuns)
         .values([{ id: 3, projectId: 1, status: 'passed', startTime: new Date('2026-09-01T12:00:00Z') }]);
       expect(await read()).toBe(false);
+
+      // The failure stopped under a Done issue: the execution's next step marks the
+      // cluster resolved, as the cluster page's does.
+      const execution = (await getTestRunCase(db as never, 10)) as { nextStep: { kind: string; title: string } } | null;
+      expect(execution?.nextStep.kind).toBe('mark-resolved');
+      expect(execution?.nextStep.title).toBe('Mark the cluster resolved — PIWI-12 is Done');
+      const cluster = await getFailureCluster(db as never, 1);
+      expect(cluster?.failureGoesOn).toBe(false);
+      expect(cluster?.nextStep.title).toBe(execution?.nextStep.title);
     } finally {
       await db.delete(schema.testRuns).where(inArray(schema.testRuns.id, [2, 3]));
       await db.update(schema.entityLinks).set({ metadata: null }).where(eq(schema.entityLinks.id, link!.id));

@@ -18,6 +18,7 @@ import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { computeNextStep } from '../next-step';
+import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
 import { getClusterPatchFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
 import { eligibleRunSql, UNFINISHED_RUN_STATUSES } from '../run-eligibility';
@@ -301,6 +302,7 @@ export async function getTestRunCase(
   }
 
   let failureCluster = null;
+  let ticketDoneKey: string | null = null;
   if (trc.failureClusterId) {
     const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, trc.failureClusterId));
     if (cluster) {
@@ -336,25 +338,38 @@ export async function getTestRunCase(
       ]);
       const knownIssue = knownIssues.get(cluster.id) ?? null;
 
-      // A Done issue on a failure that goes on (it failed in the project's latest
-      // finished run, or in one since) calls for a new issue; the rule the
-      // cluster state follows. Read only when the issue is Done.
-      let failureGoesOn: boolean | null = null;
+      // A Done issue on a failure that goes on calls for a new issue, and on one
+      // that stopped, for marking the cluster resolved: the rules the cluster page
+      // follows. Read only when the issue is Done.
+      let goesOn: boolean | null = null;
       if (knownIssue?.statusCategory === 'done') {
         const [latestFinished] = await db
-          .select({ startTime: testRuns.startTime })
+          .select({ id: testRuns.id, startTime: testRuns.startTime })
           .from(testRuns)
           .where(
             and(eq(testRuns.projectId, cluster.projectId), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
           )
-          .orderBy(desc(testRuns.startTime))
+          .orderBy(desc(testRuns.startTime), desc(testRuns.id))
           .limit(1);
         const [lastSeen] = await db
-          .select({ startTime: testRuns.startTime })
+          .select({ id: testRuns.id, startTime: testRuns.startTime })
           .from(testRuns)
           .where(eq(testRuns.id, cluster.lastSeenRunId));
-        failureGoesOn = !latestFinished || (!!lastSeen && lastSeen.startTime >= latestFinished.startTime);
+        goesOn = failureGoesOn(lastSeen ?? null, latestFinished ?? null);
       }
+      ticketDoneKey =
+        goesOn === null
+          ? null
+          : ticketReconcileKey(
+              {
+                status: cluster.status ?? 'open',
+                fixVerification: cluster.fixVerification ?? null,
+                snoozedUntil: cluster.snoozedUntil ?? null,
+                snoozeMode: cluster.snoozeMode ?? null,
+                knownIssue,
+              },
+              { failureGoesOn: goesOn, now: opts.now },
+            );
 
       failureCluster = {
         id: cluster.id,
@@ -376,7 +391,7 @@ export async function getTestRunCase(
         fixLandedAt: cluster.fixLandedAt ?? null,
         assignee: cluster.assignee ?? null,
         knownIssue,
-        failureGoesOn,
+        failureGoesOn: goesOn,
         issueFilingQueued: filings.queued.has(cluster.id),
         issueFilingFailure: filings.failures.get(cluster.id) ?? null,
         links: clusterLinks,
@@ -551,6 +566,7 @@ export async function getTestRunCase(
     fixVerification: failureCluster?.fixVerification ?? null,
     fixLandedRunId: failureCluster?.fixLandedRunId ?? null,
     fixCommit: failureCluster?.fixCommit ?? null,
+    ticketDoneKey,
     hasHealingRecommendation: Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended),
     diagnosisCompleted: patchFacts?.diagnosisCompleted ?? false,
     diagnosisSummary: patchFacts?.summary ?? null,

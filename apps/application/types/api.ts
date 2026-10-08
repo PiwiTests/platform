@@ -1099,6 +1099,11 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   assignee: string | null;
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
+  /**
+   * The failure goes on: the cluster was last seen in the project's latest finished
+   * run or a later one. A Done issue then calls for a new one.
+   */
+  failureGoesOn: boolean;
   /** One sentence with one verb for the cluster's state, and the control that changes it. */
   clusterState: ClusterState;
   /** Occurrences per run over the project's last 20 runs, oldest first. */

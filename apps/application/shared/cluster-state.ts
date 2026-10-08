@@ -63,12 +63,52 @@ export interface ClusterStateProject {
   /** The project's run ids, newest first (by start time). */
   runIdsNewestFirst: number[];
   /**
-   * The newest of them that finished. The ticket reconcile reads it, so a run
-   * still in progress never counts as one the failure skipped; without it the
-   * newest run stands in.
+   * Whether the failure goes on (`failureGoesOn`). A Done ticket is reconciled
+   * only once it stopped; unset reads as going on.
    */
-  latestFinishedRunId?: number | null;
+  failureGoesOn?: boolean;
   now?: Date;
+}
+
+/** A run as the failure-goes-on rule reads it: its id and its start time. */
+export interface RunPoint {
+  id: number;
+  startTime: string | Date | number | null;
+}
+
+/**
+ * Whether a cluster's failure goes on: it was last seen in the project's latest
+ * finished run or in a later one, or no run has finished yet. A run still in
+ * progress never counts as one the failure skipped. Runs are ordered by start
+ * time, then by id when two started in the same second.
+ */
+export function failureGoesOn(
+  lastSeen: RunPoint | null | undefined,
+  latestFinished: RunPoint | null | undefined,
+): boolean {
+  if (!latestFinished) return true;
+  if (!lastSeen) return false;
+  if (lastSeen.id === latestFinished.id) return true;
+  const seen = toEpochMs(lastSeen.startTime) ?? -Infinity;
+  const finished = toEpochMs(latestFinished.startTime) ?? -Infinity;
+  return seen > finished || (seen === finished && lastSeen.id > latestFinished.id);
+}
+
+/**
+ * The key of the Done ticket to reconcile the cluster with, or null: the cluster
+ * is open, not snoozed, its fix did not regress, its known ticket is Done and the
+ * failure stopped. The cluster state then offers to mark it resolved, and so
+ * does the next step on both failure pages.
+ */
+export function ticketReconcileKey(
+  cluster: Pick<ClusterStateCluster, 'status' | 'fixVerification' | 'snoozedUntil' | 'snoozeMode' | 'knownIssue'>,
+  opts: { failureGoesOn: boolean; now?: Date },
+): string | null {
+  if (cluster.status !== 'open' || cluster.fixVerification === 'regressed' || opts.failureGoesOn) return null;
+  const snooze = { snoozedUntil: cluster.snoozedUntil ?? null, snoozeMode: cluster.snoozeMode ?? null };
+  if (isCurrentlySnoozed(snooze, opts.now ?? new Date())) return null;
+  const issue = cluster.knownIssue;
+  return issue?.key && issue.statusCategory === 'done' ? issue.key : null;
 }
 
 /**
@@ -131,14 +171,6 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('snoozed', 'unsnooze');
   }
 
-  // The known ticket is closed while the cluster is still open: once the failure
-  // stopped, that is the reconcile to offer. While it goes on, the cluster keeps
-  // its own sentence; the pages' Issue line says the ticket is Done.
-  const doneTicket =
-    cluster.status === 'open' && cluster.knownIssue?.key && cluster.knownIssue.statusCategory === 'done'
-      ? cluster.knownIssue.key
-      : null;
-
   // Fix verification: a fix that regressed, held, or stopped the failures. It is
   // a stronger claim than the quarantine overlay below — a fix that landed
   // outranks tests that are merely parked.
@@ -150,14 +182,11 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('regressed', cluster.status === 'resolved' ? 'reopen' : null);
   }
 
-  // The ticket closed and the failure is not in the latest finished run: offer
-  // to reconcile (the resolve-on-close policy does this automatically when it is
-  // on). A cluster that failed in it, or in a run since, keeps its own sentence;
-  // the Issue line names the ticket.
-  const latestFinished = project.latestFinishedRunId !== undefined ? project.latestFinishedRunId : latestRunId;
-  const finishedIndex = latestFinished != null ? runs.indexOf(latestFinished) : -1;
-  const failedSinceLatestFinished = finishedIndex < 0 || (seenIndex >= 0 && seenIndex <= finishedIndex);
-  if (doneTicket && !failedSinceLatestFinished) {
+  // The ticket closed and the failure stopped: offer to reconcile (the
+  // resolve-on-close policy does this automatically when it is on). A failure
+  // that goes on keeps its own sentence; the Issue line names the ticket.
+  const doneTicket = ticketReconcileKey(cluster, { failureGoesOn: project.failureGoesOn ?? true, now });
+  if (doneTicket) {
     t(`${doneTicket} is Done — mark this cluster resolved?`);
     return done('ticket-done', 'mark-resolved');
   }

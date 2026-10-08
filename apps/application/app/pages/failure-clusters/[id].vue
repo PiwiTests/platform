@@ -676,7 +676,7 @@ const breadcrumbItems = computed(() => [
               :form="issueForm"
               :project-id="clusterProjectId"
               :cluster-status="cluster.status"
-              :failure-goes-on="clusterState?.kind !== 'ticket-done'"
+              :failure-goes-on="cluster.failureGoesOn"
               :known-issue="knownIssue"
               :filing-failure="cluster.issueFilingFailure"
               @create="issueModalOpen = true"

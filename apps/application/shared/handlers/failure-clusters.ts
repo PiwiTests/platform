@@ -30,7 +30,7 @@ import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type Snooz
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
-import { computeClusterState, type ClusterState } from '#shared/cluster-state';
+import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
@@ -192,7 +192,7 @@ export async function getFailureCluster(
     .select({ id: testRuns.id, startedAt: testRuns.startTime, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, cluster.projectId))
-    .orderBy(desc(testRuns.startTime))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(50);
   const seriesRuns = projectRuns.slice(0, 20);
   const seriesRunIds = seriesRuns.map((r) => r.id);
@@ -212,6 +212,25 @@ export async function getFailureCluster(
 
   const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
 
+  // Whether the failure goes on in the project's latest finished run, and the Done
+  // ticket to reconcile once it stopped: the rules the execution page follows too.
+  const latestFinishedRun =
+    projectRuns.find((r) => !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(r.status)) ?? null;
+  const goesOn = failureGoesOn(
+    lastRun ? { id: cluster.lastSeenRunId, startTime: lastRun.startTime } : null,
+    latestFinishedRun ? { id: latestFinishedRun.id, startTime: latestFinishedRun.startedAt } : null,
+  );
+  const ticketDoneKey = ticketReconcileKey(
+    {
+      status: cluster.status ?? 'open',
+      fixVerification: cluster.fixVerification ?? null,
+      snoozedUntil: cluster.snoozedUntil ?? null,
+      snoozeMode: cluster.snoozeMode ?? null,
+      knownIssue: reconcileKnownIssue,
+    },
+    { failureGoesOn: goesOn, now: opts.now },
+  );
+
   const clusterState: ClusterState = computeClusterState(
     {
       status: cluster.status ?? 'open',
@@ -230,12 +249,7 @@ export async function getFailureCluster(
       quarantinedTests: quarantinedCount,
       knownIssue: reconcileKnownIssue,
     },
-    {
-      runIdsNewestFirst: projectRuns.map((r) => r.id),
-      latestFinishedRunId:
-        projectRuns.find((r) => !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(r.status))?.id ?? null,
-      now: opts.now,
-    },
+    { runIdsNewestFirst: projectRuns.map((r) => r.id), failureGoesOn: goesOn, now: opts.now },
   );
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
@@ -288,7 +302,7 @@ export async function getFailureCluster(
     fixVerification: cluster.fixVerification ?? null,
     fixLandedRunId: cluster.fixLandedRunId ?? null,
     fixCommit: cluster.fixCommit ?? null,
-    ticketDoneKey: clusterState.kind === 'ticket-done' ? (knownIssue?.key ?? null) : null,
+    ticketDoneKey,
     hasHealingRecommendation,
     diagnosisCompleted: patchFacts.diagnosisCompleted,
     diagnosisSummary: patchFacts.summary,
@@ -332,6 +346,7 @@ export async function getFailureCluster(
     issueFilingQueued: filings.queued.has(clusterId),
     issueFilingFailure: filings.failures.get(clusterId) ?? null,
     owner,
+    failureGoesOn: goesOn,
     clusterState,
     occurrenceSeries,
     nextStep,
