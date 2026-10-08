@@ -41,7 +41,7 @@ Two ways to compare against something else:
 - **Newly flaky / passed on retry** — passed here but needed a retry.
 - **Slower / faster** — the ten largest duration changes each way.
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
-- **Environment changes** — the fields that differ, in *This run* / *Baseline* columns.
+- **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
 
 <figure>
   <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, the tests that newly started failing, the ones that got fixed, and the commits landed since the baseline">
@@ -49,6 +49,15 @@ Two ways to compare against something else:
 </figure>
 
 Comparing two runs is also how the [run comparison](./ui-overview#test-run-detail) works: select two runs on the project's Runs tab and the newer one opens on its Changes tab with the older as its baseline.
+
+## Shuffled runs
+
+A test that fails only after another one depends on the order, and a suite run in the same order every time shows the
+same neighbor every time, which leaves the flaky test's [**Before** suspect](./flaky-tests#suspects) nothing to
+compare. Playwright 1.64's `--shuffle` schedules test files, and the tests of files in parallel mode, in a random
+order, and the run keeps its seed: the run's **Details** shows it as **Order**, and clicking the seed copies
+`--shuffle <seed>`, which runs the same tests on the same workers in the same order again. Against a baseline that was
+not shuffled, or the other way round, the Changes tab lists the **Test order** under Environment changes.
 
 ## Related
 

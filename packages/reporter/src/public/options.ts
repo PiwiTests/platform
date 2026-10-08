@@ -195,7 +195,9 @@ export interface PiwiDashboardOptions {
    * runs no test and reaches no dashboard. The check runs in the reporter's
    * global setup, after `webServer` has started and before the config's own
    * `globalSetup`, so leave it off when that setup is what starts the app. Only
-   * the projects `--project` selects are checked. **Defaults to `false`**. Can
+   * the projects the run selects are checked, with their dependencies: the ones
+   * `--project` names, or every project but those declared `default: false`
+   * (Playwright 1.64+). **Defaults to `false`**. Can
    * also be set with `PIWI_CHECK_BASE_URL=true`.
    */
   checkBaseUrl?: boolean;

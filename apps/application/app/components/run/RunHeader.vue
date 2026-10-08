@@ -5,6 +5,7 @@ import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
+import { readShuffleSeed } from '#shared/utils/run-metadata';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -46,6 +47,9 @@ const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
 const incident = computed(() => readRunIncident(props.testRun?.metadata));
+// The seed of a run Playwright scheduled in random order (`--shuffle`).
+const shuffleSeed = computed(() => readShuffleSeed(props.testRun?.metadata));
+const { copy } = useCopy();
 const incidentReview = computed(() => readIncidentReview(props.testRun?.metadata));
 const incidentBadges = computed(() =>
   incident.value
@@ -307,6 +311,18 @@ function onLabelKeydown(e: KeyboardEvent) {
           <template v-if="testRun?.playwrightVersion && testRun?.reporterVersion"> · </template>
           <template v-if="testRun?.reporterVersion">Piwi v{{ testRun.reporterVersion }}</template>
         </span>
+      </div>
+      <div v-if="shuffleSeed" class="flex items-center gap-1.5">
+        <span class="text-muted inline-flex items-center gap-1">Order <HelpHint topic="run.shuffle" /></span>
+        <span>Shuffled, seed</span>
+        <button
+          type="button"
+          class="font-mono hover:underline decoration-dotted underline-offset-2 cursor-pointer"
+          :title="`Copy --shuffle ${shuffleSeed}`"
+          @click="copy(`--shuffle ${shuffleSeed}`, { toast: `Copied --shuffle ${shuffleSeed}` })"
+        >
+          {{ shuffleSeed }}
+        </button>
       </div>
       <div class="flex items-center gap-x-3 gap-y-1 flex-wrap">
         <span v-if="testRun?.avgTestDuration" class="inline-flex items-center gap-1">
