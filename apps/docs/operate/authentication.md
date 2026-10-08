@@ -106,12 +106,12 @@ Rejected sign-ins are returned to the login page with an explanatory message.
 
 A first sign-in with a provider either links an existing account or creates a new one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
 
-- If a user with the same **verified** email exists, ignoring letter case (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
+- If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
 - If the matching account is **already linked to a different provider**, the sign-in is refused: one provider is linked per account, so sign in with the original method instead.
 - Otherwise, a new user is created as a **Member** with no project role and no password, so it always signs in through its provider and sees nothing until it is [granted a role](./project-access#default-is-no-access). An email the provider has not verified never links an account, so GitHub accounts with no verified primary email always get a new account.
 
-The new account stores the provider's email, marked unverified when the provider has not verified it. When another account already uses that address, in any letter case, the new account is created **without an email** instead: one address belongs to one account. Its username is its email; without one, the GitHub login, or `<provider>-<id>` when the provider has no login. A taken username gets the first free number appended (`octocat-2`, `octocat-3`, …).
+The new account stores the provider's email, unverified unless the provider verified it, or **no email** when another account already uses that address. Its username is its email, else the GitHub login, else `<provider>-<id>`; a taken one gets the first free number appended (`octocat-2`, `octocat-3`, …).
 
 Each later sign-in updates the account's name, avatar and email from the provider. The email stays as it is when the provider sends none, or one another account already uses.
 
@@ -132,8 +132,8 @@ username, password, instance role and optional display name and email. Each row 
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
 account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that
-finds the same address on several accounts, differing only in case, stops without changing anything until an
-administrator fixes them: see [What happens when a new version starts](./upgrading#what-happens-when-a-new-version-starts).
+finds such duplicates stops until an administrator fixes them: see
+[What happens when a new version starts](./upgrading#what-happens-when-a-new-version-starts).
 
 A link Piwi emails, to verify an address, accept an invite or reset a password, works only while the account still
 holds the address it was sent to. Once the address changes, by its owner, an administrator or a provider sign-in, the
