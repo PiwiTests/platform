@@ -206,7 +206,7 @@ describe('clusterIssueFilings', () => {
       let filings = await clusterIssueFilings(db as never, [1, 2]);
       expect(filings.queued.size).toBe(0);
       expect(filings.failures.has(1)).toBe(false);
-      expect(filings.failures.get(2)).toEqual({ status: 'failed', error: ARCHIVED, at: finishedAt.toISOString() });
+      expect(filings.failures.get(2)).toEqual({ error: ARCHIVED, at: finishedAt.toISOString() });
 
       const execution = (await getTestRunCase(db as never, 11)) as {
         failureCluster: { issueFilingFailure: { error: string } | null } | null;
@@ -215,7 +215,7 @@ describe('clusterIssueFilings', () => {
       const cluster = await getFailureCluster(db as never, 2);
       expect(cluster?.issueFilingFailure?.error).toBe(ARCHIVED);
 
-      // Filing again replaces the refused action: it is queued, no longer failed.
+      // Filing again replaces the refused action, which is then queued.
       await db
         .update(schema.integrationActions)
         .set({ status: 'pending', attempts: 0, error: null })
@@ -236,10 +236,7 @@ describe('clusterIssueFilings', () => {
         }),
       );
       filings = await clusterIssueFilings(db as never, [2]);
-      expect(filings.failures.get(2)).toMatchObject({
-        status: 'skipped',
-        error: 'connection has no usable credentials',
-      });
+      expect(filings.failures.get(2)).toMatchObject({ error: 'connection has no usable credentials' });
     } finally {
       await db.delete(schema.integrationActions);
       await db.delete(schema.integrationConnections);

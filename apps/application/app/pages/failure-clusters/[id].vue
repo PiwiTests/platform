@@ -859,6 +859,7 @@ const breadcrumbItems = computed(() => [
     @created="onIssueChanged"
     @linked="onIssueChanged"
     @queued="onIssueChanged"
+    @failed="refresh"
   />
   <LinkIssueModal
     v-if="cluster && canLinkIssue"

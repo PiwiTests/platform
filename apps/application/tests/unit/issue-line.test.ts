@@ -60,6 +60,13 @@ describe('filingFailureSentence', () => {
     );
     expect(filingFailureSentence(null)).toBe('The last filing failed.');
   });
+
+  test('says how long ago the filing failed when given', () => {
+    expect(filingFailureSentence('Jira request failed (400 Bad Request): Severity is required', '3 days ago')).toBe(
+      'The last filing failed 3 days ago: Jira answered “Severity is required.”',
+    );
+    expect(filingFailureSentence(null, '3 days ago')).toBe('The last filing failed 3 days ago.');
+  });
 });
 
 describe('issueKeyTitle', () => {

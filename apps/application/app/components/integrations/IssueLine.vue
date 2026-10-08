@@ -8,9 +8,9 @@
  * failure stopped, the cluster page offers to resolve the cluster instead). An
  * untracked open cluster says it has none and offers to file or link one; a
  * filing the tracker has not answered yet shows as queued. Where filing is
- * offered, a last filing that failed for good is named with its reason, so
- * filing again is not a blind retry. The page owns the create and link dialogs:
- * this line emits. The block that renders this line provides its label.
+ * offered, a last filing that failed for good is named with its age and reason,
+ * so filing again is not a blind retry. The page owns the create and link
+ * dialogs: this line emits. The block that renders this line provides its label.
  */
 import type { IssueFilingFailure } from '#shared/handlers/known-issues';
 import { getProviderName, type LinkProvider } from '#shared/link-detect';
@@ -56,7 +56,16 @@ const doneWhileFailing = computed(
     (props.clusterStatus ?? 'open') === 'open' &&
     props.failureGoesOn === true,
 );
-const failureSentence = computed(() => (props.filingFailure ? filingFailureSentence(props.filingFailure.error) : null));
+// The age reads the browser's clock, so it shows once the line is mounted.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+const failureSentence = computed(() => {
+  const failure = props.filingFailure;
+  if (!failure || !canFile.value) return null;
+  return filingFailureSentence(failure.error, mounted.value && failure.at ? formatRelativeTime(failure.at) : null);
+});
 </script>
 
 <template>

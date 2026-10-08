@@ -6,8 +6,9 @@
  * the shared "Raw error ▸" disclosure with its Copy failure action. Its Links
  * section lists the links pinned to this execution, to its test and to its run,
  * each group named by its owner and editable by a viewer who may write links,
- * then its cluster's links, read-only, with the way to the cluster page that
- * edits them. From `md` up the popover lays its groups out in two columns.
+ * then its cluster's links, read-only, with a link that opens the cluster page's
+ * Details, where they are edited. From `md` up the popover lays its groups out in
+ * two columns, the links across both.
  *
  * The secondary facts render once and are hidden below `sm`; the Details popover
  * repeats the mobile-critical ones so the phone layout keeps them reachable.
@@ -75,28 +76,33 @@ const linkGroups = computed(() => {
       entityType: 'failure_cluster',
       entityId: tc.failureCluster.id,
       links: tc.failureCluster.links ?? [],
-      editedOn: `/failure-clusters/${tc.failureCluster.id}`,
+      editedOn: `/failure-clusters/${tc.failureCluster.id}#links`,
     });
   // A group shows once it holds links; a writer also sees the groups edited here, to add one.
   return groups.filter((g) => g.links.length > 0 || (canWriteLinks.value && !g.editedOn));
 });
 
-// The popover opens below the button, scrolling inside when it is taller than the
-// room there, and above only when the button sits too close to the bottom of the
-// screen; either way it stays clear of the dashboard navbar (4rem).
-const DETAILS_MIN_ROOM_BELOW = 200;
-const NAVBAR_CLEARANCE = 64 + 8;
+// The popover opens below the button when its content fits there, or when there
+// is at least as much room below as above; otherwise above. It never reaches over
+// the page's navbar, wherever the navbar sits (the public demo's banner pushes it
+// down), and scrolls inside when it is taller than the room it gets.
+const GAP = 8;
 const detailsButton = ref<{ $el?: Element } | null>(null);
-const detailsFlips = ref(true);
+const detailsTop = ref(64 + GAP);
+/** The top of the panel body under the navbar, read when the popover opens. */
+function contentTop(): number {
+  const panel = detailsButton.value?.$el?.closest('[id^="dashboard-panel-"]');
+  const body = panel?.querySelector(':scope > [data-slot="body"]');
+  if (body) return body.getBoundingClientRect().top;
+  const banner = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--demo-banner-height'));
+  return 64 + (Number.isFinite(banner) ? banner : 0);
+}
 function onDetailsOpen(open: boolean) {
-  if (!open) return;
-  const rect = detailsButton.value?.$el?.getBoundingClientRect();
-  detailsFlips.value = !rect || window.innerHeight - rect.bottom < DETAILS_MIN_ROOM_BELOW;
+  if (open) detailsTop.value = contentTop() + GAP;
 }
 const detailsContent = computed(() => ({
   side: 'bottom' as const,
-  sideFlip: detailsFlips.value,
-  collisionPadding: { top: NAVBAR_CLEARANCE, right: 8, bottom: 8, left: 8 },
+  collisionPadding: { top: detailsTop.value, right: GAP, bottom: GAP, left: GAP },
 }));
 // A fade with "More below" while the popover holds more than it shows.
 const detailsScroller = ref<HTMLElement | null>(null);
@@ -266,9 +272,9 @@ defineExpose({ revealRawError });
             data-testid="execution-details"
             @scroll="updateMoreBelow"
           >
-            <!-- One column on a phone, two from md up; a group never splits across them. -->
+            <!-- One column on a phone, two from md up; a group never splits across them, and Links spans both. -->
             <div
-              class="p-3 space-y-2 text-sm max-w-sm md:max-w-none md:w-[40rem] md:columns-2 md:gap-6 *:break-inside-avoid"
+              class="p-3 space-y-2 text-sm max-w-sm max-sm:max-w-[calc(100vw-1rem)] md:max-w-none md:w-[40rem] md:columns-2 md:gap-6 *:break-inside-avoid"
             >
               <!-- The facts that collapse on mobile, kept reachable here. -->
               <div class="space-y-1 sm:hidden">
@@ -348,7 +354,7 @@ defineExpose({ revealRawError });
                 <p class="text-xs font-medium text-muted uppercase tracking-wide">Tags</p>
                 <TestMetaBadges :tags="testCase?.tags" :meta="testCase?.testMeta" />
               </div>
-              <div v-if="linkGroups.length" class="space-y-1.5" data-shot="execution-links">
+              <div v-if="linkGroups.length" class="space-y-1.5 md:[column-span:all]" data-shot="execution-links">
                 <p class="text-xs font-medium text-muted uppercase tracking-wide">Links</p>
                 <div
                   v-for="group in linkGroups"

@@ -32,17 +32,19 @@ function endSentence(text: string): string {
 
 /**
  * The Issue line's sentence for a filing that failed for good, so filing again
- * is not a blind retry. It quotes Jira's own explanation when Jira gave one (the
- * error then reads "Jira request failed (400 Bad Request): <explanation>"), and
- * gives the recorded reason otherwise.
+ * is not a blind retry. It says how long ago when given (`ago`, such as "3 days
+ * ago"), quotes Jira's own explanation when Jira gave one (the error then reads
+ * "Jira request failed (400 Bad Request): <explanation>"), and gives the
+ * recorded reason otherwise.
  */
-export function filingFailureSentence(error: string | null | undefined): string {
+export function filingFailureSentence(error: string | null | undefined, ago?: string | null): string {
+  const failed = ago ? `The last filing failed ${ago}` : 'The last filing failed';
   const text = error?.trim();
-  if (!text) return 'The last filing failed.';
+  if (!text) return `${failed}.`;
   const answered = /^Jira request failed \((\d{3}[^)]*)\)(?::\s*([\s\S]+))?$/.exec(text);
-  if (answered?.[2]) return `The last filing failed: Jira answered “${endSentence(answered[2].trim())}”`;
-  if (answered) return `The last filing failed: Jira answered ${answered[1]}.`;
-  return endSentence(`The last filing failed: ${text}`);
+  if (answered?.[2]) return `${failed}: Jira answered “${endSentence(answered[2].trim())}”`;
+  if (answered) return `${failed}: Jira answered ${answered[1]}.`;
+  return endSentence(`${failed}: ${text}`);
 }
 
 /** The issue key link's tooltip: the key, the issue's summary, and that the link opens the tracker. */

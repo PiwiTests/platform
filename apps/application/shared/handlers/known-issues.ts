@@ -78,10 +78,12 @@ export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): P
   return out;
 }
 
-/** An issue filing that ended for good: no retry is coming, and filing again replaces it. */
+/**
+ * An issue filing that ended for good, because the tracker refused it, every
+ * retry failed, or Piwi could not send it: no retry is coming, and filing again
+ * replaces it.
+ */
 export interface IssueFilingFailure {
-  /** `failed` when the tracker refused it or every retry failed, `skipped` when Piwi could not send it. */
-  status: 'failed' | 'skipped';
   /** Why, as the tracker answered or as Piwi recorded it. */
   error: string | null;
   /** When its last attempt ended. */
@@ -149,7 +151,6 @@ export async function clusterIssueFilings(db: DrizzleDB, clusterIds: number[]): 
     if (row.status !== 'failed' && row.status !== 'skipped') continue;
     const at = row.finishedAt ?? row.createdAt;
     out.failures.set(clusterId, {
-      status: row.status,
       error: row.error ?? null,
       at: at ? new Date(at as unknown as string | number | Date).toISOString() : null,
     });

@@ -906,6 +906,21 @@ async function prepareJiraSceneConnection({ base, request }) {
   jiraSceneConnectionId = (await created.json()).connection.id;
 }
 
+/** The scene Jira connection, and PROJ-131 linked to cluster 1 when it is missing, so the cluster is tracked. */
+async function prepareClusterOneTracked({ base, request }) {
+  await prepareJiraSceneConnection({ base, request });
+  const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
+  if (links.items?.some((l) => l.key === 'PROJ-131')) return;
+  await request.post(`${base}/api/links`, {
+    data: {
+      entityType: 'failure_cluster',
+      entityId: 1,
+      url: 'http://127.0.0.1:9/browse/PROJ-131',
+      title: 'Pay button click times out',
+    },
+  });
+}
+
 /**
  * Answers the Jira pickers and the create screen in the page, so a scene shows
  * the required-fields UI for project CHK and its Bug type without a Jira.
@@ -3625,20 +3640,7 @@ const SCENES = [
     name: 'execution-issue-line',
     description: "Failing execution whose cluster is tracked: the Issue line names the cluster's issue",
     tags: ['desktop'],
-    async prepare({ base, request }) {
-      await prepareJiraSceneConnection({ base, request });
-      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
-      if (!links.items?.some((l) => l.key === 'PROJ-131')) {
-        await request.post(`${base}/api/links`, {
-          data: {
-            entityType: 'failure_cluster',
-            entityId: 1,
-            url: 'http://127.0.0.1:9/browse/PROJ-131',
-            title: 'Pay button click times out',
-          },
-        });
-      }
-    },
+    prepare: prepareClusterOneTracked,
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
@@ -3646,23 +3648,9 @@ const SCENES = [
   },
   {
     name: 'execution-details-links',
-    description:
-      "Failing execution's Details open below the facts line, scrolled to its links: by owner, then the cluster's, read-only",
+    description: "Failing execution's Details open, scrolled to its links: by owner, then the cluster's, read-only",
     tags: ['desktop'],
-    async prepare({ base, request }) {
-      await prepareJiraSceneConnection({ base, request });
-      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
-      if (!links.items?.some((l) => l.key === 'PROJ-131')) {
-        await request.post(`${base}/api/links`, {
-          data: {
-            entityType: 'failure_cluster',
-            entityId: 1,
-            url: 'http://127.0.0.1:9/browse/PROJ-131',
-            title: 'Pay button click times out',
-          },
-        });
-      }
-    },
+    prepare: prepareClusterOneTracked,
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 800 },
     async run({ page, shoot, settle }) {

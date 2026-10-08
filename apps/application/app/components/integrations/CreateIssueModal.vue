@@ -35,6 +35,8 @@ const emit = defineEmits<{
   linked: [{ key: string; url: string }];
   /** The tracker did not answer yet: the filing is queued and the page shows it. */
   queued: [];
+  /** The tracker refused the filing, which is recorded: the dialog stays open and the page shows the refusal. */
+  failed: [];
 }>();
 
 const toast = useToast();
@@ -327,6 +329,7 @@ async function create() {
       open.value = false;
     } else {
       showError(res.error || 'The tracker gave no reason.');
+      if (res.actionId) emit('failed');
       fieldProblems.value = [...(res.missingFields ?? []), ...(res.fieldErrors ?? [])];
       // The screen may have changed since it was read: read it again.
       if (fieldProblems.value.length) void reloadFields();

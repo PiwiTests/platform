@@ -1058,5 +1058,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
     @created="onIssueCreated"
     @linked="onIssueCreated"
     @queued="onIssueCreated"
+    @failed="refresh()"
   />
 </template>
