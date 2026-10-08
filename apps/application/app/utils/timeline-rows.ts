@@ -2,8 +2,10 @@
  * The execution timeline's step table, read as Playwright's step tree: which
  * steps it lists, how deep each one sits, which step failed (and which errors
  * the test caught), and the setup and teardown sections (hooks and fixtures)
- * that fold around the test body.
+ * that fold around the test body. Also the geometry of its duration bars on the
+ * test's clock, and which edges of the axis window cut a bar.
  */
+import type { FailureTimeline, TimelineWindow } from '#shared/failure-timeline';
 import type { PerformanceStep } from '~~/types/api';
 import {
   failingStepIndex,
@@ -138,4 +140,70 @@ export function groupRowsBySection<R>(rows: R[], stepPhase: (row: R) => StepPhas
     else blocks.push({ section: current, rows: [row] });
   });
   return blocks;
+}
+
+// ── Duration bars and the window's cut edges ─────────────────────────────────
+
+/** Where a duration's bar sits on its track, in percent of the track. */
+export interface BarPlace {
+  left: number;
+  width: number;
+}
+
+/** A bar's track on the timeline's clock, in ms: where it starts and how long it runs. */
+export interface BarTrack {
+  start: number;
+  length: number;
+}
+
+/** The narrowest bar, in percent of its track, so a short step or request still shows. */
+export const MIN_BAR_PERCENT = 1.5;
+
+/**
+ * The test's track on a built timeline: from the test's start, as long as the
+ * test (`durationMs`), else up to the timeline's end. Evidence stamped before
+ * the test started moves the timeline's origin, never the test's bars.
+ */
+export function testTrack(
+  timeline: Pick<FailureTimeline, 'origin' | 'end' | 'testStart'>,
+  durationMs: number | null | undefined,
+): BarTrack {
+  const start = timeline.testStart;
+  const length = durationMs != null && durationMs > 0 ? durationMs : timeline.end - timeline.origin - start;
+  return { start, length: Math.max(1, length) };
+}
+
+/**
+ * Place a bar spanning `[at, at + duration]` on its track, clamped to it: a bar
+ * that starts before the track starts at its left edge, one that outlasts it
+ * runs to its right edge, and none is narrower than `MIN_BAR_PERCENT`.
+ */
+export function barPlace(at: number, duration: number | null | undefined, track: BarTrack): BarPlace {
+  const length = Math.max(1, track.length);
+  const percent = (ms: number) => ((ms - track.start) / length) * 100;
+  const left = Math.min(100 - MIN_BAR_PERCENT, Math.max(0, percent(at)));
+  const right = Math.min(100, Math.max(left + MIN_BAR_PERCENT, percent(at + Math.max(0, duration ?? 0))));
+  return { left, width: right - left };
+}
+
+/** Which edges of the axis window cut a bar: it started before the window, or runs on past it. */
+export interface WindowCuts {
+  start: boolean;
+  end: boolean;
+}
+
+/** The edges of `window` that cut a span starting at `at` and lasting `duration` ms. */
+export function windowCuts(
+  span: { at: number; duration?: number | null },
+  window: Pick<TimelineWindow, 'start' | 'end'>,
+): WindowCuts {
+  return { start: span.at < window.start, end: span.at + Math.max(0, span.duration ?? 0) > window.end };
+}
+
+/** What a cut bar's tooltip says about the window; null when the window holds the whole bar. */
+export function windowCutText(cuts: WindowCuts): string | null {
+  if (cuts.start && cuts.end) return 'Started before and runs on past this window';
+  if (cuts.start) return 'Started before this window';
+  if (cuts.end) return 'Runs on past this window';
+  return null;
 }

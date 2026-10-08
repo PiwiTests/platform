@@ -1211,11 +1211,7 @@ const moreMenuItems = computed(() => {
                 :key="seg.key"
                 type="button"
                 class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
-                :class="
-                  failureSegment === seg.key
-                    ? 'bg-default shadow-sm text-highlighted'
-                    : 'text-muted hover:text-highlighted'
-                "
+                :class="failureSegment === seg.key ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-highlighted'"
                 :aria-pressed="failureSegment === seg.key"
                 @click="failureSegment = seg.key"
               >

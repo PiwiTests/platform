@@ -185,9 +185,7 @@ async function buildCommand() {
             :key="r.id"
             type="button"
             class="rounded px-2.5 py-1 text-sm outline-none focus-visible:outline-2 focus-visible:outline-primary transition-colors"
-            :class="
-              readingId === r.id ? 'bg-default shadow-sm text-highlighted font-medium' : 'text-muted hover:text-default'
-            "
+            :class="readingId === r.id ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
             :aria-pressed="readingId === r.id ? 'true' : 'false'"
             @click="readingId = r.id"
           >

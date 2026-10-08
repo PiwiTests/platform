@@ -304,10 +304,13 @@ test.describe('Test-run-case page', () => {
     // The title opens the list, the locator first, and closes it again.
     const fill = table.getByRole('button', { name: /Fill "ada@example\.com"/ });
     await expect(fill).toHaveAttribute('aria-expanded', 'false');
+    // A closed title names no list: aria-controls only points at one in the DOM.
+    await expect(fill).not.toHaveAttribute('aria-controls');
     await fill.click();
     await expect(fill).toHaveAttribute('aria-expanded', 'true');
     const params = table.locator('[data-testid="step-params"]');
     await expect(params).toHaveCount(1);
+    await expect(fill).toHaveAttribute('aria-controls', (await params.getAttribute('id'))!);
     await expect(params).toContainText('Parameters (2)');
     await expect(params.getByText('locator', { exact: true })).toBeVisible();
     await expect(params.getByText('ada@example.com')).toBeVisible();

@@ -32,6 +32,13 @@ export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-el
  */
 export const SELECTED_TAB_CLASS = 'bg-elevated text-highlighted font-medium';
 
+/**
+ * The selected option of a segmented control or view switch (a row of options
+ * on a raised track, such as the timeline's window switch): the option lifted
+ * onto the page's own surface, in the strongest text, never the primary color.
+ */
+export const SEGMENTED_SELECTED_CLASS = 'bg-default shadow-sm text-highlighted font-medium';
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;

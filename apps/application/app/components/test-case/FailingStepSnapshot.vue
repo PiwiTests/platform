@@ -237,9 +237,7 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
             class="rounded whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-primary transition-colors"
             :class="[
               full ? 'px-2.5 py-1 text-sm' : 'px-2 py-0.5 text-xs',
-              activeView === tab.value
-                ? 'bg-default shadow-sm text-highlighted font-medium'
-                : 'text-muted hover:text-default',
+              activeView === tab.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default',
               !tab.hasContent && activeView !== tab.value ? 'opacity-50' : '',
             ]"
             @click="view = tab.value"

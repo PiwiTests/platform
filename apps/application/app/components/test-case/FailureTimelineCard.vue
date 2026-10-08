@@ -56,7 +56,18 @@ import TimelineDuration from './TimelineDuration.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
 import { findLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
-import { buildStepTreeView, groupRowsBySection, sectionSummaryText } from '~/utils/timeline-rows';
+import {
+  barPlace,
+  buildStepTreeView,
+  groupRowsBySection,
+  sectionSummaryText,
+  testTrack,
+  windowCutText,
+  windowCuts,
+  type BarPlace,
+  type BarTrack,
+  type WindowCuts,
+} from '~/utils/timeline-rows';
 import type { LightboxSubject } from '~/utils/lightbox';
 import { orderedStepParams, stepLabel } from '@piwitests/core/step-analysis';
 
@@ -235,9 +246,8 @@ function laneY(lane: TimelineLane): number {
 }
 
 /** Which edges of the window cut an item's bar: it started before the window, or runs on past it. */
-function barCuts(item: TimelineItem): { start: boolean; end: boolean } {
-  const { start, end } = domain.value;
-  return { start: item.at < start, end: item.at + Math.max(0, item.duration ?? 0) > end };
+function barCuts(item: TimelineItem): WindowCuts {
+  return windowCuts(item, domain.value);
 }
 
 // A cut bar ends in a small arrow just outside the plot, on the side it continues.
@@ -343,6 +353,9 @@ const { data: hovered, pos, show, move, hide } = useChartTooltip<TimelineItem>()
 
 // A mark the type filter removes fires no mouseleave, so its tooltip goes with it.
 watch(hiddenTypeSet, () => hide());
+
+/** What the hovered bar's tooltip says about the window cutting it, if it does. */
+const hoveredCutText = computed(() => (hovered.value ? windowCutText(barCuts(hovered.value)) : null));
 
 function kindTag(item: TimelineItem): string {
   if (item.kind === 'console') return `console ${item.status ?? ''}`.trim();
@@ -595,22 +608,16 @@ const maxStepDuration = computed(() =>
   mergedRows.value.reduce((m, row) => (row.kind === 'step' ? Math.max(m, row.step.duration || 0) : m), 0),
 );
 
-/** Where a duration's bar sits on its track, in percent. */
-type BarPlace = { left: number; width: number };
-
 // With an axis, every row is a timeline item, and its bar reads on the test's
-// clock (the test's duration, else the whole timeline), so a step's bar and a
-// request's bar line up, and a request that outlasts the test runs to the end
-// of its track.
-const trackMs = computed(() => {
-  const total = props.durationMs ?? 0;
-  return total > 0 ? total : span.value;
-});
+// clock: from the test's start, as long as the test (else up to the timeline's
+// end). A step's bar and a request's bar line up, a request that outlasts the
+// test runs to the end of its track, and evidence stamped before the test
+// started never pushes the bars right.
+const track = computed<BarTrack>(() =>
+  data.value ? testTrack(data.value, props.durationMs) : { start: 0, length: 1 },
+);
 function itemBar(item: TimelineItem): BarPlace {
-  const total = trackMs.value;
-  const left = Math.min(98.5, Math.max(0, (item.at / total) * 100));
-  const width = Math.min(100 - left, Math.max(1.5, ((item.duration ?? 0) / total) * 100));
-  return { left, width };
+  return barPlace(item.at, item.duration, track.value);
 }
 function stepBar(row: StepRow): BarPlace {
   return row.item ? itemBar(row.item) : stepBarStyle(row.step);
@@ -638,12 +645,7 @@ const stepsSpan = computed(() => {
 /** Bar place for a step: a real waterfall when timings exist, else magnitude. */
 function stepBarStyle(step: PerformanceStep): BarPlace {
   if (hasStepTimings.value && stepsSpan.value > 0) {
-    const left = Math.max(
-      0,
-      Math.min(100, (((step.startTime as number) - timelineStart.value) / stepsSpan.value) * 100),
-    );
-    const width = Math.min(100 - left, Math.max(1.5, ((step.duration || 0) / stepsSpan.value) * 100));
-    return { left, width };
+    return barPlace(step.startTime as number, step.duration, { start: timelineStart.value, length: stepsSpan.value });
   }
   const width = maxStepDuration.value > 0 ? Math.max(2, ((step.duration || 0) / maxStepDuration.value) * 100) : 0;
   return { left: 0, width };
@@ -698,11 +700,7 @@ function revealItem(item: TimelineItem) {
             type="button"
             :aria-pressed="mode === option.value ? 'true' : 'false'"
             class="rounded px-2 py-0.5 text-xs whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
-            :class="
-              mode === option.value
-                ? 'bg-default shadow-sm text-highlighted font-medium'
-                : 'text-muted hover:text-default'
-            "
+            :class="mode === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
             @click="mode = option.value"
           >
             {{ option.label }}
@@ -1004,7 +1002,8 @@ function revealItem(item: TimelineItem) {
                   class="inline-flex max-w-full items-start gap-1 rounded text-left break-words outline-none focus-visible:outline-2 focus-visible:outline-primary"
                   :class="stepTitleClass(entry)"
                   :aria-expanded="openSteps.has(entry.index) ? 'true' : 'false'"
-                  :aria-controls="paramsId('card', entry.index)"
+                  :aria-controls="openSteps.has(entry.index) ? paramsId('card', entry.index) : undefined"
+                  data-testid="step-params-toggle"
                   @click="toggleStep(entry.index)"
                 >
                   <StepLabel :step="entry.step" />
@@ -1183,7 +1182,8 @@ function revealItem(item: TimelineItem) {
                             class="inline-flex max-w-full items-start gap-1 rounded text-left break-words outline-none focus-visible:outline-2 focus-visible:outline-primary"
                             :class="stepTitleClass(entry)"
                             :aria-expanded="openSteps.has(entry.index) ? 'true' : 'false'"
-                            :aria-controls="paramsId('row', entry.index)"
+                            :aria-controls="openSteps.has(entry.index) ? paramsId('row', entry.index) : undefined"
+                            data-testid="step-params-toggle"
                             @click="toggleStep(entry.index)"
                           >
                             <StepLabel :step="entry.step" />
@@ -1313,9 +1313,7 @@ function revealItem(item: TimelineItem) {
           >
         </p>
         <p v-else-if="hovered.status" class="text-gray-500">{{ hovered.status }}</p>
-        <p v-if="barCuts(hovered).start || barCuts(hovered).end" class="text-gray-500">
-          {{ barCuts(hovered).start ? 'Started before this window' : 'Runs on past this window' }}
-        </p>
+        <p v-if="hoveredCutText" class="text-gray-500">{{ hoveredCutText }}</p>
       </ChartTooltip>
     </Teleport>
   </SectionCard>

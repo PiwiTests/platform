@@ -3012,7 +3012,7 @@ const SCENES = [
       await page.getByRole('tab', { name: /^Timeline/ }).click();
       const whole = page.getByRole('button', { name: 'Whole test' });
       if (await whole.count()) await whole.click();
-      await page.locator('table button[aria-controls^="step-params-"]:visible').first().click();
+      await page.locator('table [data-testid="step-params-toggle"]:visible').first().click();
       await page.locator('table [data-testid="step-params"]:visible').first().waitFor({ timeout: 10_000 });
       await page.evaluate(() => document.fonts.ready);
       await page.waitForTimeout(300);

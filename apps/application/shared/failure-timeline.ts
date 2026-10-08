@@ -115,6 +115,12 @@ export interface FailureTimeline {
   origin: number;
   /** Epoch ms of the axis end (the latest activity end, at or after the failure). */
   end: number;
+  /**
+   * The test's own start, in ms relative to `origin`: above 0 when evidence was
+   * stamped before `startedAt` (a console entry, a backend log from a server
+   * whose clock runs behind), 0 when nothing predates it or `startedAt` is unknown.
+   */
+  testStart: number;
   /** The moment of failure, in ms relative to `origin`. */
   failureAt: number;
   /** The failed step, when one was identified. */
@@ -557,5 +563,7 @@ export function buildFailureTimeline(input: FailureTimelineInput): FailureTimeli
       }
     : { start: 0, end: span };
 
-  return { origin, end, failureAt, failedStep, lanes, unplaced, estimated, window };
+  const testStart = startedAt != null ? Math.max(0, startedAt - origin) : 0;
+
+  return { origin, end, testStart, failureAt, failedStep, lanes, unplaced, estimated, window };
 }
