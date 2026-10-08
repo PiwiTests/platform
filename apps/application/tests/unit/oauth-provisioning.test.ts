@@ -14,6 +14,7 @@ import type { OAuthProfile } from '../../server/utils/oauth-helpers';
 // so clear it before oauth.ts (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
 const { findOrCreateOAuthUser, linkProviderToUser } = await import('../../server/utils/oauth');
+const { mintAccountToken, validateAccountToken } = await import('../../server/utils/account-tokens');
 
 const MIGRATIONS = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
 
@@ -68,7 +69,7 @@ describe('findOrCreateOAuthUser — email compared ignoring case', () => {
     expect(await db.select().from(schema.users)).toHaveLength(1);
   });
 
-  test('a later sign-in whose address differs only by case keeps the account verified', async () => {
+  test('a later sign-in whose address differs only by case keeps the account verified, its spelling and its links', async () => {
     const bob = await addUser({
       username: 'bob',
       email: 'Bob@corp.com',
@@ -76,6 +77,7 @@ describe('findOrCreateOAuthUser — email compared ignoring case', () => {
       oauthProvider: 'github',
       oauthProviderId: 'github-bob',
     });
+    const reset = await mintAccountToken(db, bob.id, 'reset', 'Bob@corp.com');
 
     const signedIn = await findOrCreateOAuthUser(
       profile({ provider: 'github', providerId: 'github-bob', emailVerified: false }),
@@ -84,6 +86,8 @@ describe('findOrCreateOAuthUser — email compared ignoring case', () => {
 
     expect(signedIn.id).toBe(bob.id);
     expect(signedIn.emailVerified).toBe(true);
+    expect(signedIn.email).toBe('Bob@corp.com');
+    expect(await validateAccountToken(db, reset, 'reset')).toMatchObject({ userId: bob.id });
   });
 });
 

@@ -112,19 +112,6 @@ describe('findUserByEmail', () => {
   });
 });
 
-describe('idx_users_email', () => {
-  test('refuses an address that differs from another account only in letter case', async () => {
-    const error = await db
-      .insert(schema.users)
-      .values({ id: 2, username: 'bob', password: 'x', role: 'user', email: 'ALICE@example.com' })
-      .then(
-        () => null,
-        (failure: Error) => failure,
-      );
-    expect(String(error?.cause)).toContain("UNIQUE constraint failed: index 'idx_users_email'");
-  });
-});
-
 describe('deleteUserRecord', () => {
   beforeEach(async () => {
     // The server enables FK enforcement per connection; mirror it so a

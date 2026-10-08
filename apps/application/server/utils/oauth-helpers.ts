@@ -258,8 +258,9 @@ export function resolveProvisioningAction(
 /**
  * The email an identity-matched account keeps after a sign-in. The verified
  * flag belongs to an address: a changed address carries only the provider's
- * verdict, never the one earned by the previous address. A stored value that
- * is not an address is dropped.
+ * verdict, never the one earned by the previous address. The same address in
+ * another letter case keeps its stored spelling, which the links already
+ * emailed to it carry. A stored value that is not an address is dropped.
  */
 function refreshedEmail(
   current: OAuthUserRow,
@@ -273,7 +274,7 @@ function refreshedEmail(
     return { email: stored || null, emailVerified: Boolean(stored) && current.emailVerified };
   }
   if (sameEmailAddress(email, current.email)) {
-    return { email, emailVerified: emailVerified || current.emailVerified };
+    return { email: current.email, emailVerified: emailVerified || current.emailVerified };
   }
   return { email, emailVerified };
 }

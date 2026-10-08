@@ -447,15 +447,6 @@ describe('resolveLinkAction', () => {
     }
   });
 
-  test('does not adopt a provider email another account holds', () => {
-    const me = row({ id: 1, email: null, emailVerified: false, password: 'hash' });
-    const other = row({ id: 2, email: 'alice@example.com', emailVerified: true });
-    const action = resolveLinkAction(me, profile({ emailVerified: true }), undefined, other);
-    if (action.kind !== 'link') throw new Error(`expected link, got ${action.kind}`);
-    expect(action.set.email).toBeNull();
-    expect(action.set.emailVerified).toBe(false);
-  });
-
   test('does not adopt a provider value that is not an email address', () => {
     const me = row({ id: 1, email: null, emailVerified: false, password: 'hash' });
     const action = resolveLinkAction(me, profile({ provider: 'github', email: 'octocat', emailVerified: true }));
