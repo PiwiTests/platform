@@ -31,8 +31,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * dispatch it answers, auto markers, flaky root causes, the history of its
  * resource findings, its analysis (the scenario gaps, change coverage, fix
  * verification and the hand-back outcomes it shows) and its outbound effects
- * (AI diagnosis, the issues automatic creation files, notifications, the
- * pull-request comment and commit status, auto-heal).
+ * (AI diagnosis, the issues automatic creation files once fix verification
+ * is done, notifications, the pull-request comment and commit status, auto-heal).
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -120,9 +120,13 @@ export async function runFinalizeSideEffects(
   );
   if (!isEligibleRun(current, 'notifications')) return rollup;
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-  // The issues the project's rules file go out first, so the run's notifications name them.
+  // The issues the project's rules file go out first, so the run's notifications name them. They
+  // wait for fix verification: a regression's reopen transition is then queued, and a rule does not
+  // file a second issue beside the Done one it moves out of Done.
   const filing = isEligibleRun(current, 'tracker')
-    ? runTrackerAutomation(db, id).catch((e) => console.error('[integrations] runTrackerAutomation failed', e))
+    ? analysis.fixed
+        .then(() => runTrackerAutomation(db, id))
+        .catch((e) => console.error('[integrations] runTrackerAutomation failed', e))
     : Promise.resolve();
   void filing.then(() =>
     emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e)),

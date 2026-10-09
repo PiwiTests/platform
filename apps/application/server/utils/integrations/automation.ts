@@ -1,6 +1,9 @@
 /**
  * Automatic creation: after a run, file an issue for each cluster that failed
  * in it and that the project's rules now qualify, with no person clicking.
+ * It runs once the run's fix verification is done, so a regression's reopen
+ * transition is already queued when the rules read whether an issue tracks
+ * the cluster.
  *
  * The rules and guards live in `#shared/integrations/automation` and read the
  * facts `gatherAutoCreateFacts` collects. On top of them, this holds to the
@@ -104,7 +107,6 @@ export async function runTrackerAutomation(db: DbClient, runId: number): Promise
     defaultBranch: run.defaultBranch,
     now,
     ownerFallback: codeownersFallback(db, run.projectId),
-    reopenOnRegression: !!binding.policies.reopenTransitionId,
   });
   let capacity = binding.autoCreate.dailyCap - (await countAutomaticCreates(db, run.projectId, now));
   const locale = bindingLocale(binding, connection.config);

@@ -57,9 +57,10 @@ assignee, else the `piwi:owner` annotation, else CODEOWNERS). A failure whose ow
 
 The issue is filed through the same path as a click: the same body, labels and [dedupe by
 cluster](./issue-tracking#what-it-does-exactly), the same [required fields](./issue-tracking#required-jira-fields). An
-issue that is Done, or whose link was removed, no longer tracks the failure, so a rule files a new one, unless the
-binding's reopen transition moves a regressed failure's issue out of Done. An automatic create the tracker would refuse for a field the binding
-leaves empty is recorded as a failed action, naming the field.
+issue that is Done, or whose link was removed, no longer tracks the failure, so a rule files a new one. The exception
+is a Done issue the [reopen transition](./issue-tracking#keep-the-ticket-honest) is moving out of Done after a
+regression: until the next sync reads that issue back, a rule files nothing beside it. An automatic create the tracker
+would refuse for a field the binding leaves empty is recorded as a failed action, naming the field.
 
 ### Preview
 

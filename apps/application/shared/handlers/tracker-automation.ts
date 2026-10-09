@@ -21,7 +21,7 @@ import { eligibleRunSql } from '../run-eligibility';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { isCurrentlySnoozed } from '../inbox-queues';
 import { describeCluster } from '../describe-cluster';
-import { clusterIssueFilings, clusterKnownIssues, knownIssueTracks } from './known-issues';
+import { clusterIssueFilings, clusterKnownIssues, clusterReopenings, knownIssueTracks } from './known-issues';
 import type { DrizzleDB } from './db';
 
 /** Failing (cluster, run) rows read per call, newest first: well past what a threshold needs. */
@@ -48,11 +48,6 @@ export interface AutoCreateFactsOptions {
    * from its most-affected test's file (CODEOWNERS on the server).
    */
   ownerFallback?: (filePath: string) => Promise<string | null>;
-  /**
-   * The binding moves a Done issue out of Done when its cluster's verified fix
-   * regresses (a reopen transition), so that issue still tracks a regressed cluster.
-   */
-  reopenOnRegression?: boolean;
 }
 
 function epochMs(value: unknown): number | null {
@@ -116,6 +111,7 @@ export async function gatherAutoCreateFacts(
       .groupBy(testRunsCases.failureClusterId, testRunsCases.testCaseId),
   ]);
 
+  const reopenings = await clusterReopenings(db, knownIssues);
   const testIds = [...new Set(testRows.map((row) => row.testCaseId))];
   const [tests, retryPasses] = testIds.length
     ? await Promise.all([
@@ -178,13 +174,11 @@ export async function gatherAutoCreateFacts(
       cluster.flakeEvidenceRunId != null ||
       clusterTests.some((row) => (retryPassRun.get(row.testCaseId) ?? 0) >= cluster.firstSeenRunId);
     // Tracked as a new filing reads it: an issue that still tracks the cluster
-    // (a Done one no longer does), or a filing the tracker has not answered yet.
+    // (a Done one no longer does, unless a reopen is moving it out of Done), or
+    // a filing the tracker has not answered yet.
     const tracked =
       filings.queued.has(cluster.id) ||
-      knownIssueTracks(knownIssues.get(cluster.id), {
-        regressed: cluster.fixVerification === 'regressed',
-        reopenOnRegression: opts.reopenOnRegression === true,
-      });
+      knownIssueTracks(knownIssues.get(cluster.id), { reopening: reopenings.has(cluster.id) });
 
     out.set(cluster.id, {
       clusterId: cluster.id,
@@ -263,7 +257,7 @@ export async function previewAutoCreate(
   const facts = await gatherAutoCreateFacts(
     db,
     candidates.map((c) => c.id),
-    { ...opts, now, reopenOnRegression: !!binding.policies.reopenTransitionId },
+    { ...opts, now },
   );
   const policy = { ...binding.autoCreate, enabled: true };
   const items = [...facts.values()]

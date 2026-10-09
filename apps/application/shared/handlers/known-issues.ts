@@ -1,5 +1,6 @@
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, like } from 'drizzle-orm';
 import { entityLinks, integrationActions, testRunsCases } from '../../server/database/schema';
+import { toEpochMs } from '../relative-time';
 import type { DrizzleDB } from './db';
 
 /**
@@ -39,15 +40,81 @@ export function isTrackerLink(link: { provider: string; key: string | null; conn
 
 /**
  * Whether a cluster's known issue still tracks its failure, the rule a new
- * filing follows: an issue that is not Done does, and so does a Done one the
- * binding moves out of Done because the cluster's verified fix regressed.
+ * filing follows: an issue that is not Done does, and so does a Done one while
+ * the regression policy's reopen transition is moving it out of Done
+ * (`clusterReopenings`).
  */
 export function knownIssueTracks(
   issue: Pick<KnownIssueRef, 'statusCategory'> | null | undefined,
-  opts: { regressed: boolean; reopenOnRegression: boolean },
+  opts: { reopening: boolean },
 ): boolean {
   if (!issue) return false;
-  return issue.statusCategory !== 'done' || (opts.regressed && opts.reopenOnRegression);
+  return issue.statusCategory !== 'done' || opts.reopening;
+}
+
+/**
+ * The clusters whose Done known issue the regression policy is moving out of
+ * Done: a reopen transition on that issue waits on the tracker, or went
+ * through after the link was last read back. Once the sync reads the issue
+ * again its status says where it stands, so a transition that did not take
+ * (unavailable in the workflow, or the issue closed again) holds a new filing
+ * back until that read at most. One query for the transitions, one for the links.
+ */
+export async function clusterReopenings(db: DrizzleDB, knownIssues: Map<number, KnownIssueRef>): Promise<Set<number>> {
+  const out = new Set<number>();
+  const done = [...knownIssues].filter(([, issue]) => issue.statusCategory === 'done');
+  if (done.length === 0) return out;
+  const ids = done.map(([id]) => id);
+  const [moves, links] = await Promise.all([
+    db
+      .select({
+        clusterId: integrationActions.entityId,
+        status: integrationActions.status,
+        finishedAt: integrationActions.finishedAt,
+        payload: integrationActions.payload,
+      })
+      .from(integrationActions)
+      .where(
+        and(
+          eq(integrationActions.kind, 'transition'),
+          eq(integrationActions.entityType, 'failure_cluster'),
+          inArray(integrationActions.entityId, ids),
+          like(integrationActions.dedupeKey, '%:reopen:%'),
+          inArray(integrationActions.status, ['pending', 'processing', 'done']),
+        ),
+      ),
+    db
+      .select({ clusterId: entityLinks.failureClusterId, key: entityLinks.key, unfurledAt: entityLinks.unfurledAt })
+      .from(entityLinks)
+      .where(
+        and(
+          inArray(entityLinks.failureClusterId, ids),
+          inArray(
+            entityLinks.key,
+            done.map(([, issue]) => issue.key),
+          ),
+        ),
+      ),
+  ]);
+  // When each cluster's known issue was last read back from the tracker.
+  const readBack = new Map<number, number>();
+  for (const link of links) {
+    if (link.clusterId == null || link.key !== knownIssues.get(link.clusterId)?.key) continue;
+    const ms = toEpochMs(link.unfurledAt as Date | null);
+    if (ms != null) readBack.set(link.clusterId, Math.max(readBack.get(link.clusterId) ?? 0, ms));
+  }
+  for (const move of moves) {
+    const issue = knownIssues.get(move.clusterId);
+    if (!issue || (move.payload as { issueKey?: unknown } | null)?.issueKey !== issue.key) continue;
+    if (move.status !== 'done') {
+      out.add(move.clusterId);
+      continue;
+    }
+    const finished = toEpochMs(move.finishedAt as Date | null);
+    const refreshed = readBack.get(move.clusterId);
+    if (finished != null && refreshed != null && finished >= refreshed) out.add(move.clusterId);
+  }
+  return out;
 }
 
 /** The known issue of each cluster that has one, keyed by cluster id, in one query. */

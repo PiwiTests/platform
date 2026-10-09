@@ -40,6 +40,8 @@ const matchCiRerunRun = vi.fn(() => Promise.resolve(null));
 vi.mock('../../server/utils/ci-rerun', () => ({ matchCiRerunRun }));
 const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
+const runTrackerAutomation = vi.fn((_db: unknown, _id: number) => Promise.resolve(0));
+vi.mock('../../server/utils/integrations/automation', () => ({ runTrackerAutomation }));
 
 const { runFinalizeSideEffects } = await import('../../server/utils/run-finalize-side-effects');
 const { runEventBus } = await import('../../server/utils/run-events');
@@ -57,6 +59,12 @@ const allEffects = [
   postRunPrFeedbackInBackground,
   maybeEnqueueHealActionInBackground,
 ];
+
+/** Every finalize side effect ran once; the notifications come last, after the rules' filing. */
+const everyEffectOnce = () =>
+  vi.waitFor(() => {
+    for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+  });
 
 /** What a run sends out once finished, beside the analysis every run gets. */
 const outbound = [
@@ -106,8 +114,7 @@ describe('runFinalizeSideEffects', () => {
       recordRunHealth.mockRejectedValueOnce(new Error('classifier down'));
       await runFinalizeSideEffects(db, 42, { projectId: 1 });
       expect(errors).toHaveBeenCalledWith('[run-health] recordRunHealth failed', expect.any(Error));
-      await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
-      for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+      await everyEffectOnce();
     } finally {
       errors.mockRestore();
     }
@@ -115,14 +122,13 @@ describe('runFinalizeSideEffects', () => {
 
   test('a real run fires every finalize side effect', async () => {
     runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { scm: {} } });
-    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
-    for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+    await everyEffectOnce();
   });
 
   test.each(['bisect', 'reproduce'])('a %s run notifies but classifies no flaky root cause', async (kind) => {
     runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { piwiOrigin: { kind } } });
     await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
-    expect(emitRunNotifications).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(emitRunNotifications).toHaveBeenCalledTimes(1));
     expect(classifyRunFlakyTests).not.toHaveBeenCalled();
   });
 
@@ -179,8 +185,7 @@ describe('runFinalizeSideEffects', () => {
       isFullRun: 1,
       status: 'failed',
     });
-    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
-    for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+    await everyEffectOnce();
     // The comment is posted from the run's own analysis.
     expect(postRunPrFeedbackInBackground).toHaveBeenCalledWith(db, 42, analysis);
   });
@@ -195,12 +200,26 @@ describe('runFinalizeSideEffects', () => {
     try {
       classifyRunFlakyTests.mockRejectedValueOnce(new Error('classifier down'));
       await expect(runFinalizeSideEffects(db, 42, { projectId: 1 })).resolves.toBeUndefined();
-      await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
+      await everyEffectOnce();
       expect(errors).toHaveBeenCalledWith('[flaky-classify] classifyRunFlakyTests failed', expect.any(Error));
-      for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
     } finally {
       errors.mockRestore();
     }
+  });
+
+  test('the rules file issues once fix verification is done, and the notifications follow them', async () => {
+    runTrackerAutomation.mockClear();
+    let verified!: (fixed: never[]) => void;
+    const fixed = new Promise<never[]>((resolve) => (verified = resolve));
+    analyzeFinishedRunInBackground.mockImplementationOnce(() => ({ fixed, coverage: Promise.resolve(null) }));
+    runFinalizeSideEffects(db, 42, { projectId: 1 });
+    await vi.waitFor(() => expect(autoDiagnoseRun).toHaveBeenCalled());
+    // A regression's reopen transition is queued by fix verification, before a rule reads the cluster.
+    expect(runTrackerAutomation).not.toHaveBeenCalled();
+    expect(emitRunNotifications).not.toHaveBeenCalled();
+    verified([]);
+    await vi.waitFor(() => expect(runTrackerAutomation).toHaveBeenCalledWith(db, 42));
+    await vi.waitFor(() => expect(emitRunNotifications).toHaveBeenCalledWith(db, 42));
   });
 
   test('auto-heal starts once change coverage stored the run’s locator breaks', async () => {
@@ -229,8 +248,7 @@ describe('runFinalizeSideEffects', () => {
 
   test('a run with no metadata still finalizes', async () => {
     runFinalizeSideEffects(db, 42, { projectId: 1 });
-    await vi.waitFor(() => expect(maybeEnqueueHealActionInBackground).toHaveBeenCalledTimes(1));
-    for (const fn of allEffects) expect(fn).toHaveBeenCalledTimes(1);
+    await everyEffectOnce();
   });
 
   test('rollup-updated follows each write of the rollup, never comes before it', async () => {
