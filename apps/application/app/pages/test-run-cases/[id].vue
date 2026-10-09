@@ -9,7 +9,7 @@ import type { FailureVerdict } from '#shared/failure-verdict';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
-import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
+import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';

@@ -14,7 +14,7 @@ A **fix plan** gathers everything Piwi knows about a failure cluster into one an
 
 The same plan is reachable three ways:
 
-- **On the cluster page** — the recommended action leads as the **Next** line and the failing tests are the **Affected tests** selector; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
+- **On the cluster page** — the recommended action leads as the **Next** line, and the section it points at sits right under the situation block as its own card, above the **Affected tests** selector and the evidence; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
 - **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/docs)).
 - **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
@@ -26,7 +26,7 @@ Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) p
 
 ## More ways to fix
 
-Both pages end in one **More ways to fix** toolbox. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default; the section the next step points at opens with the page, and you unfold the rest as needed.
+Both pages end in one **More ways to fix** toolbox. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default. The section the next step points at opens with the page: inside the toolbox on an execution, and on a cluster as its own card under the situation block, with the rest folded below the evidence. You unfold the rest as needed.
 
 ## Reproduce and bisect
 

@@ -634,7 +634,7 @@ export const HELP_TOPICS = {
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',
+    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page: here on an execution, and on a cluster as its own card under the situation block, above the affected tests. Open the others as you need them.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {

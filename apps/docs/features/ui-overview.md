@@ -112,10 +112,11 @@ Two pages: an **execution** (`/test-run-cases/:id`) answers *"why did this attem
 ## Failure cluster detail
 
 `/failure-clusters/:id`: every test that failed for one cause. It opens on the same situation block, with the
-state line right above the next step, then the issue, the occurrence sparkline and what changed, then the affected
-tests and their evidence ([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to
-fix** toolbox holds the [AI diagnosis](./ai-diagnosis), the [locator fix](./locator-healing) and the
-[fix plan](./fix-plans).
+state line right above the next step, then the issue, the occurrence sparkline and what changed. Under it, the section
+the next step points at, such as the [AI diagnosis](./ai-diagnosis) or the [locator fix](./locator-healing), is a card
+of its own above the affected tests and their evidence
+([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to fix** toolbox holds the
+other sections and the [fix plan](./fix-plans).
 
 ## Setup
 

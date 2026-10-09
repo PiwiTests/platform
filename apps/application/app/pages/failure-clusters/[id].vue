@@ -15,7 +15,7 @@ import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { hasHealingAlternatives } from '#shared/locator-healing';
 import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
-import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
+import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi } from '~/utils';
 import { stripAnsi } from '~/utils/text-format';
@@ -748,151 +748,151 @@ const breadcrumbItems = computed(() => [
           </template>
         </SituationBlock>
 
-        <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
-        <div v-if="hasChangesToShow" ref="scmEl" class="scroll-mt-4">
-          <ClusterInvestigation />
-        </div>
+        <!-- ── The fix the next step points at, then the context and the evidence, then More ways to fix ── -->
+        <Toolbox ref="toolbox" lead :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
+          <template #between>
+            <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
+            <div v-if="hasChangesToShow" ref="scmEl" class="scroll-mt-4">
+              <ClusterInvestigation />
+            </div>
 
-        <!-- ── Affected tests: the evidence selector, above the evidence ── -->
-        <ClusterAffectedTests
-          v-model:selected-case-id="selectedCaseId"
-          :cluster-id="clusterId"
-          :cases="cluster.affectedTestCases ?? []"
-          :selected-run-id="selectedRunId"
-          :selected-exec-id="selectedExecId"
-          :project-id="cluster.project?.id"
-          :project-key="cluster.project?.id"
-          :project-name="cluster.project?.name"
-          @changed="refresh"
-        />
+            <!-- ── Affected tests: the evidence selector, above the evidence ── -->
+            <ClusterAffectedTests
+              v-model:selected-case-id="selectedCaseId"
+              :cluster-id="clusterId"
+              :cases="cluster.affectedTestCases ?? []"
+              :selected-run-id="selectedRunId"
+              :selected-exec-id="selectedExecId"
+              :project-id="cluster.project?.id"
+              :project-key="cluster.project?.id"
+              :project-name="cluster.project?.name"
+              @changed="refresh"
+            />
 
-        <!-- ── Evidence ───────────────────────────────────────────────── -->
-        <div v-if="selectedExecId" class="scroll-mt-4">
-          <EvidenceTabs
-            v-if="execution"
-            ref="evidenceTabs"
-            :test-case="execution"
-            :traces="execTraces ?? []"
-            :has-trace="hasTrace"
-            :default-hint="defaultHint"
-            :fixtures-state="clusterCapState('fixtures')"
-            :can-decide-fixtures="canDecideClusterCap"
-            help="case.evidence"
-            @decline-fixtures="declineClusterFixtures"
-          />
-        </div>
+            <!-- ── Evidence ───────────────────────────────────────────────── -->
+            <div v-if="selectedExecId" class="scroll-mt-4">
+              <EvidenceTabs
+                v-if="execution"
+                ref="evidenceTabs"
+                :test-case="execution"
+                :traces="execTraces ?? []"
+                :has-trace="hasTrace"
+                :default-hint="defaultHint"
+                :fixtures-state="clusterCapState('fixtures')"
+                :can-decide-fixtures="canDecideClusterCap"
+                help="case.evidence"
+                @decline-fixtures="declineClusterFixtures"
+              />
+            </div>
 
-        <!-- ── Occurrences over time, with the fix and a regression marked ── -->
-        <ClusterOccurrenceTrend :cluster-id="cluster.id" />
+            <!-- ── Occurrences over time, with the fix and a regression marked ── -->
+            <ClusterOccurrenceTrend :cluster-id="cluster.id" />
 
-        <!-- ── Fix attempts and what agents wrote to this cluster ──────── -->
-        <ClusterActivity :cluster-id="cluster.id" />
+            <!-- ── Fix attempts and what agents wrote to this cluster ──────── -->
+            <ClusterActivity :cluster-id="cluster.id" />
+          </template>
 
-        <!-- ── More ways to fix ───────────────────────────────────────── -->
-        <div class="scroll-mt-4">
-          <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
-            <template #diagnosis-summary>{{ diagnosisSummary }}</template>
-            <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
-            <template #verify-summary>{{ verifySummary }}</template>
-            <template #reproduce-summary>{{ reproduceSummary }}</template>
-            <template #fixed-before-summary
-              >{{ fixedBefore.length }} similar resolved cluster{{ fixedBefore.length === 1 ? '' : 's' }}</template
-            >
-            <template #fix-plan-summary>Copy as Markdown · the same plan an agent gets from get_fix_plan</template>
+          <template #diagnosis-summary>{{ diagnosisSummary }}</template>
+          <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
+          <template #verify-summary>{{ verifySummary }}</template>
+          <template #reproduce-summary>{{ reproduceSummary }}</template>
+          <template #fixed-before-summary
+            >{{ fixedBefore.length }} similar resolved cluster{{ fixedBefore.length === 1 ? '' : 's' }}</template
+          >
+          <template #fix-plan-summary>Copy as Markdown · the same plan an agent gets from get_fix_plan</template>
 
-            <!-- Diagnosis — the unified panel; result shows with or without a provider -->
-            <template #diagnosis>
-              <div data-shot="cluster-diagnosis">
-                <DiagnosisPanel
-                  ref="diagnosisPanel"
-                  scope="cluster"
-                  context-in-menu
-                  :cluster-id="clusterId"
-                  :project-id="cluster.project?.id ?? null"
-                  :last-seen-run-id="cluster.lastSeenRunId"
-                  :cluster-status="cluster.status"
-                  :fix-verification="cluster.fixVerification"
-                  :last-seen-at="cluster.lastSeenAt"
-                  :affected-test-cases="cluster.affectedTestCases ?? []"
+          <!-- Diagnosis — the unified panel; result shows with or without a provider -->
+          <template #diagnosis>
+            <div data-shot="cluster-diagnosis">
+              <DiagnosisPanel
+                ref="diagnosisPanel"
+                scope="cluster"
+                context-in-menu
+                :cluster-id="clusterId"
+                :project-id="cluster.project?.id ?? null"
+                :last-seen-run-id="cluster.lastSeenRunId"
+                :cluster-status="cluster.status"
+                :fix-verification="cluster.fixVerification"
+                :last-seen-at="cluster.lastSeenAt"
+                :affected-test-cases="cluster.affectedTestCases ?? []"
+              />
+            </div>
+          </template>
+
+          <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
+          <template v-if="fixedBefore.length" #fixed-before>
+            <FixedBeforeMatches
+              :matches="fixedBefore"
+              :can-triage="canTriage"
+              :applying-id="applyingId"
+              @apply="applyTriage"
+            />
+          </template>
+
+          <!-- Locator fix — the recommendation, its provenance and alternatives, once -->
+          <template #locator-fix>
+            <LocatorHealingPanel
+              ref="clusterLocatorPanel"
+              :test-runs-case-id="locatorCaseId!"
+              :healing="clusterLocatorHealing ?? null"
+              :affected-count="affectedCases.length"
+              :chrome="false"
+            />
+          </template>
+
+          <!-- Verify — the command and how to re-run it -->
+          <template v-if="fixPlan" #verify>
+            <div class="space-y-1.5">
+              <CodeBlock :code="fixPlan.verify.command" lang="bash" />
+              <p class="text-xs text-muted">{{ fixPlan.verify.expectation }}</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <DesktopRunLocallyButton
+                  :project-id="cluster.project?.id"
+                  :project-label="cluster.project?.label ?? cluster.project?.name"
+                  :cases="affectedRetryCases"
                 />
+                <ClientOnly>
+                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
+                    Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
+                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
+                  </span>
+                </ClientOnly>
               </div>
-            </template>
+            </div>
+          </template>
 
-            <!-- Fixed before — resolved clusters this one resembles, and how each was fixed -->
-            <template v-if="fixedBefore.length" #fixed-before>
-              <FixedBeforeMatches
-                :matches="fixedBefore"
-                :can-triage="canTriage"
-                :applying-id="applyingId"
-                @apply="applyTriage"
-              />
-            </template>
+          <!-- Reproduce — the local recipe and a generated git bisect -->
+          <template v-if="fixPlan && showReproduce" #reproduce>
+            <ReproduceSection
+              :reproduce="fixPlan.reproduce"
+              :bisect="fixPlan.bisect"
+              :context="fixPlan.reproduceDesktop"
+              :project-label="cluster?.project?.label ?? cluster?.project?.name"
+            />
+          </template>
 
-            <!-- Locator fix — the recommendation, its provenance and alternatives, once -->
-            <template #locator-fix>
-              <LocatorHealingPanel
-                ref="clusterLocatorPanel"
-                :test-runs-case-id="locatorCaseId!"
-                :healing="clusterLocatorHealing ?? null"
-                :affected-count="affectedCases.length"
-                :chrome="false"
-              />
-            </template>
-
-            <!-- Verify — the command and how to re-run it -->
-            <template v-if="fixPlan" #verify>
-              <div class="space-y-1.5">
-                <CodeBlock :code="fixPlan.verify.command" lang="bash" />
-                <p class="text-xs text-muted">{{ fixPlan.verify.expectation }}</p>
-                <div class="flex flex-wrap items-center gap-2">
-                  <DesktopRunLocallyButton
-                    :project-id="cluster.project?.id"
-                    :project-label="cluster.project?.label ?? cluster.project?.name"
-                    :cases="affectedRetryCases"
-                  />
-                  <ClientOnly>
-                    <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                      Last re-run {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
-                      <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
-                    </span>
-                  </ClientOnly>
-                </div>
-              </div>
-            </template>
-
-            <!-- Reproduce — the local recipe and a generated git bisect -->
-            <template v-if="fixPlan && showReproduce" #reproduce>
-              <ReproduceSection
-                :reproduce="fixPlan.reproduce"
-                :bisect="fixPlan.bisect"
-                :context="fixPlan.reproduceDesktop"
-                :project-label="cluster?.project?.label ?? cluster?.project?.name"
-              />
-            </template>
-
-            <!-- Fix plan — the whole plan assembled for a ticket or an agent -->
-            <template v-if="fixPlan" #fix-plan-actions>
-              <UButton
-                size="xs"
-                color="neutral"
-                variant="outline"
-                :icon="markdownCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-                title="Copy the whole plan as Markdown for a ticket or an agent"
-                @click="copyFixPlanMarkdown"
-              >
-                Copy as Markdown
-              </UButton>
-            </template>
-            <template v-if="fixPlan" #fix-plan>
-              <p class="flex items-center gap-1 text-xs text-muted">
-                <UIcon name="i-lucide-bot" class="size-3 shrink-0" />
-                The diagnosis, edits, failing tests, owner and verify command in one document —
-                <code class="font-mono">get_fix_plan</code> returns the same to your AI agent via the
-                <NuxtLink to="/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
-              </p>
-            </template>
-          </Toolbox>
-        </div>
+          <!-- Fix plan — the whole plan assembled for a ticket or an agent -->
+          <template v-if="fixPlan" #fix-plan-actions>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="outline"
+              :icon="markdownCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
+              title="Copy the whole plan as Markdown for a ticket or an agent"
+              @click="copyFixPlanMarkdown"
+            >
+              Copy as Markdown
+            </UButton>
+          </template>
+          <template v-if="fixPlan" #fix-plan>
+            <p class="flex items-center gap-1 text-xs text-muted">
+              <UIcon name="i-lucide-bot" class="size-3 shrink-0" />
+              The diagnosis, edits, failing tests, owner and verify command in one document —
+              <code class="font-mono">get_fix_plan</code> returns the same to your AI agent via the
+              <NuxtLink to="/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
+            </p>
+          </template>
+        </Toolbox>
       </div>
 
       <ErrorState v-else text="Cluster not found." icon="i-lucide-search-x" class="h-64">

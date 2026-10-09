@@ -91,8 +91,8 @@ Three lines are cluster-specific:
   change is not in the code.
 
 The **Affected tests** list selects which test's latest execution the evidence shows; its **Move to a new cluster**
-[splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The diagnosis, the locator fix, verify and reproduce sit in
-the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
+[splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The fix section **Next** points at leads under the block;
+the rest fold into [**More ways to fix**](./fix-plans#more-ways-to-fix).
 
 ### The state line
 

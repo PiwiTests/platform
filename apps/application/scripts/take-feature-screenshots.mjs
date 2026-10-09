@@ -588,6 +588,24 @@ const READY_INSPECTION = {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
 /**
+ * Opens a cluster page's Diagnosis: it is the card under the situation block when
+ * the next step comes from the diagnosis, and otherwise a folded section of More
+ * ways to fix, which this unfolds.
+ */
+async function openDiagnosisSection(page) {
+  const folded = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded="false"]');
+  if (await folded.count()) await folded.first().click();
+  await page.locator('[data-shot="cluster-diagnosis"]').waitFor({ timeout: 90000 });
+}
+
+/** `run` for a scene of a cluster's Diagnosis: open it, then capture the scene's `of`. */
+async function openClusterDiagnosis({ page, shoot, settle }) {
+  await openDiagnosisSection(page);
+  await settle();
+  await shoot();
+}
+
+/**
  * `prepare` for a scene that needs a signed-in viewer, such as a project's
  * Members, which exist with authentication on only: signs in with
  * PIWI_SCREENS_LOGIN (`<username>:<password>`) through the context's request
@@ -2451,7 +2469,8 @@ const SCENES = [
   },
   {
     name: 'ai-diagnosis',
-    description: 'Failure cluster page: the AI diagnosis card at the foot of the cluster page (dark)',
+    description:
+      'Failure cluster page: the AI diagnosis, as the card under the situation block when the next step comes from it, else unfolded in More ways to fix (dark)',
     tags: ['docs'],
     out: 'docs',
     // Cluster 10 ships a stored, "diagnosis-verified" diagnosis in the demo seed.
@@ -2460,6 +2479,7 @@ const SCENES = [
     of: '[data-shot="cluster-diagnosis"]',
     pad: 12,
     colorScheme: 'dark',
+    run: openClusterDiagnosis,
     // The stored diagnosis renders with or without a provider, but run this
     // scene with the server's AI env vars set (PIWI_AI_PROVIDER / PIWI_AI_API_KEY
     // / PIWI_AI_MODEL) so the illustration shows the configured panel (Re-diagnose
@@ -2585,6 +2605,7 @@ const SCENES = [
       // AI)": start the server with PIWI_AI_PROVIDER=anthropic and any
       // PIWI_AI_API_KEY. The stored diagnosis means no model is ever called.
       route: '/failure-clusters/10',
+      prepareShot: openDiagnosisSection,
       scrollTo: '[data-shot="diagnosis-result"]',
       scrollOffset: 16,
     },
@@ -2613,7 +2634,7 @@ const SCENES = [
       route: '/test-cases/1',
       charts: true,
     },
-  ].map(({ scrollTo, scrollOffset = 72, ...scene }) => ({
+  ].map(({ scrollTo, scrollOffset = 72, prepareShot, ...scene }) => ({
     ...scene,
     tags: ['docs', 'readme'],
     out: 'docs',
@@ -2623,6 +2644,7 @@ const SCENES = [
     colorScheme: 'light',
     ...(scrollTo && {
       async run({ page, shoot, settle }) {
+        if (prepareShot) await prepareShot(page);
         const target = page.locator(scrollTo).first();
         await target.waitFor({ timeout: 90000 });
         // The dashboard scrolls inside its content panel, not the document, so

@@ -395,19 +395,24 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(body.diagnosis!.category).toBe('app-bug');
   });
 
-  test('Show context and Re-diagnose open a folded Diagnosis section on the cluster page', async ({
-    page,
-    request,
-  }) => {
+  test('Show context and Re-diagnose reach the Diagnosis panel on the cluster page', async ({ page, request }) => {
     expect(clusterId).toBeTruthy();
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
 
-    // A folded section renders no body, so its diagnosis panel is not mounted.
-    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    // A step from the diagnosis puts Diagnosis in its own card, always open.
+    // Otherwise it is a folded section of More ways to fix, whose body (and so
+    // its diagnosis panel) is not mounted until it opens.
+    const leads = (await page.locator('[data-shot="fix-lead"] [data-shot="fix-diagnosis"]').count()) > 0;
+    const diagnosis = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded]').first();
     const fold = async () => {
+      if (leads) return;
       if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
       await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+    };
+    const expectOpen = async () => {
+      if (leads) await expect(page.locator('[data-shot="fix-lead"] [data-shot="cluster-diagnosis"]')).toBeVisible();
+      else await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
     };
 
     // More actions › Show context opens the section, then the context modal.
@@ -416,7 +421,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     await page.getByRole('menuitem', { name: 'Show context' }).click();
     const context = page.getByRole('dialog').filter({ hasText: 'Context sent to AI' });
     await expect(context).toBeVisible();
-    await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await expectOpen();
     await page.keyboard.press('Escape');
     await expect(context).toHaveCount(0);
 
@@ -434,7 +439,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     });
     await fold();
     await page.locator('[data-shot="next-step"]').getByRole('button', { name: 'Re-diagnose' }).click();
-    await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await expectOpen();
     await expect.poll(() => diagnoseRequests.length).toBeGreaterThan(0);
   });
 

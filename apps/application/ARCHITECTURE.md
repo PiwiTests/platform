@@ -181,8 +181,11 @@ failed again or passed, and the Cluster row names the cluster, then its ticket (
 and word where the Next step's change comes from with `shared/most-likely.ts` (`pickMostLikely`,
 `nextStepSourceLine`), one rule for the two. Under the block, the execution page shows `DidNotRunCard` for a test that did not run, `EvidenceTabs` (opening on the tab
 `useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the
-one the next step points at open) and History (`HistoryStrip`). The cluster page shows `ClusterInvestigation` when
-there is a diff to browse, `ClusterAffectedTests` (its selection picks the execution the evidence shows), `EvidenceTabs`, `ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both
+one the next step points at open) and History (`HistoryStrip`). The cluster page shows the section the next step points
+at as a card of its own (`Toolbox` with `lead`; the sections, their order and the step each serves are in
+`app/utils/fix-sections.ts`), then `ClusterInvestigation` when there is a diff to browse, `ClusterAffectedTests` (its
+selection picks the execution the evidence shows), `EvidenceTabs`, `ClusterOccurrenceTrend`, `ClusterActivity`, and
+More ways to fix with the other sections folded. Both
 pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites.
 `/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
 two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).

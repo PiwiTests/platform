@@ -66,8 +66,8 @@ A diagnosis is grounded in your actual run, not a generic "ask AI" button. Each 
 - **Suggested fix** and **prevention tips**
 
 <figure>
-  <img src="/screenshots/ai-diagnosis.png" alt="The AI diagnosis in the toolbox of a failure cluster page">
-  <figcaption>The AI diagnosis in a cluster page's toolbox: category, confidence, root cause, evidence and a suggested fix.</figcaption>
+  <img src="/screenshots/ai-diagnosis.png" alt="The AI diagnosis card under a failure cluster page's situation block">
+  <figcaption>The AI diagnosis under a cluster's situation block: category, confidence, root cause, evidence and a suggested fix.</figcaption>
 </figure>
 
 ## Diagnosing one execution

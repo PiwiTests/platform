@@ -572,11 +572,11 @@ test.describe('Cluster situation block on seeded clusters', () => {
     });
   }
 
-  // Phase 4: the evidence opens on the story and the toolbox on the next step,
-  // independent of which mutable state the seed is in. #10 ships a stored
-  // diagnosis: a step from it opens Diagnosis, and marking the cluster resolved
-  // (its verified fix, while it is open) opens no section.
-  test('#10 opens the evidence on Timeline, the toolbox on its next step, and never says "AI is not configured"', async ({
+  // The evidence opens on the story and the fix on the next step, independent of
+  // which mutable state the seed is in. #10 ships a stored diagnosis: a step from
+  // it leads with Diagnosis, and marking the cluster resolved (its verified fix,
+  // while it is open) leads with no section.
+  test('#10 opens the evidence on Timeline, the fix on its next step, and never says "AI is not configured"', async ({
     page,
     request,
   }) => {
@@ -596,17 +596,58 @@ test.describe('Cluster situation block on seeded clusters', () => {
     // places two or more items — is the default tab, not State.
     await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
 
-    // The toolbox is "More ways to fix" and opens on Diagnosis for a step from
-    // the diagnosis; the reproduce section stays folded.
+    // A step from the diagnosis puts Diagnosis in its own card; Mark resolved
+    // leads with no section, and Diagnosis stays folded in "More ways to fix".
     await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
-    await expect(
-      page.locator(`[data-shot="fix-diagnosis"] [aria-expanded="${fromDiagnosis ? 'true' : 'false'}"]`),
-    ).toBeVisible();
+    if (fromDiagnosis) {
+      await expect(page.locator('[data-shot="fix-lead"] [data-shot="fix-diagnosis"]')).toBeVisible();
+    } else {
+      await expect(page.locator('[data-shot="fix-lead"]')).toHaveCount(0);
+      await expect(page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] [aria-expanded="false"]')).toBeVisible();
+    }
     await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
 
     // A stored result renders under no provider, so the "AI is not configured"
     // line never appears — the diagnosis header offers Re-diagnose instead.
     await expect(page.getByText('AI is not configured')).toHaveCount(0);
+  });
+
+  // The section the next step points at is a card of its own right under the
+  // situation block, above the affected tests and the evidence; every other way
+  // to fix stays folded in "More ways to fix" below them.
+  test('a step from the diagnosis leads with Diagnosis above the affected tests and the evidence', async ({
+    page,
+    request,
+  }) => {
+    let target: number | null = null;
+    for (const id of [10, 1, 3, 7]) {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      if (!res.ok()) continue;
+      const detail = (await res.json()) as { nextStep: { kind: string } };
+      if (detail.nextStep.kind === 'apply-patch') {
+        target = id;
+        break;
+      }
+    }
+    test.skip(target == null, 'no seeded cluster on the apply-patch step');
+
+    await page.goto(`/failure-clusters/${target}`);
+    await waitForHydration(page);
+
+    const lead = page.locator('[data-shot="fix-lead"] [data-shot="fix-diagnosis"]');
+    await expect(lead).toBeVisible();
+    const leadTop = (await lead.boundingBox())!.y;
+    const evidence = page.locator('[data-shot="evidence-card"]');
+    await expect(evidence).toBeVisible();
+    expect(leadTop).toBeLessThan((await evidence.boundingBox())!.y);
+    const tests = page.locator('[data-shot="cluster-affected-tests"]');
+    if (await tests.count()) expect(leadTop).toBeLessThan((await tests.boundingBox())!.y);
+
+    const toolbox = page.locator('[data-shot="fix"]');
+    await expect(toolbox.locator('[data-shot="fix-diagnosis"]')).toHaveCount(0);
+    const toggles = toolbox.locator('button[aria-expanded]');
+    expect(await toggles.count()).toBeGreaterThan(0);
+    for (const toggle of await toggles.all()) await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   // The Locator fix section reads the execution the next step checked (the
@@ -644,9 +685,9 @@ test.describe('Cluster situation block on seeded clusters', () => {
       await page.locator(`a[href="/failure-clusters/${id}"]:visible`).first().click();
       await expect(page.locator('[data-shot="situation-block"]')).toBeVisible();
 
-      // Counted at once, without auto-waiting: the section opens on the next step
+      // Counted at once, without auto-waiting: the section leads as its own card,
       // with its panel's body rendered.
-      const section = page.locator('[data-shot="fix-locator-fix"]');
+      const section = page.locator('[data-shot="fix-lead"] [data-shot="fix-locator-fix"]');
       expect(await section.count()).toBe(1);
       expect(await section.locator('[data-shot="alternative-locators"]').count()).toBe(1);
 
