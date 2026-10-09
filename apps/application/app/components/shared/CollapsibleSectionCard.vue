@@ -46,7 +46,12 @@ defineExpose({ setFolded, reveal });
 
 <template>
   <div ref="rootEl" class="scroll-mt-4">
-    <UCard :ui="{ header: 'p-2.5 sm:px-4 sm:py-3', body: folded ? 'p-0 sm:p-0' : '' }" :class="folded && 'divide-y-0'">
+    <!-- Folded, the card is its header alone: the body drops its padding at every
+         width, including the `max-sm:p-3` app.config gives every card body. -->
+    <UCard
+      :ui="{ header: 'p-2.5 sm:px-4 sm:py-3', body: folded ? 'p-0 sm:p-0 max-sm:p-0' : '' }"
+      :class="folded && 'divide-y-0'"
+    >
       <template #header>
         <!-- Below `sm` the actions drop to their own full-width row under the
              title so a wide actions group never squeezes the heading on a phone. -->
