@@ -26,7 +26,7 @@ Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) p
 
 ## More ways to fix
 
-Both pages end in one **More ways to fix** toolbox. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default. The section the next step points at opens with the page: inside the toolbox on an execution, and on a cluster as its own card under the situation block, with the rest folded below the evidence. You unfold the rest as needed.
+Both pages carry one **More ways to fix** toolbox, below the evidence and above the history. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default. The section the next step points at opens with the page: inside the toolbox on an execution, and on a cluster as its own card under the situation block, with the rest folded below the evidence. You unfold the rest as needed.
 
 ## Reproduce and bisect
 

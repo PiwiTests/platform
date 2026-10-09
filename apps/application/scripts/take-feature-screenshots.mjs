@@ -1328,10 +1328,12 @@ const SCENES = [
     { suffix: '-mobile', width: 375 },
   ].map(({ suffix, width }) => ({
     name: `cluster-activity${suffix}`,
-    description: `A failure cluster’s Activity section with reported fix attempts, at ${width} px`,
+    description: `A failure cluster’s Activity section with reported fix attempts, unfolded, at ${width} px`,
     prepare: prepareClusterActivity,
     route: '/failure-clusters/2',
     viewport: { width, height: 1400 },
+    // The card is folded to one line by default.
+    expand: ['[data-shot="cluster-activity"]'],
     of: '[data-shot="cluster-activity"]',
     pad: 8,
   })),
@@ -1442,7 +1444,9 @@ const SCENES = [
     {
       shot: 'cluster-occurrence-trend',
       route: '/failure-clusters/3',
-      what: 'a failure cluster’s occurrences over time',
+      what: 'a failure cluster’s occurrences over time, unfolded',
+      // The card is folded to one line by default.
+      expand: [`[data-shot="cluster-occurrence-trend"]`],
     },
     { shot: 'project-targets', route: '/projects/1?tab=settings&section=targets', what: 'the project targets form' },
     {
@@ -1450,7 +1454,7 @@ const SCENES = [
       route: '/projects/1?tab=settings&section=browser-extension',
       what: 'the browser extension URL patterns of a project, with the origins its suite visited',
     },
-  ].flatMap(({ shot, route, what }) =>
+  ].flatMap(({ shot, route, what, expand }) =>
     [
       { suffix: '', width: 1280 },
       { suffix: '-mobile', width: 375 },
@@ -1459,11 +1463,14 @@ const SCENES = [
       description: `${what[0].toUpperCase()}${what.slice(1)}, at ${width} px`,
       route,
       viewport: { width, height: 1800 },
+      ...(expand && { expand }),
       of: `[data-shot="${shot}"]`,
       async run({ page, shoot, settle }) {
         const target = page.locator(`[data-shot="${shot}"]`).first();
         await target.waitFor({ timeout: 90000 });
         await target.scrollIntoViewIfNeeded();
+        // Unfolding clicked the header: move the pointer off the chart so no tooltip shows.
+        if (expand) await page.mouse.move(0, 0);
         await settle();
         await shoot();
       },

@@ -25,8 +25,10 @@ const props = withDefaults(
     storageKey: string;
     /** Whether the section starts folded on first visit (no stored cookie). */
     defaultFolded?: boolean;
+    /** Render the `actions` slot only while the section is open, so a folded card is its header line alone. */
+    hideActionsWhenFolded?: boolean;
   }>(),
-  { iconClass: 'text-primary', defaultFolded: true },
+  { iconClass: 'text-primary', defaultFolded: true, hideActionsWhenFolded: false },
 );
 
 const { folded, toggle, setFolded } = useFoldedState(`piwi-section-fold-${props.storageKey}`, props.defaultFolded);
@@ -76,7 +78,7 @@ defineExpose({ setFolded, reveal });
               <slot name="folded" />
             </span>
           </div>
-          <div v-if="$slots.actions" class="flex items-center gap-1 sm:shrink-0">
+          <div v-if="$slots.actions && !(hideActionsWhenFolded && folded)" class="flex items-center gap-1 sm:shrink-0">
             <slot name="actions" />
           </div>
         </div>

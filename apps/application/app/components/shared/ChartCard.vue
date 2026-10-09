@@ -5,9 +5,16 @@
  * `legend` there, so the color key reads as part of the heading instead of
  * costing a row under the plot. The export menu copies the chart as a PNG and,
  * given `exportData`, downloads its series as an Excel workbook.
+ *
+ * With `foldKey`, the card is a `CollapsibleSectionCard`: folded by default to
+ * its header and the `#folded` peek, its fold state kept per user in the cookie
+ * `piwi-section-fold-<foldKey>`, and its legend and actions shown only while it
+ * is open.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 import { chartFileName, chartPng, chartXlsx, copyPng, type ChartExportData } from '~/utils/chart-export';
+import SectionCard from './SectionCard.vue';
+import CollapsibleSectionCard from './CollapsibleSectionCard.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -24,9 +31,25 @@ const props = withDefaults(
     exportData?: ChartExportData | null;
     /** Whether the chart is drawn as an SVG the PNG export can copy; a grid of cells is not. */
     png?: boolean;
+    /** Fold the card to one line, its state kept per user under this key. */
+    foldKey?: string;
   }>(),
   { png: true },
 );
+
+const cardComponent = computed(() => (props.foldKey ? CollapsibleSectionCard : SectionCard));
+const cardBind = computed(() => ({
+  title: props.title,
+  subtitle: props.subtitle,
+  icon: props.icon,
+  iconClass: props.iconClass,
+  help: props.help,
+  ...(props.foldKey ? { storageKey: props.foldKey, hideActionsWhenFolded: true } : {}),
+}));
+
+// A folding card unfolds and scrolls into view on request.
+const card = ref<{ reveal?: () => void } | null>(null);
+defineExpose({ reveal: () => card.value?.reveal?.() });
 
 const body = ref<HTMLElement | null>(null);
 const toast = useToast();
@@ -67,9 +90,12 @@ const exportItems = computed(() => [
 </script>
 
 <template>
-  <SectionCard :title="title" :subtitle="subtitle" :icon="icon" :icon-class="iconClass" :help="help">
+  <component :is="cardComponent" ref="card" v-bind="cardBind">
     <template v-if="$slots.subtitle" #subtitle>
       <slot name="subtitle" />
+    </template>
+    <template v-if="foldKey && $slots.folded" #folded>
+      <slot name="folded" />
     </template>
     <template #actions>
       <ChartLegend v-if="legend?.length" :items="legend" />
@@ -98,5 +124,5 @@ const exportItems = computed(() => [
     <template v-if="$slots.footer" #footer>
       <slot name="footer" />
     </template>
-  </SectionCard>
+  </component>
 </template>

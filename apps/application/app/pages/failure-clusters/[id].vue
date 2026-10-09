@@ -202,6 +202,8 @@ const occurrenceCountText = computed(() => {
   return `${occurrencesText.value} in ${tests}${occurrenceSpanText.value}`;
 });
 const lastSeenAgo = computed(() => relativeTimeAgo(cluster.value?.lastSeenAt ?? null));
+// The sparkline opens the folded Occurrences over time card and scrolls to it.
+const occurrenceTrend = ref<{ reveal: () => void } | null>(null);
 const occurrenceAria = computed(() =>
   [occurrenceCountText.value, lastSeenAgo.value ? `last ${lastSeenAgo.value}` : null].filter(Boolean).join(' · '),
 );
@@ -735,6 +737,7 @@ const breadcrumbItems = computed(() => [
                 v-if="occurrenceSeries.length"
                 :series="occurrenceSeries"
                 :label="`Occurrences per run — ${occurrenceAria}`"
+                @open="occurrenceTrend?.reveal()"
               />
               <span>
                 <template v-if="singleTest"
@@ -813,12 +816,6 @@ const breadcrumbItems = computed(() => [
                 </template>
               </EvidenceTabs>
             </div>
-
-            <!-- ── Occurrences over time, with the fix and a regression marked ── -->
-            <ClusterOccurrenceTrend :cluster-id="cluster.id" />
-
-            <!-- ── Fix attempts and what agents wrote to this cluster ──────── -->
-            <ClusterActivity :cluster-id="cluster.id" />
           </template>
 
           <template #diagnosis-summary>{{ diagnosisSummary }}</template>
@@ -922,6 +919,10 @@ const breadcrumbItems = computed(() => [
             </p>
           </template>
         </Toolbox>
+
+        <!-- ── The history, folded: occurrences over time, then the activity ── -->
+        <ClusterOccurrenceTrend ref="occurrenceTrend" :cluster-id="cluster.id" :first-seen-at="cluster.firstSeenAt" />
+        <ClusterActivity :cluster-id="cluster.id" />
       </div>
 
       <ErrorState v-else text="Cluster not found." icon="i-lucide-search-x" class="h-64">

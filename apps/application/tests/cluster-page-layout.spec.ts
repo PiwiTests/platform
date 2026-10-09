@@ -186,6 +186,45 @@ test.describe('Failure cluster page layout', () => {
     await expect(h1).toHaveText(before);
   });
 
+  test('the occurrence chart and Activity fold at the foot of the page', async ({ page, request }) => {
+    // A reported fix attempt gives the cluster an Activity card.
+    const attempt = await request.post(`/api/failure-clusters/${clusterId}/fix-attempts`, {
+      data: { kind: 'fix-plan', branch: 'fix/submit-button', channel: 'ui' },
+    });
+    expect(attempt.ok()).toBeTruthy();
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    const trend = page.locator('[data-shot="cluster-occurrence-trend"]');
+    const trendHeader = trend.locator('[role="button"][aria-expanded]').first();
+    await expect(trendHeader).toHaveAttribute('aria-expanded', 'false');
+    const activity = page.locator('[data-shot="cluster-activity"]');
+    await expect(activity.locator('[role="button"][aria-expanded]').first()).toHaveAttribute('aria-expanded', 'false');
+    await expect(activity).toContainText('fix attempt');
+
+    // Below More ways to fix, the chart first, then the activity.
+    const fixBottom = await page.locator('[data-shot="fix"]').evaluate((el) => el.getBoundingClientRect().bottom);
+    const trendTop = await trend.evaluate((el) => el.getBoundingClientRect().top);
+    const activityTop = await activity.evaluate((el) => el.getBoundingClientRect().top);
+    expect(trendTop).toBeGreaterThanOrEqual(fixBottom);
+    expect(activityTop).toBeGreaterThan(trendTop);
+  });
+
+  test('the occurrence sparkline is one control that opens the occurrence chart', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    const block = page.locator('[data-shot="situation-block"]');
+    const sparkline = block.getByRole('button', { name: /Show occurrences over time$/ });
+    await expect(sparkline).toHaveCount(1);
+    await expect(sparkline.locator('a')).toHaveCount(0);
+
+    const trend = page.locator('[data-shot="cluster-occurrence-trend"]');
+    await sparkline.click();
+    await expect(trend.locator('[role="button"][aria-expanded]').first()).toHaveAttribute('aria-expanded', 'true');
+    await expect(trend.locator('svg.block').first()).toBeVisible();
+  });
+
   test('the raw error is behind a "Raw error" disclosure', async ({ page }) => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);

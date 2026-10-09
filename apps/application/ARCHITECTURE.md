@@ -184,8 +184,9 @@ and word where the Next step's change comes from with `shared/most-likely.ts` (`
 one the next step points at open) and History (`HistoryStrip`). The cluster page shows the section the next step points
 at as a card of its own (`Toolbox` with `lead`; the sections, their order and the step each serves are in
 `app/utils/fix-sections.ts`), then `ClusterInvestigation` when there is a diff to browse, `ClusterAffectedTests` (its
-selection picks the execution the evidence shows), `EvidenceTabs`, `ClusterOccurrenceTrend`, `ClusterActivity`, and
-More ways to fix with the other sections folded. Both
+selection picks the execution the evidence shows, with several tests), `EvidenceTabs`, More ways to fix with the other
+sections folded, then the history, folded to one line each: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`,
+opened by the occurrence sparkline) and `ClusterActivity`. Both
 pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites.
 `/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
 two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
@@ -223,7 +224,7 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
   `HiddenRunsNote` (what the filters hide, with the action that shows it).
 - **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
-  `FilterToolbar`, `ChartCard` (header + `legend`), the SVG chart primitives `ChartFrame` (self-measuring plot area,
+  `FilterToolbar`, `ChartCard` (header + `legend`; `foldKey` folds it to one line), the SVG chart primitives `ChartFrame` (self-measuring plot area,
   y-axis) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,
   `DurationValue` (tight `210ms` via
   the pure `splitDuration`), `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`, `LocatorCode` (a locator

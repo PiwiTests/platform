@@ -3,18 +3,24 @@
  * A failure cluster's occurrences over time: its failing executions per
  * bucket over a chosen span, with the moment its fix landed and, when the fix
  * did not hold, its first occurrence after it — "did my fix hold", at a glance.
+ * Folded to one line by default, the count as its peek; open, it spans the days
+ * since the cluster was first seen unless another span is picked.
  */
 import type { ClusterOccurrenceTrend } from '#shared/handlers/failure-clusters';
 import type { TrendLine } from '~/utils/chart';
+import { sinceFirstSeenDays } from '~/utils/occurrence-window';
 
-const props = defineProps<{ clusterId: number }>();
+const props = defineProps<{ clusterId: number; firstSeenAt?: string | Date | null }>();
 
-const SPANS = [
+type Span = 'first-seen' | 30 | 90 | 365;
+const SPANS: { label: string; value: Span }[] = [
+  { label: 'Since first seen', value: 'first-seen' },
   { label: 'Last 30 days', value: 30 },
   { label: 'Last 90 days', value: 90 },
   { label: 'Last 365 days', value: 365 },
 ];
-const days = ref(90);
+const span = ref<Span>('first-seen');
+const days = computed(() => (span.value === 'first-seen' ? sinceFirstSeenDays(props.firstSeenAt) : span.value));
 const trend = ref<ClusterOccurrenceTrend | null>(null);
 const pending = ref(false);
 const error = ref<unknown>(null);
@@ -65,30 +71,38 @@ const subtitle = computed(() => {
   const t = trend.value;
   if (!t) return undefined;
   const total = t.buckets.reduce((n, b) => n + b.occurrences, 0);
-  if (t.regressedAt) return `${total} occurrences · failed again after its fix`;
-  if (t.fixLandedAt) return `${total} occurrences · no occurrence since its fix`;
-  return `${total} occurrences`;
+  const count = `${total} occurrence${total === 1 ? '' : 's'}`;
+  if (t.regressedAt) return `${count} · failed again after its fix`;
+  if (t.fixLandedAt) return `${count} · no occurrence since its fix`;
+  return count;
 });
 const exportData = computed(() => ({
   name: `failure-cluster-${props.clusterId}-occurrences`,
   header: ['date', 'occurrences', 'tests failing'],
   rows: buckets.value.map((b) => [b.date, b.occurrences, b.tests]),
 }));
+
+// Unfold and scroll into view, for the occurrence sparkline that opens it.
+const card = ref<{ reveal: () => void } | null>(null);
+defineExpose({ reveal: () => card.value?.reveal() });
 </script>
 
 <template>
   <ChartCard
+    ref="card"
     title="Occurrences over time"
     icon="i-lucide-chart-line"
     :subtitle="subtitle"
     help="cluster.occurrence-trend"
     :legend="legend"
     :export-data="exportData"
+    fold-key="cluster-occurrence-trend"
     data-shot="cluster-occurrence-trend"
   >
+    <template #folded>{{ subtitle }}</template>
     <template #actions>
       <USelect
-        v-model="days"
+        v-model="span"
         :items="SPANS"
         value-key="value"
         size="xs"

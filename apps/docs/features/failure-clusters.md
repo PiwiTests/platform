@@ -13,7 +13,7 @@ into a **failure inbox**: the problems you still owe a decision.
 
 ## How failures are grouped
 
-Failed executions that share the same **error fingerprint** join one cluster, so twenty stack traces read as
+Failed executions sharing an **error fingerprint** join one cluster, so twenty stack traces read as
 *"20 failures, 3 root causes"*. Clustering is always on.
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
@@ -76,9 +76,9 @@ signed-in user (by name or email).
 
 ## The cluster page
 
-A cluster page leads with the same situation block as a failing execution ([Your first
+A cluster page leads with a failing execution's situation block ([Your first
 failure](/guide/first-failure)), across every test that shares the failure. The heading is the latest failure's
-headline when it says more (a timeout, a count) than the cluster's [name](./ai-diagnosis), which then sits under it.
+headline when it says more (a timeout, a count) than the cluster's [name](./ai-diagnosis), which sits under it.
 Three lines are cluster-specific:
 
 - **The state line**, right above **Next**.
@@ -108,7 +108,8 @@ triage note and the lines Piwi added to it.
 
 ### Occurrences over time
 
-A chart counts the cluster's failures per day, week or month, marking when its **fix landed**.
+Folded under the fixes, a chart counts failures per day, week or month since first seen, marking the **fix landed**;
+the sparkline opens it.
 
 ## Did the fix work?
 

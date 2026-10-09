@@ -116,7 +116,7 @@ state line right above the next step, then the issue, the occurrence sparkline a
 the next step points at, such as the [AI diagnosis](./ai-diagnosis) or the [locator fix](./locator-healing), is a card
 of its own above the affected tests and their evidence
 ([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to fix** toolbox holds the
-other sections and the [fix plan](./fix-plans).
+other sections and the [fix plan](./fix-plans); the occurrence chart and the activity fold to one line each below it.
 
 ## Setup
 
