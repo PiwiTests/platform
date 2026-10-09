@@ -4,9 +4,9 @@
  * sparkline — magnitude over time, oldest → newest. One bar per run, the failure
  * colour for a run that failed and a muted baseline tick for a run it did not,
  * the latest run emphasized. No chart library and no axes. The sparkline is one
- * button, named by the summary sentence, that emits `open` (the page opens
- * Occurrences over time, where each run is reachable); each bar keeps a `title`
- * with its run number and count.
+ * button, named by the summary sentence, that emits `open` (the page unfolds
+ * Occurrences over time, its chart per day, week or month); each bar keeps a
+ * `title` with its run number and count, and links to no run.
  *
  * SSR-safe: the server and the first client render agree (20 bars), and the
  * narrow-viewport slice to 12 bars only kicks in after mount.

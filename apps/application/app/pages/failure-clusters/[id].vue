@@ -676,7 +676,7 @@ const breadcrumbItems = computed(() => [
               >
                 <FailureHeadline :parts="latestHeadline.parts" chip />
               </h1>
-              <p data-shot="cluster-name" class="text-sm text-muted mt-1 break-words">
+              <p data-shot="cluster-name" class="mt-1 text-xs text-muted break-words">
                 <template v-for="(part, i) in clusterNameParts" :key="i">
                   <LocatorCode v-if="part.kind === 'locator'" :locator="part.text" chip class="text-[0.92em]" />
                   <template v-else>{{ part.text }}</template>
