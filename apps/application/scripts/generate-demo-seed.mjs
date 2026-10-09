@@ -4277,11 +4277,16 @@ const D_MS = `(SELECT delta_sec FROM _rebase) * 1000`;
 
 // Shift a JSON array column's per-element ms timestamp (`$.field`) in place,
 // preserving element order (json_each iterates in array order). Elements that
-// carry no `$.field` are left untouched, so a shift never writes a null key.
+// carry no `$.field` (a did-not-run attempt's null `startedAt`) keep their
+// value, so a shift never writes a null key. An untouched object goes through
+// json(): SQLite 3.45 (libsql, which app:seed:dev and the server use) drops
+// the JSON subtype of a bare `value` in a CASE branch, and json_group_array
+// would then store the object as a quoted string.
 const shiftJsonMs = (table, column, field) =>
   `UPDATE ${table} SET ${column} = (SELECT json_group_array(` +
   `CASE WHEN json_extract(value, '$.${field}') IS NOT NULL ` +
-  `THEN json_set(value, '$.${field}', json_extract(value, '$.${field}') + ${D_MS}) ELSE value END) ` +
+  `THEN json_set(value, '$.${field}', json_extract(value, '$.${field}') + ${D_MS}) ` +
+  `WHEN type IN ('object', 'array') THEN json(value) ELSE value END) ` +
   `FROM json_each(${table}.${column})) ` +
   `WHERE ${column} IS NOT NULL AND json_valid(${column});`;
 

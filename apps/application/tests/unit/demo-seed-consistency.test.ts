@@ -29,6 +29,8 @@ interface Row {
 }
 
 let db: import('sql.js').Database;
+// The regenerated seed script, as app:seed:dev and the demo SPA load it.
+let seedSql: string;
 // The seed's newest generation-time timestamp (seconds), which the load-time
 // rebase maps to "now". Read back from the rebase statement itself.
 let anchorSec: number;
@@ -61,7 +63,7 @@ function tempOutDir(): string {
 }
 
 beforeAll(async () => {
-  const seedSql = regenerate(tempOutDir());
+  seedSql = regenerate(tempOutDir());
   anchorSec = Number(/AS INTEGER\) - (\d+)\) AS delta_sec/.exec(seedSql)![1]);
 
   const initSqlJs = (await import('sql.js')).default;
@@ -1077,4 +1079,38 @@ describe('environment incidents', () => {
       where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
     expect(rows[0]!.n).toBe(0);
   });
+});
+
+describe('the seed loaded through libsql, as app:seed:dev and the server load it', () => {
+  // libsql bundles an older SQLite than sql.js, and the load-time rebase
+  // rewrites the JSON arrays element by element: every element must come back
+  // an object, or REST and MCP read a string spelled out character by character.
+  test('every JSON array element stays an object through the rebase', async () => {
+    const { createClient } = await import('@libsql/client');
+    const client = createClient({ url: ':memory:' });
+    try {
+      await client.executeMultiple(seedSql);
+      const columns: Array<[string, string]> = [
+        ['test_runs_cases', 'steps'],
+        ['test_runs_cases', 'step_events'],
+        ['test_runs_cases', 'attempts'],
+        ['test_runs_cases', 'console_logs'],
+        ['test_runs_cases', 'dialogs'],
+        ['network_requests', 'server_logs'],
+      ];
+      for (const [table, column] of columns) {
+        const res = await client.execute(`select t.id, e.type from ${table} t, json_each(t.${column}) e
+          where t.${column} is not null and json_valid(t.${column}) and e.type <> 'object'`);
+        expect(res.rows, `${table}.${column}: elements that are not objects`).toEqual([]);
+      }
+      // A test the serial cascade never ran keeps its attempt, with no start time.
+      const res = await client.execute(`select attempts from test_runs_cases
+        where status = 'didnotrun' and attempts is not null limit 1`);
+      expect(JSON.parse(String(res.rows[0]!.attempts))).toEqual([
+        { retry: 0, status: 'didnotrun', duration: 0, startedAt: null },
+      ]);
+    } finally {
+      client.close();
+    }
+  }, 60_000);
 });
