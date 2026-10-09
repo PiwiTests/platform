@@ -276,8 +276,12 @@ text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts,
   commit — is the body or meta style in `font-mono`. Nothing else in the block: no `text-toned`/`text-dimmed` mixed
   with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
 - **Structure with layout, not with styling.** A block with several kinds of lines gets one label column
-  (`SituationBlock` renders a `<dl>` with an 8 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
-  reader scans labels, not formatting. A badge, a color or a bold span is never what tells two lines apart.
+  (`SituationBlock` renders a `<dl>` with an 8 rem label column), so the reader scans labels, not formatting. A badge,
+  a color or a bold span is never what tells two lines apart.
+- **The situation block reads explanation, action, context**, in the one order of `SITUATION_ROWS`
+  (`app/utils/situation-rows.ts`): _Most likely_ first, then _State_ right above _Next_, then the context lines, the
+  ticket (_Issue_) first. A page fills the lines it has and never reorders them; a new line takes its place in that
+  list.
 - **The situation block's left edge carries the page's status color** (`SituationBlock :edge`): the execution's
   outcome color, the cluster state's dot color. It is the status, not an accent, and nothing else in the block
   repeats it.

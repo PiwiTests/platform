@@ -140,6 +140,13 @@ test.describe('Test-run-case page', () => {
     await expect(nextStep).toBeVisible();
     await expect(page.locator('[data-shot="situation-block"]')).toContainText('Next');
 
+    // The lines read the explanation, then the action, then the context: the
+    // ticket comes after the next step.
+    const labels = (await block.locator('dl > dt').allInnerTexts()).map((t) => t.trim());
+    expect(labels).toContain('Issue');
+    expect(labels.indexOf('Next')).toBeLessThan(labels.indexOf('Issue'));
+    if (labels.includes('Most likely')) expect(labels[0]).toBe('Most likely');
+
     // The raw error is a disclosure on the facts line, collapsed by default,
     // and reachable — with its Copy failure action — in one click.
     const showRaw = page.getByRole('button', { name: 'Raw error' });
@@ -390,6 +397,10 @@ test.describe('Situation block on seeded cases', () => {
   test('#37 reads the story, the regression situation and the diagnosed-fix next step', async ({ page }) => {
     await page.goto('/test-run-cases/37');
     await waitForHydration(page);
+
+    // The block reads the explanation, the action, then the context.
+    const labels = (await page.locator('[data-shot="situation-block"] dl > dt').allInnerTexts()).map((t) => t.trim());
+    expect(labels).toEqual(['Most likely', 'Situation', 'Next', 'Issue']);
 
     // Most likely — the blocked-by-pending-request story, Strong, 3 clues agree.
     await expect(page.getByText('Most likely', { exact: true })).toBeVisible();

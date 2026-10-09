@@ -209,6 +209,9 @@ async function setStatus(status: 'open' | 'dismissed') {
                 </template>
               </p>
             </template>
+            <template v-if="next" #next>
+              <p>{{ next }}</p>
+            </template>
             <template v-if="missedBy" #suite>
               <p data-shot="bug-report-missed-by">
                 {{ missedBy.summary }}
@@ -235,9 +238,6 @@ async function setStatus(status: 'open' | 'dismissed') {
                   · <span class="font-mono">{{ t.filePath }}</span>
                 </li>
               </ul>
-            </template>
-            <template v-if="next" #next>
-              <p>{{ next }}</p>
             </template>
             <template #facts>
               <span v-if="report.path" class="font-mono">{{ report.origin ?? '' }}{{ report.path }}</span>

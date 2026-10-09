@@ -167,8 +167,9 @@ case across runs) · `/test-run-cases/[id]` (one execution) · `/failure-cluster
 
 **Failure pages.** `/test-run-cases/[id]` (one execution) and `/failure-clusters/[id]` read top to bottom in one
 column. Both open on `SituationBlock`: an identity kicker, the headline as the page's `h1`, then labelled rows in the
-order of its `ROWS` (Most likely `StoryLine`, Situation, Occurrences, What changed `WhatChangedLine`, State
-`ClusterStateLine`, Issue `IssueLine`, The suite, Next `NextStepLine`; a page fills the rows it has) and a facts line
+order of `SITUATION_ROWS` (`app/utils/situation-rows.ts`), the explanation, then the action, then the context (Most
+likely `StoryLine`, Situation, State `ClusterStateLine`, Next `NextStepLine`, Issue `IssueLine`, Occurrences, What
+changed `WhatChangedLine`, The suite; a page fills the rows it has) and a facts line
 (`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. The rows are built in the handlers the demo
 shares (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from `shared/situation.ts`,
 `shared/cluster-state.ts` and `computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's
@@ -180,7 +181,7 @@ points at open) and History (`HistoryStrip`). The cluster page shows `ClusterInv
 browse, `ClusterAffectedTests` (its selection picks the execution the evidence shows), `EvidenceTabs`,
 `ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both pages provide a section locator
 (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites. `/bug-reports/[id]` opens on
-the same block with Situation, State, The suite and Next. `npm run app:measure` holds the two failure pages to their
+the same block with Situation, State, Next and The suite. `npm run app:measure` holds the two failure pages to their
 budgets (text styles, controls above the fold, the Next step beside what it copies).
 
 ### Components (`app/components/`)
@@ -242,7 +243,7 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
   `SnapshotLocatorPicker`, `EnvironmentDiffCard`, `DataLocationCard`.
 - **Failure pages** — `SituationBlock` (the labelled block the failure pages and a bug report open on: its rows in
-  `ROWS`, the status color on its left edge), `FailureHeadline` (the one-line headline, its locator in a chip when it
+  `SITUATION_ROWS`, the status color on its left edge), `FailureHeadline` (the one-line headline, its locator in a chip when it
   is the `h1`), `StatusChip` in the block's identity kicker, `StoryLine` (Most likely), `NextStepLine` (the one
   recommended step, its actions emitted as ids the page handles through `useNextStepActions`), `Toolbox` (More ways
   to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a row of squares).

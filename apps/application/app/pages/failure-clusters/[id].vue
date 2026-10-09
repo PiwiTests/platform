@@ -636,7 +636,7 @@ const breadcrumbItems = computed(() => [
 
     <template #body>
       <div v-if="cluster" class="flex flex-col gap-4 p-4 max-sm:px-0 max-w-6xl mx-auto w-full">
-        <!-- ── One block: identity, name, most likely, occurrences, what changed, state, next ── -->
+        <!-- ── One block: identity, name, most likely, state, next, issue, occurrences, what changed ── -->
         <SituationBlock help="cluster.state" :edge="stateEdge">
           <!-- Line 1: identity kicker — cluster #, error type, project, owner -->
           <template #identity>
@@ -682,7 +682,41 @@ const breadcrumbItems = computed(() => [
             <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
           </template>
 
-          <!-- Occurrences: the sparkline and its sentence -->
+          <!-- Line 4: the state, one sentence with one verb and the control that changes it -->
+          <template v-if="clusterState" #state>
+            <ClusterStateLine
+              :cluster="cluster"
+              :state="clusterState"
+              :action-in-next="!!clusterState.action && nextStep?.primary?.action === clusterState.action"
+              @saved="refresh"
+            />
+          </template>
+
+          <!-- Line 5: the next step -->
+          <template v-if="nextStep" #next>
+            <NextStepLine
+              :next-step="nextStep"
+              :retry-command="retryCommand"
+              :source="nextStepSource"
+              @action="handleNextStepAction"
+            />
+          </template>
+
+          <!-- Line 6: the issue, the ticket the cluster is tracked in or the way to file or link one -->
+          <template v-if="issueForm" #issue>
+            <IssueLine
+              :form="issueForm"
+              :project-id="clusterProjectId"
+              :cluster-status="cluster.status"
+              :failure-goes-on="cluster.failureGoesOn"
+              :known-issue="knownIssue"
+              :filing-failure="cluster.issueFilingFailure"
+              @create="issueModalOpen = true"
+              @link="linkIssueOpen = true"
+            />
+          </template>
+
+          <!-- Line 7: the occurrences, the sparkline and its sentence -->
           <template #occurrences>
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <OccurrenceSparkline
@@ -699,46 +733,12 @@ const breadcrumbItems = computed(() => [
             </div>
           </template>
 
-          <!-- What changed: the commits since the last passing run, in one line -->
+          <!-- Line 8: what changed, the commits since the last passing run in one line -->
           <template #whatChanged>
             <WhatChangedLine ref="whatChangedLine" @see="scrollToEl(scmEl)" />
           </template>
 
-          <!-- State: one sentence with one verb, and the control that changes it -->
-          <template v-if="clusterState" #state>
-            <ClusterStateLine
-              :cluster="cluster"
-              :state="clusterState"
-              :action-in-next="!!clusterState.action && nextStep?.primary?.action === clusterState.action"
-              @saved="refresh"
-            />
-          </template>
-
-          <!-- Issue: the ticket the cluster is tracked in, or the way to file or link one -->
-          <template v-if="issueForm" #issue>
-            <IssueLine
-              :form="issueForm"
-              :project-id="clusterProjectId"
-              :cluster-status="cluster.status"
-              :failure-goes-on="cluster.failureGoesOn"
-              :known-issue="knownIssue"
-              :filing-failure="cluster.issueFilingFailure"
-              @create="issueModalOpen = true"
-              @link="linkIssueOpen = true"
-            />
-          </template>
-
-          <!-- Line 5: the next step -->
-          <template v-if="nextStep" #next>
-            <NextStepLine
-              :next-step="nextStep"
-              :retry-command="retryCommand"
-              :source="nextStepSource"
-              @action="handleNextStepAction"
-            />
-          </template>
-
-          <!-- Line 6: the facts line — Details, Raw error, Copy summary -->
+          <!-- Line 9: the facts line: Details, Raw error, Copy summary -->
           <template #facts>
             <ClusterFactsLine ref="factsLine" :cluster="cluster" :signature-line="signatureLine" @refresh="refresh" />
           </template>

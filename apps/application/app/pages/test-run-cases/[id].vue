@@ -845,7 +845,17 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Issue: the ticket the cluster is tracked in, or the way to file or link one -->
+          <!-- Line 5: the next step -->
+          <template v-if="isProblem && nextStep" #next>
+            <NextStepLine
+              :next-step="nextStep"
+              :retry-command="retryCommand"
+              :source="nextStepSource"
+              @action="handleNextStepAction"
+            />
+          </template>
+
+          <!-- Line 6: the issue, the ticket the cluster is tracked in or the way to file or link one -->
           <template v-if="isProblem && issueForm" #issue>
             <IssueLine
               :form="issueForm"
@@ -859,17 +869,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             />
           </template>
 
-          <!-- Line 5: the next step -->
-          <template v-if="isProblem && nextStep" #next>
-            <NextStepLine
-              :next-step="nextStep"
-              :retry-command="retryCommand"
-              :source="nextStepSource"
-              @action="handleNextStepAction"
-            />
-          </template>
-
-          <!-- Line 6: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 7: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"

@@ -2,13 +2,14 @@
 /**
  * The one block at the top of a failure page: what broke, what is going on and
  * what to do next. An identity kicker and the page's `<h1>` on top, then a
- * labelled list — "Most likely", "Situation", "Occurrences", "What changed",
- * "State", "Issue", "Next" — whose labels sit in one narrow column so the lines
- * read as a structured record rather than a paragraph, then the facts line under
- * a divider.
+ * labelled list whose labels sit in one narrow column so the lines read as a
+ * structured record rather than a paragraph, then the facts line under a divider.
+ * The list follows one order on every page (`SITUATION_ROWS`): the explanation,
+ * then the action (the state right above the next step), then the context.
  * Every line is an optional named slot; a line with no slot collapses, so the same
- * frame serves a failing execution, a passing one (identity and facts only) and
- * the cluster page, which adds its occurrence, what-changed and state lines.
+ * frame serves a failing execution, a passing one (identity and facts only), the
+ * cluster page, which adds its state, occurrence and what-changed lines, and a
+ * bug report.
  *
  * The block uses four text styles and no more: the heading, one body style for
  * the sentences, one label style, one meta style; code in a heading or a sentence
@@ -17,6 +18,7 @@
  * a word of it. It carries the page's single help hint; nothing else on it does.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
+import { SITUATION_ROWS } from '~/utils/situation-rows';
 
 const props = defineProps<{
   help?: HelpTopicKey;
@@ -26,17 +28,6 @@ const props = defineProps<{
 
 // A 4px edge in the status color, on every width (the phone layout drops the side borders).
 const edgeStyle = computed(() => (props.edge ? { borderLeftWidth: '4px', borderLeftColor: props.edge } : undefined));
-
-const ROWS = [
-  { slot: 'story', label: 'Most likely' },
-  { slot: 'situation', label: 'Situation' },
-  { slot: 'occurrences', label: 'Occurrences' },
-  { slot: 'whatChanged', label: 'What changed' },
-  { slot: 'state', label: 'State' },
-  { slot: 'issue', label: 'Issue' },
-  { slot: 'suite', label: 'The suite' },
-  { slot: 'next', label: 'Next' },
-] as const;
 </script>
 
 <template>
@@ -59,10 +50,10 @@ const ROWS = [
 
     <!-- The labelled lines: one narrow label column, one content column -->
     <dl
-      v-if="ROWS.some((r) => $slots[r.slot])"
+      v-if="SITUATION_ROWS.some((r) => $slots[r.slot])"
       class="mt-4 grid grid-cols-1 gap-y-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-x-4"
     >
-      <template v-for="row in ROWS" :key="row.slot">
+      <template v-for="row in SITUATION_ROWS" :key="row.slot">
         <template v-if="$slots[row.slot]">
           <dt class="text-sm font-semibold text-highlighted leading-relaxed max-sm:-mb-3">{{ row.label }}</dt>
           <dd class="min-w-0 text-sm text-highlighted leading-relaxed"><slot :name="row.slot" /></dd>

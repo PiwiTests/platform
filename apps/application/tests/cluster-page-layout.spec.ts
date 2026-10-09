@@ -102,6 +102,16 @@ test.describe('Failure cluster page layout', () => {
     await expect(page.getByRole('heading', { name: 'Runs', exact: true })).toHaveCount(0);
   });
 
+  test('the block reads the explanation, then the state and the next step, then the context', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    const labels = (await page.locator('[data-shot="situation-block"] dl > dt').allInnerTexts()).map((t) => t.trim());
+    const order = ['State', 'Next', 'Issue', 'Occurrences', 'What changed'];
+    expect(labels.filter((label) => order.includes(label))).toEqual(order);
+    if (labels.includes('Most likely')) expect(labels[0]).toBe('Most likely');
+  });
+
   test('the affected-tests selector switches the evidence', async ({ page }) => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
@@ -271,6 +281,10 @@ test.describe('Cluster situation block on seeded clusters', () => {
 
       // The next-step line renders the server's chosen step title verbatim.
       await expect(page.locator('[data-shot="next-step"]')).toContainText(detail.nextStep.title);
+
+      // The state sits right above the next step.
+      const labels = (await page.locator('[data-shot="situation-block"] dl > dt').allInnerTexts()).map((t) => t.trim());
+      expect(labels.indexOf('Next')).toBe(labels.indexOf('State') + 1);
     });
   }
 
