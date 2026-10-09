@@ -169,8 +169,8 @@ function buildScript(kind: DiagnosisKind, ev: ClusterEvidence, story: FailureSto
           {
             category: 'test-bug',
             likelihood: 38,
-            rootCause: 'The test clicks without an explicit wait for the element to be ready.',
-            evidence: ['No waitForLoadState/waitFor precedes the click [testSource]'],
+            rootCause: 'The test clicks without waiting for what the element depends on.',
+            evidence: ['Nothing waits on the request or state the element depends on before the click [testSource]'],
           },
         ],
         evidence: [
@@ -180,14 +180,14 @@ function buildScript(kind: DiagnosisKind, ev: ClusterEvidence, story: FailureSto
         ],
         investigationSteps: [
           'Re-run the cluster on a low-load runner to confirm CI variability is the driver',
-          'Check whether the page fires a network-idle event before the target becomes interactive',
+          'Find the request or state the target waits on before it becomes interactive',
         ],
         preventionTips: [
-          'Await page.waitForLoadState("networkidle") before interacting with dynamically loaded content',
+          'Wait on the request the element depends on (page.waitForResponse), or assert its state (expect(locator).toBeEnabled()), before interacting',
           'Add a CI-aware timeout multiplier for critical interactions',
         ],
         suggestedFix: fix(
-          'Wait for the page to settle (waitForLoadState or an explicit waitFor) before the interaction so the click no longer races the render.',
+          'Wait for the request or the web-first condition the element depends on (page.waitForResponse, expect(locator).toBeEnabled()) before the interaction, so the click does not race it.',
         ),
         thinkingChunks: [
           'Starting from the error signature — this is a **locator timeout**, not an assertion failure.\n\n',

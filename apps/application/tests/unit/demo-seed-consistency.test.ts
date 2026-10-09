@@ -258,6 +258,49 @@ describe('suggested-fix patches and SCM references', () => {
     }
   });
 
+  test('the checkout story patch applies at its stated lines, hunk after hunk', () => {
+    const story = FAILURE_STORIES.find((s) => s.key === 'checkout-pay-timeout')!;
+    const patch = story.diagnosis.fix.patch;
+    expect(patch.match(/^@@ /gm)?.length, 'hunks').toBeGreaterThan(1);
+    const result = validatePatch(patch, allDemoSourceFiles());
+    expect(result.status, result.errors.join('; ')).toBe('applies');
+  });
+
+  test('no story patch, seeded diagnosis or demo AI template recommends networkidle', () => {
+    for (const story of FAILURE_STORIES) {
+      expect(story.diagnosis.fix.patch, story.key).not.toContain('networkidle');
+      expect(story.diagnosis.fix.description, story.key).not.toContain('networkidle');
+    }
+    const stored = [
+      ...q('select cluster_id, summary, root_cause, details from failure_diagnoses'),
+      ...q('select cluster_id, summary, root_cause, details from failure_diagnosis_versions'),
+    ];
+    expect(stored.length).toBeGreaterThan(0);
+    for (const d of stored) {
+      expect(`${d.summary} ${d.root_cause} ${d.details}`, `diagnosis of cluster ${d.cluster_id}`).not.toMatch(
+        /networkidle|network-idle/i,
+      );
+    }
+    const template = readFileSync(join(rootDir, 'app/demo/api/ai.ts'), 'utf-8');
+    expect(template).not.toMatch(/networkidle|network-idle/i);
+  });
+
+  test('a seeded diagnosis of a count assertion quotes the counts its error shows', () => {
+    const diagnoses = q('select cluster_id, summary from failure_diagnoses');
+    let checked = 0;
+    for (const d of diagnoses) {
+      const story = FAILURE_STORIES.find((s) => s.clusterId === d.cluster_id)!;
+      for (const fc of story.failingCases) {
+        const counts = /toHaveCount[\s\S]*?Expected: (\d+)\nReceived: (\d+)/.exec(fc.error);
+        if (!counts) continue;
+        checked++;
+        expect(d.summary, `cluster ${d.cluster_id} expected count`).toContain(counts[1]);
+        expect(d.summary, `cluster ${d.cluster_id} received count`).toContain(counts[2]);
+      }
+    }
+    expect(checked, 'a count-assertion story carries a stored diagnosis').toBeGreaterThan(0);
+  });
+
   test('every story suspect commit exists in its project SCM history', () => {
     for (const story of FAILURE_STORIES) {
       const repo = SCM_REPOS[story.projectId as keyof typeof SCM_REPOS];

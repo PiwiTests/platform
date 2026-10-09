@@ -2502,9 +2502,9 @@ const FAILURE_DIAGNOSES = [
     category: 'infrastructure',
     confidence: 'high',
     summary:
-      'Checkout Pay button click times out — the payment form renders slowly on CI and the click races the render.',
+      'Checkout Pay click times out: the Pay button stays disabled while the price quote takes 28 s on CI, past the 30 s test timeout.',
     root_cause:
-      'The click is interrupted by the 30 000 ms test timeout because the Pay button is present but not yet interactive. A recent commit added a third-party payment SDK fetched before the form is enabled; on a loaded CI runner that pushes interactivity past the timeout. Combined with CI variability this fails intermittently.',
+      'The Pay button stays disabled until POST /api/checkout/quote answers. On failing runs that request takes 28.4 s, so locator.click waits on a disabled button until the 30 000 ms test timeout interrupts it. The helper clicks without waiting for the quote, and the test has no time budget for a quote that slow. The suspect commit also gates the form on a third-party payment SDK, which adds to the wait on a loaded CI runner, so the failure comes and goes with CI load.',
     details: JSON.stringify({
       confidenceScore: 82,
       severity: 'high',
@@ -2514,33 +2514,34 @@ const FAILURE_DIAGNOSES = [
           category: 'infrastructure',
           likelihood: 82,
           rootCause:
-            'Slow CI runner renders the payment form too late; the click exceeds the 30s test timeout before the button becomes interactive.',
+            'The checkout quote answers in 28 s on loaded CI runners; the Pay button stays disabled until then and the click exceeds the 30 s test timeout.',
           evidence: [
-            'Failure rate correlates with high-load CI runs [recurrenceFlakiness]',
+            'POST /api/checkout/quote takes 28.4 s on failing runs [networkRequests]',
             'The call log shows the button resolved but disabled at click time [executionError]',
+            'The console warns the quote is still pending after 20 s [console]',
           ],
         },
         {
           category: 'test-bug',
           likelihood: 38,
-          rootCause: 'The payment helper clicks without an explicit wait for the quote to resolve.',
-          evidence: ['No waitForLoadState/waitFor precedes the click in fillPaymentDetails [testSource]'],
+          rootCause: 'The payment helper clicks Pay without waiting for the quote response it depends on.',
+          evidence: ['Nothing in fillPaymentDetails waits on the quote request before the click [testSource]'],
         },
       ],
       evidence: [
         'The test timeout interrupts locator.click in both affected tests [executionError]',
-        'The SCM diff adds a third-party payment SDK fetched before the form is enabled [scmInvestigation]',
-        'The checkout quote request takes 28s on failing runs [networkRequests]',
+        'POST /api/checkout/quote takes 28.4 s on failing runs [networkRequests]',
+        'The SCM diff gates the form on a third-party payment SDK [scmInvestigation]',
         'The full call stack from the trace pins the timeout inside the checkout flow helper [traceCallStack]',
         'Recurs on high-load CI runs [recurrenceFlakiness]',
       ],
       investigationSteps: [
-        'Re-run the cluster on a low-load runner to confirm CI variability is the driver',
-        'Check whether the payment form fires a network-idle event before becoming interactive',
+        'Time POST /api/checkout/quote on a low-load runner to confirm CI load is the driver',
+        'Check why the quote endpoint takes longer than 20 s under load',
       ],
       preventionTips: [
-        'Await page.waitForLoadState("networkidle") before interacting with dynamically loaded payment forms',
-        'Add a CI-aware timeout multiplier for payment-related actions',
+        'Wait on the request a control depends on (page.waitForResponse) before interacting with it',
+        'Mark flows that wait on slow backend calls with test.slow() instead of raising the global timeout',
       ],
       suggestedFix: storyFix(1),
       patchValidation: appliesPatch,
@@ -2740,9 +2741,9 @@ const FAILURE_DIAGNOSES = [
     category: 'app-bug',
     confidence: 'high',
     summary:
-      'Users table renders 50 rows instead of 25 — server-driven pagination shipped with the API default page size.',
+      'Users table renders 51 rows instead of 26: 50 users under the header instead of 25, because server-driven pagination shipped with the API default page size.',
     root_cause:
-      'The row-count assertion fails deterministically: the users endpoint now returns 50 rows per page. The server-driven pagination change replaced the dashboard page size (25) with the API default (50), so the table renders two pages worth of rows and the test correctly catches the regression.',
+      'The row-count assertion fails deterministically: the table renders 51 rows, the header plus 50 users, where the test expects 26, the header plus 25, because the users endpoint now returns 50 rows per page. The server-driven pagination change replaced the dashboard page size (25) with the API default (50), so the table renders two pages worth of rows and the test correctly catches the regression.',
     details: JSON.stringify({
       confidenceScore: 88,
       severity: 'medium',
@@ -2796,7 +2797,7 @@ const FAILURE_DIAGNOSES = [
 ];
 
 // Diagnosis version history — a snapshot of an earlier, lower-confidence take on
-// cluster 1 that was superseded when the SCM diff revealed the payment SDK. Powers
+// cluster 1 that the network capture of the slow price quote superseded. Powers
 // the "previous versions" dropdown on the cluster diagnosis panel.
 const FAILURE_DIAGNOSIS_VERSIONS = [
   {
@@ -2812,7 +2813,7 @@ const FAILURE_DIAGNOSIS_VERSIONS = [
     confidence: 'medium',
     summary: 'Earlier take: likely a missing explicit wait in the payment helper before the Pay click.',
     root_cause:
-      'Initial assessment attributed the timeout purely to a missing explicit wait in the payment helper, before the SCM diff surfaced the newly added third-party payment SDK that delays interactivity.',
+      'Initial assessment attributed the timeout purely to a missing explicit wait in the payment helper, before the network capture showed the 28 s price quote the Pay button waits on.',
     details: JSON.stringify({
       confidenceScore: 58,
       severity: 'medium',

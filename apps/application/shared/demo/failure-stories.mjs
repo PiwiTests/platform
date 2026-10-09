@@ -197,34 +197,68 @@ export function buildCrashError({ action, callLog, frames }) {
 // ── Unified-diff derivation (keeps suggested-fix patches glued to the sources) ──
 
 /**
- * Build a single-hunk unified diff from the file's actual source lines, so the
- * hunk header and context can never drift from the content `validatePatch`
- * checks it against.
+ * Build a unified diff from the file's actual source lines, so the hunk
+ * headers and context can never drift from the content `validatePatch` checks
+ * it against.
+ *
+ * One edit gives one hunk. Several edits give one hunk each, and edits whose
+ * context lines overlap or touch share a hunk, the way `git diff` groups them.
  *
  * @param {string} file Repo-relative path.
  * @param {string[]} source Full file content as lines.
- * @param {{ at: number, remove?: number, add?: string[], context?: number }} op
+ * @param {PatchEdit | PatchEdit[]} edits One edit, or several on distinct lines.
+ * @returns {string}
+ *
+ * @typedef {{ at: number, remove?: number, add?: string[], context?: number }} PatchEdit
  *   `at` — 1-based line where the change starts; `remove` — how many lines are
  *   deleted there (default 0); `add` — lines inserted in their place;
  *   `context` — unchanged lines shown around the change (default 1).
- * @returns {string}
  */
-export function derivePatch(file, source, { at, remove = 0, add = [], context = 1 }) {
-  const before = source.slice(Math.max(0, at - 1 - context), at - 1);
-  const removed = source.slice(at - 1, at - 1 + remove);
-  const after = source.slice(at - 1 + remove, at - 1 + remove + context);
-  const oldStart = at - before.length;
-  const oldCount = before.length + removed.length + after.length;
-  const newCount = before.length + add.length + after.length;
-  return [
-    `--- a/${file}`,
-    `+++ b/${file}`,
-    `@@ -${oldStart},${oldCount} +${oldStart},${newCount} @@`,
-    ...before.map((l) => ` ${l}`),
-    ...removed.map((l) => `-${l}`),
-    ...add.map((l) => `+${l}`),
-    ...after.map((l) => ` ${l}`),
-  ].join('\n');
+export function derivePatch(file, source, edits) {
+  const changes = (Array.isArray(edits) ? edits : [edits])
+    .map(({ at, remove = 0, add = [], context = 1 }) => ({
+      at,
+      remove,
+      add,
+      // The 1-based first and last source lines the hunk shows for this edit.
+      from: Math.max(1, at - context),
+      to: Math.min(source.length, at - 1 + remove + context),
+    }))
+    .sort((a, b) => a.at - b.at);
+
+  /** @type {Array<{ from: number, to: number, changes: typeof changes }>} */
+  const hunks = [];
+  for (const change of changes) {
+    const last = hunks.at(-1);
+    if (last && change.from <= last.to + 1) {
+      last.to = Math.max(last.to, change.to);
+      last.changes.push(change);
+    } else {
+      hunks.push({ from: change.from, to: change.to, changes: [change] });
+    }
+  }
+
+  const out = [`--- a/${file}`, `+++ b/${file}`];
+  // Lines added minus lines removed by the hunks already written.
+  let shift = 0;
+  for (const hunk of hunks) {
+    const body = [];
+    let line = hunk.from;
+    let added = 0;
+    let removed = 0;
+    for (const change of hunk.changes) {
+      for (; line < change.at; line++) body.push(` ${source[line - 1]}`);
+      for (let i = 0; i < change.remove; i++, line++) body.push(`-${source[line - 1]}`);
+      body.push(...change.add.map((l) => `+${l}`));
+      added += change.add.length;
+      removed += change.remove;
+    }
+    for (; line <= hunk.to; line++) body.push(` ${source[line - 1]}`);
+    const oldCount = hunk.to - hunk.from + 1;
+    out.push(`@@ -${hunk.from},${oldCount} +${hunk.from + shift},${oldCount - removed + added} @@`, ...body);
+    shift += added - removed;
+  }
+  return out.join('\n');
 }
 
 // ── Spec & app sources ──────────────────────────────────────────────────────
@@ -947,12 +981,22 @@ export const FAILURE_STORIES = [
       area: 'checkout / payment',
       fix: {
         description:
-          'Wait for the network to settle before clicking, so the click no longer races the third-party form render.',
+          'Wait for the price quote the Pay button depends on, and give the flow the time the quote takes on CI.',
         file: 'tests/helpers/payment.ts',
-        patch: derivePatch('tests/helpers/payment.ts', PAYMENT_HELPER, {
-          at: payClickLine,
-          add: ["  await page.waitForLoadState('networkidle');"],
-        }),
+        patch: derivePatch('tests/helpers/payment.ts', PAYMENT_HELPER, [
+          {
+            at: lineOf(PAYMENT_HELPER, "import type { Page } from '@playwright/test';"),
+            remove: 1,
+            add: ["import { test, type Page } from '@playwright/test';"],
+            context: 3,
+          },
+          {
+            at: lineOf(PAYMENT_HELPER, "await page.getByLabel('Card number').fill(TEST_CARD);"),
+            add: ['  test.slow();', "  const quoteResponse = page.waitForResponse('**/api/checkout/quote');"],
+            context: 3,
+          },
+          { at: payClickLine, add: ['  await quoteResponse;'], context: 3 },
+        ]),
       },
     },
     media: {

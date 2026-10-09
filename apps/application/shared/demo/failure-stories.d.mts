@@ -235,11 +235,13 @@ export declare function buildStrictModeError(p: {
   frames: StoryFrame[];
 }): string;
 export declare function buildCrashError(p: { action: string; callLog: string[]; frames: StoryFrame[] }): string;
-export declare function derivePatch(
-  file: string,
-  source: string[],
-  op: { at: number; remove?: number; add?: string[]; context?: number },
-): string;
+export interface PatchEdit {
+  at: number;
+  remove?: number;
+  add?: string[];
+  context?: number;
+}
+export declare function derivePatch(file: string, source: string[], edits: PatchEdit | PatchEdit[]): string;
 export declare function sourceText(path: string): string;
 export declare function buildTestSource(
   story: { specFile: string },
