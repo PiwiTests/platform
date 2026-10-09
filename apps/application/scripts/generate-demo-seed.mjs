@@ -44,6 +44,7 @@ import {
   failingCallDuration,
   failingStep,
   authoredFailureSteps,
+  authoredBeforeEachMs,
   storyEvidenceTimes,
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
@@ -665,15 +666,34 @@ const SEED_FIRST_REQUEST_OFFSET_MS = 120;
 const SEED_REQUEST_GAP_MS = 35;
 
 /**
+ * A framework segment's share `f` of a test lasting `durationMs`, clamped
+ * between `min` and `max` ms so it stays visible without overflowing a short test.
+ */
+function segmentMs(durationMs, f, min, max) {
+  return Math.max(min, Math.min(max, Math.round(durationMs * f)));
+}
+
+/** The `Before Hooks` parts of a test lasting `durationMs`: its context and page fixtures, then its beforeEach hook. */
+function seedBeforeHooks(durationMs) {
+  return {
+    context: segmentMs(durationMs, 0.04, 40, 120),
+    page: segmentMs(durationMs, 0.03, 30, 90),
+    beforeEach: segmentMs(durationMs, 0.06, 60, 200),
+  };
+}
+
+/**
  * Build realistic `step_events` for a seeded case: the `Before Hooks` and
  * `After Hooks` sections with the hooks and fixtures they ran (as the reporter
  * records them), framework-injected waits, and — for wait-heavy cases — an
  * explicit `Wait for timeout` sleep that counts as wasted time under the
- * default wasted-wait patterns. Segment offsets are emitted as absolute epoch ms
+ * default wasted-wait patterns. `beforeHooks` sizes the before hooks (a case
+ * running authored steps passes the beforeEach hook that holds them, 0 when
+ * its spec has none). Segment offsets are emitted as absolute epoch ms
  * anchored to the case's start so the timeline can place each segment. Returns
  * the events plus the total wasted ms (sum of the explicit timeout sleeps).
  */
-function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
+function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy, beforeHooks = null) {
   const events = [];
   let offset = 0;
   const seg = (title, category, duration, status, loc = null, hooks = null) => {
@@ -682,17 +702,13 @@ function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
     events.push(event);
     offset += duration;
   };
-  // Each framework segment is a fraction of the test duration, clamped so it
-  // stays visible without overflowing short tests.
-  const frac = (f, min, max) => Math.max(min, Math.min(max, Math.round(caseDuration * f)));
+  const frac = (f, min, max) => segmentMs(caseDuration, f, min, max);
 
-  const context = frac(0.04, 40, 120);
-  const page = frac(0.03, 30, 90);
-  const beforeEach = frac(0.06, 60, 200);
+  const { context, page, beforeEach } = beforeHooks ?? seedBeforeHooks(caseDuration);
   seg('Before Hooks', 'hook', context + page + beforeEach, 'passed', null, [
     { title: 'Fixture "context"', category: 'fixture', duration: context },
     { title: 'Fixture "page"', category: 'fixture', duration: page },
-    { title: 'beforeEach hook', category: 'hook', duration: beforeEach },
+    ...(beforeEach > 0 ? [{ title: 'beforeEach hook', category: 'hook', duration: beforeEach }] : []),
   ]);
   // Framework-injected navigation wait — not wasted.
   seg('Wait for load state', 'wait', frac(0.1, 80, 600), 'passed');
@@ -776,19 +792,23 @@ function storedStep({ at, ...step }, caseStartMs) {
  * failing call ends the steps, and lasts until the test timeout, for its own
  * action or expect timeout, or as long as the step it stands in for when it
  * failed without one. A case with authored steps runs those, stretched by how
- * fast this run drew it; any other runs the project's themed steps with the
- * failing call in place of the last one, and a `test.step` around that one
- * grows to hold it. `drawnMs` is the duration drawn for the case, kept when
- * the error says nothing about time.
+ * fast this run drew it, once its fixtures are set up, and its beforeEach hook
+ * (`beforeHooks`) holds the authored steps its spec runs there; any other runs
+ * the project's themed steps with the failing call in place of the last one,
+ * and a `test.step` around that one grows to hold it. `drawnMs` is the
+ * duration drawn for the case, kept when the error says nothing about time.
  */
 function storyFailureLayout(proj, failing, drawnMs, avgMs, caseStartMs) {
-  const authored = authoredFailureSteps(failing, { scale: drawnMs / avgMs });
+  const scale = drawnMs / avgMs;
+  const { context, page } = seedBeforeHooks(drawnMs);
+  const authored = authoredFailureSteps(failing, { scale, startMs: context + page });
   if (authored) {
     const step = authored.at(-1);
     return {
       steps: authored.map((s) => storedStep(s, caseStartMs)),
       step,
       durationMs: step.at + step.duration + FAILURE_TEARDOWN_MS,
+      beforeHooks: { context, page, beforeEach: authoredBeforeEachMs(failing, { scale }) },
     };
   }
   const steps = buildSteps(proj, drawnMs, caseStartMs);
@@ -808,6 +828,7 @@ function storyFailureLayout(proj, failing, drawnMs, avgMs, caseStartMs) {
     steps,
     step: { at, duration },
     durationMs: duration === last.duration ? drawnMs : at + duration + FAILURE_TEARDOWN_MS,
+    beforeHooks: null,
   };
 }
 
@@ -1220,9 +1241,10 @@ for (const proj of DEMO_PROJECTS) {
       }
 
       // Timeline step events: every executed case shows hooks/fixtures/waits;
-      // ~1/3 of long-enough cases also carry an explicit wasted `Wait for timeout`.
+      // ~1/3 of long-enough cases also carry an explicit wasted `Wait for timeout`,
+      // except a case running its authored steps, which never sleeps.
       // Did-not-run cases never executed, so they have no step events.
-      const waitHeavy = !isDidNotRunCase && caseDuration >= 1500 && j % 3 === 0;
+      const waitHeavy = !isDidNotRunCase && !failure?.beforeHooks && caseDuration >= 1500 && j % 3 === 0;
       const { stepEvents, wastedMs } = isDidNotRunCase
         ? { stepEvents: null, wastedMs: 0 }
         : buildSeedStepEvents(
@@ -1230,6 +1252,7 @@ for (const proj of DEMO_PROJECTS) {
             caseDuration,
             `${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`,
             waitHeavy,
+            failure?.beforeHooks,
           );
 
       // Themed browser console. Failing cases carry only what the story says a

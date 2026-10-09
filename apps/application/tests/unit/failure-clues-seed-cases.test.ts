@@ -82,7 +82,7 @@ describe('buildFailureClues — seeded failure ranking baseline', () => {
       ['known-flake-suspect', 'weak'],
     ]);
     expect(report.story?.id).toBe('blocked-by-pending-request');
-    expect(report.story?.sentence).toContain('the console said so 8.0 s before the click gave up');
+    expect(report.story?.sentence).toContain('the console said so 7.8 s before the click gave up');
   });
 
   test('#13 — same cluster, earlier run', () => {

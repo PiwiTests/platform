@@ -231,6 +231,42 @@ describe('cluster ↔ case ↔ file coherence', () => {
     }
   });
 
+  test('an execution running its authored steps never sleeps, and its before hooks hold its beforeEach steps', () => {
+    const rows = q(`select trc.id, trc.steps, trc.step_events, trc.wasted_time_ms, trc.failure_cluster_id, tc.title
+      from test_runs_cases trc join test_cases tc on tc.id = trc.test_case_id
+      where trc.failure_cluster_id is not null`);
+    let checked = 0;
+    for (const r of rows) {
+      const story = FAILURE_STORIES.find((s) => s.clusterId === r.failure_cluster_id)!;
+      const before = story.failingCases.find((fc) => fc.title === r.title)?.before;
+      if (!before) continue;
+      checked++;
+      expect(r.wasted_time_ms ?? 0, `trc ${r.id}: wasted time`).toBe(0);
+      const events = JSON.parse(r.step_events as string) as Array<{
+        title: string;
+        startedAt: number;
+        duration: number;
+        status: string;
+      }>;
+      expect(
+        events.filter((e) => e.status === 'wasted'),
+        `trc ${r.id}: sleeps`,
+      ).toEqual([]);
+      const hooks = events.find((e) => e.title === 'Before Hooks')!;
+      const hooksEnd = hooks.startedAt + hooks.duration;
+      const steps = JSON.parse(r.steps as string) as Array<{ startTime: number; duration: number }>;
+      const inHook = before.filter((step) => step.hook === 'beforeEach').length;
+      // The fixtures come first; the beforeEach steps end with the before hooks and the body follows.
+      expect(steps[0]!.startTime, `trc ${r.id}: first step after the fixtures`).toBeGreaterThan(hooks.startedAt);
+      if (inHook > 0) {
+        const last = steps[inHook - 1]!;
+        expect(last.startTime + last.duration, `trc ${r.id}: beforeEach steps end with the hooks`).toBe(hooksEnd);
+      }
+      expect(steps[inHook]!.startTime, `trc ${r.id}: the body starts after the hooks`).toBeGreaterThanOrEqual(hooksEnd);
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
   test('cluster fingerprint matches the real recomputation of its sample_error', async () => {
     const rows = q('select id, fingerprint, sample_error from failure_clusters');
     expect(rows.length).toBe(FAILURE_STORIES.length);

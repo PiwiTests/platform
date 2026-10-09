@@ -5,7 +5,7 @@
     "status": "failed",
     "duration": 30250,
     "browserName": "Chromium",
-    "startedAt": 1791476979000,
+    "startedAt": 1791482654000,
     "locks": ["database"],
     "shardIndex": null
   },
@@ -35,22 +35,22 @@
     "isLocatorResolutionFailure": false
   },
   "timeline": {
-    "origin": 1791476979000,
-    "end": 1791477009478,
+    "origin": 1791482654000,
+    "end": 1791482684688,
     "testStart": 0,
     "failureAt": 30000,
     "failedStep": {
       "index": 5,
       "label": "Click getByRole('button', { name: 'Pay' })",
-      "at": 2048,
-      "duration": 27952
+      "at": 2258,
+      "duration": 27742
     },
     "lanes": {
       "steps": [
         {
           "id": "step-0",
           "lane": "steps",
-          "at": 0,
+          "at": 210,
           "duration": 838,
           "label": "Navigate /checkout",
           "status": "passed",
@@ -75,7 +75,7 @@
         {
           "id": "step-1",
           "lane": "steps",
-          "at": 838,
+          "at": 1048,
           "duration": 391,
           "label": "Fill \"buyer@example.com\" getByLabel('Email address')",
           "status": "passed",
@@ -101,7 +101,7 @@
         {
           "id": "step-2",
           "lane": "steps",
-          "at": 1229,
+          "at": 1439,
           "duration": 354,
           "label": "Fill \"4242 4242 4242 4242\" getByLabel('Card number')",
           "status": "passed",
@@ -127,7 +127,7 @@
         {
           "id": "step-3",
           "lane": "steps",
-          "at": 1583,
+          "at": 1793,
           "duration": 242,
           "label": "Fill \"12/30\" getByLabel('Expiry date')",
           "status": "passed",
@@ -153,7 +153,7 @@
         {
           "id": "step-4",
           "lane": "steps",
-          "at": 1825,
+          "at": 2035,
           "duration": 223,
           "label": "Fill \"123\" getByLabel('CVV')",
           "status": "passed",
@@ -179,8 +179,8 @@
         {
           "id": "step-5",
           "lane": "steps",
-          "at": 2048,
-          "duration": 27952,
+          "at": 2258,
+          "duration": 27742,
           "label": "Click getByRole('button', { name: 'Pay' })",
           "status": "failed",
           "kind": "step",
@@ -207,7 +207,7 @@
         {
           "id": "console-0",
           "lane": "console",
-          "at": 22118,
+          "at": 22328,
           "label": "[checkout] price quote still pending after 20s — Pay stays disabled",
           "status": "warning",
           "kind": "console",
@@ -234,7 +234,7 @@
         {
           "id": "network-1",
           "lane": "network",
-          "at": 2078,
+          "at": 2288,
           "duration": 28400,
           "label": "POST https://shop.example.com/api/checkout/quote",
           "status": "200",
@@ -278,7 +278,7 @@
     "estimated": false,
     "window": {
       "start": 0,
-      "end": 30478
+      "end": 30688
     }
   },
   "healing": {
@@ -343,7 +343,7 @@
     "baseline": {
       "runId": 6,
       "executionId": 61,
-      "startTime": 1791356314000,
+      "startTime": 1791361989000,
       "environment": "staging"
     },
     "baselineNote": null,
@@ -370,7 +370,7 @@
       "url": "https://shop.example.com/api/cart",
       "status": 200,
       "duration": 72,
-      "startTime": 1791476979120,
+      "startTime": 1791482654120,
       "failure": null,
       "serverLogs": null
     },
@@ -379,7 +379,7 @@
       "url": "https://shop.example.com/api/checkout/quote",
       "status": 200,
       "duration": 28400,
-      "startTime": 1791476981078,
+      "startTime": 1791482656288,
       "failure": null,
       "serverLogs": null
     },
@@ -388,7 +388,7 @@
       "url": "https://cdn.pay.example.com/sdk.js",
       "status": 200,
       "duration": 887,
-      "startTime": 1791476979227,
+      "startTime": 1791482654227,
       "failure": null,
       "serverLogs": null
     }
@@ -397,7 +397,7 @@
     {
       "type": "warning",
       "text": "[checkout] price quote still pending after 20s — Pay stays disabled",
-      "timestamp": 1791477001118,
+      "timestamp": 1791482676328,
       "location": "https://shop.example.com/assets/checkout-D4kXqz.js:1:48211"
     }
   ],
@@ -405,7 +405,7 @@
     {
       "type": "confirm",
       "message": "Your session is about to expire. Stay signed in?",
-      "closedAt": 1791477008850
+      "closedAt": 1791482683850
     }
   ],
   "browserPeers": [
@@ -420,21 +420,21 @@
       "testCaseId": 1,
       "title": "should complete checkout with credit card",
       "status": "failed",
-      "startedAt": 1791476979000
+      "startedAt": 1791482654000
     },
     {
       "id": 21,
       "testCaseId": 9,
       "title": "should apply discount code",
       "status": "passed",
-      "startedAt": 1791477011406
+      "startedAt": 1791482686406
     },
     {
       "id": 819,
       "testCaseId": 9,
       "title": "should apply discount code",
       "status": "failed",
-      "startedAt": 1791477009450
+      "startedAt": 1791482684450
     }
   ],
   "lockHolders": [
@@ -442,7 +442,7 @@
       "id": 13,
       "title": "should complete checkout with credit card",
       "status": "failed",
-      "startedAt": 1791476979000,
+      "startedAt": 1791482654000,
       "duration": 30250,
       "shardIndex": null,
       "locks": ["database"]
@@ -451,7 +451,7 @@
       "id": 14,
       "title": "should complete checkout with PayPal",
       "status": "failed",
-      "startedAt": 1791476979000,
+      "startedAt": 1791482654000,
       "duration": 30250,
       "shardIndex": null,
       "locks": ["database", "external-api"]
@@ -460,8 +460,8 @@
       "id": 15,
       "title": "should complete checkout with Apple Pay",
       "status": "failed",
-      "startedAt": 1791476979000,
-      "duration": 11275,
+      "startedAt": 1791482654000,
+      "duration": 11485,
       "shardIndex": null,
       "locks": ["database", "external-api"]
     },
@@ -469,7 +469,7 @@
       "id": 16,
       "title": "should show error for expired card",
       "status": "skipped",
-      "startedAt": 1791476979000,
+      "startedAt": 1791482654000,
       "duration": 0,
       "shardIndex": null,
       "locks": ["database"]
@@ -478,7 +478,7 @@
       "id": 17,
       "title": "should show error for invalid CVV",
       "status": "skipped",
-      "startedAt": 1791477009450,
+      "startedAt": 1791482684450,
       "duration": 0,
       "shardIndex": null,
       "locks": ["database"]
@@ -487,7 +487,7 @@
       "id": 18,
       "title": "should add item to cart",
       "status": "passed",
-      "startedAt": 1791477009450,
+      "startedAt": 1791482684450,
       "duration": 4061,
       "shardIndex": null,
       "locks": []
@@ -496,7 +496,7 @@
       "id": 19,
       "title": "should remove item from cart",
       "status": "passed",
-      "startedAt": 1791476990475,
+      "startedAt": 1791482665685,
       "duration": 4462,
       "shardIndex": null,
       "locks": []
@@ -505,7 +505,7 @@
       "id": 20,
       "title": "should update item quantity",
       "status": "passed",
-      "startedAt": 1791476979000,
+      "startedAt": 1791482654000,
       "duration": 4385,
       "shardIndex": null,
       "locks": []
@@ -514,7 +514,7 @@
       "id": 21,
       "title": "should apply discount code",
       "status": "passed",
-      "startedAt": 1791477011406,
+      "startedAt": 1791482686406,
       "duration": 3512,
       "shardIndex": null,
       "locks": []
@@ -523,7 +523,7 @@
       "id": 22,
       "title": "should display cart total correctly",
       "status": "passed",
-      "startedAt": 1791477013711,
+      "startedAt": 1791482688711,
       "duration": 3382,
       "shardIndex": null,
       "locks": []
@@ -532,7 +532,7 @@
       "id": 23,
       "title": "should fill and save shipping address",
       "status": "passed",
-      "startedAt": 1791476995137,
+      "startedAt": 1791482670347,
       "duration": 3831,
       "shardIndex": null,
       "locks": []
@@ -541,7 +541,7 @@
       "id": 24,
       "title": "should validate required address fields",
       "status": "passed",
-      "startedAt": 1791476983585,
+      "startedAt": 1791482658585,
       "duration": 4128,
       "shardIndex": null,
       "locks": []
@@ -550,7 +550,7 @@
       "id": 819,
       "title": "should apply discount code",
       "status": "failed",
-      "startedAt": 1791477009450,
+      "startedAt": 1791482684450,
       "duration": 1756,
       "shardIndex": null,
       "locks": []

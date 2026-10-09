@@ -902,7 +902,7 @@ const PAY_CALL_LOG = [
 
 /**
  * @typedef {{ file: string, line: number, column: number, fn?: string }} StoryFrame
- * @typedef {{ title: string, category: string, subtitle?: string, params?: Record<string, string>, location?: string, duration?: number }} StoryStep
+ * @typedef {{ title: string, category: string, subtitle?: string, params?: Record<string, string>, location?: string, duration?: number, hook?: 'beforeEach' }} StoryStep
  * @typedef {StoryStep & { timeoutMs: number | null, timeout: 'test' | 'action' | 'expect' | null, location: string }} FailingCall
  * @typedef {{ title: string, failingLine: number, column: number, frames: StoryFrame[], error: string, call: FailingCall, before?: StoryStep[] }} FailingCase
  */
@@ -998,6 +998,7 @@ function checkoutStepsBefore(nth, extra = []) {
       ...navigateCall('/checkout', 'https://shop.example.com/checkout'),
       location: callSite(spec, "await page.goto('/checkout');", 'goto'),
       duration: 900,
+      hook: 'beforeEach',
     },
     field(
       'Email address',
@@ -1160,6 +1161,7 @@ export const FAILURE_STORIES = [
               ...navigateCall('/checkout', 'https://shop.example.com/checkout'),
               location: callSite('tests/checkout/checkout.spec.ts', "await page.goto('/checkout');", 'goto'),
               duration: 900,
+              hook: 'beforeEach',
             },
           ],
         },
@@ -1798,19 +1800,24 @@ export function failingStep(failing, at, duration) {
   };
 }
 
+/** An authored duration at `scale`, in ms. */
+const scaledMs = (duration, scale) => Math.round((duration ?? 0) * scale);
+
 /**
  * The steps of a failing case that carries its authored steps, ending with the
  * failing call: each with `at`, in ms from the test start, and its `duration`.
- * `scale` stretches the authored durations, as a slower or faster runner
- * would. Null when the case carries none.
+ * The first starts at `startMs`, once the test's fixtures are set up; `scale`
+ * stretches the authored durations, as a slower or faster runner would. Null
+ * when the case carries none.
  *
- * @param {FailingCase} failing @param {{ scale?: number, fallbackMs?: number }} [opts]
+ * @param {FailingCase} failing @param {{ scale?: number, startMs?: number, fallbackMs?: number }} [opts]
  */
-export function authoredFailureSteps(failing, { scale = 1, fallbackMs = 500 } = {}) {
+export function authoredFailureSteps(failing, { scale = 1, startMs = 0, fallbackMs = 500 } = {}) {
   if (!failing.before) return null;
-  let at = 0;
-  const steps = failing.before.map(({ duration, ...step }) => {
-    const ms = Math.round((duration ?? 0) * scale);
+  let at = startMs;
+  // The step as the reporter sends it: no timeout keys, no hook marker.
+  const steps = failing.before.map(({ duration, timeoutMs: _ms, timeout: _kind, hook: _hook, ...step }) => {
+    const ms = scaledMs(duration, scale);
     const out = { title: step.title, duration: ms, category: step.category, at, ...step };
     at += ms;
     return out;
@@ -1820,13 +1827,24 @@ export function authoredFailureSteps(failing, { scale = 1, fallbackMs = 500 } = 
 }
 
 /**
+ * How long the beforeEach hook of a case with authored steps runs, in ms at
+ * `scale`: the authored steps it holds, 0 when its spec has no beforeEach.
+ *
+ * @param {FailingCase} failing @param {{ scale?: number }} [opts]
+ */
+export function authoredBeforeEachMs(failing, { scale = 1 } = {}) {
+  return (failing.before ?? [])
+    .filter((step) => step.hook === 'beforeEach')
+    .reduce((sum, step) => sum + scaledMs(step.duration, scale), 0);
+}
+
+/**
  * Where a story's own evidence sits around its failing step, in ms from the
  * test start: a slow request starts `intoStepMs` (default 30 ms) into the step
  * and is still in flight through it, any other request ends 40 ms before the
- * step starts; a console
- * entry with `intoSlowRequestMs` is logged that long after the slow request
- * started, any other 250 ms before the step; the dialog closes 150 ms before
- * the failure.
+ * step starts; a console entry with `intoSlowRequestMs` is logged that long
+ * after the slow request started, any other 250 ms before the step; the dialog
+ * closes 150 ms before the failure.
  *
  * @param {FailureStory} story @param {{ at: number, duration: number }} step
  * @returns {{ requests: number[], console: number[], dialogClosedAt: number }}

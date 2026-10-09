@@ -19,6 +19,8 @@ export interface StoryStep {
   /** Project-relative `file:line:col` of the call. */
   location?: string;
   duration?: number;
+  /** The hook that runs the step; absent for a step of the test body. */
+  hook?: 'beforeEach';
 }
 
 /** The call a failing case failed on, as its step, and whose timeout its error reports. */
@@ -293,8 +295,9 @@ export declare function failingCallDuration(call: FailingCall, at: number, fallb
 export declare function failingStep(failing: FailingCase, at: number, duration: number): PlacedStoryStep;
 export declare function authoredFailureSteps(
   failing: FailingCase,
-  opts?: { scale?: number; fallbackMs?: number },
+  opts?: { scale?: number; startMs?: number; fallbackMs?: number },
 ): PlacedStoryStep[] | null;
+export declare function authoredBeforeEachMs(failing: FailingCase, opts?: { scale?: number }): number;
 export declare function storyEvidenceTimes(
   story: FailureStory,
   step: { at: number; duration: number },
