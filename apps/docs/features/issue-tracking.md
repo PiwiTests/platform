@@ -29,8 +29,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   back to Piwi. Every section degrades independently.
 - Each issue carries the labels `piwi`, `piwi-cluster-<id>` and `piwi-fp-<hash>` and a `Piwi-Cluster: <id>` trailer, so
   a JQL filter finds every Piwi-filed issue.
-- **Filing is deduped by cluster** — a second click, a duplicate event or a create from another of its executions
-  names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
+- **Filing is deduped by cluster** — a second click, a duplicate event, a [rule](./issue-automation) or a create from
+  another of its executions names the issue already filed; once that link is removed or the issue is Done, the next create files a new one, and a
   Done issue stays linked. Before creating, the modal surfaces any issue that already tracks the failure (a pinned
   link, a matching label, or a *fixed-before* match) and leads with *link it instead*.
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
