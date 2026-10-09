@@ -1081,6 +1081,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
     testCaseId: number;
     title: string;
     filePath: string;
+    /** The test's `piwi:owner` annotation, when it declares one. */
+    owner?: string | null;
     runCount: number;
     recentTestRunsCaseId: number;
     quarantined: boolean;
@@ -1228,6 +1230,8 @@ export interface ApiKeySummary {
   createdAt: Date;
   lastUsedAt?: Date | null;
   expiresAt?: Date | null;
+  /** The connection of an MCP client that signed in through OAuth: there is no key value to use. */
+  oauth: boolean;
 }
 
 /**

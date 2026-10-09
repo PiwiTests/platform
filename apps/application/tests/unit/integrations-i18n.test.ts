@@ -81,8 +81,8 @@ describe('French document', () => {
     expect(md).toContain('## Preuves');
     expect(md).toContain('## Quoi faire');
     expect(md).toContain('## Liens');
-    expect(md).toContain("**Type d'erreur**");
-    expect(md).toContain('**Première occurrence**');
+    expect(md).toContain("**Type d'erreur:**");
+    expect(md).toContain('**Première occurrence:**');
     expect(md).toContain('### 1 test affecté');
     expect(md).toContain('Localisateur en échec');
   });

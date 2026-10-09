@@ -1,0 +1,200 @@
+/**
+ * Automatic creation: after a run, file an issue for each cluster that failed
+ * in it and that the project's rules now qualify, with no person clicking.
+ *
+ * The rules and guards live in `#shared/integrations/automation` and read the
+ * facts `gatherAutoCreateFacts` collects. On top of them, this holds to the
+ * daily cap, leaves alone a failure an open issue in the tracker already
+ * carries the labels of (a person links that one; the activity list says so),
+ * and files through the same `createIssue` path a click takes, so dedupe,
+ * owner routes, required fields and the outbox apply unchanged. The issue
+ * opens with what the rule counted.
+ */
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { projects, testRuns, testRunsCases } from '../../database/schema';
+import type { DbClient } from '../../database';
+import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { automaticFiling, evaluateAutoCreate } from '#shared/integrations/automation';
+import { issueLabels } from '#shared/integrations/build-issue';
+import { createIssueKey } from '#shared/integrations/action-keys';
+import { pickOwnerRoute } from '#shared/integrations/binding';
+import {
+  countAutomaticCreates,
+  gatherAutoCreateFacts,
+  previewAutoCreate,
+  type AutoCreateFactsOptions,
+  type AutoCreatePreview,
+} from '#shared/handlers/tracker-automation';
+import { missingRequiredFields } from '#shared/integrations/fields';
+import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
+import type { IssueTracker, TrackerIssue } from './types';
+import { createIssue } from './create';
+import { recordRefusedAction } from './actions';
+import { bindingLocale, readProjectIntegration } from './binding';
+import { createTracker, getConnectionRow } from './connections';
+import { getCreateFields } from './fields';
+import { loadTrackerRun } from './tracker-run';
+import { resolveOwners } from '../scm/ownership';
+import { resolveDefaultBranch } from '../scm/default-branch';
+
+/** An open issue already carrying the cluster's or its fingerprint's label, else null. */
+async function openLabeledIssue(
+  tracker: IssueTracker,
+  clusterId: number,
+  fingerprint: string,
+): Promise<TrackerIssue | null> {
+  const [, clusterLabel, fingerprintLabel] = issueLabels(clusterId, fingerprint);
+  for (const label of [clusterLabel!, fingerprintLabel!]) {
+    const found = await tracker.search({ labels: [label], limit: 5 });
+    const open = found.find((issue) => issue.statusCategory !== 'done');
+    if (open) return open;
+  }
+  return null;
+}
+
+/** CODEOWNERS for a file, the owner of a cluster nobody was assigned and whose tests declare none. */
+function codeownersFallback(db: DbClient, projectId: number): NonNullable<AutoCreateFactsOptions['ownerFallback']> {
+  return async (filePath) => {
+    const test = { filePath, owner: null };
+    const resolved = await resolveOwners(db, projectId, [test]);
+    return resolved.get(test)?.owner ?? null;
+  };
+}
+
+/** A binding that can file issues: a connection, a tracker project and an issue type. */
+function canFile(binding: ResolvedProjectIntegration): binding is ResolvedProjectIntegration & {
+  connectionId: number;
+  projectKey: string;
+  issueType: string;
+} {
+  return binding.connectionId != null && !!binding.projectKey && !!binding.issueType;
+}
+
+/**
+ * File the issues a finished run qualifies under the project's rules. Returns
+ * how many it filed. A run the `tracker` use leaves out, or a project whose
+ * binding has automatic creation off or cannot file, files nothing.
+ */
+export async function runTrackerAutomation(db: DbClient, runId: number): Promise<number> {
+  const [row] = await db.select({ projectId: testRuns.projectId }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!row) return 0;
+  const binding = await readProjectIntegration(db, row.projectId);
+  if (!binding.autoCreate.enabled || !canFile(binding)) return 0;
+  const run = await loadTrackerRun(db, runId);
+  if (!run?.eligible) return 0;
+  const connection = await getConnectionRow(db, binding.connectionId);
+  if (!connection) return 0;
+
+  const failing = await db
+    .selectDistinct({ clusterId: testRunsCases.failureClusterId })
+    .from(testRunsCases)
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        isNotNull(testRunsCases.failureClusterId),
+        inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]),
+      ),
+    );
+  const clusterIds = failing.map((row) => row.clusterId).filter((id): id is number => id != null);
+  if (clusterIds.length === 0) return 0;
+
+  const now = new Date();
+  const facts = await gatherAutoCreateFacts(db, clusterIds, {
+    defaultBranch: run.defaultBranch,
+    now,
+    ownerFallback: codeownersFallback(db, run.projectId),
+  });
+  let capacity = binding.autoCreate.dailyCap - (await countAutomaticCreates(db, run.projectId, now));
+  const locale = bindingLocale(binding, connection.config);
+  let tracker: IssueTracker | null | undefined;
+  let filed = 0;
+
+  for (const clusterId of clusterIds) {
+    const cluster = facts.get(clusterId);
+    if (!cluster) continue;
+    const decision = evaluateAutoCreate(binding.autoCreate, binding.ownerRoutes, cluster, {
+      now: now.getTime(),
+      currentRunId: runId,
+    });
+    if (decision.verdict !== 'file') continue;
+    if (capacity <= 0) {
+      console.warn(`[integrations] automatic creation for project ${run.projectId} reached its daily cap`);
+      break;
+    }
+
+    tracker ??= await createTracker(db, binding.connectionId).catch(() => null);
+    if (!tracker) return filed;
+    // When the tracker cannot be searched, nothing is filed: the next failure tries again.
+    const existing = await openLabeledIssue(tracker, clusterId, cluster.fingerprint).catch(() => undefined);
+    if (existing === undefined) continue;
+    if (existing) {
+      await recordRefusedAction(db, {
+        connectionId: binding.connectionId,
+        projectId: run.projectId,
+        kind: 'create-issue',
+        entityType: 'failure_cluster',
+        entityId: clusterId,
+        dedupeKey: createIssueKey('failure_cluster', clusterId, binding.connectionId),
+        payload: { automatic: null, existingKey: existing.key },
+        requestedBy: null,
+        status: 'skipped',
+        error: `${existing.key} already carries this failure's labels: link it from the cluster page`,
+      });
+      continue;
+    }
+
+    const route = pickOwnerRoute(binding.ownerRoutes, cluster.owner);
+    const rule = binding.autoCreate.rules[decision.progress.ruleIndex];
+    const outcome = await createIssue(db, {
+      entityType: 'failure_cluster',
+      entityId: clusterId,
+      connectionId: binding.connectionId,
+      projectKey: route?.projectKey ?? binding.projectKey,
+      issueType: binding.issueType,
+      labels: [...binding.labels, ...(rule?.labels ?? [])],
+      assignee: route?.assigneeAccountId ?? binding.defaultAssignee,
+      locale,
+      include: binding.include,
+      requestedBy: null,
+      siteUrl: process.env.PIWI_SITE_URL ?? null,
+      automatic: automaticFiling(decision.progress),
+    }).catch((e) => {
+      console.error(`[integrations] automatic creation for cluster ${clusterId} failed`, e);
+      return null;
+    });
+    if (outcome?.status === 'done' || outcome?.status === 'pending') {
+      capacity--;
+      filed++;
+    }
+  }
+  return filed;
+}
+
+/**
+ * The settings preview for a project, with an unsaved binding: the open,
+ * untracked clusters as the rules see them, and the tracker fields an
+ * automatic create would still leave empty.
+ */
+export async function previewProjectAutoCreate(
+  db: DbClient,
+  projectId: number,
+  binding: ResolvedProjectIntegration,
+): Promise<AutoCreatePreview> {
+  const [project] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const defaultBranch = project ? await resolveDefaultBranch(db, project).catch(() => null) : null;
+  const preview = await previewAutoCreate(db, projectId, binding, {
+    defaultBranch,
+    ownerFallback: codeownersFallback(db, projectId),
+  });
+  if (!canFile(binding)) return preview;
+  const screen = await getCreateFields(db, binding.connectionId, binding.projectKey, binding.issueType).catch(
+    () => null,
+  );
+  const missing = screen
+    ? missingRequiredFields(screen, binding.fieldDefaults, { assignee: !!binding.defaultAssignee, components: false })
+    : [];
+  return { ...preview, missingFields: missing.map((field) => field.name) };
+}

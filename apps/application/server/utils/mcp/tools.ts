@@ -33,18 +33,23 @@ import {
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
-import { AGENT_DIAGNOSIS_ERRORS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
+import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
+import { storedPatchValidation } from '#shared/patch';
 import { parseFixAttempt } from '#shared/fix-attempts';
 import type { LatestExecution } from '#shared/latest-execution';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
 import { clusterTrailerLine } from '#shared/commit-trailers';
 import { parseSetRunIncident } from '#shared/run-incident';
-import { recordAgentDiagnosisOnCluster } from '../agent-diagnosis';
+import { recordAgentDiagnosisOn } from '../agent-diagnosis';
+import { diagnoseExecution, loadExecutionForDiagnosis } from '../execution-diagnosis';
 import { decideRunIncident } from '../run-incident-decision';
 import { describeFlakeArm, estimateFlakeSessionMs } from '@piwitests/core/flake-plan';
 import {
   getFailureCluster,
   getClusterDiagnosis,
+  getExecutionDiagnosis,
+  extractClusterCases,
   patchClusterStatus,
   patchClusterBaseCommit,
   recordClusterBisect,
@@ -66,7 +71,7 @@ import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
 import { foldedContains } from '#shared/utils/fold-text-sql';
 import { listTags } from '#shared/handlers/tags';
-import { createLinkSchema, listLinks, type LinkEntityType } from '#shared/handlers/links';
+import { createLinkSchema, deleteLinksTo, listLinks, type LinkEntityType } from '#shared/handlers/links';
 import { resolveLinkEntityProjectId } from '../project-access';
 import { buildIssueDraft, type DraftEntityType } from '../integrations/draft';
 import { createIssue } from '../integrations/create';
@@ -152,7 +157,7 @@ import { createScmProvider } from '../scm';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
-import { dismissQuarantineProposal } from '#shared/handlers/quarantine';
+import { addQuarantine, dismissQuarantineProposal, releaseQuarantine } from '#shared/handlers/quarantine';
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import { getFeatureGraph } from '../feature-graph';
 import { resolveAiConfig } from '../ai-provider';
@@ -179,7 +184,7 @@ import {
 } from '../project-access';
 import type { ProjectScope } from '../project-access';
 import type { HandbackActor } from '#shared/handback-outcomes';
-import type { User } from '../../database/schema';
+import type { FailureCluster, FailureDiagnosis, User } from '../../database/schema';
 import {
   PROJECT_ROLE_LABELS,
   can,
@@ -305,19 +310,28 @@ function assertProject(ctx: McpContext, projectId: number): void {
  * Resolve an entity's owning project, returning 'not-found' when it doesn't
  * exist (handlers map that to null) and throwing when it's out of scope, or
  * when the caller lacks `permission` there (a write tool's permission).
+ * Returns what `resolve` found: the project id, or the entity loaded with its
+ * `projectId` when the handler needs more of it.
  */
-async function checkEntityScope(
+async function checkEntityScope<T extends number | { projectId: number }>(
   db: DbClient,
   ctx: McpContext,
   id: number,
-  resolve: (db: DbClient, id: number) => Promise<number | null>,
+  resolve: (db: DbClient, id: number) => Promise<T | null>,
   permission?: ProjectPermission,
-): Promise<'ok' | 'not-found'> {
-  const projectId = await resolve(db, id);
-  if (projectId == null) return 'not-found';
+): Promise<T | 'not-found'> {
+  const found = await resolve(db, id);
+  if (found == null) return 'not-found';
+  const projectId = typeof found === 'number' ? found : found.projectId;
   assertProject(ctx, projectId);
   if (permission) assertPermission(ctx, permission, projectId);
-  return 'ok';
+  return found;
+}
+
+/** A failure cluster's row; null when it does not exist. */
+async function loadCluster(db: DbClient, id: number): Promise<FailureCluster | null> {
+  const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
+  return cluster ?? null;
 }
 
 /** The refusal naming a missing permission and who holds it, so the agent can tell its user what to ask for. */
@@ -340,6 +354,48 @@ function permissionRefusal(permission: Permission, projectId?: number): string {
  */
 export function assertPermission(ctx: McpContext, permission: Permission, projectId?: number): void {
   if (!can(ctx.access, permission, projectId)) throw new Error(permissionRefusal(permission, projectId));
+}
+
+/** The refusal of a diagnosis run on an instance with no AI provider, naming the way that still works. */
+const AI_NOT_CONFIGURED =
+  'AI diagnosis is not configured on this instance; write the diagnosis and call record_diagnosis';
+
+/** The cluster or the failure a diagnosis tool names: exactly one of `clusterId` and `executionId`. */
+function diagnosisTarget(params: Record<string, unknown>): AgentDiagnosisTarget {
+  const named = (params.clusterId != null ? 1 : 0) + (params.executionId != null ? 1 : 0);
+  if (named !== 1) throw new Error('Pass clusterId or executionId (one of them)');
+  return params.clusterId != null
+    ? { scope: 'cluster', clusterId: numericParam(params.clusterId, 'clusterId') }
+    : { scope: 'execution', executionId: numericParam(params.executionId, 'executionId') };
+}
+
+/** A stored diagnosis, cluster or execution scope, in the shape the diagnosis tools return. */
+function diagnosisToMcp(diag: FailureDiagnosis) {
+  const det = diag.details as Record<string, unknown> | null;
+  return {
+    diagnosisId: diag.id,
+    status: diag.status,
+    provider: diag.provider || null,
+    model: diag.model || null,
+    category: diag.category || null,
+    confidence: diag.confidence || null,
+    confidenceScore: (det?.confidenceScore as number) ?? null,
+    severity: (det?.severity as string) || null,
+    affectedArea: (det?.affectedArea as string) || null,
+    summary: diag.summary || null,
+    rootCause: diag.rootCause || null,
+    evidence: (det?.evidence as string[]) || null,
+    hypotheses: (det?.hypotheses as unknown[]) || null,
+    suggestedFix: det?.suggestedFix || null,
+    patchValidation: storedPatchValidation(det),
+    investigationSteps: (det?.investigationSteps as string[]) || null,
+    preventionTips: (det?.preventionTips as string[]) || null,
+    error: trunc(diag.error, 400),
+    inputTokens: diag.inputTokens || null,
+    outputTokens: diag.outputTokens || null,
+    durationMs: diag.durationMs || null,
+    updatedAt: iso(diag.updatedAt),
+  };
 }
 
 // ── Tool definition type ─────────────────────────────────────────────────────
@@ -1008,32 +1064,16 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       return null;
     }
     const result = await getClusterDiagnosis(db, id);
-    const diag = result.diagnosis as any;
-    if (!diag) return null;
+    if (!result.diagnosis) return null;
+    return dropNulls({ ...diagnosisToMcp(result.diagnosis), manualBaseCommit: result.manualBaseCommit || null });
+  },
 
-    const det = diag.details as Record<string, unknown> | null;
-    return dropNulls({
-      status: diag.status,
-      provider: diag.provider || null,
-      model: diag.model || null,
-      category: diag.category || null,
-      confidence: diag.confidence || null,
-      confidenceScore: (det?.confidenceScore as number) ?? null,
-      severity: (det?.severity as string) || null,
-      affectedArea: (det?.affectedArea as string) || null,
-      summary: diag.summary || null,
-      rootCause: diag.rootCause || null,
-      evidence: (det?.evidence as string[]) || null,
-      hypotheses: (det?.hypotheses as unknown[]) || null,
-      suggestedFix: det?.suggestedFix || null,
-      investigationSteps: (det?.investigationSteps as string[]) || null,
-      preventionTips: (det?.preventionTips as string[]) || null,
-      inputTokens: diag.inputTokens || null,
-      outputTokens: diag.outputTokens || null,
-      durationMs: diag.durationMs || null,
-      updatedAt: iso(diag.updatedAt),
-      manualBaseCommit: result.manualBaseCommit || null,
-    });
+  // ── get_execution_diagnosis ───────────────────────────────────────────────
+  async get_execution_diagnosis(db, params, ctx) {
+    const id = numericParam(params.executionId, 'executionId');
+    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
+    const { diagnosis } = await getExecutionDiagnosis(db, id);
+    return diagnosis ? dropNulls({ executionId: id, ...diagnosisToMcp(diagnosis) }) : null;
   },
 
   // ── get_test_case_context ─────────────────────────────────────────────────
@@ -2359,42 +2399,46 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── run_cluster_diagnosis ──────────────────────────────────────────────────
   async run_cluster_diagnosis(db, params, ctx) {
     const id = numericParam(params.clusterId, 'clusterId');
-    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'ai:run')) === 'not-found') return null;
+    const cluster = await checkEntityScope(db, ctx, id, loadCluster, 'ai:run');
+    if (cluster === 'not-found') return null;
     if (isDiagnosisRunning(id)) throw new Error('Diagnosis is already running for this cluster');
 
-    const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
-    if (!cluster) return null;
-
-    const config = await resolveAiConfig(db);
-    if (!config) return { error: 'AI diagnosis is not configured' };
-
-    const force = params.force === true || params.force === 'true';
-    const baseCommit = typeof params.baseCommit === 'string' ? params.baseCommit : undefined;
-
-    // Honour `force` (per the tool's schema): return the existing completed
-    // diagnosis unless a re-run is explicitly requested.
-    let diag: any;
-    if (!force) {
+    // Return the stored completed diagnosis unless a re-run is asked for.
+    if (params.force !== true && params.force !== 'true') {
       const [existing] = await db
         .select()
         .from(failureDiagnoses)
         .where(and(eq(failureDiagnoses.clusterId, id), eq(failureDiagnoses.scope, 'cluster')))
         .limit(1);
-      diag =
-        existing?.status === 'completed' ? existing : await runClusterDiagnosis(db, cluster, config, { baseCommit });
-    } else {
-      diag = (await runClusterDiagnosis(db, cluster, config, { baseCommit })) as any;
+      if (existing?.status === 'completed') return dropNulls({ clusterId: id, ...diagnosisToMcp(existing) });
     }
-    const det = diag.details as Record<string, unknown> | null;
-    return dropNulls({
-      clusterId: id,
-      status: diag.status,
-      category: diag.category || null,
-      confidence: diag.confidence || null,
-      summary: diag.summary || null,
-      rootCause: diag.rootCause || null,
-      suggestedFix: det?.suggestedFix || null,
+
+    const config = await resolveAiConfig(db);
+    if (!config) throw new Error(AI_NOT_CONFIGURED);
+    const baseCommit = typeof params.baseCommit === 'string' ? params.baseCommit : undefined;
+    const diag = await runClusterDiagnosis(db, cluster, config, { baseCommit });
+    return dropNulls({ clusterId: id, ...diagnosisToMcp(diag) });
+  },
+
+  // ── run_execution_diagnosis ────────────────────────────────────────────────
+  async run_execution_diagnosis(db, params, ctx) {
+    const id = numericParam(params.executionId, 'executionId');
+    const execution = await checkEntityScope(db, ctx, id, loadExecutionForDiagnosis, 'ai:run');
+    if (execution === 'not-found') return null;
+    const outcome = await diagnoseExecution(db, execution, {
+      force: params.force === true || params.force === 'true',
+      additionalContext:
+        typeof params.additionalContext === 'string' && params.additionalContext.trim()
+          ? params.additionalContext
+          : undefined,
+      baseCommit: typeof params.baseCommit === 'string' && params.baseCommit.trim() ? params.baseCommit : undefined,
     });
+    if (!outcome.ok) {
+      if (outcome.error === 'not-failed') throw new Error(`Execution ${id} did not fail: there is nothing to diagnose`);
+      if (outcome.error === 'not-configured') throw new Error(AI_NOT_CONFIGURED);
+      throw new Error('A diagnosis is already running for this failure');
+    }
+    return dropNulls({ executionId: id, ...diagnosisToMcp(outcome.diagnosis) });
   },
 
   // ── triage_cluster ─────────────────────────────────────────────────────────
@@ -2535,6 +2579,28 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     return { suggestionId, decision, ok: true };
   },
 
+  // ── move_tests_to_new_cluster ──────────────────────────────────────────────
+  async move_tests_to_new_cluster(db, params, ctx) {
+    const id = numericParam(params.clusterId, 'clusterId');
+    const testCaseIds = parseBulkIds(params.testCaseIds);
+    if (!testCaseIds) {
+      throw new Error(`testCaseIds must be a non-empty array of positive integers (max ${BULK_TRIAGE_MAX})`);
+    }
+    if (params.triageNote != null && typeof params.triageNote !== 'string') {
+      throw new Error('triageNote must be a string');
+    }
+    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'triage:write')) === 'not-found') return null;
+    const note = typeof params.triageNote === 'string' && params.triageNote.trim() ? params.triageNote : undefined;
+    const result = await extractClusterCases(db, id, testCaseIds, note);
+    if (!result) return null;
+    return dropNulls({
+      sourceClusterId: id,
+      clusterId: result.clusterId,
+      movedTests: result.extractedCount,
+      remainingOccurrences: result.remainingOccurrences,
+    });
+  },
+
   // ── dismiss_quarantine_proposal ────────────────────────────────────────────
   async dismiss_quarantine_proposal(db, params, ctx) {
     const projectId = numericParam(params.projectId, 'projectId');
@@ -2554,6 +2620,24 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     }
     if (!dismissed) throw new Error(`Test ${testCaseId} has no ${proposal} proposal to dismiss`);
     return dropNulls({ projectId, testCaseId, proposal, dismissed, reason });
+  },
+
+  // ── set_test_quarantine ────────────────────────────────────────────────────
+  async set_test_quarantine(db, params, ctx) {
+    const testCaseId = numericParam(params.testCaseId, 'testCaseId');
+    if (typeof params.quarantined !== 'boolean') throw new Error('quarantined must be true or false');
+    if (params.reason != null && typeof params.reason !== 'string') throw new Error('reason must be a string');
+    const projectId = await checkEntityScope(db, ctx, testCaseId, resolveCaseProjectId, 'quarantine:write');
+    if (projectId === 'not-found') return null;
+    const reason = typeof params.reason === 'string' && params.reason.trim() ? params.reason.slice(0, 500) : null;
+    if (params.quarantined) {
+      const { created } = await addQuarantine(db, projectId, testCaseId, { reason, createdBy: ctx.user?.id || null });
+      // A test already in quarantine keeps the reason it was quarantined with.
+      return dropNulls({ testCaseId, quarantined: true, changed: created, reason: created ? reason : null });
+    }
+    const { released } = await releaseQuarantine(db, projectId, testCaseId, reason, mcpActor(ctx));
+    if (!released) throw new Error(`Test ${testCaseId} is not in quarantine`);
+    return dropNulls({ testCaseId, quarantined: false, changed: true, reason });
   },
 
   // ── set_bug_report_status ──────────────────────────────────────────────────
@@ -2606,17 +2690,20 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
   // ── record_diagnosis ───────────────────────────────────────────────────────
   async record_diagnosis(db, params, ctx) {
-    const id = numericParam(params.clusterId, 'clusterId');
+    const target = diagnosisTarget(params);
     const parsed = parseAgentDiagnosis({ model: params.model, diagnosis: params.diagnosis });
     if (!parsed.ok) throw new Error(parsed.message);
-    if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'ai:run')) === 'not-found') return null;
-    const result = await recordAgentDiagnosisOnCluster(db, id, parsed.value, mcpActor(ctx));
+    const id = target.scope === 'cluster' ? target.clusterId : target.executionId;
+    const resolved = await checkEntityScope(db, ctx, id, (db) => resolveAgentDiagnosisTarget(db, target), 'ai:run');
+    if (resolved === 'not-found') return null;
+    const result = await recordAgentDiagnosisOn(db, target, parsed.value, mcpActor(ctx), resolved);
     if (!result.ok) {
       if (result.error === 'not-found') return null;
-      throw new Error(AGENT_DIAGNOSIS_ERRORS[result.error]);
+      throw new Error(agentDiagnosisErrorMessage(result.error, target.scope));
     }
     return dropNulls({
-      clusterId: id,
+      clusterId: target.scope === 'cluster' ? target.clusterId : null,
+      executionId: target.scope === 'execution' ? target.executionId : null,
       diagnosisId: result.diagnosisId,
       category: parsed.value.diagnosis.category,
       confidence: parsed.value.diagnosis.confidence,
@@ -2689,6 +2776,26 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       title: link.title || null,
       statusText: link.statusText || null,
     });
+  },
+
+  // ── unlink_issue ───────────────────────────────────────────────────────────
+  async unlink_issue(db, params, ctx) {
+    const validation = createLinkSchema.omit({ title: true }).safeParse({
+      entityType: params.entityType,
+      entityId: params.entityId,
+      url: typeof params.url === 'string' ? params.url.trim() : params.url,
+    });
+    if (!validation.success) {
+      throw new Error(validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
+    }
+    const { entityType, entityId, url } = validation.data;
+    const projectId = await resolveLinkEntityProjectId(db, entityType, entityId);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
+    assertPermission(ctx, 'link:write', projectId);
+    const removed = await deleteLinksTo(db, entityType, entityId, url);
+    if (removed === 0) throw new Error(`${entityType} ${entityId} has no link to ${url}`);
+    return { entityType, entityId, url, removed };
   },
 
   // ── create_test_function ───────────────────────────────────────────────────

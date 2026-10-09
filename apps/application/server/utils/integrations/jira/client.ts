@@ -1,8 +1,9 @@
 import type { IssueDocument } from '#shared/integrations/document';
-import { renderAdf } from '#shared/integrations/render-adf';
+import { adfPlainText, renderAdf } from '#shared/integrations/render-adf';
 import { DEFAULT_EXPORT_MAX_INLINE_BYTES } from '#shared/export/limits';
 import type {
   CreateIssueInput,
+  IssueText,
   IssueTracker,
   TrackerCredentials,
   TrackerIssue,
@@ -11,6 +12,7 @@ import type {
   TrackerSearch,
   TrackerTransition,
   TrackerUser,
+  UpdateIssueInput,
 } from '../types';
 import { statusColorForCategory, toStatusCategory } from '../types';
 import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
@@ -19,6 +21,15 @@ import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
+
+/** Jira refuses a summary longer than this, or one with a line break. */
+const SUMMARY_MAX_LENGTH = 255;
+
+/** A title as Jira takes a summary: one line, at most {@link SUMMARY_MAX_LENGTH} characters. */
+export function jiraSummary(title: string): string {
+  const line = title.replace(/\s+/g, ' ').trim();
+  return line.length <= SUMMARY_MAX_LENGTH ? line : `${line.slice(0, SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+}
 
 /** Create metadata is paged; a screen past this many fields is read no further. */
 const CREATE_META_PAGE_SIZE = 100;
@@ -382,7 +393,7 @@ export class JiraClient implements IssueTracker {
       ...(input.fields ?? {}),
       project: { key: input.projectKey },
       issuetype,
-      summary: input.title,
+      summary: jiraSummary(input.title),
       description: renderAdf(input.body),
     };
     if (input.labels?.length) fields.labels = input.labels;
@@ -401,7 +412,7 @@ export class JiraClient implements IssueTracker {
       id: data.id ?? null,
       key,
       url: this.issueUrl(key),
-      title: input.title,
+      title: jiraSummary(input.title),
       status: null,
       statusCategory: null,
       statusColor: null,
@@ -414,6 +425,29 @@ export class JiraClient implements IssueTracker {
       method: 'POST',
       body: JSON.stringify({ body: renderAdf(body) }),
     });
+  }
+
+  async updateIssue(key: string, input: UpdateIssueInput): Promise<void> {
+    const fields: Record<string, unknown> = {};
+    if (input.title != null) fields.summary = jiraSummary(input.title);
+    if (input.body) fields.description = renderAdf(input.body);
+    if (Object.keys(fields).length === 0) return;
+    await this.request<void>(`/rest/api/3/issue/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ fields }),
+    });
+  }
+
+  async readIssueText(key: string): Promise<IssueText | null> {
+    try {
+      const data = await this.request<{ fields?: { summary?: string | null; description?: unknown } }>(
+        `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description`,
+      );
+      return { title: data.fields?.summary ?? null, description: adfPlainText(data.fields?.description) };
+    } catch (err) {
+      if (err instanceof JiraError && err.status === 404) return null;
+      throw err;
+    }
   }
 
   async attach(key: string, file: { name: string; bytes: Uint8Array; mime: string }): Promise<void> {

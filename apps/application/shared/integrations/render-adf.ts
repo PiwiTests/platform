@@ -103,3 +103,15 @@ export function renderAdf(document: IssueDocument): AdfDocument {
   }
   return { type: 'doc', version: 1, content };
 }
+
+/**
+ * The text of an ADF tree: its text nodes in document order, whatever their
+ * marks and layout — what a description says, for telling an edit apart.
+ */
+export function adfPlainText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const n = node as { text?: unknown; content?: unknown };
+  const own = typeof n.text === 'string' ? n.text : '';
+  const children = Array.isArray(n.content) ? n.content.map(adfPlainText).join('') : '';
+  return own + children;
+}

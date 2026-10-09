@@ -83,6 +83,14 @@ imported by both. Exceptions only where the implementations genuinely differ (er
   administrator (`ADMIN_ACCESS`), so every endpoint keeps working and the UI allows everything.
 - Two methods when enabled: session cookie (browser) or API key (Bearer / `X-API-Key`, `pd_` prefix). **An API key
   carries its owner's access** (instance role and project roles), nothing more and nothing less.
+- **`/mcp` takes a third: an OAuth access token** (`pdo_`), from the authorization server MCP clients sign in through
+  (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `proposals/mcp-oauth.md`).
+  Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it; keep it that way. Each grant owns
+  an `api_keys` row named after the client, whose value is never handed out: it carries the access, the write log
+  names it, and deleting it ends the grant (foreign-key cascade). Every 401 from `/mcp` carries the
+  `WWW-Authenticate` challenge clients discover the server from. **The authorize endpoint never redirects an error
+  to the client's redirect URI**: registration is open, so that would make the instance an open redirector; every
+  refusal lands on the consent page, and only the user's Allow or Deny sends the browser to the client.
 - **The model lives in `#shared/permissions`** (pure, shared by the server, the MCP tools, the demo and the UI; design
   record `proposals/roles-and-groups.md`): instance roles `InstanceRole` (`administrator`, `member`; stored in
   `users.role`), project roles `ProjectRole` (`viewer`, `contributor`, `maintainer`, `project_admin`, `uploader`),
@@ -498,6 +506,7 @@ Where to add things in subsystems whose wiring spans several files:
 | Blob-report import            | `server/utils/blob-report.ts` (parse) + `import-evidence.ts` (recovered evidence); everything after parsing in `shared/handlers/import-runs.ts`; endpoints `test-runs/import[.post]` and `import/check.post.ts`; page `projects/[id]/import.vue` + `useBlobReportImport`                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Trace-file import             | `server/utils/trace-import.ts` — reconstructs an execution from a trace's `context-options`/`error` events; grouped into one run by the `importGroup` field on `test-runs/import.post.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Quality report language       | Its code in `shared/reports/languages.ts`, the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks) and a `shared/reports/sentences.<code>.ts` implementing `ReportSentences` (copy `sentences.fr.ts`), registered in `REPORT_SENTENCES`; validation, the MCP tool, the pickers and the CLI follow. `tests/unit/report-languages.test.ts` names the labels, metrics and gap titles the file lacks, and a new gap detector needs a sample in `tests/unit/gap-title-samples.ts`. The PDF's standard fonts write Windows-1252 only                                                                                                                           |
+| Issue automation criterion    | The rule field and its check in `shared/integrations/automation.ts` (`AutoCreateRule`, `resolveAutoCreateRule`, `evaluateAutoCreate`, `describeAutoCreateRule`); the fact it reads in `gatherAutoCreateFacts` (`shared/handlers/tracker-automation.ts`, shared with the demo preview); the form in `app/utils/tracker-binding-form.ts` and `AutoCreateRulesEditor.vue`; the table on `apps/docs/features/issue-automation.md`. The run trigger (`server/utils/integrations/automation.ts`) and the write-back scope (`policies.ts`, `tracker-run.ts`) read the rules, never re-implement them                                                                                       |
 
 ## Subsystem invariants
 

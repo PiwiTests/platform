@@ -1,3 +1,5 @@
+import { isFailedStatus } from './utils/test-counts';
+
 export const DIAGNOSIS_CATEGORIES = [
   'app-bug',
   'test-bug',
@@ -13,6 +15,14 @@ export type DiagnosisConfidence = (typeof DIAGNOSIS_CONFIDENCES)[number];
 
 export const DIAGNOSIS_SEVERITIES = ['blocker', 'high', 'medium', 'low'] as const;
 export type DiagnosisSeverity = (typeof DIAGNOSIS_SEVERITIES)[number];
+
+/**
+ * Whether one execution has a failure to diagnose: it failed, or it passed on a
+ * retry and kept the error of the attempt that failed.
+ */
+export function hasFailureToDiagnose(execution: { status: string; error: string | null }): boolean {
+  return isFailedStatus(execution.status) || Boolean(execution.error?.trim());
+}
 
 /** The phases of a streaming diagnosis; `research` runs only when a distinct research model is configured. */
 export type DiagnosisStage = 'research' | 'diagnosis';

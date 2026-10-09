@@ -2145,9 +2145,71 @@ const SCENES = [
       }
     },
     route: '/projects/2?tab=settings&section=issue-tracker',
-    viewport: { width: 1280, height: 1600 },
+    viewport: { width: 1280, height: 2000 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
+  },
+  {
+    name: 'project-integration-auto-create',
+    description:
+      'Project → Settings → Issue tracker: automatic creation with two rules, and the preview of what they file',
+    tags: ['docs'],
+    out: 'docs',
+    // The binding is answered as bound to CHK / Bug with automatic creation on;
+    // the preview runs for real against the seeded clusters of project 2.
+    prepare: prepareJiraSceneConnection,
+    route: '/projects/2?tab=settings&section=issue-tracker',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, goto, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            autoCreate: {
+              enabled: true,
+              rules: [
+                {
+                  branches: ['release/*'],
+                  defaultBranch: false,
+                  environments: [],
+                  tags: [],
+                  minOccurrences: 1,
+                  minRuns: 1,
+                  minDays: 0,
+                  labels: ['release-blocker'],
+                },
+                {
+                  branches: [],
+                  defaultBranch: true,
+                  environments: ['staging'],
+                  tags: [],
+                  minOccurrences: 3,
+                  minRuns: 2,
+                  minDays: 1,
+                  labels: [],
+                },
+              ],
+              skipFlaky: true,
+              dailyCap: 5,
+              routeUnmatchedToDefault: false,
+            },
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings&section=issue-tracker');
+      const block = page.locator('[data-shot="binding-auto-create"]');
+      await block.waitFor({ timeout: 20000 });
+      await block.getByRole('button', { name: 'Preview' }).click();
+      await block.getByText(/issues filed automatically in the last 24 hours/).waitFor({ timeout: 15000 });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="binding-auto-create"]', pad: 12 });
+    },
   },
   {
     name: 'create-issue-required-fields',
@@ -4075,6 +4137,50 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...[
+    { name: 'mcp-oauth-consent', width: 1280 },
+    { name: 'mcp-oauth-consent-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `The consent page an MCP client's OAuth sign-in opens, with the client, where the answer goes and the account, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password>`,
+    async prepare({ base, request }) {
+      await signInForScene({ base, request });
+      const redirectUri = 'http://127.0.0.1:33418/callback';
+      const client = await (
+        await request.post(`${base}/oauth/register`, {
+          data: { client_name: 'Claude Code (piwi)', redirect_uris: [redirectUri] },
+        })
+      ).json();
+      const query = new URLSearchParams({
+        response_type: 'code',
+        client_id: client.client_id,
+        redirect_uri: redirectUri,
+        code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+        code_challenge_method: 'S256',
+        state: 'screenshot',
+      });
+      const res = await request.get(`${base}/oauth/authorize?${query}`, { maxRedirects: 0 });
+      this.consentPath = res.headers().location;
+    },
+    route: '/',
+    viewport: { width, height: 900 },
+    of: '[data-shot="mcp-oauth-consent"]',
+    async run({ shoot, settle, goto }) {
+      await goto(this.consentPath);
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'mcp-client-auth',
+    description:
+      'MCP page with authentication on: client setup signs in through OAuth, with the Use an API key switch. Pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password>',
+    route: '/mcp',
+    viewport: { width: 1280, height: 1400 },
+    of: '[data-shot="mcp-client-setup"]',
+    pad: 12,
+    prepare: signInForScene,
+  },
   {
     name: 'evidence-fixtures-footer',
     description: 'Execution page evidence card for a project with no captured fixtures: the footer names them',

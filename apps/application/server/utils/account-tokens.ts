@@ -1,7 +1,8 @@
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { eq, and, gt } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { accountTokens, users } from '../database/schema';
+import { hashToken } from './token-hash';
 
 export type TokenPurpose = 'reset' | 'verify' | 'invite';
 
@@ -10,10 +11,6 @@ const TTL_MS: Record<TokenPurpose, number> = {
   verify: 24 * 60 * 60 * 1000, // 24 hours
   invite: 72 * 60 * 60 * 1000, // 72 hours
 };
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
 
 /**
  * Mint a new single-use token for a user, to email to `email`. Returns the

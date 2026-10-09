@@ -17,7 +17,6 @@ import {
   failureDiagnoses,
   failureDiagnosisVersions,
   testRunsCases,
-  testRuns,
   failureClusters,
   projects,
 } from '../../../server/database/schema';
@@ -33,6 +32,7 @@ import {
 import type { ContextLimits } from '#shared/ai-context-limits';
 import { getAppSetting, setAppSetting } from '~~/server/utils/app-settings';
 import { validatePatch } from '#shared/patch';
+import { hasFailureToDiagnose } from '#shared/ai-diagnosis';
 import { buildDiagnosisVersionValues } from '#shared/handlers/diagnosis-versions';
 import { getAiUsageSummary } from '#shared/handlers/ai-usage';
 import { collectClusterEvidence } from './diagnosis-context';
@@ -786,11 +786,17 @@ async function snapshotAndClear(db: Awaited<ReturnType<typeof getDemoDb>>, clust
   await db.delete(failureDiagnoses).where(eq(failureDiagnoses.id, existing.id));
 }
 
+/**
+ * Store a generated diagnosis and send `diagnosis.completed` like the server:
+ * about the diagnosed cluster, or the cluster of the diagnosed execution
+ * (`eventClusterId`), opening the execution; none for a failure in no cluster.
+ */
 async function persistDiagnosis(
   clusterId: number | null,
   gen: Awaited<ReturnType<typeof generateDiagnosis>>,
   scope: 'cluster' | 'execution' = 'cluster',
   testRunsCaseId: number | null = null,
+  eventClusterId: number | null = clusterId,
 ): Promise<FailureDiagnosis> {
   const db = await getDemoDb();
   const now = new Date();
@@ -818,35 +824,23 @@ async function persistDiagnosis(
     })
     .returning();
 
-  // Look up project for the notification event — cluster-scoped rows resolve via the
-  // cluster; execution-scoped rows carry no cluster and resolve via the execution's run.
-  let projectId = 0;
-  if (clusterId != null) {
+  if (eventClusterId != null) {
     const [cluster] = await db
       .select({ projectId: failureClusters.projectId })
       .from(failureClusters)
-      .where(eq(failureClusters.id, clusterId))
+      .where(eq(failureClusters.id, eventClusterId))
       .limit(1);
-    projectId = cluster?.projectId ?? 0;
-  } else if (testRunsCaseId != null) {
-    const [run] = await db
-      .select({ projectId: testRuns.projectId })
-      .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-      .where(eq(testRunsCases.id, testRunsCaseId))
-      .limit(1);
-    projectId = run?.projectId ?? 0;
+    publishDemoNotificationEvent({
+      type: 'diagnosis.completed',
+      clusterId: eventClusterId,
+      ...(scope === 'execution' && testRunsCaseId != null ? { executionId: testRunsCaseId } : {}),
+      projectId: cluster?.projectId ?? 0,
+      summary: gen.row.summary,
+      rootCause: gen.row.rootCause,
+      category: gen.row.category,
+      confidence: gen.row.confidence,
+    });
   }
-
-  publishDemoNotificationEvent({
-    type: 'diagnosis.completed',
-    clusterId: clusterId ?? 0,
-    projectId,
-    summary: gen.row.summary,
-    rootCause: gen.row.rootCause,
-    category: gen.row.category,
-    confidence: gen.row.confidence,
-  });
 
   return saved!;
 }
@@ -865,7 +859,7 @@ export async function apiDiagnoseCluster(
   // Execution-scoped diagnose targets one test-run-case, mirroring the server's
   // scope branch on the cluster endpoint.
   if (body?.scope === 'execution' && body?.executionId != null) {
-    return apiDiagnoseExecution(Number(body.executionId), body);
+    return apiDiagnoseExecution(Number(body.executionId), body, query);
   }
 
   // Like the server: an existing completed diagnosis is the answer unless the
@@ -891,24 +885,28 @@ export async function apiDiagnoseCluster(
 export async function apiDiagnoseExecution(
   testRunsCaseId: number,
   body?: Record<string, unknown>,
+  query?: URLSearchParams,
 ): Promise<FailureDiagnosis> {
   const db = await getDemoDb();
   const [trc] = await db
-    .select({ clusterId: testRunsCases.failureClusterId })
+    .select({ clusterId: testRunsCases.failureClusterId, status: testRunsCases.status, error: testRunsCases.error })
     .from(testRunsCases)
     .where(eq(testRunsCases.id, testRunsCaseId));
   if (!trc) throw demoHttpError(404, 'Execution not found');
+  if (!hasFailureToDiagnose(trc)) throw demoHttpError(400, 'This test run case did not fail');
   // Every failing demo case belongs to a cluster; ground the diagnosis in that cluster's
   // evidence when present (the common path). If a failure ever had no cluster the diagnose
   // action simply wouldn't fire, so a missing cluster is a hard error, not a silent no-op.
   if (!trc.clusterId) throw demoHttpError(400, 'Execution has no failure to diagnose');
 
-  // Snapshot/replace any existing execution-scoped row for this case.
+  // Like the server: an existing completed diagnosis is the answer unless the
+  // caller forces a re-run, which snapshots and replaces it.
   const [existing] = await db
     .select()
     .from(failureDiagnoses)
     .where(and(eq(failureDiagnoses.testRunsCaseId, testRunsCaseId), eq(failureDiagnoses.scope, 'execution')))
     .limit(1);
+  if (existing?.status === 'completed' && query?.get('force') !== 'true') return existing;
   if (existing) {
     await db.insert(failureDiagnosisVersions).values(buildDiagnosisVersionValues(existing, new Date()));
     await db.delete(failureDiagnoses).where(eq(failureDiagnoses.id, existing.id));
@@ -920,7 +918,7 @@ export async function apiDiagnoseExecution(
   });
   // Execution-scoped rows persist a null cluster (mirrors the server + keeps the
   // (cluster_id, scope) unique index from colliding across executions of one cluster).
-  return persistDiagnosis(null, gen, 'execution', testRunsCaseId);
+  return persistDiagnosis(null, gen, 'execution', testRunsCaseId, trc.clusterId);
 }
 
 /** How long the simulated research stage lasts before the diagnosis stage streams. */

@@ -1,11 +1,12 @@
 import { getRequestURL, type H3Event } from 'h3';
-import { requireAuth, isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { isAuthEnabled, getRequestAccess } from '../utils/auth';
+import { requireMcpAuth } from '../utils/mcp-oauth';
 import { getDatabase, type DbClient } from '../database';
 import { MCP_TOOLS, DESKTOP_MCP_TOOLS, toContent } from '../utils/mcp/tools';
 import type { McpContext, McpTool } from '../utils/mcp/tools';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { getProjectScope } from '../utils/project-access';
-import { resolvePublicBaseUrl } from '../utils/oauth-helpers';
+import { publicBaseUrl } from '../utils/public-base-url';
 import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
 import type { JsonRpcRequest } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
@@ -59,15 +60,17 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // Implements the MCP Streamable HTTP transport for the protocol versions in
 // SUPPORTED_PROTOCOL_VERSIONS.
 // A single POST /mcp handles initialize, tools/list, tools/call, and ping.
-// Auth: same pd_<key> Bearer token as the REST API.
+// Auth: an OAuth access token (the client signs in through this instance's
+// authorization server, see utils/mcp-oauth.ts), or the same pd_<key> Bearer
+// token and session as the REST API.
 
 export default eventHandler(async (event) => {
-  // Authenticate using the same API-key / session mechanism as the REST API,
+  // Authenticate with an OAuth access token or the REST API's key / session,
   // then load the caller's access and project scope once. Every tool honors the
   // scope, so a key reads only the projects its owner holds a role on, and every
   // write tool checks its permission on the project it acts on — the same rules
   // the REST API enforces.
-  const user = await requireAuth(event);
+  const user = await requireMcpAuth(event);
   const db = await getDatabase();
   const access = await getRequestAccess(event);
   const scope = await getProjectScope(db, user);
@@ -142,7 +145,8 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
           'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
           'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
           'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
-          'Write/triage tools (set_cluster_status, triage_cluster, triage_gap, decide_merge_suggestion, dismiss_quarantine_proposal, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, run_cluster_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) need, on the project they act on, the permission the same action needs in the dashboard (each description names it and the roles that hold it); tools/list leaves out the ones this key cannot use on any project, and each call is logged with the key that made it. ' +
+          'Write/triage tools (set_cluster_status, triage_cluster, move_tests_to_new_cluster, triage_gap, decide_merge_suggestion, set_test_quarantine, dismiss_quarantine_proposal, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, unlink_issue, run_cluster_diagnosis, run_execution_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) need, on the project they act on, the permission the same action needs in the dashboard (each description names it and the roles that hold it); tools/list leaves out the ones this key cannot use on any project, and each call is logged with the key that made it. ' +
+          'To set the diagnosis of a cluster or of one failure, write it and call record_diagnosis with clusterId or executionId. ' +
           'After fixing a cluster, call report_fix_attempt with the commit or branch, and put the Piwi-Cluster trailer get_fix_plan suggests in the commit message, so Piwi can verify the fix. ' +
           'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
           'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
@@ -188,7 +192,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       try {
         const data = await tool.handler(db, args, ctx);
         // Write tools are logged with what they acted on; read tools never are.
-        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok');
+        await logMcpToolCall(db, ctx, tool.name, args, data === null ? 'not-found' : 'ok', null, data);
         return ok(id, toContent(data));
       } catch (err) {
         // A tool that throws surfaces as a tool result with `isError: true`, not
@@ -219,9 +223,7 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
       }
       // The URL the client used to reach this dashboard is the URL its reporter
       // should point at; PIWI_SITE_URL overrides it when set (reverse proxy).
-      const requestUrl = getRequestURL(event);
-      const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-      const baseUrl = resolvePublicBaseUrl(siteUrl, `${requestUrl.protocol}//${requestUrl.host}`);
+      const baseUrl = publicBaseUrl(event);
       const result = await getPrompt(p.name, {
         db,
         ctx,

@@ -98,21 +98,24 @@ repository connection is set up on [Source control](/guide/source-control).
 
 ### Validated patches
 
-Every suggested patch is checked before it reaches you, by dry-running each hunk against the source files the model
-was shown. The patch carries one badge: **Applies cleanly**, **Applies with offset** (`git apply` should still succeed),
+Every suggested patch is dry-run, hunk by hunk, against the source files the model was shown. The patch carries one
+badge: **Applies cleanly**, **Applies with offset** (`git apply` should still succeed),
 **Does not apply** (the file diverged), **Invalid diff**, or **Unverified** (the file was not in the context). When a
 fix is [verified](./failure-clusters#did-the-fix-work), the patch is checked again at the fix's commit. The model
 is told to return no patch unless it can quote the lines it changes. Applying a patch is always manual: **Copy**,
 **Copy `git apply` command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
-deterministic locator edits rather than model output.
+deterministic locator edits.
 
 ## Diagnoses written by an agent
 
-A coding agent can record its own diagnosis on a cluster with the MCP tool `record_diagnosis`, in the same JSON a
-model returns here. It needs no AI provider on this instance, its patch is validated against the source the cluster
-failed at when [source control](/guide/source-control) is connected, and the panel shows it as **written by an
-agent** with the model it named. It replaces the current diagnosis, which stays in the history. Declining the
-**Agent diagnoses** capability refuses them; declining AI diagnosis does not.
+A coding agent can record its own diagnosis on a cluster, or on one failure, with the MCP tool `record_diagnosis`, in
+the same JSON a model returns here. It needs no AI provider on this instance, its patch is validated against the
+source the failure happened at when [source control](/guide/source-control) is connected, and the panel shows it as
+**written by an agent** with the model it named. It replaces the current diagnosis, which stays in the history.
+Declining the **Agent diagnoses** capability refuses them; declining AI diagnosis does not.
+
+For one failure, `run_execution_diagnosis` runs the diagnosis of the failure page, and `get_execution_diagnosis` reads
+what is stored, whoever wrote it.
 
 ## Locator healing
 

@@ -89,6 +89,15 @@ describe('renderEventSubject', () => {
     );
   });
 
+  test('diagnosis.completed opens the cluster, or the failure a diagnosis of one execution is about', () => {
+    const cluster = { clusterId: 5, projectId: 2, completedAt: 1000 };
+    const failure = { ...cluster, executionId: 90 };
+    expect(notificationTargetPath('diagnosis.completed', cluster)).toBe('/failure-clusters/5');
+    expect(notificationTargetPath('diagnosis.completed', failure)).toBe('/test-run-cases/90');
+    expect(buildNotificationDedupeKey('diagnosis.completed', cluster, 3)).toBe('diagnosis.completed:c5:1000:3');
+    expect(buildNotificationDedupeKey('diagnosis.completed', failure, 3)).toBe('diagnosis.completed:c5:e90:1000:3');
+  });
+
   test('flakiness.spike and perf.regression produce distinct subjects', () => {
     expect(renderEventSubject('flakiness.spike', runPayload)).toBe('Flakiness spike — my-project');
     expect(renderEventSubject('perf.regression', runPayload)).toBe('Performance regression — my-project');

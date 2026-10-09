@@ -31,6 +31,7 @@ interface NotificationEventData {
   title?: string | null;
   verification?: string;
   clusterId?: number;
+  executionId?: number;
   summary?: string | null;
   rootCause?: string | null;
   category?: string | null;
@@ -105,6 +106,7 @@ function renderBody(data: NotificationEventData): string {
 
 function getLink(data: NotificationEventData): string | null {
   if (data.snapshotId) return `/reports/${data.snapshotId}`;
+  if (data.type === 'diagnosis.completed' && data.executionId) return `/test-run-cases/${data.executionId}`;
   if (data.clusterId) return `/failure-clusters/${data.clusterId}`;
   if (data.runId && data.projectId) return `/test-runs/${data.runId}`;
   return null;
@@ -128,7 +130,7 @@ function handleEvent(data: NotificationEventData) {
   if (!body) return;
 
   // Use type + key id for dedup tag
-  const dedupKey = data.snapshotId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type;
+  const dedupKey = data.snapshotId ?? data.executionId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type;
   const tag = `piwi-${data.type}-${dedupKey}`;
 
   const notification = new Notification('Piwi Dashboard', {

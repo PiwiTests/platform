@@ -94,3 +94,106 @@ describe('buildIssue', () => {
     expect(on).toContain('/share/x');
   });
 });
+
+describe('ticket content', () => {
+  test('bold labels keep the space outside the bold, so Markdown renders them', () => {
+    const md = renderMarkdown(buildIssue(facts()).document);
+    expect(md).toContain('**Root cause:** A refactor renamed the selector.');
+    expect(md).toContain("**Failing locator:** `getByRole('button')`");
+    expect(md).not.toMatch(/\*\*[^*\n]* \*\*/);
+  });
+
+  test('what happened counts the runs and lists every branch and environment', () => {
+    const md = renderMarkdown(
+      buildIssue(facts({ runs: 3, branches: ['main', 'release/2.0'], environments: ['staging', 'prod'] })).document,
+    );
+    expect(md).toContain('- **Occurrences:** 5 in 3 runs');
+    expect(md).toContain('- **Branches:** `main`, `release/2.0`');
+    expect(md).toContain('- **Environments:** staging, prod');
+    expect(md).toContain('- **Latest commit:** `abc123def456`');
+  });
+
+  test('a single branch falls back to the latest occurrence and reads singular', () => {
+    const md = renderMarkdown(buildIssue(facts({ runs: 1 })).document);
+    expect(md).toContain('- **Occurrences:** 5 in 1 run');
+    expect(md).toContain('- **Branch:** `main`');
+    expect(md).toContain('- **Environment:** staging');
+  });
+
+  test('the affected tests carry their own owner and failures, and count the rest', () => {
+    const md = renderMarkdown(
+      buildIssue(
+        facts({
+          affectedTests: [
+            { title: 'checks out', filePath: 'checkout.spec.ts', owner: '@acme/checkout', failures: 4 },
+            { title: 'pays', filePath: 'pay.spec.ts', owner: null, failures: 1 },
+          ],
+          moreAffectedTests: 3,
+        }),
+      ).document,
+    );
+    expect(md).toContain('### 5 affected tests');
+    expect(md).toContain('| Test | File | Owner | Failures |');
+    expect(md).toContain('| checks out | checkout.spec.ts | @acme/checkout | 4 |');
+    expect(md).toContain('| pays | pay.spec.ts |  | 1 |');
+    expect(md).toContain('…and 3 more tests.');
+  });
+
+  test('the owner column is left out when no test has an owner', () => {
+    const md = renderMarkdown(
+      buildIssue(facts({ affectedTests: [{ title: 'checks out', filePath: 'checkout.spec.ts', owner: null }] }))
+        .document,
+    );
+    expect(md).toContain('| Test | File |');
+    expect(md).not.toContain('Owner');
+  });
+
+  test('the diagnosis says its category and confidence', () => {
+    const md = renderMarkdown(
+      buildIssue(facts({ diagnosisCategory: 'app-bug', diagnosisConfidence: 'medium' })).document,
+    );
+    expect(md).toContain('**Category:** Application bug (medium confidence)');
+    const unknown = renderMarkdown(buildIssue(facts({ diagnosisCategory: 'unknown' })).document);
+    expect(unknown).not.toContain('Category');
+  });
+
+  test('issues of the same kind of failure, fixed before, are listed', () => {
+    const md = renderMarkdown(
+      buildIssue(
+        facts({
+          relatedIssues: [
+            { key: 'PROJ-12', url: 'https://jira.test/browse/PROJ-12', title: 'Pay times out', status: 'Done' },
+          ],
+        }),
+      ).document,
+    );
+    expect(md).toContain('## Related issues');
+    expect(md).toContain(
+      '- [PROJ-12](https://jira.test/browse/PROJ-12) Pay times out (Done) — the same kind of failure, fixed before',
+    );
+  });
+
+  test('an issue a rule filed opens with what the rule counted, in the ticket language', () => {
+    const automatic = {
+      ruleIndex: 0,
+      occurrences: 4,
+      runs: 2,
+      days: 1,
+      firstFailureAt: Date.UTC(2026, 9, 6),
+      branches: ['main'],
+      environments: ['staging'],
+    };
+    const md = renderMarkdown(buildIssue(facts({ automatic })).document);
+    expect(
+      md.startsWith(
+        'Filed automatically by Piwi after 4 occurrences in 2 runs since Oct 6, 2026. Counted on main (staging).',
+      ),
+    ).toBe(true);
+    const fr = renderMarkdown(buildIssue(facts({ automatic }), { locale: 'fr' }).document);
+    expect(fr).toContain('Créé automatiquement par Piwi après 4 occurrences sur 2 séries depuis le 6 oct. 2026.');
+    const envOnly = renderMarkdown(
+      buildIssue(facts({ automatic: { ...automatic, branches: [], environments: ['prod'] } })).document,
+    );
+    expect(envOnly).toContain('Counted in the prod environment.');
+  });
+});

@@ -143,9 +143,9 @@ back** badge, when a new run fails it again.
 ## From an AI agent
 
 Over the [MCP server](/features/mcp), `list_open_clusters` takes the same `queue` argument, and the inbox's actions
-have tools: `triage_cluster` sets the status (with a note), assigns, snoozes, quarantines or releases one or more
-clusters at once, `decide_merge_suggestion` approves or rejects a merge suggestion, `rerun_cluster_in_ci` re-runs a
-cluster's tests in CI, and `link_issue` links an existing ticket. `set_cluster_status` triages one cluster.
+have tools: `triage_cluster` sets the status (with a note), assigns, snoozes, quarantines or releases clusters,
+`decide_merge_suggestion` decides a merge suggestion, `move_tests_to_new_cluster` moves tests out of a cluster,
+`rerun_cluster_in_ci` re-runs a cluster's tests in CI, and `link_issue` and `unlink_issue` manage tickets.
 
 ## Related
 

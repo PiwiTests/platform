@@ -31,10 +31,14 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   plan already in the body, keep it linked as the known issue, and let Piwi keep it honest: a background sync task and
   an optional inbound webhook carry status both ways under per-project policies (comment on fix or regression,
   transition, resolve on close), a `needs-ticket` inbox queue lists the clusters still without one, tickets are written
-  in the destination's language (English or French), and the `create_issue` MCP tool does the same for agents. Jira
-  Cloud first, on a provider layer that makes the next tracker one file. Steps 1–3 of
+  in the destination's language (English or French), and the `create_issue` MCP tool does the same for agents.
+  Per-project rules file an issue on their own for a failure that persists on the branches and environments a team
+  picks (occurrences, runs, days, test tags; never a flaky one, under a daily cap, previewed before saving), and keep
+  its comments and description current without overwriting an edit made in Jira. Jira Cloud first, on a provider
+  layer that makes the next tracker one file. Steps 1–3 and the automatic creation of step 4 of
   [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md); see
-  [issue tracking](https://piwitests.dev/features/issue-tracking).
+  [issue tracking](https://piwitests.dev/features/issue-tracking) and
+  [issue automation](https://piwitests.dev/features/issue-automation).
 - **Deterministic failure clues and rebuilt failure pages** — a rules engine explains every failure in one line before
   the raw error, with no AI configured. The execution, cluster, run, project and history pages were rebuilt around one
   situation block (what most likely happened, and the next step), tabbed evidence and a folded fix toolbox; a
@@ -151,10 +155,9 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   and what is worth caring about (usage, churn, age, escape history). Delivered first as a per-ticket section in the
   pull-request comment and as MCP tools that hand an agent a draft, then as a warn-only gate policy and a Gaps tab.
   Design record in [proposals/scenario-gaps.md](proposals/scenario-gaps.md).
-- **Issue trackers, the rest** — automatic ticket creation behind conservative guards (a new cluster on the default
-  branch, repeated occurrences, not flaky, under a daily cap; off by default), tickets for flaky tests and whole runs,
-  investigation and run reports published to Confluence with in-place page updates, and the next trackers on the same
-  provider layer: GitHub Issues and GitLab Issues on the SCM token, Jira Data Center, Linear. Steps 4–6 of
+- **Issue trackers, the rest** — tickets for flaky tests and whole runs, investigation and run reports published to
+  Confluence with in-place page updates, and the next trackers on the same provider layer: GitHub Issues and GitLab
+  Issues on the SCM token, Jira Data Center, Linear. The rest of step 4 and steps 5–6 of
   [proposals/issue-tracker-integrations.md](proposals/issue-tracker-integrations.md).
 - **Branches as entities** — on top of the shipped branch column: a merge-readiness verdict per branch,
   branch-class gate policies, cross-branch fix verification and retention by branch class, plus flakiness and trends

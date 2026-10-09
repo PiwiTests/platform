@@ -1,9 +1,9 @@
 // Record a diagnosis an agent wrote on a failure cluster: the same JSON a model
 // returns to Piwi, stored with the provider `agent` and the model the agent
 // names. The MCP tool `record_diagnosis` calls the same handler.
-import { AGENT_DIAGNOSIS_ERRORS, AGENT_DIAGNOSIS_STATUS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
+import { AGENT_DIAGNOSIS_STATUS, agentDiagnosisErrorMessage, parseAgentDiagnosis } from '#shared/agent-diagnosis';
 import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../../utils/project-access';
-import { recordAgentDiagnosisOnCluster } from '../../../utils/agent-diagnosis';
+import { recordAgentDiagnosisOn } from '../../../utils/agent-diagnosis';
 
 defineRouteMeta({
   openAPI: {
@@ -38,13 +38,16 @@ export default eventHandler(async (event) => {
   const parsed = parseAgentDiagnosis(await readBody(event));
   if (!parsed.ok) throw apiError({ statusCode: 400, message: parsed.message });
 
-  const result = await recordAgentDiagnosisOnCluster(db, id, parsed.value, {
+  const result = await recordAgentDiagnosisOn(db, { scope: 'cluster', clusterId: id }, parsed.value, {
     channel: parsed.value.channel ?? 'ui',
     userId: user.id,
     apiKeyId: (event.context.apiKeyId as number | undefined) ?? null,
   });
   if (!result.ok) {
-    throw apiError({ statusCode: AGENT_DIAGNOSIS_STATUS[result.error], message: AGENT_DIAGNOSIS_ERRORS[result.error] });
+    throw apiError({
+      statusCode: AGENT_DIAGNOSIS_STATUS[result.error],
+      message: agentDiagnosisErrorMessage(result.error, 'cluster'),
+    });
   }
   return { ok: true, diagnosisId: result.diagnosisId, patchValidation: result.patchValidation };
 });

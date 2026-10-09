@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { startDeviceConnect, CONNECT_RATE_LIMITS } from '../../utils/extension-connect';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
-import { resolvePublicBaseUrl } from '../../utils/oauth-helpers';
+import { publicBaseUrl } from '../../utils/public-base-url';
 
 defineRouteMeta({
   openAPI: {
@@ -48,9 +48,7 @@ export default eventHandler(async (event) => {
     editor: body.editor,
     os: body.os,
   });
-  const siteUrl = (useRuntimeConfig(event).public as { siteUrl?: string })?.siteUrl;
-  const url = getRequestURL(event);
-  const base = resolvePublicBaseUrl(siteUrl, `${url.protocol}//${url.host}`);
+  const base = publicBaseUrl(event);
   return {
     ...started,
     verificationUrl: `${base}/extension/connect?code=${encodeURIComponent(started.userCode)}`,

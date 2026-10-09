@@ -81,6 +81,15 @@ export interface CreatedIssueLink {
   statusCategory?: string | null;
 }
 
+/** The metadata a created link starts with: the status category at creation and the caller's bookkeeping. */
+function createdLinkMetadata(
+  statusCategory: string | null | undefined,
+  extra: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  const metadata = { ...(statusCategory ? { statusCategory } : {}), ...(extra ?? {}) };
+  return Object.keys(metadata).length ? metadata : null;
+}
+
 /**
  * Record the link to an issue Piwi just created. `origin: 'created'` distinguishes
  * it from a link a person pinned, so the sync task knows it can write back through
@@ -95,6 +104,8 @@ export async function writeCreatedIssueLink(
     connectionId: number;
     createdBy: number | null;
     issue: CreatedIssueLink;
+    /** Bookkeeping kept on the link from the start, such as what Piwi wrote. */
+    metadata?: Record<string, unknown> | null;
   },
 ): Promise<{ id: number } | null> {
   const [row] = await db
@@ -111,7 +122,7 @@ export async function writeCreatedIssueLink(
       externalId: input.issue.externalId,
       origin: 'created',
       createdBy: input.createdBy,
-      metadata: input.issue.statusCategory ? ({ statusCategory: input.issue.statusCategory } as never) : null,
+      metadata: createdLinkMetadata(input.issue.statusCategory, input.metadata) as never,
       unfurledAt: new Date(),
     })
     .returning({ id: entityLinks.id });

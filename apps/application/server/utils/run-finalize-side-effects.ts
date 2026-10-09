@@ -1,5 +1,6 @@
 import { applyBugReportLifecycle } from '#shared/handlers/bug-reports';
 import { followBugReportTickets } from './integrations/bug-reports';
+import { runTrackerAutomation } from './integrations/automation';
 import type { DbClient } from '../database';
 import { computeRegressionSignals } from './compute-regression-signals';
 import { autoDiagnoseRun } from './ai-diagnosis';
@@ -30,8 +31,8 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * dispatch it answers, auto markers, flaky root causes, the history of its
  * resource findings, its analysis (the scenario gaps, change coverage, fix
  * verification and the hand-back outcomes it shows) and its outbound effects
- * (AI diagnosis, notifications, the pull-request comment and commit status,
- * auto-heal).
+ * (AI diagnosis, the issues automatic creation files, notifications, the
+ * pull-request comment and commit status, auto-heal).
  *
  * Every ingest path (finish, upload, submit) routes its finalization through
  * this one helper so the run eligibility rule is honored everywhere: none of
@@ -119,7 +120,13 @@ export async function runFinalizeSideEffects(
   );
   if (!isEligibleRun(current, 'notifications')) return rollup;
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
-  emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e));
+  // The issues the project's rules file go out first, so the run's notifications name them.
+  const filing = isEligibleRun(current, 'tracker')
+    ? runTrackerAutomation(db, id).catch((e) => console.error('[integrations] runTrackerAutomation failed', e))
+    : Promise.resolve();
+  void filing.then(() =>
+    emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e)),
+  );
   // Healing's diff-rename step reads the locator breaks change coverage stores.
   void postRunPrFeedbackInBackground(db, id, analysis).then(() => maybeEnqueueHealActionInBackground(db, id));
   return rollup;

@@ -23,11 +23,85 @@ describe('resolveProjectIntegration', () => {
     expect(policies.reopenOnTicketReopen).toBe(false);
     expect(policies.commentOnMerge).toBe(false);
     expect(policies.commentOnNewOccurrences).toBe(false);
+    expect(policies.commentOnDiagnosis).toBe(false);
+    expect(policies.updateDescription).toBe(false);
+    expect(policies.newOccurrencesEvery).toBe('day');
+    expect(policies.newOccurrencesMin).toBe(1);
     expect(policies.needsTicketAfterDays).toBe(2);
+    // The write-backs follow every run until a scope names branches or environments.
+    expect(policies.scope).toEqual({ branches: [], defaultBranch: false, environments: [] });
     expect(autoCreate.enabled).toBe(false);
-    expect(autoCreate.minOccurrences).toBe(2);
-    expect(autoCreate.minRuns).toBe(2);
+    expect(autoCreate.skipFlaky).toBe(true);
     expect(autoCreate.dailyCap).toBe(5);
+    expect(autoCreate.rules).toEqual([
+      {
+        branches: [],
+        defaultBranch: true,
+        environments: [],
+        tags: [],
+        minOccurrences: 2,
+        minRuns: 2,
+        minDays: 0,
+        labels: [],
+      },
+    ]);
+  });
+
+  test('a stored auto-create policy without rules becomes one rule on the default branch', () => {
+    const { autoCreate } = resolveProjectIntegration({
+      autoCreate: {
+        enabled: false,
+        minOccurrences: 4,
+        minRuns: 3,
+        dailyCap: 2,
+        routeUnmatchedToDefault: true,
+      } as never,
+    });
+    expect(autoCreate.rules).toHaveLength(1);
+    expect(autoCreate.rules[0]).toMatchObject({ defaultBranch: true, minOccurrences: 4, minRuns: 3, minDays: 0 });
+    expect(autoCreate.dailyCap).toBe(2);
+    expect(autoCreate.routeUnmatchedToDefault).toBe(true);
+  });
+
+  test('auto-create rules normalize their patterns, tags and thresholds', () => {
+    const { autoCreate } = resolveProjectIntegration({
+      autoCreate: {
+        enabled: true,
+        rules: [
+          { branches: [' release/* ', 'release/*', ''], environments: ['staging'], tags: ['@smoke', 'smoke'] },
+          { defaultBranch: true, minOccurrences: 0, minRuns: 500, minDays: -2 },
+        ],
+      } as never,
+    });
+    expect(autoCreate.enabled).toBe(true);
+    // A rule that names branches does not follow the default branch unless it says so.
+    expect(autoCreate.rules[0]).toMatchObject({
+      branches: ['release/*'],
+      defaultBranch: false,
+      environments: ['staging'],
+      tags: ['smoke'],
+    });
+    expect(autoCreate.rules[1]).toMatchObject({ defaultBranch: true, minOccurrences: 1, minRuns: 100, minDays: 0 });
+  });
+
+  test('an explicit empty rule list stays empty', () => {
+    expect(resolveProjectIntegration({ autoCreate: { rules: [] } as never }).autoCreate.rules).toEqual([]);
+  });
+
+  test('the write-back scope and the note cadence normalize', () => {
+    const { policies } = resolveProjectIntegration({
+      policies: {
+        scope: { branches: ['main', ' main '], defaultBranch: 'yes', environments: ['prod*'] },
+        newOccurrencesEvery: 'month',
+        newOccurrencesMin: 0,
+      } as never,
+    });
+    expect(policies.scope).toEqual({ branches: ['main'], defaultBranch: false, environments: ['prod*'] });
+    expect(policies.newOccurrencesEvery).toBe('day');
+    expect(policies.newOccurrencesMin).toBe(1);
+    expect(
+      resolveProjectIntegration({ policies: { newOccurrencesEvery: 'week' } as never }).policies.newOccurrencesEvery,
+    ).toBe('week');
   });
 
   test('include defaults to diagnosis + patch on, screenshot + share link off', () => {
@@ -95,10 +169,10 @@ describe('resolveProjectIntegration', () => {
   test('numeric guards clamp to their ranges', () => {
     const r = resolveProjectIntegration({
       policies: { needsTicketAfterDays: 9999 } as never,
-      autoCreate: { minOccurrences: 0, dailyCap: -5 } as never,
+      autoCreate: { rules: [{ minOccurrences: 0 }], dailyCap: -5 } as never,
     });
     expect(r.policies.needsTicketAfterDays).toBe(365);
-    expect(r.autoCreate.minOccurrences).toBe(1);
+    expect(r.autoCreate.rules[0]!.minOccurrences).toBe(1);
     expect(r.autoCreate.dailyCap).toBe(0);
   });
 

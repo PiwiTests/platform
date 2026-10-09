@@ -110,6 +110,7 @@ export const PROJECT = {
   INSIGHTS_BASELINE: 'insights-baseline-test',
   INSIGHTS_SPEC_HEALTH: 'insights-spec-health-test',
   INTEGRATIONS: 'integrations-test',
+  INTEGRATIONS_AUTOMATION: 'integrations-automation-test',
   INTEGRATIONS_CREATE_ISSUE: 'integrations-create-issue-test',
   INTEGRATIONS_REQUIRED_FIELDS: 'integrations-required-fields-test',
   INTEGRATIONS_SYNC: 'integrations-sync-test',

@@ -4,8 +4,8 @@
  * (`server/utils/fix-attempts.ts`). Shared by the REST route, the MCP tool and
  * the demo.
  */
-import { and, eq } from 'drizzle-orm';
-import { failureClusters, failureDiagnoses } from '../../server/database/schema';
+import { and, eq, or } from 'drizzle-orm';
+import { failureClusters, failureDiagnoses, testRunsCases } from '../../server/database/schema';
 import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
 import type { HandbackActor, HandbackOutcome } from '../handback-outcomes';
 import { fixAttemptDetails, fixAttemptKey, type FixAttemptDetails, type ReportFixAttemptBody } from '../fix-attempts';
@@ -73,10 +73,17 @@ export async function reportFixAttempt(
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return { ok: false, error: 'not-found' };
   if (body.diagnosisId != null) {
+    // The cluster's diagnosis, or the diagnosis of one of its failures (execution scope).
     const [diagnosis] = await db
       .select({ id: failureDiagnoses.id })
       .from(failureDiagnoses)
-      .where(and(eq(failureDiagnoses.id, body.diagnosisId), eq(failureDiagnoses.clusterId, clusterId)));
+      .leftJoin(testRunsCases, eq(testRunsCases.id, failureDiagnoses.testRunsCaseId))
+      .where(
+        and(
+          eq(failureDiagnoses.id, body.diagnosisId),
+          or(eq(failureDiagnoses.clusterId, clusterId), eq(testRunsCases.failureClusterId, clusterId)),
+        ),
+      );
     if (!diagnosis) return { ok: false, error: 'diagnosis-mismatch' };
   }
 
@@ -100,5 +107,8 @@ export async function reportFixAttempt(
 /** The message and HTTP status of each refusal of {@link reportFixAttempt}. */
 export const FIX_ATTEMPT_ERRORS = {
   'not-found': { status: 404, message: 'Failure cluster not found' },
-  'diagnosis-mismatch': { status: 400, message: 'diagnosisId is not a diagnosis of this cluster' },
+  'diagnosis-mismatch': {
+    status: 400,
+    message: 'diagnosisId is not a diagnosis of this cluster or of one of its failures',
+  },
 } as const;

@@ -26,7 +26,7 @@ import { clusterShareTokenMinter } from './share-url';
 import { getConnectionRow, getProjectBinding, listTrackerConnections, trackerForRow } from './connections';
 import { bindingRowToResolved } from './binding';
 import { pickOwnerRoute } from '#shared/integrations/binding';
-import { getFailureCluster } from '#shared/handlers/failure-clusters';
+import { resolveClusterOwner } from './owner';
 import { findFixedBefore } from '../cluster-memory';
 import { statusColorForCategory } from './types';
 import type { IssueTracker, TrackerIssue } from './types';
@@ -208,8 +208,8 @@ export async function buildIssueDraft(
   // The cluster's effective owner picks the first matching route; its overrides
   // (project key, assignee, extra labels) fill the draft on top of the binding
   // defaults, so a team's failures prefill that team's destination.
-  const clusterMeta = await getFailureCluster(db, clusterId).catch(() => null);
-  const route = pickOwnerRoute(resolved.ownerRoutes, clusterMeta?.owner?.name ?? null);
+  const owner = await resolveClusterOwner(db, clusterId).catch(() => null);
+  const route = pickOwnerRoute(resolved.ownerRoutes, owner);
 
   const [cluster] = await db
     .select({ fingerprint: failureClusters.fingerprint })

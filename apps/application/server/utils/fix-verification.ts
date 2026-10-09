@@ -69,7 +69,12 @@ import { isEligibleRun } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
-import { enqueueFixPolicies, enqueueRegressionPolicies, enqueueStillFailingPolicy } from './integrations/policies';
+import {
+  enqueueFixPolicies,
+  enqueueRegressionPolicies,
+  enqueueRunDescriptionUpdates,
+  enqueueStillFailingPolicy,
+} from './integrations/policies';
 import { listOutcomes, recordOutcome } from './outcomes';
 import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
 import type { DbClient } from '../database';
@@ -536,7 +541,35 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       ),
     );
 
-  if (candidates.length === 0) return [];
+  // ── Still failing: what a ticket hears about failures this run saw ─────────
+  // A cluster that failed again this run (and did not regress) may earn a
+  // "still failing" note on its ticket, and the issue Piwi filed for it a
+  // refreshed description.
+  const followTrackedFailures = async (): Promise<void> => {
+    const stillFailingIds = [...clustersSeenNow].filter((id) => !regressedIds.has(id));
+    if (stillFailingIds.length > 0) {
+      const openWithCounts = await db
+        .select({ id: failureClusters.id, occurrences: failureClusters.occurrences })
+        .from(failureClusters)
+        .where(and(inArray(failureClusters.id, stillFailingIds), eq(failureClusters.status, 'open')));
+      for (const cluster of openWithCounts) {
+        await enqueueStillFailingPolicy(db, {
+          clusterId: cluster.id,
+          projectId: run.projectId,
+          latestRunId: runId,
+          occurrences: cluster.occurrences ?? 0,
+        }).catch((e) => console.error('[integrations] still-failing policy failed', e));
+      }
+    }
+    await enqueueRunDescriptionUpdates(db, { projectId: run.projectId, runId, clusterIds: [...clustersSeenNow] }).catch(
+      (e) => console.error('[integrations] description updates failed', e),
+    );
+  };
+
+  if (candidates.length === 0) {
+    await followTrackedFailures();
+    return [];
+  }
 
   const candidateIds = candidates.map((cluster) => cluster.id);
   const affected = await db
@@ -758,24 +791,6 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     }).catch((e) => console.error('[integrations] fix policy failed', e));
   }
 
-  // ── Still failing: new occurrences on an open ticket ──────────────────────
-  // A cluster that failed again this run (and did not regress or get fixed) may
-  // earn a once-a-day "still failing" note on its ticket.
-  const stillFailingIds = [...clustersSeenNow].filter((id) => !regressedIds.has(id));
-  if (stillFailingIds.length > 0) {
-    const openWithCounts = await db
-      .select({ id: failureClusters.id, occurrences: failureClusters.occurrences, status: failureClusters.status })
-      .from(failureClusters)
-      .where(and(inArray(failureClusters.id, stillFailingIds), eq(failureClusters.status, 'open')));
-    for (const cluster of openWithCounts) {
-      await enqueueStillFailingPolicy(db, {
-        clusterId: cluster.id,
-        projectId: run.projectId,
-        latestRunId: runId,
-        occurrences: cluster.occurrences ?? 0,
-      }).catch((e) => console.error('[integrations] still-failing policy failed', e));
-    }
-  }
-
+  await followTrackedFailures();
   return fixed;
 }

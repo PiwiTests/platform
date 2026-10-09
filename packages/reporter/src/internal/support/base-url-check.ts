@@ -30,6 +30,12 @@ interface ProjectLike {
 /** The part of Playwright's `FullConfig` the check reads. */
 export interface BaseUrlConfig {
   projects?: ProjectLike[];
+  /**
+   * The projects Playwright selected to run, before their dependencies
+   * (Playwright 1.64+): the ones `--project` names, or every project not
+   * declared `default: false`.
+   */
+  filteredProjects?: ProjectLike[];
   use?: ProjectLike['use'];
 }
 
@@ -69,15 +75,27 @@ function wildcard(pattern: string): RegExp {
 }
 
 /**
- * The projects the run selects: the ones `--project` names (case-insensitive,
- * `*` as a wildcard) and, unless `--no-deps` is given, the projects they
- * depend on; every project when `--project` is absent.
+ * The projects the run selects, and, unless `--no-deps` is given, the projects
+ * they depend on. The selection is Playwright's own `filteredProjects` when it
+ * is given (Playwright 1.64+), matched by identity or, for a named project, by name. Otherwise it is
+ * read off the command line: the projects `--project` names (case-insensitive,
+ * `*` as a wildcard), or every project when `--project` is absent.
  */
-export function selectedProjects<T extends ProjectLike>(projects: T[], argv: string[] = process.argv): T[] {
-  const names = cliProjectNames(argv);
-  if (!names || names.length === 0) return projects;
-  const patterns = names.map(wildcard);
-  const chosen = new Set(projects.filter((p) => patterns.some((re) => re.test(p.name ?? ''))));
+export function selectedProjects<T extends ProjectLike>(
+  projects: T[],
+  argv: string[] = process.argv,
+  filtered?: ProjectLike[],
+): T[] {
+  let chosen: Set<T>;
+  if (Array.isArray(filtered)) {
+    const names = new Set(filtered.map((p) => p.name).filter(Boolean));
+    chosen = new Set(projects.filter((p) => filtered.includes(p) || (!!p.name && names.has(p.name))));
+  } else {
+    const names = cliProjectNames(argv);
+    if (!names || names.length === 0) return projects;
+    const patterns = names.map(wildcard);
+    chosen = new Set(projects.filter((p) => patterns.some((re) => re.test(p.name ?? ''))));
+  }
   if (!argv.includes('--no-deps')) {
     const byName = new Map(projects.map((p) => [p.name ?? '', p]));
     const queue = [...chosen];
@@ -102,8 +120,9 @@ function asProxy(value: unknown): Proxy | undefined {
 /** The distinct base URLs of the projects the run selects, each with the projects that use it. */
 export function baseUrlTargets(config: BaseUrlConfig, argv: string[] = process.argv): BaseUrlTarget[] {
   const projects: ProjectLike[] = config.projects?.length ? config.projects : [{ name: '', use: config.use }];
+  const filtered = config.projects?.length ? config.filteredProjects : undefined;
   const targets = new Map<string, BaseUrlTarget>();
-  for (const project of selectedProjects(projects, argv)) {
+  for (const project of selectedProjects(projects, argv, filtered)) {
     const url = project.use?.baseURL;
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue;
     const target = targets.get(url);

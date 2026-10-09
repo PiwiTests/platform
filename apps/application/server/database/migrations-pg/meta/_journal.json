@@ -799,6 +799,13 @@
       "when": 1791463630449,
       "tag": "0113_perpetual_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791472427045,
+      "tag": "0114_oauth_mcp_authorization",
+      "breakpoints": true
     }
   ]
 }

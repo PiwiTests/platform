@@ -3,6 +3,7 @@ import {
   buildFixComment,
   buildRegressionComment,
   buildStillFailingComment,
+  buildDiagnosisComment,
   buildMergeComment,
 } from '../../shared/integrations/policy-comments';
 import { renderMarkdown } from '../../shared/integrations/render-markdown';
@@ -14,6 +15,9 @@ import {
   reopenTransitionKey,
   occurrencesCommentKey,
   mergeCommentKey,
+  diagnosisCommentKey,
+  updateIssueKey,
+  dailyUpdateReason,
 } from '../../shared/integrations/action-keys';
 
 describe('policy comment builders', () => {
@@ -66,12 +70,79 @@ describe('policy comment builders', () => {
     const one = renderMarkdown(
       buildStillFailingComment('en', { addedOccurrences: 1, runs: 1, latestRun: 100, clusterUrl: null }),
     );
-    expect(one).toContain('+1 occurrence in 1 runs');
+    expect(one).toContain('+1 occurrence in 1 run since');
     const many = renderMarkdown(
       buildStillFailingComment('en', { addedOccurrences: 12, runs: 4, latestRun: 100, clusterUrl: null }),
     );
     expect(many).toContain('+12 occurrences in 4 runs');
     expect(many).toContain('run #100');
+  });
+
+  test('still-failing comment says where it last failed and what is new since the last note', () => {
+    const md = renderMarkdown(
+      buildStillFailingComment('en', {
+        addedOccurrences: 9,
+        runs: 3,
+        latestRun: 120,
+        latestBranch: 'main',
+        latestEnvironment: 'staging',
+        newTests: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+        newBranches: ['release/2.0'],
+        newEnvironments: ['prod', 'preprod'],
+        clusterUrl: null,
+      }),
+    );
+    expect(md).toContain(
+      '+9 occurrences in 3 runs since the last note, latest run #120. Latest failure on main (staging).',
+    );
+    expect(md).toContain('Now failing on a new branch: release/2.0.');
+    expect(md).toContain('Now failing in new environments: prod, preprod.');
+    expect(md).toContain('Now also failing in 7 more tests:');
+    // Five titles are listed, the rest counted.
+    expect(md).toContain('- e');
+    expect(md).not.toContain('- f');
+    expect(md).toContain('…and 2 more tests.');
+  });
+
+  test('still-failing comment in French', () => {
+    const md = renderMarkdown(
+      buildStillFailingComment('fr', {
+        addedOccurrences: 2,
+        runs: 1,
+        latestRun: 7,
+        latestBranch: null,
+        latestEnvironment: 'staging',
+        clusterUrl: null,
+      }),
+    );
+    expect(md).toContain('+2 occurrences sur 1 série depuis la dernière note');
+    expect(md).toContain('Dernier échec dans l’environnement staging.');
+  });
+
+  test('diagnosis comment carries the summary, root cause and category', () => {
+    const md = renderMarkdown(
+      buildDiagnosisComment('en', {
+        summary: 'The button was renamed.',
+        rootCause: 'A refactor renamed Pay to Checkout.',
+        category: 'test-bug',
+        confidence: 'high',
+        clusterUrl: 'https://piwi.test/failure-clusters/4',
+      }),
+    );
+    expect(md).toContain('**Piwi diagnosed this failure:** The button was renamed.');
+    expect(md).toContain('**Root cause:** A refactor renamed Pay to Checkout.');
+    expect(md).toContain('**Category:** Test bug (high confidence)');
+    expect(md).toContain('[Open in Piwi](https://piwi.test/failure-clusters/4)');
+    const fr = renderMarkdown(
+      buildDiagnosisComment('fr', {
+        summary: null,
+        rootCause: null,
+        category: 'nonsense',
+        confidence: null,
+        clusterUrl: null,
+      }),
+    );
+    expect(fr).toBe('**Diagnostic de Piwi :**\n');
   });
 
   test('merge comment points each way', () => {
@@ -93,6 +164,11 @@ describe('action dedupe keys', () => {
     expect(reopenTransitionKey(42, 1234)).toBe('transition:failure_cluster:42:reopen:r1234');
     expect(occurrencesCommentKey(42, '2026-09-13')).toBe('comment:failure_cluster:42:occurrences:2026-09-13');
     expect(mergeCommentKey(42, 124)).toBe('comment:failure_cluster:42:merge:124');
+    expect(occurrencesCommentKey(42, '2026-W41')).toBe('comment:failure_cluster:42:occurrences:2026-W41');
+    expect(diagnosisCommentKey(42, 1700000000000)).toBe('comment:failure_cluster:42:diagnosis:1700000000000');
+    expect(updateIssueKey(42, dailyUpdateReason(new Date(Date.UTC(2026, 9, 8, 23))))).toBe(
+      'update-issue:failure_cluster:42:day:2026-10-08',
+    );
   });
 
   test('a re-run reuses the same fix key; a different run gets a different one', () => {

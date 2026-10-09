@@ -30,6 +30,25 @@ interface RunMetadataLike {
   scm?: { branch?: string | null } | null;
   ci?: { provider?: string | null } | null;
   htmlReport?: { projects?: Array<{ use?: { browserName?: string | null } | null }> } | null;
+  playwrightConfig?: { shuffleSeed?: unknown } | null;
+}
+
+/**
+ * The seed of a run Playwright scheduled in random order (`--shuffle`,
+ * Playwright 1.64+), or null for a run in the order the files declare. Only a
+ * plain token that does not start with `-` is returned, since the seed is shown
+ * in a copyable `--shuffle <seed>` command.
+ */
+export function readShuffleSeed(meta: RunMetadataLike | null | undefined): string | null {
+  const seed = meta?.playwrightConfig?.shuffleSeed;
+  const text = typeof seed === 'number' && Number.isFinite(seed) ? String(seed) : seed;
+  return typeof text === 'string' && /^\w[\w.-]{0,63}$/.test(text) ? text : null;
+}
+
+/** A run's test order in words: its shuffle seed, or the declared order. */
+export function describeTestOrder(meta: RunMetadataLike | null | undefined): string {
+  const seed = readShuffleSeed(meta);
+  return seed ? `Shuffled, seed ${seed}` : 'Declared order';
 }
 
 /** Build a provider-specific "compare two commits" URL, or null when the host is unknown. */
@@ -70,7 +89,11 @@ export function getBrowserList(meta: RunMetadataLike | null | undefined): string
   return names.join(', ');
 }
 
-/** Diff two runs' environment, branch, CI provider and browser set. */
+/**
+ * Diff two runs' environment, branch, CI provider, browser set and test order.
+ * The test order counts as changed when one run was shuffled and the other was
+ * not; two shuffled runs with different seeds do not differ here.
+ */
 export function computeMetadataDiff(
   prevMeta: RunMetadataLike | null | undefined,
   currMeta: RunMetadataLike | null | undefined,
@@ -96,6 +119,14 @@ export function computeMetadataDiff(
   const currBrowsers = getBrowserList(currMeta);
   if (prevBrowsers !== currBrowsers) {
     diff.push({ key: 'browsers', label: 'Browsers', before: prevBrowsers || null, after: currBrowsers || null });
+  }
+  if ((readShuffleSeed(prevMeta) === null) !== (readShuffleSeed(currMeta) === null)) {
+    diff.push({
+      key: 'test_order',
+      label: 'Test order',
+      before: describeTestOrder(prevMeta),
+      after: describeTestOrder(currMeta),
+    });
   }
 
   return diff;

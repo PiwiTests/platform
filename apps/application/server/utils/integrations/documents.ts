@@ -8,8 +8,11 @@
  * own logic (patch, locator edits, verify command, reproduce recipe) is reused,
  * never duplicated.
  */
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../../database/schema';
+import { notLabRun } from '#shared/run-eligibility';
+import { clusterKnownIssues } from '#shared/handlers/known-issues';
+import type { AutomaticFiling } from '#shared/integrations/automation';
 import { buildFixPlan } from '../fix-plan';
 import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { describeCluster } from '#shared/describe-cluster';
@@ -27,6 +30,7 @@ import {
   type IssueBuildOpts,
   type IssueFacts,
   type LocatorEditFact,
+  type RelatedIssueFact,
 } from '#shared/integrations/build-issue';
 import { DEFAULT_LOCALE, formatDate } from '#shared/integrations/messages';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -56,11 +60,17 @@ export type ShareTokenMinter = (projectId: number, clusterId: number) => Promise
 /** The builder options: the pure `IssueBuildOpts` plus the server-side minter. */
 export interface DocumentBuildOpts extends IssueBuildOpts {
   mintShareToken?: ShareTokenMinter | null;
+  /** The share link the issue already carries: a rebuilt body reuses it rather than minting another. */
+  shareUrl?: string | null;
+  /** Set when a rule files the issue: the body opens with what it counted. */
+  automatic?: AutomaticFiling | null;
 }
 
-/** The cluster's share URL when the toggle is on and a minter produced a token. */
+/** The cluster's share URL when the toggle is on: the one given, else a freshly minted one. */
 async function resolveShareUrl(projectId: number, clusterId: number, opts: DocumentBuildOpts): Promise<string | null> {
-  if (!opts.includeShareLink || !opts.mintShareToken) return null;
+  if (!opts.includeShareLink) return null;
+  if (opts.shareUrl !== undefined) return opts.shareUrl;
+  if (!opts.mintShareToken) return null;
   const base = site(opts);
   if (!base) return null;
   const token = await opts.mintShareToken(projectId, clusterId);
@@ -111,9 +121,13 @@ async function gatherClusterFacts(
   const headlineDesc = occurrence?.error ? caseHeadline({ error: occurrence.error, steps: occurrence.steps }) : null;
   const commit = scmCommit(run?.metadata ?? null);
 
-  const affectedTests: AffectedTestFact[] = cluster.affectedTestCases
-    .slice(0, 25)
-    .map((t) => ({ title: t.title, filePath: t.filePath, owner: cluster.owner?.name ?? null }));
+  const affectedTests: AffectedTestFact[] = cluster.affectedTestCases.slice(0, 25).map((t) => ({
+    title: t.title,
+    filePath: t.filePath,
+    owner: t.owner ?? cluster.owner?.name ?? null,
+    failures: t.runCount,
+  }));
+  const reach = await clusterReach(db, clusterId);
 
   const plan = await buildFixPlan(db, clusterId);
   const patch = opts.includePatch === false ? null : (plan?.diagnosis?.patch ?? null);
@@ -138,6 +152,8 @@ async function gatherClusterFacts(
 
   const base = site(opts);
   const shareUrl = await resolveShareUrl(cluster.projectId, clusterId, opts);
+  const ownKeys = new Set(cluster.links.map((l) => l.key).filter((key): key is string => !!key));
+  const relatedIssues = await relatedTrackerIssues(db, plan?.fixedBefore ?? [], ownKeys);
 
   const facts: IssueFacts = {
     clusterId,
@@ -148,12 +164,18 @@ async function gatherClusterFacts(
     firstSeen: formatDate(locale, cluster.firstSeenAt),
     lastSeen: formatDate(locale, cluster.lastSeenAt),
     occurrences: cluster.occurrences ?? 0,
+    runs: reach.runs || null,
     affectedTests,
+    moreAffectedTests: Math.max(0, (cluster.affectedTests ?? 0) - affectedTests.length),
     branch: run?.branch ?? null,
     environment: run?.environment ?? null,
+    branches: reach.branches,
+    environments: reach.environments,
     commit: commit ? commit.slice(0, 12) : null,
     diagnosisSummary,
     rootCause,
+    diagnosisCategory: diagnosisSummary || rootCause ? (cluster.diagnosis?.category ?? null) : null,
+    diagnosisConfidence: diagnosisSummary || rootCause ? (cluster.diagnosis?.confidence ?? null) : null,
     clue,
     errorExcerpt: errorExcerpt(occurrence?.error ?? cluster.sampleError ?? null) ?? null,
     failingLocator: cluster.selector ?? null,
@@ -161,6 +183,8 @@ async function gatherClusterFacts(
     locatorEdits,
     verifyCommand: plan?.verify.command ?? null,
     reproduceScript,
+    relatedIssues,
+    automatic: opts.automatic ?? null,
     clusterUrl: link(base, `/failure-clusters/${clusterId}`),
     executionUrl: executionId ? link(base, `/test-run-cases/${executionId}`) : null,
     runUrl: runId ? link(base, `/test-runs/${runId}`) : null,
@@ -170,8 +194,66 @@ async function gatherClusterFacts(
   return { facts, projectId: cluster.projectId, fingerprint: cluster.fingerprint };
 }
 
+/**
+ * Where a cluster failed: the distinct runs, and the distinct branches and
+ * environments of those runs, newest first. Lab runs are left out.
+ */
+async function clusterReach(
+  db: DrizzleDB,
+  clusterId: number,
+): Promise<{ runs: number; branches: string[]; environments: string[] }> {
+  const failing = and(eq(testRunsCases.failureClusterId, clusterId), notLabRun(testRuns.origin));
+  const [[count], places] = await Promise.all([
+    db
+      .select({ runs: sql<number>`count(distinct ${testRunsCases.testRunId})` })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(failing),
+    db
+      .select({
+        branch: testRuns.branch,
+        environment: testRuns.environment,
+        lastRunId: sql<number>`max(${testRuns.id})`,
+      })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(failing)
+      .groupBy(testRuns.branch, testRuns.environment)
+      .orderBy(desc(sql`max(${testRuns.id})`))
+      .limit(20),
+  ]);
+  const distinct = (values: Array<string | null>) => [...new Set(values.filter((v): v is string => !!v))];
+  return {
+    runs: Number(count?.runs ?? 0),
+    branches: distinct(places.map((p) => p.branch)),
+    environments: distinct(places.map((p) => p.environment)),
+  };
+}
+
+/** The tracker issues of the clusters a fix plan found fixed before, other than the cluster's own. */
+async function relatedTrackerIssues(
+  db: DrizzleDB,
+  fixedBefore: Array<{ clusterId: number; title: string }>,
+  ownKeys: Set<string>,
+): Promise<RelatedIssueFact[]> {
+  if (fixedBefore.length === 0) return [];
+  const known = await clusterKnownIssues(
+    db,
+    fixedBefore.map((m) => m.clusterId),
+  ).catch(() => new Map());
+  const related: RelatedIssueFact[] = [];
+  for (const match of fixedBefore) {
+    const issue = known.get(match.clusterId);
+    if (!issue || ownKeys.has(issue.key) || related.some((r) => r.key === issue.key)) continue;
+    related.push({ key: issue.key, url: issue.url, title: match.title, status: issue.status });
+  }
+  return related.slice(0, 3);
+}
+
 export interface BuiltClusterIssue extends BuiltIssue {
   projectId: number;
+  /** The share link the body carries, when it carries one. */
+  shareUrl: string | null;
 }
 
 /** Build the default cluster ticket. Returns null when the cluster is gone. */
@@ -182,7 +264,7 @@ export async function buildClusterIssue(
 ): Promise<BuiltClusterIssue | null> {
   const gathered = await gatherClusterFacts(db, clusterId, null, opts);
   if (!gathered) return null;
-  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId };
+  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl };
 }
 
 /**
@@ -207,7 +289,7 @@ export async function buildExecutionIssue(
   // title is the same from either entry point.
   const gathered = await gatherClusterFacts(db, execution.failureClusterId, executionId, opts);
   if (!gathered) return null;
-  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId };
+  return { ...buildIssue(gathered.facts, opts), projectId: gathered.projectId, shareUrl: gathered.facts.shareUrl };
 }
 
 /**
@@ -246,5 +328,5 @@ export async function buildBugReportIssue(
       .catch(() => null),
     reportUrl: link(base, `/bug-reports/${report.id}`),
   };
-  return { ...buildBugIssue(facts, { locale }), projectId: report.projectId };
+  return { ...buildBugIssue(facts, { locale }), projectId: report.projectId, shareUrl: null };
 }

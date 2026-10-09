@@ -112,8 +112,8 @@ function confirmRevokeApiKey(key: ApiKeySummary) {
 async function handleRevokeApiKey() {
   const key = keyToRevoke.value;
   if (!key) return;
+  // keyToRevoke stays set: the closing modal still renders its text.
   isRevokeKeyConfirmOpen.value = false;
-  keyToRevoke.value = null;
 
   try {
     await $fetch(`/api/users/${props.userId}/api-keys/${key.id}`, {
@@ -208,7 +208,10 @@ async function handleRevokeApiKey() {
             <span class="font-medium truncate">{{ key.name }}</span>
           </div>
           <div class="text-xs text-muted mt-1 flex flex-wrap gap-x-4">
-            <span
+            <span v-if="key.oauth" title="An MCP client that signed in through OAuth: it has no key to copy"
+              >MCP client, signed in through OAuth</span
+            >
+            <span v-else
               >Prefix: <code class="font-mono">pd_{{ key.keyPrefix }}…</code></span
             >
             <span>Created: <ClientDate :date="key.createdAt" date-only /></span>
@@ -243,7 +246,11 @@ async function handleRevokeApiKey() {
     <ClientOnly>
       <UModal :open="isRevokeKeyConfirmOpen" title="Revoke API key" @update:open="isRevokeKeyConfirmOpen = $event">
         <template #body>
-          <p>
+          <p v-if="keyToRevoke?.oauth">
+            Disconnect <strong>"{{ keyToRevoke?.name }}"</strong>? The MCP client loses access at its next request and
+            has to sign in again.
+          </p>
+          <p v-else>
             Revoke API key <strong>"{{ keyToRevoke?.name }}"</strong>? Any CI pipeline using it will stop working
             immediately.
           </p>

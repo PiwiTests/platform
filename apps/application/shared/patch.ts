@@ -45,14 +45,14 @@ export interface PatchValidation {
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
 /**
- * The patch validation stored on a diagnosis's details. An agent's diagnosis
- * keeps it inside its suggested fix, Piwi's own diagnosis at the top of the
- * details; the suggested fix's wins when both are present. `null` when neither
- * holds an object with a string `status`.
+ * The patch validation stored on a diagnosis's details: at the top of the
+ * details, where Piwi's own diagnoses and agents' store it, else inside the
+ * suggested fix, where agents' diagnoses recorded earlier keep it. `null` when
+ * neither holds an object with a string `status`.
  */
 export function storedPatchValidation(details: unknown): PatchValidation | null {
-  const d = details as { suggestedFix?: { patchValidation?: unknown } | null; patchValidation?: unknown } | null;
-  for (const candidate of [d?.suggestedFix?.patchValidation, d?.patchValidation]) {
+  const d = details as { patchValidation?: unknown; suggestedFix?: { patchValidation?: unknown } | null } | null;
+  for (const candidate of [d?.patchValidation, d?.suggestedFix?.patchValidation]) {
     if (candidate && typeof candidate === 'object' && typeof (candidate as { status?: unknown }).status === 'string') {
       return candidate as PatchValidation;
     }

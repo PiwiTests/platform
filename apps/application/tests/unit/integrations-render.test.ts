@@ -30,9 +30,9 @@ describe('renderMarkdown', () => {
     expect(md).toContain('- [two](https://x.test)');
   });
 
-  test('renders a facts node as a two-column table, dropping empty rows', () => {
-    expect(md).toContain('| **Error type** | timeout |');
-    expect(md).toContain('| **Branch** | `main` |');
+  test('renders a facts node as a list of labeled lines, dropping empty rows', () => {
+    expect(md).toContain('- **Error type:** timeout');
+    expect(md).toContain('- **Branch:** `main`');
     expect(md).not.toContain('Empty');
   });
 

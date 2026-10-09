@@ -57,6 +57,16 @@ export const HELP_TOPICS = {
     text: 'The tracker issue this cluster is tracked by: the newest Jira issue, or issue on a connected tracker, linked to it. Linking or filing another keeps the earlier one linked, and the new one takes its place. Its key and status show on the cluster page’s Issue line, at the end of an execution’s Cluster line, and wherever the cluster is listed.',
     doc: 'features/issue-tracking#the-key-travels',
   },
+  'integrations.run-scope': {
+    title: 'Runs that write to the ticket',
+    text: 'The runs whose results comment on, move or update a tracked issue: the fix, regression and still-failing notes, the transitions and the description updates.\n\n- **Branches** — names or `*` patterns (`release/*`)\n- **Default branch** — the project default branch, whatever it is named\n- **Environments** — names or `*` patterns\n\nNothing named means every run. A run from an editor, a lab run, a bisect step or a reproduction never writes, nor does a developer run of part of the suite.',
+    doc: 'features/issue-automation#the-runs-that-write',
+  },
+  'integrations.auto-create': {
+    title: 'Automatic creation',
+    text: 'After each run, Piwi files an issue for each failure that meets a rule, counting only the runs the rule names.\n\n- **Occurrences, Runs** — how often it failed, and in how many distinct runs\n- **Days** — how long since the first occurrence counted\n- **Test tags** — only failures of tests carrying one of them\n\nA failure that is snoozed, looks flaky, is already tracked or that an open issue already carries the labels of is never filed, and the daily cap holds. Preview shows what the rules file before you save.',
+    doc: 'features/issue-automation#automatic-creation',
+  },
 
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
@@ -531,6 +541,11 @@ export const HELP_TOPICS = {
     text: 'What the dashboard left out or rebuilt while storing this run: steps and console entries over the ingest caps, traces it could not store, evidence rebuilt from a trace, and the fallback the reporter took when its usual way of sending the run failed. A missing step or console line may be one of these, not something the test skipped.',
     doc: 'features/ui-overview#test-run-detail',
     envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
+  },
+  'run.shuffle': {
+    title: 'Shuffled run',
+    text: 'Playwright ran this run’s tests in a random order (`--shuffle`). Click the seed to copy `--shuffle <seed>`: a run with the same tests, workers and seed runs them in the same order again, to reproduce a failure that depends on which test ran before.',
+    doc: 'features/run-changes#shuffled-runs',
   },
   'run.metadata': {
     title: 'Tags, links & custom data',
@@ -1023,7 +1038,7 @@ export const HELP_TOPICS = {
   },
   'mcp.auth': {
     title: 'Authentication',
-    text: 'How an MCP client authenticates to this server — uses the same API keys as the rest of the dashboard.',
+    text: 'A client signs in through OAuth: it opens this instance in the browser and you allow it. It can also send an API key (`pd_`), the same keys as the rest of the dashboard.',
     doc: 'features/mcp#authentication',
   },
   'mcp.client-setup': {
