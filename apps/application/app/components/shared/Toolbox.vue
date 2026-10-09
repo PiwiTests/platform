@@ -97,9 +97,11 @@ const rootEl = ref<HTMLElement | null>(null);
 
 /**
  * Open a section. Resolves once its body is mounted, so a caller can then act on
- * a panel the section renders.
+ * a panel the section renders. A key the toolbox does not show leaves the open
+ * section as it is.
  */
 async function openSection(key: FixSectionKey): Promise<void> {
+  if (!props.sections.includes(key)) return;
   openKey.value = key;
   await nextTick();
 }

@@ -37,13 +37,15 @@ export interface NextStepActionHandlers {
   /** The endpoint the AI prompt is copied from (`?format=prompt` is appended). */
   diagnosisContextEndpoint: () => string;
   /**
-   * Reveal and scroll to a toolbox section. The diagnosis, reproduce and
-   * locator-fix actions all route through this one callback, so a page passes it
-   * once rather than three identical scroll callbacks. Resolves once the
-   * section's body is mounted.
+   * Open a toolbox section and scroll it into view; resolves once its body is
+   * mounted. The `pick-from-snapshot`, `all-alternatives`, `read-diagnosis`,
+   * `diagnose` and `reproduce` actions use it.
    */
   scrollToSection: (key: ToolboxSectionKey) => void | Promise<void>;
-  /** Open a toolbox section without scrolling; resolves once its body is mounted. */
+  /**
+   * Open a toolbox section without scrolling; resolves once its body is mounted.
+   * The `copy-patch` and `copy-locator` actions use it.
+   */
   openSection: (key: ToolboxSectionKey) => void | Promise<void>;
   /** Select the Attempts evidence tab. */
   selectAttemptsTab: () => void;
