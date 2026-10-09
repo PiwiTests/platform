@@ -9,7 +9,8 @@ import { compileCodeowners, parseCodeowners } from '@piwitests/core/codeowners';
 /**
  * The situation sentence an agent reads names the owner the execution page
  * names: explain_failure and get_fix_plan fall back to the repository's
- * CODEOWNERS for a failing test with no `piwi:owner` annotation.
+ * CODEOWNERS for a failing test with no `piwi:owner` annotation. explain_failure
+ * also says whether the execution is the latest of its test, and which one is.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -88,5 +89,36 @@ describe('the owner in the situation an agent reads', () => {
     };
     expect(result.ownership).toEqual({ owner: '@payments', source: 'codeowners' });
     expect(result.situation).toMatch(/Owner @payments\.$/);
+  });
+});
+
+describe('whether the execution is the latest, as an agent reads it', () => {
+  type Latest = { isLatest: boolean; executionId?: number; runId?: number; status?: string };
+
+  test('explain_failure says the only execution is the latest', async () => {
+    const result = (await tool('explain_failure')(db as never, { executionId: 10 }, viewer)) as { latest?: Latest };
+    expect(result.latest).toEqual({ isLatest: true });
+  });
+
+  test('after a later run, explain_failure names the newest execution, its run and its status', async () => {
+    await db.insert(schema.testRuns).values({
+      id: 2,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date('2026-09-02T10:00:00Z'),
+      metadata: { scm: { remoteUrl: 'https://github.com/acme/shop.git', branch: 'main' } },
+    });
+    await db.insert(schema.testRunsCases).values({
+      id: 11,
+      testRunId: 2,
+      testCaseId: 1,
+      status: 'failed',
+      error: 'Error: card declined',
+      failureClusterId: 1,
+    });
+    const result = (await tool('explain_failure')(db as never, { executionId: 10 }, viewer)) as { latest?: Latest };
+    expect(result.latest).toEqual({ isLatest: false, executionId: 11, runId: 2, status: 'failed' });
+    const newest = (await tool('explain_failure')(db as never, { executionId: 11 }, viewer)) as { latest?: Latest };
+    expect(newest.latest).toEqual({ isLatest: true });
   });
 });

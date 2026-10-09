@@ -583,11 +583,13 @@ test.describe('Situation block on seeded cases', () => {
 /**
  * The line under the headline says whether the execution is the latest of its
  * test: two failing runs of one test, then a passing one, in the same project.
+ * Each attempt of the describe (a retry runs it again in a new worker) files
+ * its own test, so the runs an earlier attempt left behind are another test's.
  */
 test.describe('Latest execution line', () => {
   test.describe.configure({ mode: 'serial' });
 
-  const base = Date.now() - 3 * 60 * 60 * 1000;
+  let base = 0;
   const failure = {
     title: 'cart keeps its items',
     location: 'tests/cart.spec.ts:7:1',
@@ -623,7 +625,9 @@ test.describe('Latest execution line', () => {
   let runA: { runId: number; executionId: number };
   let runB: { runId: number; executionId: number };
 
-  test.beforeAll(async ({ request }) => {
+  test.beforeAll(async ({ request }, testInfo) => {
+    base = Date.now() - 3 * 60 * 60 * 1000;
+    failure.title = `cart keeps its items (attempt ${testInfo.retry}, ${base})`;
     runA = await submit(request, base, false);
     runB = await submit(request, base + 60 * 60 * 1000, false);
   });
