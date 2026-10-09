@@ -11,14 +11,24 @@ import type { ClusterState } from '#shared/cluster-state';
 import type { FailureClueStrength } from '#shared/failure-clues';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import type { DrizzleDB } from '#shared/handlers/db';
+import type { FixPlan } from '#shared/fix-plan.types';
 
 /**
  * The failure pages' lines, checked against each other over a freshly generated
  * demo seed. Every failure cluster and every problem execution goes through the
  * shared handlers the REST endpoints and the demo serve (`getFailureCluster`,
- * `getTestRunCase`, `getFailureClues`), with and without an AI provider, and
- * each page's Most likely and Next source line are built the way the pages build
- * them (`pickMostLikely`, `nextStepSourceLine`).
+ * `getTestRunCase`, `getFailureClues`, `buildFixPlan`, `getLocatorHealing`),
+ * with and without an AI provider, and each page's Most likely and Next source
+ * line are built the way the pages build them (`pickMostLikely`,
+ * `nextStepSourceLine` with the fix plan's patch and the locator healing).
+ *
+ * The rules, one test each:
+ * - a verified fix reads the same in State and Next;
+ * - a Next from the diagnosis quotes it when Most likely shows something else;
+ * - a cluster and its latest occurrence's execution lead with the same Most likely;
+ * - no Next says nothing explains the failure beside a strong or medium Most likely;
+ * - no Situation or State sentence says "unassigned";
+ * - a cluster-level Next is the same step on its latest occurrence's execution.
  *
  * Each rule reads kinds and sources, not sentences, so a reworded seed keeps
  * passing. A failure names the page and prints its lines. The last test names
@@ -37,6 +47,16 @@ const CLUSTER_LEVEL_STEPS: ReadonlySet<NextStep['kind']> = new Set([
   'follow-diagnosis',
   'see-what-changed',
 ]);
+
+/** The State kinds that offer Mark resolved for a fix. */
+const RESOLVE_OFFERING_STATES: ReadonlySet<ClusterState['kind']> = new Set([
+  'fix-verified-open',
+  'stopped-failing-open',
+  'ticket-done',
+]);
+
+/** The fallback steps, taken when no clue or diagnosis leads to a change. */
+const FALLBACK_STEPS: ReadonlySet<NextStep['kind']> = new Set(['diagnose', 'reproduce']);
 
 /** The fallback wording that denies what Most likely shows. */
 const NOTHING_KNOWN = /nothing (deterministic|conclusive)/i;
@@ -141,19 +161,51 @@ async function ids(sql: string): Promise<number[]> {
 async function pageBuilders(db: DrizzleDB, now: Date) {
   const { getTestRunCase, getFailureClues } = await import('#shared/handlers/test-cases');
   const { getFailureCluster } = await import('#shared/handlers/failure-clusters');
+  const { buildFixPlan } = await import('~~/server/utils/fix-plan');
+  const { getLocatorHealing } = await import('~~/server/utils/locator-healing');
 
   const cluesById = new Map<number, FailureCluesResult>();
   const cluesFor = async (id: number) => {
     if (!cluesById.has(id)) cluesById.set(id, await getFailureClues(db, id));
     return cluesById.get(id)!;
   };
+  const plansById = new Map<number, FixPlan | null>();
+  const planFor = async (clusterId: number) => {
+    if (!plansById.has(clusterId)) plansById.set(clusterId, await buildFixPlan(db, clusterId));
+    return plansById.get(clusterId)!;
+  };
 
-  // The cluster page shows the clues of its latest occurrence and the cluster's
+  // The facts both pages add to the source line: the cluster's fix plan says
+  // whether its diagnosis carries a patch and how it validated, and when the
+  // step replaces a locator, the execution's locator healing says where its pick
+  // comes from.
+  async function sourceLine(
+    step: NextStep | null,
+    facts: { mostLikely: MostLikely | null; diagnosis: DiagnosisFacts | null; scope: 'cluster' | 'execution' },
+    clusterId: number | null,
+    healingCaseId: number | null,
+  ): Promise<string | null> {
+    const plan = clusterId != null ? await planFor(clusterId) : null;
+    const healing =
+      step?.source === 'healing' && healingCaseId != null ? await getLocatorHealing(db, healingCaseId) : null;
+    return nextStepSourceLine(step, {
+      ...facts,
+      diagnosis: facts.diagnosis && {
+        ...facts.diagnosis,
+        hasPatch: plan?.diagnosis ? Boolean(plan.diagnosis.patch) : null,
+        patchStatus: plan?.diagnosis?.patchValidation?.status ?? null,
+      },
+      healing,
+    });
+  }
+
+  // The cluster page shows the clues of its latest occurrence (the most-affected
+  // test's latest execution when the handler names none) and the cluster's
   // completed diagnosis.
   async function clusterPage(id: number, aiConfigured: boolean, label: string): Promise<PageLines> {
     const cluster = await getFailureCluster(db, id, { aiConfigured, now });
     if (!cluster) throw new Error(`cluster #${id} not found`);
-    const latest = cluster.latestTestRunsCaseId ?? null;
+    const latest = cluster.latestTestRunsCaseId ?? cluster.affectedTestCases[0]?.recentTestRunsCaseId ?? null;
     const clues = latest != null ? await cluesFor(latest) : null;
     const diagnosis = completedDiagnosis(cluster.diagnosis);
     const mostLikely = pickMostLikely({ story: clues?.story, clues: clues?.clues, diagnosis });
@@ -168,7 +220,7 @@ async function pageBuilders(db: DrizzleDB, now: Date) {
       mostLikely,
       strength: shownStrength(mostLikely, clues),
       next: cluster.nextStep,
-      sourceLine: nextStepSourceLine(cluster.nextStep, { mostLikely, diagnosis, scope: 'cluster' }),
+      sourceLine: await sourceLine(cluster.nextStep, { mostLikely, diagnosis, scope: 'cluster' }, id, latest),
       state: cluster.clusterState,
       situation: null,
     };
@@ -196,14 +248,22 @@ async function pageBuilders(db: DrizzleDB, now: Date) {
       strength: shownStrength(mostLikely, clues),
       next: isProblem ? execution.nextStep : null,
       sourceLine: isProblem
-        ? nextStepSourceLine(execution.nextStep, { mostLikely: computed, diagnosis, scope: 'execution' })
+        ? await sourceLine(
+            execution.nextStep,
+            { mostLikely: computed, diagnosis, scope: 'execution' },
+            execution.failureCluster?.id ?? null,
+            id,
+          )
         : null,
       state: null,
       situation: execution.situation?.text ?? null,
     };
   }
 
-  return { clusterPage, executionPage };
+  // A changed diagnosis changes the cluster's fix plan.
+  const forgetPlan = (clusterId: number) => plansById.delete(clusterId);
+
+  return { clusterPage, executionPage, forgetPlan };
 }
 
 /**
@@ -231,6 +291,7 @@ async function buildVariants(builders: Awaited<ReturnType<typeof pageBuilders>>)
              WHERE cluster_id = ? AND scope = 'cluster'`,
       args: [JSON.stringify(atFix), clusterId],
     });
+    builders.forgetPlan(clusterId);
     const cluster = await builders.clusterPage(clusterId, true, `cluster #${clusterId}, patch applying at its fix`);
     out.push(cluster);
     if (cluster.latestExecutionId != null) {
@@ -246,20 +307,17 @@ beforeAll(async () => {
   const builders = await pageBuilders(db, now);
   const clusterIds = await ids('SELECT id FROM failure_clusters ORDER BY id');
   const statuses = PROBLEM_STATUSES.map((s) => `'${s}'`).join(', ');
-  // Every problem execution, and every cluster's latest occurrence whatever its status.
-  const executionIds = await ids(
-    `SELECT id FROM test_runs_cases WHERE status IN (${statuses})
-     UNION
-     SELECT max(e.id) AS id FROM failure_clusters c
-       JOIN test_runs_cases e ON e.failure_cluster_id = c.id AND e.test_run_id = c.last_seen_run_id
-      GROUP BY c.id
-     ORDER BY id`,
-  );
+  const problemIds = await ids(`SELECT id FROM test_runs_cases WHERE status IN (${statuses}) ORDER BY id`);
 
   for (const aiConfigured of [true, false]) {
     const suffix = aiConfigured ? '' : ' (no AI provider)';
-    for (const id of clusterIds) pages.push(await builders.clusterPage(id, aiConfigured, `cluster #${id}${suffix}`));
-    for (const id of executionIds) {
+    const clusters: PageLines[] = [];
+    for (const id of clusterIds) clusters.push(await builders.clusterPage(id, aiConfigured, `cluster #${id}${suffix}`));
+    pages.push(...clusters);
+    // Every problem execution, and every cluster's latest occurrence as its
+    // handler names it, whatever its status.
+    const latestIds = clusters.flatMap((c) => (c.latestExecutionId != null ? [c.latestExecutionId] : []));
+    for (const id of [...new Set([...problemIds, ...latestIds])].sort((a, b) => a - b)) {
       pages.push(await builders.executionPage(id, aiConfigured, `execution #${id}${suffix}`));
     }
   }
@@ -281,6 +339,10 @@ function latestOccurrencePage(cluster: PageLines): PageLines | undefined {
   );
 }
 
+function missingLatestOccurrence(cluster: PageLines): string {
+  return `${describePage(cluster)}\n  its latest occurrence, execution #${cluster.latestExecutionId}, has no page built`;
+}
+
 // ── The rules ────────────────────────────────────────────────────────────────
 
 /**
@@ -293,7 +355,7 @@ function verifiedFixRule(): RuleResult {
   const result: RuleResult = { checked: [], violations: [] };
   for (const p of all()) {
     if (p.page !== 'cluster' || !p.state || !p.next) continue;
-    const offersResolve = ['fix-verified-open', 'stopped-failing-open', 'ticket-done'].includes(p.state.kind);
+    const offersResolve = RESOLVE_OFFERING_STATES.has(p.state.kind);
     const patchOnVerifiedFix = p.fixVerification === 'diagnosis-verified' && p.next.kind === 'apply-patch';
     if (!offersResolve && !patchOnVerifiedFix) continue;
     result.checked.push(p.label);
@@ -321,9 +383,12 @@ function sameMostLikelyRule(): RuleResult {
   const result: RuleResult = { checked: [], violations: [] };
   for (const p of all()) {
     if (p.page !== 'cluster' || p.latestExecutionId == null) continue;
-    const execution = latestOccurrencePage(p);
-    if (!execution) continue;
     result.checked.push(p.label);
+    const execution = latestOccurrencePage(p);
+    if (!execution) {
+      result.violations.push(missingLatestOccurrence(p));
+      continue;
+    }
     const same =
       p.mostLikely?.source === execution.mostLikely?.source &&
       p.mostLikely?.sentence === execution.mostLikely?.sentence;
@@ -362,9 +427,12 @@ function sameClusterStepRule(): RuleResult {
   const result: RuleResult = { checked: [], violations: [] };
   for (const p of all()) {
     if (p.page !== 'cluster' || !p.next || !CLUSTER_LEVEL_STEPS.has(p.next.kind)) continue;
-    const execution = latestOccurrencePage(p);
-    if (!execution) continue;
     result.checked.push(p.label);
+    const execution = latestOccurrencePage(p);
+    if (!execution) {
+      result.violations.push(missingLatestOccurrence(p));
+      continue;
+    }
     if (execution.next?.kind !== p.next.kind) result.violations.push(`${describePage(p)}\n${describePage(execution)}`);
   }
   return result;
@@ -405,7 +473,17 @@ describe('failure page lines over the demo seed', () => {
     // #37 and cluster #1 lead with the quote story while Next applies the diagnosed patch.
     expect(reached(diagnosisSourceRule)).toEqual(expect.arrayContaining(['execution #37', 'cluster #1']));
     expect(reached(sameMostLikelyRule)).toEqual(expect.arrayContaining(['cluster #1', 'cluster #10']));
-    expect(reached(noDenialRule)).toEqual(expect.arrayContaining(['execution #37', 'execution #37 (no AI provider)']));
+    // #682 leads with a medium clue; Next diagnoses with AI, or reproduces it
+    // locally without a provider. Both fallback steps must meet a strong or
+    // medium Most likely somewhere, or the rule checks nothing it is about.
+    const denials = reached(noDenialRule);
+    expect(denials).toEqual(expect.arrayContaining(['execution #682', 'execution #682 (no AI provider)']));
+    const fallbackKinds = new Set(
+      all()
+        .filter((p) => denials.includes(p.label) && p.next && FALLBACK_STEPS.has(p.next.kind))
+        .map((p) => p.next!.kind),
+    );
+    expect([...fallbackKinds].sort()).toEqual([...FALLBACK_STEPS].sort());
     expect(reached(noUnassignedRule)).toEqual(expect.arrayContaining(['cluster #1', 'execution #37']));
     // Apply the patch, replace the locator, mark resolved.
     expect(reached(sameClusterStepRule)).toEqual(
