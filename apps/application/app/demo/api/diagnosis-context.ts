@@ -20,7 +20,7 @@
  * server can reach storage and the network.
  */
 
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, sql } from 'drizzle-orm';
 import { getAppSetting } from '~~/server/utils/app-settings';
 import { buildDiagnosisSystemPrompt } from '~~/server/utils/ai-system-prompt';
 import { buildPromptPreview } from '#shared/ai-prompt-preview';
@@ -226,6 +226,8 @@ export interface ClusterEvidence {
   failureRatePct: number;
   firstBuild: string | null;
   lastBuild: string | null;
+  /** The representative execution's slowest request at or over the slow-request threshold. */
+  slowRequest: { method: string; url: string; duration: number } | null;
 }
 
 export async function collectClusterEvidence(db: DrizzleDB, clusterId: number): Promise<ClusterEvidence | null> {
@@ -280,6 +282,20 @@ export async function collectClusterEvidence(db: DrizzleDB, clusterId: number): 
     buildFor(cluster.lastSeenRunId),
   ]);
 
+  const [slowRequest = null] = rep
+    ? await db
+        .select({ method: networkRequests.method, url: networkRequests.url, duration: networkRequests.duration })
+        .from(networkRequests)
+        .where(
+          and(
+            eq(networkRequests.testRunsCaseId, rep.id),
+            gte(networkRequests.duration, DEFAULT_CONTEXT_LIMITS.slowRequestMs),
+          ),
+        )
+        .orderBy(desc(networkRequests.duration))
+        .limit(1)
+    : [];
+
   const runsForRate = runsInProject || 1;
   return {
     cluster,
@@ -292,6 +308,9 @@ export async function collectClusterEvidence(db: DrizzleDB, clusterId: number): 
     failureRatePct: Math.round((failedRuns / runsForRate) * 100),
     firstBuild,
     lastBuild,
+    slowRequest: slowRequest?.url
+      ? { method: slowRequest.method, url: slowRequest.url, duration: Number(slowRequest.duration) }
+      : null,
   };
 }
 

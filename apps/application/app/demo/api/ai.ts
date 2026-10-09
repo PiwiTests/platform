@@ -39,6 +39,7 @@ import { collectClusterEvidence } from './diagnosis-context';
 import type { ClusterEvidence } from './diagnosis-context';
 import { getDemoScmProject } from '../demo-scm';
 import { storyByClusterId } from '#shared/demo/failure-stories.mjs';
+import { parsePlaywrightError } from '#shared/error-parse';
 import type { FailureStory } from '#shared/demo/failure-stories.mjs';
 import { publishDemoNotificationEvent } from '../run-events';
 import { demoHttpError } from './http-error';
@@ -125,6 +126,31 @@ function browsersSentence(ev: ClusterEvidence): string {
   return ev.browsers.map((b) => `${b.name} (${b.count})`).join(', ');
 }
 
+/**
+ * The slow request a timed-out click waited on, from the representative
+ * execution's network capture: its `METHOD /path`, how long it took, and how
+ * the call log describes the target (a disabled one stays disabled until the
+ * request answers). Null when the capture has no slow request.
+ */
+function waitedOnRequest(ev: ClusterEvidence) {
+  const req = ev.slowRequest;
+  if (!req) return null;
+  const parsed = parsePlaywrightError(ev.rep?.error ?? ev.cluster.sampleError ?? '');
+  let path = req.url;
+  try {
+    path = new URL(req.url).pathname;
+  } catch {
+    // A relative or malformed URL is named as captured.
+  }
+  return {
+    name: `${req.method} ${path}`,
+    took: `${Math.round(req.duration / 1000)} s`,
+    tookExact: `${(req.duration / 1000).toFixed(1)} s`,
+    timeout: `${Math.round((parsed.timeoutMs ?? 30000) / 1000)} s ${parsed.kind === 'test-timeout' ? 'test timeout' : 'timeout'}`,
+    target: /not enabled/.test(ev.rep?.error ?? ev.cluster.sampleError ?? '') ? 'stays disabled' : 'is not ready',
+  };
+}
+
 function buildScript(kind: DiagnosisKind, ev: ClusterEvidence, story: FailureStory | null): DiagnosisScript {
   const proj = getDemoScmProject(ev.cluster.projectId);
   const suspectSha = story?.suspectSha ?? proj?.suspectShas[0];
@@ -146,7 +172,59 @@ function buildScript(kind: DiagnosisKind, ev: ClusterEvidence, story: FailureSto
       : { description: fallbackDescription, file: null, code, patch: null };
 
   switch (kind) {
-    case 'timeout-interaction':
+    case 'timeout-interaction': {
+      const waited = waitedOnRequest(ev);
+      if (waited) {
+        return {
+          category: 'infrastructure',
+          confidence: 'high',
+          confidenceScore: 82,
+          severity: 'high',
+          affectedArea: area,
+          summary: `${firstTest(ev)} times out on its click: the target ${waited.target} until ${waited.name} answers, and on CI that request takes ${waited.took}, so the click is still waiting when the ${waited.timeout} hits.`,
+          rootCause: `The click waits on a target that ${waited.target} until ${waited.name} answers. On the failing run that request takes ${waited.tookExact}, so the click is still waiting when the ${waited.timeout} interrupts it, and nothing in the test waits on the request first.${suspect ? ` The failures start with ${suspectLine}.` : ''}`,
+          hypotheses: [
+            {
+              category: 'infrastructure',
+              likelihood: 82,
+              rootCause: `${waited.name} answers in ${waited.took} on loaded CI runners; the target ${waited.target} until then, so the click is still waiting when the ${waited.timeout} hits.`,
+              evidence: [
+                `${waited.name} takes ${waited.tookExact} on the failing run [networkRequests]`,
+                `Failure rate correlates with CI load: ${runs} [recurrenceFlakiness]`,
+              ],
+            },
+            {
+              category: 'test-bug',
+              likelihood: 38,
+              rootCause: `The test clicks without waiting for ${waited.name}.`,
+              evidence: [`Nothing waits on ${waited.name} before the click [testSource]`],
+            },
+          ],
+          evidence: [
+            `TimeoutError fires during the click across ${tests} test(s) [executionError]`,
+            `${waited.name} takes ${waited.tookExact} on the failing run [networkRequests]`,
+            `Affects ${browsersSentence(ev)} [browserDistribution]`,
+          ],
+          investigationSteps: [
+            `Time ${waited.name} on a low-load runner to confirm CI load is the driver`,
+            `Check why ${waited.name} slows down under load`,
+          ],
+          preventionTips: [
+            'Wait on the request a control depends on (page.waitForResponse) before interacting with it',
+            'Mark flows that wait on slow backend calls with test.slow() instead of raising the global timeout',
+          ],
+          suggestedFix: fix(
+            `Wait for ${waited.name} (page.waitForResponse) before the click, so the click does not wait on it until the timeout.`,
+          ),
+          thinkingChunks: [
+            'Starting from the error signature: this is a **locator timeout**, not an assertion failure.\n\n',
+            `The cluster recurs in **${runs}**. A deterministic bug would fail every run; an intermittent rate this shape points at timing.\n\n`,
+            `The network capture of the failing run has **${waited.name}** taking **${waited.tookExact}**.\n\n`,
+            `The locator resolves but the target ${waited.target}, so the click waits on that request until the ${waited.timeout} hits.\n\n`,
+            `Nothing in the test waits on ${waited.name} before the click. Primary hypothesis: a slow request the click depends on, worse on a loaded CI runner. Writing it up.\n\n`,
+          ],
+        };
+      }
       return {
         category: 'infrastructure',
         confidence: 'high',
@@ -197,6 +275,7 @@ function buildScript(kind: DiagnosisKind, ev: ClusterEvidence, story: FailureSto
           'On a loaded CI runner that fetch pushes interactivity past the 30s timeout. Primary hypothesis: infrastructure-amplified race. Writing it up.\n\n',
         ],
       };
+    }
 
     case 'goto-timeout':
       return {

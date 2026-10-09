@@ -2653,7 +2653,7 @@ const FAILURE_DIAGNOSES = [
     category: 'infrastructure',
     confidence: 'high',
     summary:
-      'Checkout Pay click times out: the Pay button stays disabled while the price quote takes 28 s on CI, past the 30 s test timeout.',
+      'Checkout Pay click times out: the Pay button stays disabled until the price quote answers, and on CI the quote takes 28 s, so the click is still waiting when the 30 s test timeout hits.',
     root_cause:
       'The Pay button stays disabled until POST /api/checkout/quote answers. On failing runs that request takes 28.4 s, so locator.click waits on a disabled button until the 30 000 ms test timeout interrupts it. The helper clicks without waiting for the quote, and the test has no time budget for a quote that slow. The suspect commit also gates the form on a third-party payment SDK, which adds to the wait on a loaded CI runner, so the failure comes and goes with CI load.',
     details: JSON.stringify({
@@ -2665,7 +2665,7 @@ const FAILURE_DIAGNOSES = [
           category: 'infrastructure',
           likelihood: 82,
           rootCause:
-            'The checkout quote answers in 28 s on loaded CI runners; the Pay button stays disabled until then and the click exceeds the 30 s test timeout.',
+            'The checkout quote answers in 28 s on loaded CI runners; the Pay button stays disabled until then, so the click is still waiting when the 30 s test timeout hits.',
           evidence: [
             'POST /api/checkout/quote takes 28.4 s on failing runs [networkRequests]',
             'The call log shows the button resolved but disabled at click time [executionError]',

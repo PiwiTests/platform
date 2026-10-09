@@ -38,7 +38,7 @@ export const DEMO_EXAMPLES = [
     doc: 'features/ai-diagnosis',
     title: 'Web Dashboard › Users table paginates 25 rows per page',
     shows:
-      'A stored diagnosis traces the 50 rows to the API’s default page size and suggests a patch; the fix has since landed.',
+      'A stored diagnosis traces the 50 user rows (51 with the header) to the API’s default page size and suggests a patch; the fix has since landed.',
     route: '/failure-clusters/10',
     expect: { cluster: { id: 10, story: 'users-table-page-size' }, diagnosis: 'with-patch', fixLanded: true },
   },
