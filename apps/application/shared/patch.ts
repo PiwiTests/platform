@@ -86,9 +86,13 @@ export interface PatchExcerpt {
   file: string | null;
   /** The body lines of every hunk of every file that the window leaves out. */
   hiddenLines: number;
+  /** The removed and added lines among `hiddenLines`. */
+  hiddenChanges: number;
   /** How many files the diff touches. */
   files: number;
 }
+
+const isChange = (line: string) => line[0] === '+' || line[0] === '-';
 
 /**
  * A window of at most `maxLines` body lines on the first changed run of a
@@ -99,10 +103,12 @@ export interface PatchExcerpt {
  */
 export function patchExcerpt(patch: string, maxLines = 6): PatchExcerpt | null {
   const parsed = parseUnifiedDiff(patch);
-  const total = parsed.files.reduce((sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.length, 0), 0);
+  const hunks = parsed.files.flatMap((f) => f.hunks);
+  const total = hunks.reduce((n, h) => n + h.lines.length, 0);
+  const totalChanges = hunks.reduce((n, h) => n + h.lines.filter(isChange).length, 0);
   for (const file of parsed.files) {
     for (const hunk of file.hunks) {
-      const first = hunk.lines.findIndex((line) => line[0] === '+' || line[0] === '-');
+      const first = hunk.lines.findIndex(isChange);
       if (first === -1) continue;
       let last = first;
       while (last + 1 < hunk.lines.length && hunk.lines[last + 1]![0] !== ' ') last++;
@@ -124,6 +130,7 @@ export function patchExcerpt(patch: string, maxLines = 6): PatchExcerpt | null {
         diff: [`@@ -${range(oldLine, oldCount)} +${range(newLine, newCount)} @@`, ...window].join('\n'),
         file: stripAbPrefix(file.newPath) ?? stripAbPrefix(file.oldPath),
         hiddenLines: total - window.length,
+        hiddenChanges: totalChanges - window.filter(isChange).length,
         files: parsed.files.length,
       };
     }

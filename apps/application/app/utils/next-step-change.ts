@@ -30,7 +30,11 @@ export interface NextStepChange {
   file: string | null;
   /** The call site a replace step rewrites (`file:line:col`). */
   location: string | null;
-  /** The lines of `copyText` the excerpt leaves out. */
+  /**
+   * The lines of `copyText` the excerpt leaves out that the row counts: every
+   * line of a patch, which Full patch opens, and only the removed and added
+   * lines of a locator edit, whose other lines are the file as it is.
+   */
   hiddenLines: number;
   /** The patch's validation in the words of its badge, when the patch applies. */
   validation: string | null;
@@ -81,7 +85,7 @@ export function buildNextStepChange(
         excerpt: excerpt.diff,
         file: excerpt.file,
         location,
-        hiddenLines: excerpt.hiddenLines,
+        hiddenLines: excerpt.hiddenChanges,
         validation: null,
       };
     }

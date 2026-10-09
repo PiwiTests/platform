@@ -61,7 +61,7 @@ describe('buildNextStepChange', () => {
     expect(change.hiddenLines).toBeGreaterThan(0);
   });
 
-  test('a replace step with an edit shows a window on its diff and copies it whole', () => {
+  test('a replace step with an edit shows a window on its diff, counts no unchanged line, and copies it whole', () => {
     const change = buildNextStepChange(step('replace-locator'), { diagnosis, healing: healingWithEdit })!;
     expect(change).toMatchObject({
       kind: 'locator',
@@ -69,7 +69,7 @@ describe('buildNextStepChange', () => {
       recommendedLocator: recommended,
       file: spec,
       location: `${spec}:23:10`,
-      hiddenLines: 39,
+      hiddenLines: 0,
       validation: null,
     });
     expect(change.excerpt.split('\n')).toEqual([

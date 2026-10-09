@@ -264,6 +264,7 @@ describe('patchExcerpt', () => {
     const total = parseUnifiedDiff(patch).files[0]!.hunks.reduce((n, h) => n + h.lines.length, 0);
     expect(parseUnifiedDiff(patch).files[0]!.hunks).toHaveLength(2);
     expect(excerpt.hiddenLines).toBe(total - 3);
+    expect(excerpt.hiddenChanges).toBe(3);
   });
 
   test("shows cluster 3's added lines between their context lines", () => {
@@ -289,7 +290,7 @@ describe('patchExcerpt', () => {
     const excerpt = patchExcerpt(edit.unifiedDiff!)!;
     expect(excerpt.diff.split('\n')[0]).toBe('@@ -22,3 +22,3 @@');
     expect(body(excerpt.diff)).toEqual([` ${lines[21]}`, `-${edit.oldLine}`, `+${edit.newLine}`, ` ${lines[23]}`]);
-    expect(excerpt.hiddenLines).toBe(39);
+    expect(excerpt).toMatchObject({ hiddenLines: 39, hiddenChanges: 0 });
   });
 
   test('keeps a deletion-only run with its context', () => {
@@ -304,13 +305,13 @@ describe('patchExcerpt', () => {
     const excerpt = patchExcerpt(['--- a/a.ts', '+++ b/a.ts', ...hunk].join('\n'))!;
     expect(excerpt.diff.split('\n')[0]).toBe('@@ -4,6 +4,1 @@');
     expect(body(excerpt.diff)).toEqual([' before();', ...removed]);
-    expect(excerpt.hiddenLines).toBe(12 - 6);
+    expect(excerpt).toMatchObject({ hiddenLines: 12 - 6, hiddenChanges: 5 });
   });
 
   test('counts the hunks and files it leaves out', () => {
     const second = '--- a/b.ts\n+++ b/b.ts\n@@ -1,1 +1,1 @@\n-x();\n+y();\n';
     const excerpt = patchExcerpt(`${SAMPLE}${second}`)!;
-    expect(excerpt).toMatchObject({ file: 'src/foo.ts', files: 2, hiddenLines: 2 });
+    expect(excerpt).toMatchObject({ file: 'src/foo.ts', files: 2, hiddenLines: 2, hiddenChanges: 2 });
   });
 
   test('reads a hunk without counts, and a new file', () => {
