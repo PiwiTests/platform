@@ -10,8 +10,9 @@ import { gitApplyCommand } from '#shared/patch';
  * headline and the line under it, the most likely explanation, the next step and
  * the cluster, with the raw error one click away behind *Raw error* — then one evidence
  * card with content-level tabs (Timeline, Screen, Source, Network, Console,
- * State, Performance), then the Fix card and the History block. A passing
- * execution shows identity and facts only, on the Timeline tab, with no Fix card.
+ * State, Performance), then More ways to fix and the History block. A passing
+ * execution shows identity and facts, with the evidence on the Timeline tab and no
+ * More ways to fix.
  */
 test.describe('Test-run-case page', () => {
   test.describe.configure({ mode: 'serial' });
@@ -174,7 +175,7 @@ test.describe('Test-run-case page', () => {
     // A tab that lists items carries its count as plain text, never a badge.
     await expect(tablist.getByRole('tab', { name: /^Network/ })).toHaveText(/^\s*Network\s*2\s*$/);
 
-    // The Fix card gathers what to do (diagnosis, verify, …) below the evidence.
+    // More ways to fix gathers the other ways to fix (diagnosis, verify, …) below the evidence.
     // With no AI provider its diagnosis is one line, not a placeholder block.
     const fix = page.locator('[data-shot="fix"]');
     await expect(fix).toBeVisible();
@@ -195,12 +196,12 @@ test.describe('Test-run-case page', () => {
     const timelineTab = page.getByRole('tab', { name: /^Timeline/ });
     await expect(timelineTab).toBeVisible();
     await expect(timelineTab).toHaveAttribute('aria-selected', 'true');
-    // No failure → no headline, no story, no situation, no next step, no Fix card.
+    // No failure → no headline, no story, no situation, no next step, no More ways to fix.
     await expect(page.getByRole('button', { name: 'Raw error' })).toHaveCount(0);
     await expect(page.locator('[data-shot="execution-meta"]')).toHaveCount(0);
     await expect(page.locator('[data-shot="cluster-line"]')).toHaveCount(0);
     await expect(page.locator('[data-shot="next-step"]')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Fix', exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-shot="fix"]')).toHaveCount(0);
     // A passing execution shows the steps table without the failure axis or its
     // controls. The tab is the heading — the block does not repeat "Steps".
     await expect(page.getByRole('button', { name: 'Around the failure' })).toHaveCount(0);

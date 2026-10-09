@@ -95,7 +95,7 @@ test.describe('Failure cluster page layout', () => {
     await waitForHydration(page);
 
     // The one-verb state line, with its Triage panel (auth is disabled → the virtual
-    // admin can write). There is no segmented "Triage status" control any more.
+    // admin can write).
     const state = page.locator('[data-shot="cluster-state"]');
     await expect(state).toBeVisible();
     await expect(state).toContainText('Still failing');
