@@ -68,11 +68,14 @@ capture.
 2. **Control reach from the locator index** (shipped). Each recompute reads the default branch's locator index
    (`locator_usages`, what the extension's overlay evaluates) and parses each chain with
    `@piwitests/core/locator-chain`: a `getByRole(role, { name })` maps to a `role:name` control or link key
-   (confidence 1), an alternative its locator snapshot captured at the same call site maps the same way (0.9), and
-   a label, placeholder or title maps to the one control carrying that name (0.8). It writes `test → control` and
-   `test → link` reaches with `evidence.action` = `operated` or `checked`, which wakes *control nobody exercises*
-   (finding 2). A test id or CSS chain whose snapshot has no role alternative still maps to nothing; the element the
-   snapshot resolved to (`element_tag`, `element_attrs`) would map it.
+   (confidence 1), an alternative its locator snapshot captured on the same line for the same call maps the same
+   way (0.9), a name without `exact` maps to the one node of its role whose name holds it, as Playwright matches
+   (0.8), and a label, placeholder or title maps to the one labeled-role control carrying that name (0.8) or holding
+   it (0.7). It writes `test → control` and `test → link` reaches with `evidence.action` = `operated` or `checked`
+   and the use's own last-seen time, which wakes *control nobody exercises* (finding 2). A test id or CSS chain whose
+   snapshot has no role alternative maps to nothing, and when it operated an element, the controls of its page are
+   not raised as untested or single-covered; the element the snapshot resolved to (`element_tag`, `element_attrs`)
+   would map it.
 3. **Retire *API-only route*** (shipped). Its claim, *reached only by request fixtures*, cannot hold for any
    observed route, since only the page's own requests are captured; trigger edges would have hidden the noise, not
    fixed the claim. The recompute closes its open rows and keeps the dismissed ones. Trigger edges are still worth
@@ -89,7 +92,8 @@ capture.
 6. **Exposure for node gaps** (churn and escape history shipped). A gap on a route, a handler or a dependency
    takes churn and escape history from the handler files behind it (`handled-by`), counted from the `changes`
    edges the default-branch runs recorded and the failure clusters' fixing commits, so no provider call is made
-   (finding 7). Still proposed: page files by convention, and age from the file's first commit, read once from the
+   (finding 7). A run's diff runs from its last green run, so churn counts distinct diff bases, and escape history
+   marks the whole diff that ended on the fix; per-commit files would make both exact. Still proposed: page files by convention, and age from the file's first commit, read once from the
    provider and cached.
 7. **Route keys without the query.** The node key drops the query; the parameter names move to `attrs.query`.
    A migration merges the split nodes and their edges (finding 8).
