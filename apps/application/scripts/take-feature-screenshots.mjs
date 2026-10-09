@@ -3292,10 +3292,11 @@ const SCENES = [
   ...['', '-mobile'].map((suffix) => ({
     name: `timeline-durations${suffix}`,
     description: suffix
-      ? 'The timeline at phone width: the step and request cards, only the 28.4 s request colored'
-      : 'Timeline tab: durations colored only where they stand out (the 28.4 s request), the cut bar ending in an arrow',
-    // Execution 37: five sub-second steps and one 28.4 s request, which the
-    // window around the failure cuts.
+      ? 'The timeline at phone width: the step and request cards, only the 28 s Pay click and the 28.4 s request colored'
+      : 'Timeline tab: durations colored only where they stand out (the 28 s Pay click, the 28.4 s request), the cut bar ending in an arrow',
+    // Execution 37: five sub-second steps, then a Pay click the 30 s test
+    // timeout stops after 28 s, and a 28.4 s request that outlasts the test,
+    // which the window around the failure cuts.
     route: '/test-run-cases/37',
     viewport: suffix ? { width: 375, height: 2400 } : { width: 1280, height: 1400 },
     of: '[data-shot="evidence-card"]',

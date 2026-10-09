@@ -40,6 +40,11 @@ import {
   buildTestSource,
   buildSourceFrames,
   storyByClusterId,
+  FAILURE_TEARDOWN_MS,
+  failingCallDuration,
+  failingStep,
+  authoredFailureSteps,
+  storyEvidenceTimes,
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
@@ -760,6 +765,52 @@ function buildSteps(proj, caseDuration, caseStartMs) {
   return out;
 }
 
+/** A placed story step (`at`, ms from the test start) in the stored form, with its absolute `startTime`. */
+function storedStep({ at, ...step }, caseStartMs) {
+  const { title, duration, category, ...rest } = step;
+  return { title, duration, category, startTime: caseStartMs + at, ...rest };
+}
+
+/**
+ * The steps of a failing story case and how long it ran, from its error: the
+ * failing call ends the steps, and lasts until the test timeout, for its own
+ * action or expect timeout, or as long as the step it stands in for when it
+ * failed without one. A case with authored steps runs those, stretched by how
+ * fast this run drew it; any other runs the project's themed steps with the
+ * failing call in place of the last one, and a `test.step` around that one
+ * grows to hold it. `drawnMs` is the duration drawn for the case, kept when
+ * the error says nothing about time.
+ */
+function storyFailureLayout(proj, failing, drawnMs, avgMs, caseStartMs) {
+  const authored = authoredFailureSteps(failing, { scale: drawnMs / avgMs });
+  if (authored) {
+    const step = authored.at(-1);
+    return {
+      steps: authored.map((s) => storedStep(s, caseStartMs)),
+      step,
+      durationMs: step.at + step.duration + FAILURE_TEARDOWN_MS,
+    };
+  }
+  const steps = buildSteps(proj, drawnMs, caseStartMs);
+  const last = steps[steps.length - 1];
+  const at = last.startTime - caseStartMs;
+  const duration = failingCallDuration(failing.call, at, last.duration);
+  steps[steps.length - 1] = storedStep(failingStep(failing, at, duration), caseStartMs);
+  const end = last.startTime + duration;
+  for (const parent of steps.slice(0, -1)) {
+    const holdsLast =
+      parent.category === 'test.step' &&
+      parent.startTime <= last.startTime &&
+      parent.startTime + parent.duration >= last.startTime + last.duration;
+    if (holdsLast) parent.duration = Math.max(parent.duration, end - parent.startTime);
+  }
+  return {
+    steps,
+    step: { at, duration },
+    durationMs: duration === last.duration ? drawnMs : at + duration + FAILURE_TEARDOWN_MS,
+  };
+}
+
 /**
  * Re-anchor a story's backend log entries onto the request that produced them.
  * The stories carry one illustrative epoch clock shared by every run, so used
@@ -901,6 +952,30 @@ const CASCADE_BLOCKED_TITLES = [
   'should display cart total correctly',
 ];
 
+/** The test timeout a story's error reports for a case, in ms; null when its error is no test timeout. */
+function storyTestTimeoutOf(caseId) {
+  const call = storyByCaseId.get(caseId)?.failingCase.call;
+  return call?.timeout === 'test' ? call.timeoutMs : null;
+}
+
+/**
+ * Effective per-test timeout (ms), stable per test case across runs. Most tests
+ * keep a healthy 20s budget that timeout-hygiene never flags (its headroom
+ * stays under the 20s floor); the designated slow case keeps a tripled 90s
+ * budget it no longer needs, and one non-slow case per project is deliberately
+ * oversized at 120s — so the demo shows both opportunity kinds (stale
+ * test.slow() and oversized-timeout). A case whose story error is a test
+ * timeout keeps the timeout that error reports, and one whose failing call
+ * timed out on its own gets a test timeout that leaves room for it.
+ */
+function caseTimeoutOf(caseId, isSlowCase, oversizedCaseId) {
+  const reported = storyTestTimeoutOf(caseId);
+  if (reported) return reported;
+  const base = isSlowCase ? 90000 : caseId === oversizedCaseId ? 120000 : 20000;
+  const callTimeout = storyByCaseId.get(caseId)?.failingCase.call.timeoutMs ?? 0;
+  return callTimeout >= base ? 2 * callTimeout : base;
+}
+
 for (const proj of DEMO_PROJECTS) {
   const cfg = PROJECT_CONFIGS[proj.id];
   const caseIds = caseIdsByProject[proj.id];
@@ -917,6 +992,9 @@ for (const proj of DEMO_PROJECTS) {
         `${proj.id}\x00${proj.cases.find((c) => c.title === FLAKY_CASES[proj.id].title)?.file}\x00${FLAKY_CASES[proj.id].title}`,
       )
     : null;
+  // The project's oversized case: its second case, or the next one whose
+  // timeout no story error reports.
+  const oversizedCaseId = caseIds.find((id, k) => k >= 1 && id !== flakyCaseId && !storyTestTimeoutOf(id));
 
   // Decide which stories fire on which runs (deterministic). A story is
   // eligible once its suspect commit has landed (and, for environment-driven
@@ -1092,12 +1170,19 @@ for (const proj of DEMO_PROJECTS) {
       const storyForCase = storyByCaseId.get(caseId)?.story ?? null;
 
       const caseStatus = isFailedCase ? 'failed' : isDidNotRunCase ? 'didnotrun' : 'passed';
-      const caseDuration = isDidNotRunCase
+      const drawnDuration = isDidNotRunCase
         ? 0
         : Math.max(500, Math.round(avgTestDuration + (rng() - 0.5) * 0.3 * avgTestDuration));
 
       const workerIndex = j % SEED_WORKER_COUNT;
       const caseStartMs = runStartMs + workerCursorMs[workerIndex];
+
+      // A failing case runs its story: its steps end on the call its error
+      // names, and its duration follows that error.
+      const failure = isFailedCase
+        ? storyFailureLayout(proj, storyEntry.failingCase, drawnDuration, avgTestDuration, caseStartMs)
+        : null;
+      const caseDuration = failure ? failure.durationMs : drawnDuration;
 
       if (story) {
         const stats = clusterStats[story.clusterId];
@@ -1116,14 +1201,9 @@ for (const proj of DEMO_PROJECTS) {
       }
 
       // A test that did not run reports no steps, start time or worker.
-      const steps = isDidNotRunCase ? [] : buildSteps(proj, caseDuration, caseStartMs);
-      // Mark the last step of a failing case as the failed one, so the timeline
-      // anchors its window and failure marker on a captured step boundary.
-      if (isFailedCase && steps.length > 0) {
-        const lastStep = steps[steps.length - 1];
-        lastStep.failed = true;
-        lastStep.error = { message: (storyEntry.failingCase.error ?? '').split('\n')[0] || 'Test failed' };
-      }
+      const steps = failure?.steps ?? (isDidNotRunCase ? [] : buildSteps(proj, caseDuration, caseStartMs));
+      // Where the story puts its own requests, console entries and dialog.
+      const evidenceTimes = failure ? storyEvidenceTimes(story, failure.step) : null;
       const slowestStep = steps.length > 0 ? steps.reduce((a, b) => (a.duration > b.duration ? a : b)) : null;
 
       // Test annotations — failures link to their cluster, the designated slow
@@ -1160,7 +1240,7 @@ for (const proj of DEMO_PROJECTS) {
         consoleLogs = story.evidence.consoleOnFail.map((entry, idx) => ({
           type: entry.type,
           text: entry.text,
-          timestamp: caseStartMs + Math.round(caseDuration * 0.6) + idx * 40,
+          timestamp: caseStartMs + evidenceTimes.console[idx],
           location: entry.location,
         }));
       } else if (!isFailedCase && !isDidNotRunCase && proj.consolePassing && rng() < 0.3) {
@@ -1176,18 +1256,11 @@ for (const proj of DEMO_PROJECTS) {
       // closes just before the failure so it lands in the failure window.
       const dialogs =
         isFailedCase && !noPage && story?.evidence.dialogOnFail
-          ? [{ ...story.evidence.dialogOnFail, closedAt: caseStartMs + Math.round(caseDuration * 0.95) }]
+          ? [{ ...story.evidence.dialogOnFail, closedAt: caseStartMs + evidenceTimes.dialogClosedAt }]
           : null;
 
-      // Effective per-test timeout (ms), stable per test case across runs. Most
-      // tests keep a healthy 20s budget that timeout-hygiene never flags (its
-      // headroom stays under the 20s floor); the designated slow case keeps a
-      // tripled 90s budget it no longer needs, and one non-slow case per project
-      // is deliberately oversized at 120s — so the demo shows both opportunity
-      // kinds (stale test.slow() and oversized-timeout).
       const isSlowCase = Boolean(flakyCaseId) && caseId === flakyCaseId;
-      const isOversizedCase = !isSlowCase && caseId === caseIds[1];
-      const caseTimeout = isSlowCase ? 90000 : isOversizedCase ? 120000 : 20000;
+      const caseTimeout = caseTimeoutOf(caseId, isSlowCase, oversizedCaseId);
 
       const trcIdVal = trcId++;
       TEST_RUNS_CASES.push({
@@ -1256,11 +1329,21 @@ for (const proj of DEMO_PROJECTS) {
 
       if (!isDidNotRunCase) {
         // Requests fire one after another from shortly after the test starts,
-        // so the execution page can order them by start time.
+        // so the execution page can order them by start time. A failing case's
+        // own requests sit where its story puts them, around the failing step,
+        // and the requests the failure stops short of never go out.
+        const storyRequests = isFailedCase ? (story.evidence.failingNetwork ?? []) : [];
+        const unreached = isFailedCase ? (story.evidence.unreachedNetwork ?? []) : [];
+        const storyIndex = (req) => storyRequests.findIndex((o) => o.method === req.method && o.url === req.url);
         let requestStartMs = caseStartMs + SEED_FIRST_REQUEST_OFFSET_MS;
         for (const req of buildNetwork(proj, storyEntry)) {
-          const startTime = requestStartMs;
-          requestStartMs += (req.duration ?? 0) + SEED_REQUEST_GAP_MS;
+          if (unreached.some((o) => o.method === req.method && o.url === req.url)) continue;
+          const own = storyIndex(req);
+          const startTime =
+            own >= 0
+              ? Math.max(caseStartMs + SEED_FIRST_REQUEST_OFFSET_MS, caseStartMs + evidenceTimes.requests[own])
+              : requestStartMs;
+          if (own < 0) requestStartMs += (req.duration ?? 0) + SEED_REQUEST_GAP_MS;
           NETWORK_REQUESTS.push({
             id: nrId++,
             test_runs_case_id: trcIdVal,

@@ -10,6 +10,26 @@ export interface StoryFrame {
   fn?: string;
 }
 
+/** One step a test ran, as Playwright reports it, with its typical duration in ms. */
+export interface StoryStep {
+  title: string;
+  category: string;
+  subtitle?: string;
+  params?: Record<string, string>;
+  /** Project-relative `file:line:col` of the call. */
+  location?: string;
+  duration?: number;
+}
+
+/** The call a failing case failed on, as its step, and whose timeout its error reports. */
+export interface FailingCall extends StoryStep {
+  /** The innermost frame of the error. */
+  location: string;
+  timeoutMs: number | null;
+  /** The test's, the action's or the expect's timeout; null when the call failed without one. */
+  timeout: 'test' | 'action' | 'expect' | null;
+}
+
 export interface FailingCase {
   title: string;
   failingLine: number;
@@ -18,12 +38,25 @@ export interface FailingCase {
   frames: StoryFrame[];
   /** Full reporter-format error text (message head, call log, at-frames). */
   error: string;
+  call: FailingCall;
+  /** The steps the test ran before the failing call, in order, when the story authors them. */
+  before?: StoryStep[];
+}
+
+/** A stored step placed in its execution: `at` is ms from the test start. */
+export interface PlacedStoryStep extends StoryStep {
+  duration: number;
+  at: number;
+  failed?: boolean;
+  error?: { message: string };
 }
 
 export interface StoryConsoleEntry {
   type: string;
   text: string;
   location: string | null;
+  /** Logged this long after the story's slow request started, in ms. */
+  intoSlowRequestMs?: number;
 }
 
 export interface StoryNetworkRequest {
@@ -33,6 +66,8 @@ export interface StoryNetworkRequest {
   duration: number;
   resourceType: string;
   contentType?: string;
+  /** For a story's slow request: how far into the failing step it starts, in ms. */
+  intoStepMs?: number;
   serverLogs?: Array<{ timestamp: number; level: string; category: string; message: string; stack?: string }>;
 }
 
@@ -45,6 +80,8 @@ export interface StoryDialog {
 export interface StoryEvidence {
   consoleOnFail?: StoryConsoleEntry[];
   failingNetwork?: StoryNetworkRequest[];
+  /** Requests the project's passing runs send that the failure stops short of. */
+  unreachedNetwork?: Array<{ method: string; url: string }>;
   /** A browser dialog left open at the failure moment. */
   dialogOnFail?: StoryDialog;
   /** localStorage keys missing from the failing page state (vs the passing template). */
@@ -251,6 +288,17 @@ export declare function buildTestSource(
 export declare function buildSourceFrames(failing: {
   frames: Array<{ file: string; line: number }>;
 }): Array<{ file: string; line: number; snippet: string }>;
+export declare const FAILURE_TEARDOWN_MS: number;
+export declare function failingCallDuration(call: FailingCall, at: number, fallbackMs: number): number;
+export declare function failingStep(failing: FailingCase, at: number, duration: number): PlacedStoryStep;
+export declare function authoredFailureSteps(
+  failing: FailingCase,
+  opts?: { scale?: number; fallbackMs?: number },
+): PlacedStoryStep[] | null;
+export declare function storyEvidenceTimes(
+  story: FailureStory,
+  step: { at: number; duration: number },
+): { requests: number[]; console: number[]; dialogClosedAt: number };
 export declare function storyByClusterId(clusterId: number): FailureStory | null;
 export declare function storyForCase(projectId: number, filePath: string, title: string): FailureStory | null;
 export declare function projectSourceFilePaths(projectId: number): string[];

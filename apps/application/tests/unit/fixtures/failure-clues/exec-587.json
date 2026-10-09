@@ -3,9 +3,9 @@
     "id": 587,
     "testCaseId": 31,
     "status": "failed",
-    "duration": 9555,
+    "duration": 11106,
     "browserName": "Chromium",
-    "startedAt": 1788455793486,
+    "startedAt": 1791249091486,
     "locks": [],
     "shardIndex": null
   },
@@ -29,19 +29,21 @@
     "lastCallLogLine": "waiting for locator('.modal.is-open') to be visible",
     "lastStateLine": "waiting for locator('.modal.is-open') to be visible",
     "messageHead": "TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.",
+    "customMessage": null,
     "topFrame": "tests/ui/modal.spec.ts:15",
     "isNavigationFailure": false,
     "isLocatorResolutionFailure": true
   },
   "timeline": {
-    "origin": 1788455793486,
-    "end": 1788455803041,
-    "failureAt": 9555,
+    "origin": 1791249091486,
+    "end": 1791249102592,
+    "testStart": 0,
+    "failureAt": 10856,
     "failedStep": {
       "index": 3,
-      "label": "Compare against baseline",
+      "label": "Wait for selector locator('.modal.is-open')",
       "at": 5856,
-      "duration": 3699
+      "duration": 5000
     },
     "lanes": {
       "steps": [
@@ -97,17 +99,26 @@
           "id": "step-3",
           "lane": "steps",
           "at": 5856,
-          "duration": 3699,
-          "label": "Compare against baseline",
+          "duration": 5000,
+          "label": "Wait for selector locator('.modal.is-open')",
           "status": "failed",
           "kind": "step",
           "ref": {
             "section": "steps",
             "index": 3
           },
-          "origin": null,
+          "origin": {
+            "file": "tests/ui/modal.spec.ts",
+            "line": 15,
+            "function": null,
+            "chain": []
+          },
           "group": null,
-          "category": "assertion",
+          "subtitle": "locator('.modal.is-open')",
+          "params": {
+            "locator": "locator('.modal.is-open')"
+          },
+          "category": "wait",
           "failed": true
         }
       ],
@@ -115,7 +126,7 @@
         {
           "id": "console-0",
           "lane": "console",
-          "at": 5733,
+          "at": 5606,
           "label": "Uncaught TypeError: Cannot read properties of undefined (reading 'activate')\n    at ModalController.open (https://design.example.com/assets/modal-C7hQx2.js:2:1381)",
           "status": "error",
           "kind": "console",
@@ -186,7 +197,7 @@
     "estimated": false,
     "window": {
       "start": 0,
-      "end": 9555
+      "end": 11106
     }
   },
   "healing": {
@@ -289,7 +300,7 @@
     "baseline": {
       "runId": 52,
       "executionId": 627,
-      "startTime": 1788319993000,
+      "startTime": 1791113291000,
       "environment": "staging"
     },
     "baselineNote": null,
@@ -302,7 +313,8 @@
       "url": "https://design.example.com/components/button",
       "status": 200,
       "duration": 38,
-      "startTime": 1788455793606,
+      "startTime": 1791249091606,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -310,7 +322,8 @@
       "url": "https://design.example.com/assets/tokens-D2mXq.css",
       "status": 200,
       "duration": 14,
-      "startTime": 1788455793679,
+      "startTime": 1791249091679,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -318,7 +331,8 @@
       "url": "https://design.example.com/assets/components-Bq7Yz.js",
       "status": 200,
       "duration": 63,
-      "startTime": 1788455793728,
+      "startTime": 1791249091728,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -326,7 +340,8 @@
       "url": "https://design.example.com/fonts/Inter-Variable.woff2",
       "status": 200,
       "duration": 28,
-      "startTime": 1788455793826,
+      "startTime": 1791249091826,
+      "failure": null,
       "serverLogs": null
     }
   ],
@@ -334,7 +349,7 @@
     {
       "type": "error",
       "text": "Uncaught TypeError: Cannot read properties of undefined (reading 'activate')\n    at ModalController.open (https://design.example.com/assets/modal-C7hQx2.js:2:1381)",
-      "timestamp": 1788455799219,
+      "timestamp": 1791249097092,
       "location": "https://design.example.com/assets/modal-C7hQx2.js:2:1381"
     }
   ],
@@ -351,21 +366,28 @@
       "testCaseId": 27,
       "title": "Button primary variant renders correctly",
       "status": "passed",
-      "startedAt": 1788455785000
+      "startedAt": 1791249083000
     },
     {
       "id": 587,
       "testCaseId": 31,
       "title": "Modal with large content scrolls correctly",
       "status": "failed",
-      "startedAt": 1788455793486
+      "startedAt": 1791249091486
     },
     {
       "id": 591,
       "testCaseId": 35,
       "title": "Table pagination works correctly",
       "status": "passed",
-      "startedAt": 1788455803241
+      "startedAt": 1791249107861
+    },
+    {
+      "id": 827,
+      "testCaseId": 35,
+      "title": "Table pagination works correctly",
+      "status": "failed",
+      "startedAt": 1791249102792
     }
   ],
   "lockHolders": [],
@@ -375,5 +397,55 @@
     "fixVerification": null
   },
   "timeout": 20000,
-  "slowRequestMs": null
+  "slowRequestMs": null,
+  "flakeSuspects": [
+    {
+      "id": "alongside:30",
+      "kind": "alongside",
+      "label": "Modal opens and closes correctly alongside",
+      "sentence": "Modal opens and closes correctly was running in 4 of 4 failures and 2 of 6 passes.",
+      "counts": {
+        "failuresWith": 4,
+        "failures": 4,
+        "passesWith": 2,
+        "passes": 6
+      },
+      "condition": {
+        "kind": "alongside",
+        "testCaseId": 30,
+        "title": "Modal opens and closes correctly"
+      },
+      "conditionLabel": "run together",
+      "testCaseId": 30,
+      "title": "Modal opens and closes correctly",
+      "sharedRoutes": [],
+      "approximate": false,
+      "lift": 2.2222222222222223,
+      "executionIds": [547, 557, 577, 587]
+    },
+    {
+      "id": "alongside:36",
+      "kind": "alongside",
+      "label": "Table search filters results alongside",
+      "sentence": "Table search filters results was running in 4 of 4 failures and 2 of 6 passes.",
+      "counts": {
+        "failuresWith": 4,
+        "failures": 4,
+        "passesWith": 2,
+        "passes": 6
+      },
+      "condition": {
+        "kind": "alongside",
+        "testCaseId": 36,
+        "title": "Table search filters results"
+      },
+      "conditionLabel": "run together",
+      "testCaseId": 36,
+      "title": "Table search filters results",
+      "sharedRoutes": [],
+      "approximate": false,
+      "lift": 2.2222222222222223,
+      "executionIds": [547, 557, 577, 587]
+    }
+  ]
 }

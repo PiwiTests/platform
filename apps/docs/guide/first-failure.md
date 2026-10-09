@@ -29,7 +29,7 @@ It is read from the action or matcher, the locator, the expected and received va
 
 Under the headline, the **Most likely** line gives you the one explanation, not a pile of them. It is built from **[clues](/features/evidence#clues)**: deterministic, rule-based findings correlated from the evidence, with *no model involved*. When the clues match a known pattern (some patterns need only one clue), the line is a [story](./concepts#story), one sentence that chains them:
 
-> *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight (28 s); the console said so 1.5 s before the click gave up"*
+> *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight (28 s); the console said so 8.0 s before the click gave up"*
 
 Otherwise it is the cluster's completed [AI diagnosis](/features/ai-diagnosis), else the strongest clue. It carries a strength (*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
 

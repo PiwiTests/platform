@@ -10,6 +10,8 @@ import { validatePatch } from '#shared/patch';
 import { allDemoSourceFiles } from '~~/app/demo/demo-scm';
 import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#shared/demo/failure-stories.mjs';
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
+import { parsePlaywrightError } from '#shared/error-parse';
+import { extractStepLocatorUse, renderLocatorChain, tryParseLocatorChain } from '#shared/locator-chain';
 import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
@@ -136,6 +138,94 @@ describe('cluster ↔ case ↔ file coherence', () => {
       const frames = [...(r.error as string).matchAll(/at (\S+):(\d+):(\d+)/g)];
       const last = frames[frames.length - 1];
       expect(last?.[1], `last frame file for "${r.title}"`).toBe(story.specFile);
+    }
+  });
+
+  interface FailingRow {
+    id: number;
+    started_at: number;
+    duration: number;
+    timeout: number;
+    error: string;
+    steps: string;
+    console_logs: string | null;
+    failure_cluster_id: number;
+  }
+  const failingStoryRows = () =>
+    q(`select id, started_at, duration, timeout, error, steps, console_logs, failure_cluster_id
+      from test_runs_cases where failure_cluster_id is not null`) as unknown as FailingRow[];
+  const lastStepOf = (r: FailingRow) =>
+    (JSON.parse(r.steps) as Array<Record<string, unknown> & { startTime: number; duration: number }>).at(-1)!;
+  const canonical = (locator: string) => {
+    const chain = tryParseLocatorChain(locator);
+    return chain ? renderLocatorChain(chain) : locator;
+  };
+  // The step action Playwright reports for each call the stories fail on.
+  const STEP_ACTION: Record<string, string> = { click: 'click', fill: 'fill', waitForSelector: 'waitFor' };
+
+  test('every failing story execution ends on the step its error names', () => {
+    const rows = failingStoryRows();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const parsed = parsePlaywrightError(r.error);
+      const last = lastStepOf(r);
+      expect(last.failed, `trc ${r.id}: last step failed`).toBe(true);
+      if (parsed.locator) {
+        const use = extractStepLocatorUse(last);
+        expect(use?.locator, `trc ${r.id}: locator`).toBe(canonical(parsed.locator));
+        const action = parsed.assertion ? `expect.${parsed.assertion}` : STEP_ACTION[parsed.action ?? ''];
+        expect(use?.action, `trc ${r.id}: action`).toBe(action);
+      } else if (parsed.action === 'goto') {
+        expect(last.title, `trc ${r.id}: navigation`).toBe('Navigate');
+        expect((last.params as { url?: string }).url, `trc ${r.id}: url`).toBe(parsed.url);
+      } else {
+        expect(last.title, `trc ${r.id}: assertion`).toBe(`Expect "${parsed.assertion}"`);
+      }
+    }
+  });
+
+  test('a test-timeout error runs its execution to that timeout and stores it', () => {
+    const rows = failingStoryRows().filter((r) => parsePlaywrightError(r.error).kind === 'test-timeout');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const { timeoutMs } = parsePlaywrightError(r.error);
+      expect(r.timeout, `trc ${r.id}: stored timeout`).toBe(timeoutMs);
+      expect(r.duration, `trc ${r.id}: duration`).toBeGreaterThanOrEqual(timeoutMs!);
+      const last = lastStepOf(r);
+      expect(last.startTime + last.duration - r.started_at, `trc ${r.id}: failing step ends at the timeout`).toBe(
+        timeoutMs,
+      );
+    }
+  });
+
+  test('an action or expect timeout is the duration of the failing step', () => {
+    const rows = failingStoryRows().filter((r) =>
+      ['action-timeout', 'assertion-timeout', 'navigation'].includes(parsePlaywrightError(r.error).kind),
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const { timeoutMs } = parsePlaywrightError(r.error);
+      expect(lastStepOf(r).duration, `trc ${r.id}: failing step duration`).toBe(timeoutMs);
+      expect(r.timeout, `trc ${r.id}: room for the call's own timeout`).toBeGreaterThan(timeoutMs!);
+    }
+  });
+
+  test("every story's own request and console entry happen inside its execution", () => {
+    const rows = failingStoryRows();
+    for (const r of rows) {
+      const story = FAILURE_STORIES.find((s) => s.clusterId === r.failure_cluster_id)!;
+      const end = r.started_at + r.duration;
+      for (const declared of story.evidence.failingNetwork ?? []) {
+        const [req] = q(`select start_time from network_requests
+          where test_runs_case_id = ${r.id} and method = '${declared.method}' and url = '${declared.url}'`);
+        expect(req, `trc ${r.id}: ${declared.method} ${declared.url}`).toBeTruthy();
+        expect(req!.start_time as number, `trc ${r.id}: request start`).toBeGreaterThanOrEqual(r.started_at);
+        expect(req!.start_time as number, `trc ${r.id}: request start`).toBeLessThanOrEqual(end);
+      }
+      for (const entry of JSON.parse(r.console_logs ?? '[]') as Array<{ timestamp: number }>) {
+        expect(entry.timestamp, `trc ${r.id}: console entry`).toBeGreaterThanOrEqual(r.started_at);
+        expect(entry.timestamp, `trc ${r.id}: console entry`).toBeLessThanOrEqual(end);
+      }
     }
   });
 
@@ -576,8 +666,7 @@ describe('evidence timing survives the load-time rebase', () => {
     steps: string;
   }
 
-  // Executed cases only: a didnotrun case has duration 0 and no real span, so
-  // its illustrative steps have no window to sit inside.
+  // Executed cases only: a didnotrun case has no steps and no span.
   function executedCasesWithSteps(): StepRow[] {
     return q(`
       select id, started_at, duration, steps from test_runs_cases

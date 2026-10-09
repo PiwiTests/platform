@@ -22,6 +22,9 @@ import {
   buildTestSource,
   buildSourceFrames,
   buildWebAssertionError,
+  authoredFailureSteps,
+  storyEvidenceTimes,
+  FAILURE_TEARDOWN_MS,
 } from '#shared/demo/failure-stories.mjs';
 import { demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
 import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
@@ -51,6 +54,9 @@ interface SimStep {
   params?: Record<string, string | number | boolean>;
   /** Project-relative `file:line:col` of the call. */
   location?: string;
+  /** The step the test failed on, with the first line of its error. */
+  failed?: boolean;
+  error?: { message: string };
 }
 
 interface SimAttempt {
@@ -452,17 +458,24 @@ function buildPageState(): Record<string, unknown> {
 }
 
 /**
- * Stamp timestamps onto a story's themed console evidence. A real browser
- * console never echoes the Playwright/Node assertion text back at itself, so
- * — like the seed generator — this only ever surfaces what the story declares
- * as plausible page console output, never a copy of `error`.
+ * Stamp timestamps onto a story's themed console evidence, each entry
+ * `offsets[i]` ms after the test started. A real browser console never echoes
+ * the Playwright/Node assertion text back at itself, so — like the seed
+ * generator — this only ever surfaces what the story declares as plausible
+ * page console output, never a copy of `error`.
  */
 function themedConsoleLogs(
   entries: Array<{ type: string; text: string; location: string | null }> | undefined,
   startedAt: number,
+  offsets: number[],
 ): Array<Record<string, unknown>> | undefined {
   if (!entries?.length) return undefined;
-  return entries.map((e, i) => ({ ...e, timestamp: startedAt + 1200 + i * 400 }));
+  return entries.map((e, i) => ({
+    type: e.type,
+    text: e.text,
+    location: e.location,
+    timestamp: startedAt + (offsets[i] ?? 0),
+  }));
 }
 
 interface BaseTestOptions {
@@ -759,21 +772,31 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
       // same error text as the seeded cluster 1, so this joins it rather than
       // splitting into a lookalike duplicate.
       for (const i of [0, 1]) {
-        const failedDuration = vary(31200, 0.03);
         const failingCase = CLUSTER1_STORY.failingCases[i]!;
+        // The story's own steps: the checkout fields, then the Pay click the
+        // test timeout stops, with the story's evidence placed around it.
+        const placed = authoredFailureSteps(failingCase, { scale: vary(1000, 0.1) / 1000 })!;
+        const payClick = placed.at(-1)!;
+        const failedDuration = payClick.at + payClick.duration + FAILURE_TEARDOWN_MS;
+        const times = storyEvidenceTimes(CLUSTER1_STORY, payClick);
+        const steps: SimStep[] = placed.map(({ at: _at, ...step }) => step);
+        const slowest = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
+        tests[i]!.steps = steps;
+        tests[i]!.slowestStep = slowest.title;
+        tests[i]!.slowestStepDuration = slowest.duration;
         const startedAt = Date.now();
         tests[i]!.attempts = [
           {
             status: 'failed',
             duration: failedDuration,
             error: failingCase.error,
-            consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, startedAt),
+            consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, startedAt, times.console),
             // The first holder also leaves a confirm dialog open at the failure
             // moment — it blocks the page until dismissed, so the Pay action
             // never resolves. Feeds the dialogs lane and the dialog clue.
             dialogs:
               i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
-                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: startedAt + failedDuration - 250 }]
+                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: startedAt + times.dialogClosedAt }]
                 : undefined,
             testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
             testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
@@ -782,15 +805,18 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         ];
         // Merge in the story's own themed evidence (a slow quote request, not
         // a payment failure — the Pay button times out because the quote
-        // never resolves in time, not because payment itself errors).
-        const netOverrides: Array<Record<string, unknown>> = (CLUSTER1_STORY.evidence.failingNetwork ?? []).map(
-          (o) => ({ ...o }),
+        // never resolves in time, not because payment itself errors). The
+        // quote starts where the story puts it, and the payment authorization
+        // the Pay click would send never goes out.
+        const own = CLUSTER1_STORY.evidence.failingNetwork ?? [];
+        const skipped = [...own, ...(CLUSTER1_STORY.evidence.unreachedNetwork ?? [])];
+        const base = buildNetworkRequests().filter(
+          (r) => !skipped.some((o) => o.method === r.method && o.url === r.url),
         );
-        const base = buildNetworkRequests();
-        tests[i]!.networkRequests = withStartTimes([
-          ...base.filter((r) => !netOverrides.some((o) => o.method === r.method && o.url === r.url)),
-          ...netOverrides,
-        ]);
+        tests[i]!.networkRequests = [
+          ...withStartTimes(base),
+          ...own.map((o, k) => ({ ...o, startTime: startedAt + times.requests[k]! })),
+        ];
       }
       // One test fails with a new error signature — a brand-new cluster
       tests[2]!.attempts = [

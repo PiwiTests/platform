@@ -3,9 +3,9 @@
     "id": 13,
     "testCaseId": 1,
     "status": "failed",
-    "duration": 3633,
+    "duration": 30250,
     "browserName": "Chromium",
-    "startedAt": 1788683681000,
+    "startedAt": 1791476979000,
     "locks": ["database"],
     "shardIndex": null
   },
@@ -29,27 +29,29 @@
     "lastCallLogLine": "waiting 100ms",
     "lastStateLine": "element is not enabled",
     "messageHead": "Test timeout of 30000ms exceeded.\n---\nlocator.click: Test timeout of 30000ms exceeded.",
+    "customMessage": null,
     "topFrame": "tests/helpers/payment.ts:16",
     "isNavigationFailure": false,
     "isLocatorResolutionFailure": false
   },
   "timeline": {
-    "origin": 1745537488451,
-    "end": 1788683711029,
-    "failureAt": 43146196183,
+    "origin": 1791476979000,
+    "end": 1791477009478,
+    "testStart": 0,
+    "failureAt": 30000,
     "failedStep": {
-      "index": 4,
-      "label": "Expect \"toBeVisible\" getByText('Order confirmed')",
-      "at": 43146195653,
-      "duration": 530
+      "index": 5,
+      "label": "Click getByRole('button', { name: 'Pay' })",
+      "at": 2048,
+      "duration": 27952
     },
     "lanes": {
       "steps": [
         {
           "id": "step-0",
           "lane": "steps",
-          "at": 43146192549,
-          "duration": 681,
+          "at": 0,
+          "duration": 838,
           "label": "Navigate /checkout",
           "status": "passed",
           "kind": "step",
@@ -57,7 +59,12 @@
             "section": "steps",
             "index": 0
           },
-          "origin": null,
+          "origin": {
+            "file": "tests/checkout/checkout.spec.ts",
+            "line": 6,
+            "function": null,
+            "chain": []
+          },
           "group": null,
           "subtitle": "/checkout",
           "params": {
@@ -68,84 +75,131 @@
         {
           "id": "step-1",
           "lane": "steps",
-          "at": 43146193230,
-          "duration": 606,
-          "label": "Fill \"ada@example.com\" getByLabel('Email')",
+          "at": 838,
+          "duration": 391,
+          "label": "Fill \"buyer@example.com\" getByLabel('Email address')",
           "status": "passed",
           "kind": "step",
           "ref": {
             "section": "steps",
             "index": 1
           },
-          "origin": null,
+          "origin": {
+            "file": "tests/checkout/checkout.spec.ts",
+            "line": 10,
+            "function": null,
+            "chain": []
+          },
           "group": null,
-          "subtitle": "getByLabel('Email')",
+          "subtitle": "getByLabel('Email address')",
           "params": {
-            "locator": "getByLabel('Email')",
-            "value": "ada@example.com"
+            "locator": "getByLabel('Email address')",
+            "value": "buyer@example.com"
           },
           "category": "input"
         },
         {
           "id": "step-2",
           "lane": "steps",
-          "at": 43146193836,
-          "duration": 833,
-          "label": "Fill \"Ada Lovelace\" getByLabel('Name on card')",
+          "at": 1229,
+          "duration": 354,
+          "label": "Fill \"4242 4242 4242 4242\" getByLabel('Card number')",
           "status": "passed",
           "kind": "step",
           "ref": {
             "section": "steps",
             "index": 2
           },
-          "origin": null,
+          "origin": {
+            "file": "tests/helpers/payment.ts",
+            "line": 12,
+            "function": null,
+            "chain": []
+          },
           "group": null,
-          "subtitle": "getByLabel('Name on card')",
+          "subtitle": "getByLabel('Card number')",
           "params": {
-            "locator": "getByLabel('Name on card')",
-            "value": "Ada Lovelace"
+            "locator": "getByLabel('Card number')",
+            "value": "4242 4242 4242 4242"
           },
           "category": "input"
         },
         {
           "id": "step-3",
           "lane": "steps",
-          "at": 43146194669,
-          "duration": 984,
-          "label": "Click getByRole('button', { name: 'Place order' })",
+          "at": 1583,
+          "duration": 242,
+          "label": "Fill \"12/30\" getByLabel('Expiry date')",
           "status": "passed",
           "kind": "step",
           "ref": {
             "section": "steps",
             "index": 3
           },
-          "origin": null,
-          "group": null,
-          "subtitle": "getByRole('button', { name: 'Place order' })",
-          "params": {
-            "locator": "getByRole('button', { name: 'Place order' })"
+          "origin": {
+            "file": "tests/helpers/payment.ts",
+            "line": 13,
+            "function": null,
+            "chain": []
           },
-          "category": "action"
+          "group": null,
+          "subtitle": "getByLabel('Expiry date')",
+          "params": {
+            "locator": "getByLabel('Expiry date')",
+            "value": "12/30"
+          },
+          "category": "input"
         },
         {
           "id": "step-4",
           "lane": "steps",
-          "at": 43146195653,
-          "duration": 530,
-          "label": "Expect \"toBeVisible\" getByText('Order confirmed')",
-          "status": "failed",
+          "at": 1825,
+          "duration": 223,
+          "label": "Fill \"123\" getByLabel('CVV')",
+          "status": "passed",
           "kind": "step",
           "ref": {
             "section": "steps",
             "index": 4
           },
-          "origin": null,
-          "group": null,
-          "subtitle": "getByText('Order confirmed')",
-          "params": {
-            "locator": "getByText('Order confirmed')"
+          "origin": {
+            "file": "tests/helpers/payment.ts",
+            "line": 14,
+            "function": null,
+            "chain": []
           },
-          "category": "assertion",
+          "group": null,
+          "subtitle": "getByLabel('CVV')",
+          "params": {
+            "locator": "getByLabel('CVV')",
+            "value": "123"
+          },
+          "category": "input"
+        },
+        {
+          "id": "step-5",
+          "lane": "steps",
+          "at": 2048,
+          "duration": 27952,
+          "label": "Click getByRole('button', { name: 'Pay' })",
+          "status": "failed",
+          "kind": "step",
+          "ref": {
+            "section": "steps",
+            "index": 5
+          },
+          "origin": {
+            "file": "tests/helpers/payment.ts",
+            "line": 16,
+            "function": null,
+            "chain": []
+          },
+          "group": null,
+          "subtitle": "getByRole('button', { name: 'Pay' })",
+          "params": {
+            "locator": "getByRole('button', { name: 'Pay' })"
+          },
+          "category": "action",
           "failed": true
         }
       ],
@@ -153,7 +207,7 @@
         {
           "id": "console-0",
           "lane": "console",
-          "at": 43146194729,
+          "at": 22118,
           "label": "[checkout] price quote still pending after 20s — Pay stays disabled",
           "status": "warning",
           "kind": "console",
@@ -167,7 +221,7 @@
         {
           "id": "network-0",
           "lane": "network",
-          "at": 43146192669,
+          "at": 120,
           "duration": 72,
           "label": "GET https://shop.example.com/api/cart",
           "status": "200",
@@ -180,7 +234,7 @@
         {
           "id": "network-1",
           "lane": "network",
-          "at": 43146192776,
+          "at": 2078,
           "duration": 28400,
           "label": "POST https://shop.example.com/api/checkout/quote",
           "status": "200",
@@ -193,7 +247,7 @@
         {
           "id": "network-2",
           "lane": "network",
-          "at": 43146221691,
+          "at": 227,
           "duration": 887,
           "label": "GET https://cdn.pay.example.com/sdk.js",
           "status": "200",
@@ -202,19 +256,6 @@
             "section": "networkRequests",
             "index": 2
           }
-        },
-        {
-          "id": "network-3",
-          "lane": "network",
-          "at": 43146221211,
-          "duration": 445,
-          "label": "POST https://shop.example.com/api/payments/authorize",
-          "status": "201",
-          "kind": "network",
-          "ref": {
-            "section": "networkRequests",
-            "index": 3
-          }
         }
       ],
       "backend": [],
@@ -222,7 +263,7 @@
         {
           "id": "dialog-0",
           "lane": "dialogs",
-          "at": 0,
+          "at": 29850,
           "label": "confirm: Your session is about to expire. Stay signed in?",
           "status": "confirm",
           "kind": "dialogs",
@@ -236,8 +277,8 @@
     "unplaced": [],
     "estimated": false,
     "window": {
-      "start": 43146185653,
-      "end": 43146198183
+      "start": 0,
+      "end": 30478
     }
   },
   "healing": {
@@ -302,7 +343,7 @@
     "baseline": {
       "runId": 6,
       "executionId": 61,
-      "startTime": 1788563016000,
+      "startTime": 1791356314000,
       "environment": "staging"
     },
     "baselineNote": null,
@@ -329,7 +370,8 @@
       "url": "https://shop.example.com/api/cart",
       "status": 200,
       "duration": 72,
-      "startTime": 1788683681120,
+      "startTime": 1791476979120,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -337,7 +379,8 @@
       "url": "https://shop.example.com/api/checkout/quote",
       "status": 200,
       "duration": 28400,
-      "startTime": 1788683681227,
+      "startTime": 1791476981078,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -345,15 +388,8 @@
       "url": "https://cdn.pay.example.com/sdk.js",
       "status": 200,
       "duration": 887,
-      "startTime": 1788683710142,
-      "serverLogs": null
-    },
-    {
-      "method": "POST",
-      "url": "https://shop.example.com/api/payments/authorize",
-      "status": 201,
-      "duration": 445,
-      "startTime": 1788683709662,
+      "startTime": 1791476979227,
+      "failure": null,
       "serverLogs": null
     }
   ],
@@ -361,7 +397,7 @@
     {
       "type": "warning",
       "text": "[checkout] price quote still pending after 20s — Pay stays disabled",
-      "timestamp": 1788683683180,
+      "timestamp": 1791477001118,
       "location": "https://shop.example.com/assets/checkout-D4kXqz.js:1:48211"
     }
   ],
@@ -369,7 +405,7 @@
     {
       "type": "confirm",
       "message": "Your session is about to expire. Stay signed in?",
-      "closedAt": 1745537488451
+      "closedAt": 1791477008850
     }
   ],
   "browserPeers": [
@@ -384,21 +420,21 @@
       "testCaseId": 1,
       "title": "should complete checkout with credit card",
       "status": "failed",
-      "startedAt": 1788683681000
-    },
-    {
-      "id": 17,
-      "testCaseId": 5,
-      "title": "should show error for invalid CVV",
-      "status": "passed",
-      "startedAt": 1788683684833
+      "startedAt": 1791476979000
     },
     {
       "id": 21,
       "testCaseId": 9,
       "title": "should apply discount code",
       "status": "passed",
-      "startedAt": 1788683689314
+      "startedAt": 1791477011406
+    },
+    {
+      "id": 819,
+      "testCaseId": 9,
+      "title": "should apply discount code",
+      "status": "failed",
+      "startedAt": 1791477009450
     }
   ],
   "lockHolders": [
@@ -406,8 +442,8 @@
       "id": 13,
       "title": "should complete checkout with credit card",
       "status": "failed",
-      "startedAt": 1788683681000,
-      "duration": 3633,
+      "startedAt": 1791476979000,
+      "duration": 30250,
       "shardIndex": null,
       "locks": ["database"]
     },
@@ -415,8 +451,8 @@
       "id": 14,
       "title": "should complete checkout with PayPal",
       "status": "failed",
-      "startedAt": 1788683681000,
-      "duration": 4290,
+      "startedAt": 1791476979000,
+      "duration": 30250,
       "shardIndex": null,
       "locks": ["database", "external-api"]
     },
@@ -424,26 +460,26 @@
       "id": 15,
       "title": "should complete checkout with Apple Pay",
       "status": "failed",
-      "startedAt": 1788683681000,
-      "duration": 4444,
+      "startedAt": 1791476979000,
+      "duration": 11275,
       "shardIndex": null,
       "locks": ["database", "external-api"]
     },
     {
       "id": 16,
       "title": "should show error for expired card",
-      "status": "passed",
-      "startedAt": 1788683681000,
-      "duration": 3479,
+      "status": "skipped",
+      "startedAt": 1791476979000,
+      "duration": 0,
       "shardIndex": null,
       "locks": ["database"]
     },
     {
       "id": 17,
       "title": "should show error for invalid CVV",
-      "status": "passed",
-      "startedAt": 1788683684833,
-      "duration": 4281,
+      "status": "skipped",
+      "startedAt": 1791477009450,
+      "duration": 0,
       "shardIndex": null,
       "locks": ["database"]
     },
@@ -451,7 +487,7 @@
       "id": 18,
       "title": "should add item to cart",
       "status": "passed",
-      "startedAt": 1788683685490,
+      "startedAt": 1791477009450,
       "duration": 4061,
       "shardIndex": null,
       "locks": []
@@ -460,7 +496,7 @@
       "id": 19,
       "title": "should remove item from cart",
       "status": "passed",
-      "startedAt": 1788683685644,
+      "startedAt": 1791476990475,
       "duration": 4462,
       "shardIndex": null,
       "locks": []
@@ -469,7 +505,7 @@
       "id": 20,
       "title": "should update item quantity",
       "status": "passed",
-      "startedAt": 1788683684679,
+      "startedAt": 1791476979000,
       "duration": 4385,
       "shardIndex": null,
       "locks": []
@@ -478,7 +514,7 @@
       "id": 21,
       "title": "should apply discount code",
       "status": "passed",
-      "startedAt": 1788683689314,
+      "startedAt": 1791477011406,
       "duration": 3512,
       "shardIndex": null,
       "locks": []
@@ -487,7 +523,7 @@
       "id": 22,
       "title": "should display cart total correctly",
       "status": "passed",
-      "startedAt": 1788683689751,
+      "startedAt": 1791477013711,
       "duration": 3382,
       "shardIndex": null,
       "locks": []
@@ -496,7 +532,7 @@
       "id": 23,
       "title": "should fill and save shipping address",
       "status": "passed",
-      "startedAt": 1788683690306,
+      "startedAt": 1791476995137,
       "duration": 3831,
       "shardIndex": null,
       "locks": []
@@ -505,8 +541,17 @@
       "id": 24,
       "title": "should validate required address fields",
       "status": "passed",
-      "startedAt": 1788683689264,
+      "startedAt": 1791476983585,
       "duration": 4128,
+      "shardIndex": null,
+      "locks": []
+    },
+    {
+      "id": 819,
+      "title": "should apply discount code",
+      "status": "failed",
+      "startedAt": 1791477009450,
+      "duration": 1756,
       "shardIndex": null,
       "locks": []
     }
@@ -516,6 +561,30 @@
     "fixLandedRunId": 3,
     "fixVerification": "regressed"
   },
-  "timeout": 20000,
-  "slowRequestMs": null
+  "timeout": 30000,
+  "slowRequestMs": null,
+  "flakeSuspects": [
+    {
+      "id": "slow-route:POST /api/checkout/quote",
+      "kind": "slow-route",
+      "label": "POST /api/checkout/quote slower (≥28.4 s)",
+      "sentence": "POST /api/checkout/quote took 28.4 s or more in 3 of 3 failures and 0 of 16 passes.",
+      "counts": {
+        "failuresWith": 3,
+        "failures": 3,
+        "passesWith": 0,
+        "passes": 16
+      },
+      "condition": {
+        "kind": "delay",
+        "route": "POST /api/checkout/quote",
+        "ms": 28400
+      },
+      "conditionLabel": "delay to 28.4 s",
+      "route": "POST /api/checkout/quote",
+      "thresholdMs": 28400,
+      "lift": 14.400000000000002,
+      "executionIds": [1, 13, 37]
+    }
+  ]
 }
