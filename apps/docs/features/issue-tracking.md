@@ -36,7 +36,7 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 - Creating an issue is a **durable outbox action**: attempted immediately, retried with backoff if Jira is down (the
   cluster and execution pages show *Filing queued*, with a retry), and recorded: the cluster's **Activity** lists each
   write Piwi makes to the issue. A create Jira refuses outright (a missing or invalid field) fails at once, with
-  Jira's reason at the top of the modal and on the Issue line; creating again replaces it.
+  Jira's reason atop the modal and on the Issue or Cluster line; creating again replaces it.
 
 ## The key travels
 
@@ -67,7 +67,7 @@ write back as the cluster evolves:
 | A cluster **regresses** | Comments *Regressed in run #N …*, and optionally reopens the issue. |
 | **New occurrences** on an open ticket | At most one comment a day: *Still failing — +N occurrences in M runs …*. |
 | A cluster is **merged** | With *comment on merge*, notes it on both issues; the survivor inherits the links. |
-| The **ticket moves to Done** | With *resolve on close*, resolves the cluster unless its fix regressed. Otherwise, once the latest finished run no longer fails and the fix did not regress, the next step is *Mark the cluster resolved — PROJ-123 is Done*; while it fails, the Issue line offers *File a new issue*. |
+| The **ticket moves to Done** | With *resolve on close*, resolves the cluster unless its fix regressed. Otherwise, once the latest finished run no longer fails and the fix did not regress, the next step is *Mark the cluster resolved — PROJ-123 is Done*; while it fails, the Issue or Cluster line offers *File a new issue*. |
 | The **ticket is reopened** | With *reopen on ticket reopen*, reopens a resolved cluster with a note. |
 
 Both status policies act on a **move** of the ticket, so a cluster a person reopened or resolved stays as they set it.
