@@ -11,7 +11,7 @@ import { compileCodeowners, parseCodeowners } from '@piwitests/core/codeowners';
  * names: explain_failure and get_fix_plan fall back to the repository's
  * CODEOWNERS for a failing test with no `piwi:owner` annotation. explain_failure
  * also says whether the execution is the latest of its test, and which one is,
- * and gives a test that passed on retry its failed attempt's headline.
+ * and gives a test that passed on retry its failed attempt's headline and execution.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -125,7 +125,7 @@ describe('whether the execution is the latest, as an agent reads it', () => {
 });
 
 describe('a test that passed on retry, as an agent reads it', () => {
-  test("explain_failure gives its failed attempt's headline, the attempt in the situation and the attempts step", async () => {
+  test("explain_failure gives its failed attempt's headline and execution, the attempt in the situation and the attempts step", async () => {
     await db
       .insert(schema.testCases)
       .values({ id: 2, projectId: 1, title: 'keeps the cart', filePath: 'tests/cart.spec.ts' });
@@ -136,14 +136,20 @@ describe('a test that passed on retry, as an agent reads it', () => {
       { id: 20, testRunId: 3, testCaseId: 2, status: 'failed', retries: 0, error: 'Error: card declined' },
       { id: 21, testRunId: 3, testCaseId: 2, status: 'passed', retries: 1 },
     ]);
-    const failed = (await tool('explain_failure')(db as never, { executionId: 20 }, viewer)) as { headline?: string };
+    const failed = (await tool('explain_failure')(db as never, { executionId: 20 }, viewer)) as {
+      headline?: string;
+      failedAttempt?: unknown;
+    };
     const result = (await tool('explain_failure')(db as never, { executionId: 21 }, viewer)) as {
       headline?: string;
+      failedAttempt?: unknown;
       situation?: string;
       nextStep?: { kind: string };
     };
     expect(failed.headline).toBeTruthy();
+    expect(failed.failedAttempt).toBeUndefined();
     expect(result.headline).toBe(failed.headline);
+    expect(result.failedAttempt).toEqual({ executionId: 20, retry: 0 });
     expect(result.situation).toMatch(/^Failed on attempt 1, passed on attempt 2/);
     expect(result.nextStep?.kind).toBe('compare-attempts');
   });

@@ -108,7 +108,7 @@ import {
 } from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { caseHeadline } from '#shared/failure-verdict';
+import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { collectReportBundle } from '#shared/reports/collect';
 import { assertDashboardScope } from '#shared/reports/request';
@@ -2296,8 +2296,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const nextStep = (detail as { nextStep?: unknown } | null)?.nextStep ?? null;
     const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
     const latest = (detail as { latest?: LatestExecution | null } | null)?.latest ?? null;
-    // A retry pass has no error of its own: its verdict reads the failed attempt's.
-    const verdictHeadline = (detail as { verdict?: { headline?: string } | null } | null)?.verdict?.headline ?? null;
+    // A retry pass has no error of its own: its verdict reads the failed attempt's,
+    // and names that attempt's execution.
+    const verdict = (detail as { verdict?: FailureVerdict | null } | null)?.verdict ?? null;
+    const failedAttempt = verdict?.attempt ?? null;
     const didNotRun = (detail as { didNotRun?: { text?: string } | null } | null)?.didNotRun ?? null;
 
     return dropNulls({
@@ -2306,7 +2308,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       title: tc?.title || null,
       filePath: tc?.filePath || null,
       status: row.status,
-      headline: caseHeadline(row)?.headline ?? verdictHeadline,
+      headline: caseHeadline(row)?.headline ?? verdict?.headline ?? null,
+      failedAttempt: failedAttempt ? { executionId: failedAttempt.executionId, retry: failedAttempt.retry } : null,
       error: trunc(row.error, 1500),
       story: story
         ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
