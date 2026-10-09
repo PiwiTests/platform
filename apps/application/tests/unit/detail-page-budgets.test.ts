@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — plain ESM module of the measurement script, without type declarations
@@ -203,6 +204,24 @@ describe('the Next actions the distance budget knows', () => {
     expect(copying.length).toBeGreaterThan(0);
     for (const action of new Set(copying)) {
       expect(Object.keys(NEXT_STEP_COPIES), `${action} needs a class in NEXT_STEP_COPIES`).toContain(action);
+    }
+  });
+
+  it('finds a data-copies carrier in a component for every budgeted action', () => {
+    const components = fileURLToPath(new URL('../../app/components', import.meta.url));
+    const carried = new Set(
+      readdirSync(components, { recursive: true })
+        .map(String)
+        .filter((file) => file.endsWith('.vue'))
+        .flatMap((file) => [...readFileSync(join(components, file), 'utf8').matchAll(/data-copies="([^"]*)"/g)])
+        .flatMap((m) => m[1].split(/\s+/)),
+    );
+    const budgeted = Object.entries(NEXT_STEP_COPIES)
+      .filter(([, kind]) => kind === 'budgeted')
+      .map(([action]) => action);
+    expect(budgeted.length).toBeGreaterThan(0);
+    for (const action of budgeted) {
+      expect([...carried], `no component carries data-copies="${action}"`).toContain(action);
     }
   });
 });
