@@ -19,6 +19,7 @@ import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
 import { computeNextStep } from '../next-step';
+import { describeDidNotRun } from '../did-not-run';
 import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
 import { getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
@@ -27,7 +28,7 @@ import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
-import { isFailedStatus } from '../utils/test-counts';
+import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import {
   attachUsualDurations,
@@ -662,9 +663,33 @@ export async function getTestRunCase(
           () => null,
         )
       : null;
+  // A test that did not run gives its reason as one sentence, and its next step
+  // opens what stopped it: the blocking failure, the run's one failure, or the run.
+  const didNotRun =
+    trc.status === 'didnotrun'
+      ? describeDidNotRun({
+          reason: trc.didNotRunReason,
+          blockedByCase,
+          runFailedTests: testRun?.failedTests ?? null,
+        })
+      : null;
+  // The run's one failed execution, when a max-failures cutoff has a single one to open.
+  const runFailedRows =
+    trc.status === 'didnotrun' && !blockedByCase && trc.didNotRunReason === 'max-failures'
+      ? await db
+          .select({ id: testRunsCases.id })
+          .from(testRunsCases)
+          .where(
+            and(eq(testRunsCases.testRunId, trc.testRunId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])),
+          )
+          .limit(2)
+      : [];
   const nextStep = computeNextStep({
     status: trc.status,
     blockedByCase: blockedByCase ? { id: blockedByCase.id, title: blockedByCase.title } : null,
+    didNotRunReason: trc.didNotRunReason ?? null,
+    runId: trc.testRunId,
+    runFailedExecutionId: runFailedRows.length === 1 ? runFailedRows[0]!.id : null,
     clusterStatus: failureCluster?.status ?? null,
     fixVerification: failureCluster?.fixVerification ?? null,
     fixLandedRunId: failureCluster?.fixLandedRunId ?? null,
@@ -738,6 +763,7 @@ export async function getTestRunCase(
     blockedBy: trc.blockedBy ?? null,
     blockedByCase,
     blockedTests,
+    didNotRun,
     failureCluster,
     verdict,
     situation,

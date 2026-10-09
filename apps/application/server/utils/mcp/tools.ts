@@ -2298,6 +2298,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const latest = (detail as { latest?: LatestExecution | null } | null)?.latest ?? null;
     // A retry pass has no error of its own: its verdict reads the failed attempt's.
     const verdictHeadline = (detail as { verdict?: { headline?: string } | null } | null)?.verdict?.headline ?? null;
+    const didNotRun = (detail as { didNotRun?: { text?: string } | null } | null)?.didNotRun ?? null;
 
     return dropNulls({
       executionId: id,
@@ -2311,6 +2312,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
         : null,
       situation: situation?.text || null,
+      didNotRun: didNotRun?.text || null,
       latest: latest
         ? dropNulls({
             isLatest: latest.isLatest,

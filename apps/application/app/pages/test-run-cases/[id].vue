@@ -17,6 +17,7 @@ import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
 import type { Situation } from '#shared/situation';
 import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
+import type { DidNotRunExplanation } from '#shared/did-not-run';
 import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
@@ -175,6 +176,10 @@ const mostLikely = computed(() =>
 // facts the toolbox reads.
 const situation = computed(() => (testCase.value as { situation?: Situation | null } | null)?.situation ?? null);
 const nextStep = computed(() => (testCase.value as { nextStep?: NextStep | null } | null)?.nextStep ?? null);
+// Why a test that did not run never started: its Most likely line.
+const didNotRun = computed(
+  () => (testCase.value as { didNotRun?: DidNotRunExplanation | null } | null)?.didNotRun ?? null,
+);
 
 // A commit in the situation links to the SCM host only when the run has a repository.
 const repositoryUrl = computed(() => reproduceData.value?.desktop?.repositoryUrl ?? null);
@@ -827,9 +832,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow -->
+          <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow; for a test that did not run, why -->
           <template v-if="isProblem && verdict && mostLikely" #story>
             <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
+          </template>
+          <template v-else-if="didNotRun" #story>
+            <DidNotRunLine :explanation="didNotRun" />
           </template>
 
           <!-- Line 4: the next step -->
@@ -879,13 +887,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
             />
           </template>
         </SituationBlock>
-
-        <!-- Why this execution never ran — pinned under the block for a did-not-run case. -->
-        <DidNotRunCard
-          :status="testCase?.status"
-          :reason="(testCase as any)?.didNotRunReason ?? null"
-          :blocked-by-case="(testCase as any)?.blockedByCase ?? null"
-        />
 
         <!-- ── Evidence ───────────────────────────────────────────────── -->
         <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->

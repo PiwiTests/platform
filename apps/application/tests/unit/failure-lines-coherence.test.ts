@@ -26,6 +26,8 @@ import type { FixPlan } from '#shared/fix-plan.types';
  * - a verified fix reads the same in State and Next;
  * - a test that passed on retry compares its attempts or takes its Flake Lab step,
  *   with no Most likely;
+ * - a test that did not run gives its reason, and its Next opens the failure that
+ *   blocked it or the run, never reproduces or diagnoses;
  * - a Next from the diagnosis quotes it when Most likely shows something else;
  * - a cluster and its latest occurrence's execution lead with the same Most likely;
  * - no Next says nothing explains the failure beside a strong or medium Most likely;
@@ -40,6 +42,9 @@ import type { FixPlan } from '#shared/fix-plan.types';
 
 /** The statuses whose execution page shows Most likely and Next. */
 const PROBLEM_STATUSES = ['failed', 'timedOut', 'timedout', 'didnotrun'];
+
+/** The steps a test that did not run takes: open the failure that blocked it, or the run. */
+const DID_NOT_RUN_STEPS: ReadonlySet<NextStep['kind']> = new Set(['open-blocker', 'open-run']);
 
 /** The steps a test that passed on retry takes: compare its attempts, or the Flake Lab's next experiment. */
 const RETRY_PASS_STEPS: ReadonlySet<NextStep['kind']> = new Set([
@@ -85,6 +90,8 @@ interface PageLines {
   aiConfigured: boolean;
   /** An execution that passed on retry. */
   retryPass: boolean;
+  /** An execution that did not run: the sentence its Most likely row gives instead, null when missing. */
+  didNotRun: { text: string } | null | false;
   fixVerification: string | null;
   /** The cluster page's latest occurrence, whose clues it shows. */
   latestExecutionId: number | null;
@@ -133,6 +140,7 @@ function describePage(p: PageLines): string {
   if (p.mostLikely) {
     lines.push(`  Most likely [${p.mostLikely.source}, ${p.mostLikely.grade ?? '-'}] ${p.mostLikely.sentence}`);
   }
+  if (p.didNotRun !== false) lines.push(`  Most likely [did not run] ${p.didNotRun?.text ?? '(none)'}`);
   if (p.state) lines.push(`  State [${p.state.kind}, action ${p.state.action ?? 'none'}] ${p.state.sentence}`);
   if (p.situation) lines.push(`  Situation ${p.situation}`);
   if (p.next) {
@@ -226,6 +234,7 @@ async function pageBuilders(db: DrizzleDB, now: Date) {
       id,
       aiConfigured,
       retryPass: false,
+      didNotRun: false,
       fixVerification: cluster.fixVerification ?? null,
       latestExecutionId: latest,
       diagnosis,
@@ -257,6 +266,7 @@ async function pageBuilders(db: DrizzleDB, now: Date) {
       id,
       aiConfigured,
       retryPass,
+      didNotRun: execution.status === 'didnotrun' ? (execution.didNotRun ?? null) : false,
       fixVerification: execution.failureCluster?.fixVerification ?? null,
       latestExecutionId: null,
       diagnosis,
@@ -384,6 +394,17 @@ function verifiedFixRule(): RuleResult {
   return result;
 }
 
+/** A test that did not run says why, and its Next opens the failure that blocked it or the run. */
+function didNotRunRule(): RuleResult {
+  const result: RuleResult = { checked: [], violations: [] };
+  for (const p of all()) {
+    if (p.didNotRun === false) continue;
+    result.checked.push(p.label);
+    if (!p.didNotRun || !p.next || !DID_NOT_RUN_STEPS.has(p.next.kind)) result.violations.push(describePage(p));
+  }
+  return result;
+}
+
 /** A retry pass compares its attempts or takes its Flake Lab step, and shows no Most likely. */
 function retryPassRule(): RuleResult {
   const result: RuleResult = { checked: [], violations: [] };
@@ -471,6 +492,10 @@ describe('failure page lines over the demo seed', () => {
     expect(verifiedFixRule().violations).toEqual([]);
   });
 
+  test('a test that did not run says why, and its Next opens the failure that blocked it or the run', () => {
+    expect(didNotRunRule().violations).toEqual([]);
+  });
+
   test('a test that passed on retry compares its attempts or takes its Flake Lab step, with no Most likely', () => {
     expect(retryPassRule().violations).toEqual([]);
   });
@@ -502,6 +527,9 @@ describe('failure page lines over the demo seed', () => {
     expect(reached(verifiedFixRule)).toEqual(
       expect.arrayContaining(['cluster #10', 'cluster #10, patch applying at its fix']),
     );
+    // #748 never started: its run stopped at its failure budget. #7 was blocked by
+    // an earlier failure in its serial group.
+    expect(reached(didNotRunRule)).toEqual(expect.arrayContaining(['execution #748', 'execution #7']));
     // #768 failed its first attempt in the seed's generic flaky test; #21 is the
     // Flake Lab's verified flake.
     expect(reached(retryPassRule)).toEqual(expect.arrayContaining(['execution #768', 'execution #21']));

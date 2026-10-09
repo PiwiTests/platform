@@ -602,7 +602,7 @@ export const HELP_TOPICS = {
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
-    text: "One block, read top to bottom: what broke (the headline, built from the Playwright error itself), and under it since when (for a test that passed on retry, which attempt failed), on which commit, and whether a newer execution of the test failed again or passed; what is most likely behind it (a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue; the cluster page follows the same rule); what to do next (one action chosen by a policy, with the change it copies and where it comes from); then the cluster the failure belongs to, with its issue. Every clue, the raw error and the rest of the facts are one click away.",
+    text: "One block, read top to bottom: what broke (the headline, built from the Playwright error itself), and under it since when (for a test that passed on retry, which attempt failed), on which commit, and whether a newer execution of the test failed again or passed; what is most likely behind it (a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue; the cluster page follows the same rule; for a test that did not run, the test that blocked it or where the run stopped); what to do next (one action chosen by a policy, with the change it copies and where it comes from); then the cluster the failure belongs to, with its issue. Every clue, the raw error and the rest of the facts are one click away.",
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {

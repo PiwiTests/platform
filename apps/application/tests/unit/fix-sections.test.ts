@@ -19,6 +19,7 @@ describe('fixSectionForNextStep', () => {
 
   test.each<NextStepKind>([
     'mark-resolved',
+    'open-run',
     'see-what-changed',
     'compare-attempts',
     'verify-flake-fix',

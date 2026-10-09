@@ -6,8 +6,8 @@
  * quarantines, re-runs) as callbacks, and the composable owns the shared
  * plumbing — the change's apply command, locator, download and open-in-IDE,
  * the recipe copy, the AI-prompt copy, the Flake Lab command and its CI
- * dispatch, the navigation — so the execution page and the cluster page never
- * duplicate the switch.
+ * dispatch, the navigation (to an execution, a run and its tab) — so the
+ * execution page and the cluster page never duplicate the switch.
  */
 import { reproScript, type ReproRecipe } from '#shared/reproduce';
 import type { NextStepChange } from '~/utils/next-step-change';
@@ -137,6 +137,13 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
         if (typeof id !== 'number') break;
         if (handlers.openExecution) await handlers.openExecution(id);
         else await navigateTo(`/test-run-cases/${id}`);
+        break;
+      }
+      case 'open-run': {
+        const runId = payload?.runId;
+        if (typeof runId !== 'number') break;
+        const tab = typeof payload?.tab === 'string' ? payload.tab : undefined;
+        await navigateTo({ path: `/test-runs/${runId}`, query: tab ? { tab } : {} });
         break;
       }
       case 'mark-resolved':

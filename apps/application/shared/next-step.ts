@@ -3,10 +3,11 @@
  * execution page and the cluster page assemble the same facts — the verdict,
  * whether locator healing has a recommendation, the cluster's diagnosis and its
  * patch validation, the fix verification, the attempt facts, whether AI and a
- * CI re-run are configured, and the case that blocked this one — and hand them
- * here. The first matching row wins; the caller renders the one primary action
- * and folds the rest into the toolbox. A step that copies a change names where
- * the change comes from (`source`), which the pages turn into a sentence.
+ * CI re-run are configured, the case that blocked this one, and for a test that
+ * did not run why and in which run — and hand them here. The first matching row
+ * wins; the caller renders the one primary action and folds the rest into the
+ * toolbox. A step that copies a change names where the change comes from
+ * (`source`), which the pages turn into a sentence.
  *
  * Pure: no DB, no model call. The facts are gathered in the handlers.
  */
@@ -18,6 +19,7 @@ import type { PatchValidationStatus } from '#shared/patch';
 
 export type NextStepKind =
   | 'open-blocker'
+  | 'open-run'
   | 'mark-resolved'
   | 'replace-locator'
   | 'apply-patch'
@@ -54,10 +56,16 @@ export interface NextStep {
 }
 
 export interface NextStepInput {
-  /** The execution or cluster's own status (`didnotrun` gates the blocker row). */
+  /** The execution or cluster's own status (`didnotrun` gates the blocker and run rows). */
   status?: string | null;
   /** The failing execution that blocked this one, when this test did not run. */
   blockedByCase?: { id: number; title?: string | null } | null;
+  /** Why this test did not run, as the reporter recorded it (`max-failures`, `global-timeout`, …). */
+  didNotRunReason?: string | null;
+  /** The run this execution belongs to. */
+  runId?: number | null;
+  /** The run's failed execution, when it has exactly one. */
+  runFailedExecutionId?: number | null;
 
   /** The cluster's triage status and fix verification. */
   clusterStatus?: string | null;
@@ -157,6 +165,55 @@ export function patchShortfall(patch: {
   }
 }
 
+/** The step for a test the run never started: the failure that stopped it, the run's failures or the run. */
+function openRunStep(input: NextStepInput): Omit<NextStep, 'source'> {
+  const runId = input.runId ?? null;
+  const openRun = (label: string, tab?: string): NextStepAction => ({
+    label,
+    action: 'open-run',
+    payload: runId != null ? { runId, ...(tab ? { tab } : {}) } : undefined,
+  });
+  const runLabel = runId != null ? `Open run #${runId}` : 'Open the run';
+  const step = (title: string, why: string, primary: NextStepAction) => ({
+    kind: 'open-run' as const,
+    title,
+    why: `Nothing to fix in this test: ${why}`,
+    primary,
+    secondary: [],
+  });
+  switch (input.didNotRunReason) {
+    case 'max-failures':
+      if (input.runFailedExecutionId != null) {
+        return step('Open the failure that stopped the run', 'it runs again once that failure is fixed.', {
+          label: 'Open the failure',
+          action: 'open-execution',
+          payload: { executionId: input.runFailedExecutionId },
+        });
+      }
+      return step(
+        "Open the run's failures",
+        'it runs again once those failures are fixed.',
+        openRun('Open the failures', 'failure-groups'),
+      );
+    case 'previous-failure':
+      return step(
+        "Open the run's failures",
+        "it runs again once its group's failure is fixed.",
+        openRun('Open the failures', 'failure-groups'),
+      );
+    case 'global-timeout':
+      return step(
+        'See what made the run slow',
+        'it runs again once the run ends within its time limit.',
+        openRun("Open the run's timeline", 'workers'),
+      );
+    case 'interrupted':
+      return step('Open the run', 'it runs again in the next run that completes.', openRun(runLabel));
+    default:
+      return step('Open the run', 'the run shows where it stopped.', openRun(runLabel));
+  }
+}
+
 function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   const clusterId = input.clusterId ?? null;
   const withCluster = clusterId != null ? { clusterId } : undefined;
@@ -173,12 +230,13 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   const patchFirst = fixUnconfirmed && input.clusterStatus === 'open';
   const hasCleanPatch = input.diagnosisCompleted === true && (input.patchAppliesCleanly === true || fixUnconfirmed);
 
-  // 1 — a did-not-run cascade: open the failure that blocked this test.
+  // 1 — a did-not-run cascade: open the failure that blocked this test. The
+  // reason is the Most likely line's; the step says what to do about it.
   if (input.status === 'didnotrun' && input.blockedByCase) {
     return {
       kind: 'open-blocker',
       title: 'Open the failure that blocked this test',
-      why: 'This test did not run because an earlier failure stopped it.',
+      why: 'Nothing to fix in this test: it runs again once that failure is fixed.',
       primary: {
         label: 'Open the blocking failure',
         action: 'open-execution',
@@ -187,6 +245,10 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
       secondary: [],
     };
   }
+
+  // 1b — a test the run never started, with no blocker: open the run, where
+  // what stopped it is.
+  if (input.status === 'didnotrun') return openRunStep(input);
 
   // 2 — the failures stopped on an open cluster: mark it resolved. A
   // diagnosis-verified fix whose patch still applied at its commit goes to the

@@ -181,7 +181,9 @@ handlers the demo shares (`shared/handlers/test-cases.ts`, `shared/handlers/fail
 `computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's action id into behavior on both pages, copying
 the change the row shows (`buildNextStepChange`, `app/utils/next-step-change.ts`). Both pages choose Most likely
 and word where the Next step's change comes from with `shared/most-likely.ts` (`pickMostLikely`,
-`nextStepSourceLine`), one rule for the two. Under the block, the execution page shows `DidNotRunCard` for a test that did not run, `EvidenceTabs` (opening on the tab
+`nextStepSourceLine`), one rule for the two; a test that did not run gives its reason as Most likely instead
+(`DidNotRunLine`, from `describeDidNotRun` in `shared/did-not-run.ts`), and its Next opens the blocking failure or
+the run (`open-blocker`, `open-run`). Under the block, the execution page shows `EvidenceTabs` (opening on the tab
 `useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the
 one the next step points at open) and History (`HistoryStrip`). The cluster page shows the section the next step points
 at as a card of its own (`Toolbox` with `lead`; the sections, their order and the step each serves are in
@@ -201,7 +203,7 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shared/`                                                               | Cross-page primitives and widgets — see below                                                                                                                                                                                   |
 | `run/`                                                                  | Run detail: summary, cases table, workers timeline, comparison, slow endpoints, failure groups, reports, the Resources tab (`RunResources`, formatting in `app/utils/resources.ts`)                                             |
-| `test-case/`                                                            | Single-execution detail: the facts line, the evidence tabs and their cards (timeline, screen, source, network, console, state, performance, attempts, locators), the did-not-run card, clues; the test page's flakiness tab     |
+| `test-case/`                                                            | Single-execution detail: the facts line, the evidence tabs and their cards (timeline, screen, source, network, console, state, performance, attempts, locators), the did-not-run line, clues; the test page's flakiness tab     |
 | `cluster/`                                                              | Failure-cluster detail: the state, what-changed and facts lines, the occurrence sparkline and trend, the affected-tests selector, investigation + baseline picker, commit browser, activity, fixed-before matches               |
 | `diagnosis/`                                                            | AI diagnosis panel: context preview + coverage strip, result with evidence citations, export                                                                                                                                    |
 | `integrations/`                                                         | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the integration activity                                                 |

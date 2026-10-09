@@ -12,6 +12,74 @@ describe('computeNextStep — one row per rule', () => {
     expect(s.primary.payload).toEqual({ executionId: 7 });
   });
 
+  test('1: the blocker step says what to do, not why the test did not run', () => {
+    const s = step({ status: 'didnotrun', blockedByCase: { id: 7, title: 'login' } });
+    expect(s.why).toBe('Nothing to fix in this test: it runs again once that failure is fixed.');
+    expect(s.why).not.toMatch(/did not run|stopped/);
+  });
+
+  describe('1b: a test the run never started, with no blocker, opens the run', () => {
+    const run = (overrides: Partial<NextStepInput>) => step({ status: 'didnotrun', runId: 66, ...overrides });
+
+    test('max-failures with one failure in the run opens that failure', () => {
+      const s = run({ didNotRunReason: 'max-failures', runFailedExecutionId: 747 });
+      expect(s).toMatchObject({
+        kind: 'open-run',
+        title: 'Open the failure that stopped the run',
+        primary: { label: 'Open the failure', action: 'open-execution', payload: { executionId: 747 } },
+        secondary: [],
+        source: null,
+      });
+    });
+
+    test('max-failures with several failures opens the failures of the run', () => {
+      const s = run({ didNotRunReason: 'max-failures' });
+      expect(s.title).toBe("Open the run's failures");
+      expect(s.primary).toEqual({
+        label: 'Open the failures',
+        action: 'open-run',
+        payload: { runId: 66, tab: 'failure-groups' },
+      });
+    });
+
+    test('an earlier failure in its group with no blocker found opens the failures of the run', () => {
+      const s = run({ didNotRunReason: 'previous-failure' });
+      expect(s.kind).toBe('open-run');
+      expect(s.primary.payload).toEqual({ runId: 66, tab: 'failure-groups' });
+    });
+
+    test('a global timeout opens the timeline of the run', () => {
+      const s = run({ didNotRunReason: 'global-timeout' });
+      expect(s.title).toBe('See what made the run slow');
+      expect(s.primary).toEqual({
+        label: "Open the run's timeline",
+        action: 'open-run',
+        payload: { runId: 66, tab: 'workers' },
+      });
+    });
+
+    test('an interruption or no reason opens the run', () => {
+      for (const didNotRunReason of ['interrupted', null]) {
+        const s = run({ didNotRunReason });
+        expect(s.title).toBe('Open the run');
+        expect(s.primary).toEqual({ label: 'Open run #66', action: 'open-run', payload: { runId: 66 } });
+      }
+    });
+
+    test('never reproduces or diagnoses, and never restates the reason', () => {
+      for (const didNotRunReason of ['max-failures', 'global-timeout', 'interrupted', 'previous-failure', null]) {
+        const s = run({ didNotRunReason, aiConfigured: true, why: null });
+        expect(['reproduce', 'diagnose']).not.toContain(s.kind);
+        expect(s.why.startsWith('Nothing to fix in this test: ')).toBe(true);
+        expect(s.why).not.toMatch(/maximum number|global timeout|interrupted|did not run/);
+      }
+    });
+
+    test('the blocker row wins when the blocking failure is known', () => {
+      expect(run({ didNotRunReason: 'previous-failure', blockedByCase: { id: 7 } }).kind).toBe('open-blocker');
+    });
+  });
+
   test('2: a verified fix that held, still open → mark resolved', () => {
     const s = step({ fixVerification: 'diagnosis-verified', clusterStatus: 'open', fixLandedRunId: 62 });
     expect(s.kind).toBe('mark-resolved');
@@ -240,6 +308,10 @@ describe('computeNextStep — precedence between rows', () => {
   test('every row returns exactly one primary action', () => {
     for (const input of [
       { status: 'didnotrun', blockedByCase: { id: 1 } },
+      { status: 'didnotrun', didNotRunReason: 'max-failures', runId: 1, runFailedExecutionId: 2 },
+      { status: 'didnotrun', didNotRunReason: 'max-failures', runId: 1 },
+      { status: 'didnotrun', didNotRunReason: 'global-timeout', runId: 1 },
+      { status: 'didnotrun', runId: 1 },
       { fixVerification: 'diagnosis-verified', clusterStatus: 'open' },
       { hasHealingRecommendation: true },
       { hasHealingRecommendation: true, healingEditAvailable: true },
@@ -266,6 +338,7 @@ describe('computeNextStep — where the change a step copies comes from', () => 
     ['apply-patch', { diagnosisCompleted: true, patchAppliesCleanly: true }, 'diagnosis'],
     ['follow-diagnosis', { diagnosisCompleted: true }, 'diagnosis'],
     ['open-blocker', { status: 'didnotrun', blockedByCase: { id: 1 } }, null],
+    ['open-run', { status: 'didnotrun', didNotRunReason: 'interrupted', runId: 1 }, null],
     ['mark-resolved', { fixVerification: 'stopped-failing', clusterStatus: 'open' }, null],
     ['see-what-changed', { fixVerification: 'regressed' }, null],
     ['compare-attempts', { why: 'passed-on-retry' as const }, null],

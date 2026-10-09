@@ -4004,6 +4004,13 @@ const SCENES = [
     route: '/test-run-cases/748',
     viewport: { width: 390, height: 800 },
   },
+  {
+    name: 'execution-did-not-run-blocked',
+    description: 'Execution page first screen for a test an earlier failure of its serial group blocked (1280×800)',
+    // Execution 7 did not run: Most likely links the test that blocked it, and Next opens that failure.
+    route: '/test-run-cases/7',
+    viewport: { width: 1280, height: 800 },
+  },
 
   // ── Desktop shell (report artifacts) ──────────────────────────────────────
   {

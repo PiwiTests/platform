@@ -50,8 +50,9 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
 of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error, opens on
-**Attempts** and keeps its next step; any other passing execution shows identity and facts only. Network, console,
-Web Vitals, ARIA and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
+**Attempts** and keeps its next step; any other passing execution shows identity and facts only. A test that **did
+not run** gives its reason as Most likely, with no evidence card. Network, console, Web Vitals, ARIA and
+alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 
 ### Clues
 
@@ -63,7 +64,7 @@ the strongest one, and the AI diagnosis receives them as evidence. Every rule, a
 
 ### Attempts
 
-When a test failed and then passed on retry, the **Attempts** tab lists every attempt (status and duration, the one you
+When a test passed on retry, the **Attempts** tab lists every attempt (status and duration, the one you
 opened marked), then **what differed** between the failing attempt and the passing one, most diagnostic first:
 
 - the **error** present on the failing attempt and gone on the pass;

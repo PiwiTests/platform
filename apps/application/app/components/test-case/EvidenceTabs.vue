@@ -241,7 +241,7 @@ const tabs = computed<TabDef[]>(() =>
 const primaryTrace = computed(() => props.traces[0] ?? null);
 const { viewUrl: traceViewUrl, onView: onViewTrace } = useTraceLinks(primaryTrace);
 
-// Nothing was captured for a test that never started — the did-not-run card above
+// Nothing was captured for a test that never started — the Most likely line above
 // says why, so the evidence card stays away rather than showing empty tabs.
 const hasNoEvidence = computed(
   () => status.value === 'didnotrun' && !primaryTrace.value && tabs.value.every((tab) => !tab.hasData),

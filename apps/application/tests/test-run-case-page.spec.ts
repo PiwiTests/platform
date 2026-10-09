@@ -436,7 +436,7 @@ async function nextChangeRows(page: import('@playwright/test').Page): Promise<st
  * The story line, the line under the headline and the next step read from the
  * deterministic demo seed: #37 chains the blocked-by-pending-request story and
  * proposes the diagnosed patch, #587 replaces a locator, #682 reproduces, #768
- * and #21 passed on retry and lead with their failed attempt. These
+ * and #21 passed on retry and lead with their failed attempt, #748 never ran. These
  * run only when the seeded cases are present (a demo-seeded server); a bare test
  * DB has no such ids, so the block skips rather than fails.
  */
@@ -750,6 +750,17 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.locator('[data-shot="next-step"]')).toContainText(
       'Compare the failing attempt with the passing one',
     );
+  });
+
+  test('#748 states its reason in Most likely and shows no evidence card', async ({ page }) => {
+    test.skip(!(await (await page.request.get('/api/test-run-cases/748')).ok()), 'no #748');
+    await page.goto('/test-run-cases/748');
+    await waitForHydration(page);
+    await expect(page.locator('[data-shot="most-likely"]')).toContainText('maximum number of failures');
+    await expect(page.locator('[data-shot="evidence-card"]')).toHaveCount(0);
+    const next = page.locator('[data-shot="next-step"]');
+    await expect(next).toHaveAttribute('data-next-kind', 'open-run');
+    await expect(next).not.toContainText('Reproduce locally');
   });
 
   test('#21 proposes the Flake Lab verify step', async ({ page }) => {
