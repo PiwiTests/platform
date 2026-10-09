@@ -72,7 +72,7 @@ node to recenter on it. Agents walk the same graph with the
 [`get_feature_graph`](/reference/mcp-tools#get_feature_graph) MCP tool.
 
 <figure>
-  <img src="/screenshots/scenario-gaps-graph.png" alt="Feature graph centered on the page /settings/api-tokens and its neighbors">
+  <img src="/screenshots/scenario-gaps-graph.png" alt="Feature graph centered on the page /settings/api and its neighbors">
   <figcaption>A page one test reaches: what leads to it on the left, what it contains, links to and loads on the right.</figcaption>
 </figure>
 
@@ -105,7 +105,8 @@ The map is recomputed after every run and nightly.
 
 Every verdict is also a labeled example: accepted and covered-by count *for* a detector, dismissed as *wrong* counts
 *against* it. A detector below 60% precision on a project with twenty or more verdicts **mutes itself** there: its
-rows leave the pull-request comment, and the Gaps tab and **Settings → About** say so.
+rows leave the pull-request comment and the Gaps digest, its gaps sort last in the Gaps tab, and the Gaps tab and
+**Settings → About** say so.
 
 The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)

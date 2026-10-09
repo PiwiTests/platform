@@ -21,7 +21,7 @@ without it.
 | **Success only** | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | nothing more | `Observed 412 times over the last 30 runs, always 200` |
 | **Declared, never hit** | blind-spot | a route or page the application declares that no test reaches | a [declared surface](/features/scenario-gaps#declared-surface) | `Declared in OpenAPI · 0 tests in 30 runs · documents 200, 404` |
 | **Surface drift** | blind-spot | a route, page, control, link, handler or dependency first seen in the latest run that no test reaches; never a feature, and nothing in the run that built the graph first | nothing more | `Appeared in run #830; no test reaches it yet` |
-| **Control nobody exercises** | blind-spot | a control on a page that no test reaches | the page inventory | `On 12 page(s) · no locator targets it` |
+| **Control nobody exercises** | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited** | blind-spot | a page other pages link to that no test navigates to | the page inventory | `Linked from 7 page(s) · never navigated to` |
 | **Escaped defect** | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Changed, unreached** | blind-spot | a changed file no test reaches, at pull-request time | an SCM token | `+41 −3 · no test in run #812 · 0 in 30 runs` |
@@ -36,9 +36,11 @@ A trusted test is one that is not flaky, not quarantined, and not skipped in its
 covered on [Uncovered changes in pull requests](/features/uncovered-changes). A finding never closes itself; triage it.
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
-call on, and the page it ended on. A test reaches a control only through triage (*covered by* or *covered
-elsewhere*), so *Control nobody exercises* reports a control only once some control on the project has a covering
-test.
+call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
+[locator index](/features/locator-usage): a test reaches a control when one of its locators names it by role and
+name, when an alternative captured for that locator does, or when a label, placeholder or title names exactly one
+control. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control nobody exercises* stays silent
+until a locator reaches some control on the project.
 
 ## Exposure
 
@@ -53,8 +55,11 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 | **Priority** | the highest [`piwi:priority`](/reference/test-metadata#ownership-metadata-piwi-annotations) of the tests reaching the node: critical 1, high 0.7, medium 0.4, low 0.2 | critical |
 
 Churn, age and escape history come from the [source control](/guide/source-control) connection and apply to the
-files a pull request changed; the other detectors rank by priority and confidence. A finding ranks by its severity
-(1 for unhandled, 0.5 for degraded) times the route's reach.
+files a pull request changed. A gap on a route, a handler or a dependency draws churn and escape history from the
+handler files behind it: the commits whose diffs the default-branch runs recorded on them over the last 90 days, and
+whether one of those is a fixing commit. Age needs each file's history, so it stays at 0.1 there. The other detectors
+rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
+route's reach.
 
 ## What the graph includes
 

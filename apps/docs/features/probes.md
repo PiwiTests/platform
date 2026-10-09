@@ -79,9 +79,10 @@ fault onto one request (`X-Piwi-Probe`, an HMAC signature made with `PIWI_PROBE_
 a delay, a mutated response or a failed dependency call. The instrumentation reports the fault it applied, so a probe
 it did not honor records as *inconclusive*, never as a pass.
 
-Two signals come back: whether the test noticed, as with a client probe, and whether the application coped. A
-console error, a dialog or a backend error while the fault is applied makes a **degraded** finding. Findings rank by
-severity and reach, and the *unprobed dependency* detector names the dependencies no probe has failed yet.
+Two signals come back: whether the test noticed, as with a client probe, and whether the application coped. An
+uncaught page error, or a blank page after a backend error, makes an **unhandled** finding; a console error, a dialog,
+a backend error or a blank page alone makes a **degraded** one. Findings rank by severity and reach, and the
+*unprobed dependency* detector names the dependencies no probe has failed yet.
 
 It needs:
 

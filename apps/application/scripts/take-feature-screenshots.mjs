@@ -2046,7 +2046,7 @@ const SCENES = [
         .catch(() => {});
       await page
         .locator('[data-shot^="gap-"]')
-        .filter({ hasText: 'Only one test reaches page /settings/api-tokens' })
+        .filter({ hasText: 'Only one test reaches page /settings/api' })
         .getByRole('button', { name: 'View', exact: false })
         .click();
       await page

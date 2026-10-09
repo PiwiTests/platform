@@ -70,7 +70,7 @@
   <rect class="box chip" x="24" y="262" width="160" height="30" rx="7"/>
   <text class="l" x="34" y="281">rotates the API token</text>
   <rect class="fr chip" x="204" y="262" width="176" height="30" rx="7"/>
-  <text class="l mono" x="214" y="281">/settings/api-tokens</text>
+  <text class="l mono" x="214" y="281">/settings/api</text>
   <text class="frt" x="204" y="308">one test reaches it</text>
   <rect class="fr chip" x="400" y="262" width="190" height="30" rx="7"/>
   <text class="l mono" x="410" y="281">POST /api/tokens/:id/rotate</text>
