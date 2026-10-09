@@ -1,5 +1,14 @@
 import { describe, test, expect } from 'vitest';
-import { parseUnifiedDiff, storedPatchValidation, stripAbPrefix, validatePatch } from '#shared/patch';
+import {
+  parseUnifiedDiff,
+  patchInCode,
+  patchStillAppliesAtFix,
+  storedPatchValidation,
+  storedPatchValidationAtFix,
+  stripAbPrefix,
+  validatePatch,
+  type PatchValidationAtFix,
+} from '#shared/patch';
 
 const SAMPLE = `--- a/src/foo.ts
 +++ b/src/foo.ts
@@ -142,5 +151,59 @@ describe('storedPatchValidation', () => {
     expect(storedPatchValidation({ suggestedFix: { patch: SAMPLE } })).toBeNull();
     expect(storedPatchValidation({ patchValidation: { status: 3 } })).toBeNull();
     expect(storedPatchValidation({ suggestedFix: null, patchValidation: null })).toBeNull();
+  });
+});
+
+describe('patchInCode', () => {
+  test("is true once every hunk's post-image is in its file", () => {
+    expect(patchInCode(SAMPLE, { 'src/foo.ts': 'const a = 1;\nconst b = 3;\nconst c = 4;\n' })).toBe(true);
+    expect(patchInCode(SAMPLE, { 'src/foo.ts': 'const a = 1;\nconst b = 2;\nconst c = 4;\n' })).toBe(false);
+  });
+
+  test('tells an applied addition from one that still dry-runs as applying', () => {
+    // Context on one side only: the pre-image is still in the file once applied.
+    const addImport = `--- a/src/foo.ts\n+++ b/src/foo.ts\n@@ -1,2 +1,3 @@\n+import x from 'x';\n const a = 1;\n const b = 2;\n`;
+    const applied = "import x from 'x';\nconst a = 1;\nconst b = 2;\n";
+    expect(validatePatch(addImport, { 'src/foo.ts': applied }).status).toBe('applies-with-offset');
+    expect(patchInCode(addImport, { 'src/foo.ts': applied })).toBe(true);
+    expect(patchInCode(addImport, { 'src/foo.ts': 'const a = 1;\nconst b = 2;\n' })).toBe(false);
+  });
+
+  test('is false when a file is missing or the patch does not parse', () => {
+    expect(patchInCode(SAMPLE, {})).toBe(false);
+    expect(patchInCode('not a diff', { 'src/foo.ts': 'x' })).toBe(false);
+    expect(patchInCode(null, {})).toBe(false);
+  });
+});
+
+describe('the patch checked at a verified fix', () => {
+  const check = (over: Partial<PatchValidationAtFix> = {}): PatchValidationAtFix => ({
+    status: 'applies',
+    filesChecked: 1,
+    filesInPatch: 1,
+    errors: [],
+    inCode: false,
+    runId: 62,
+    commit: 'abc1234',
+    ...over,
+  });
+
+  test('reads the check stored on the details', () => {
+    expect(storedPatchValidationAtFix({ patchValidationAtFix: check() })).toEqual(check());
+    expect(storedPatchValidationAtFix({ patchValidation: check() })).toBeNull();
+    expect(storedPatchValidationAtFix({ patchValidationAtFix: { status: 'applies' } })).toBeNull();
+    expect(storedPatchValidationAtFix(null)).toBeNull();
+  });
+
+  test('still applies only for the fix it was made for, its change not in the code', () => {
+    expect(patchStillAppliesAtFix(check(), 62)).toBe(true);
+    expect(patchStillAppliesAtFix(check({ status: 'applies-with-offset' }), 62)).toBe(true);
+    expect(patchStillAppliesAtFix(check(), 70)).toBe(false);
+    expect(patchStillAppliesAtFix(check(), null)).toBe(false);
+    expect(patchStillAppliesAtFix(check({ inCode: true }), 62)).toBe(false);
+    for (const status of ['stale-file', 'invalid', 'unchecked'] as const) {
+      expect(patchStillAppliesAtFix(check({ status }), 62)).toBe(false);
+    }
+    expect(patchStillAppliesAtFix(null, 62)).toBe(false);
   });
 });

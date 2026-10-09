@@ -34,6 +34,12 @@
  * `healPr`, whatever its verdict, when one of that PR's edits belongs to the
  * cluster.
  *
+ * A `diagnosis-verified` fix also checks the diagnosed patch against the code
+ * at the fix's commit and stores the result on the diagnosis
+ * (`patchValidationAtFix`): a patch that still applies there, its change not
+ * being in that code, means another change fixed the failure, and the cluster
+ * state says the diagnosed change may not be in the code yet.
+ *
  * Both verdicts are also the cluster diagnosis's hand-back outcome: a
  * `diagnosis-verified` fix records `verified` on the diagnosis version that was
  * current when the fix landed, and a regression of a cluster whose diagnosis was
@@ -56,7 +62,7 @@ import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import { normalizeGitUrl } from './scm/git-url';
 import { emitNotification } from './notifications/emit';
 import { notifyFixAuthor } from './notifications/fix-author';
-import { parseUnifiedDiff, stripAbPrefix } from '#shared/patch';
+import { parseUnifiedDiff, patchInCode, stripAbPrefix, validatePatch } from '#shared/patch';
 import type { FixAuthor, HealPrRef, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
 import { isEligibleRun } from '#shared/run-eligibility';
@@ -185,6 +191,62 @@ async function recordDiagnosisVerified(
   });
 }
 
+/**
+ * Check the cluster diagnosis's patch against the code at the commit a
+ * diagnosis-verified fix landed in, and store the result on the diagnosis as
+ * `patchValidationAtFix`. The range's changed files give the repository path of
+ * a patch path written relative to a package root. A file that cannot be read
+ * leaves the check `unchecked`, which claims nothing.
+ */
+async function checkPatchAtFix(
+  db: DbClient,
+  input: {
+    projectId: number;
+    clusterId: number;
+    runId: number;
+    commit: string;
+    repositoryUrl: string;
+    changedFiles: string[];
+  },
+): Promise<void> {
+  const [diagnosis] = await db
+    .select({ id: failureDiagnoses.id, details: failureDiagnoses.details })
+    .from(failureDiagnoses)
+    .where(
+      and(
+        eq(failureDiagnoses.clusterId, input.clusterId),
+        eq(failureDiagnoses.scope, 'cluster'),
+        eq(failureDiagnoses.status, 'completed'),
+      ),
+    )
+    .limit(1);
+  const details = (diagnosis?.details ?? null) as { suggestedFix?: { patch?: unknown } | null } | null;
+  const patch = details?.suggestedFix?.patch;
+  if (!diagnosis || typeof patch !== 'string' || !patch.trim()) return;
+
+  const provider = await createScmProvider(input.repositoryUrl, db, input.projectId);
+  if (!provider) return;
+  const sources = new Map<string, string>();
+  for (const file of parseUnifiedDiff(patch).files) {
+    const path = stripAbPrefix(file.newPath) ?? stripAbPrefix(file.oldPath);
+    if (!path) continue;
+    const repoPath = input.changedFiles.find((changed) => samePath(changed, path)) ?? path;
+    const fetched = await provider.fetchFileAtRef(repoPath, input.commit).catch(() => null);
+    if (fetched && !fetched.truncated) sources.set(repoPath, fetched.content);
+  }
+
+  const patchValidationAtFix = {
+    ...validatePatch(patch, sources),
+    inCode: patchInCode(patch, sources),
+    runId: input.runId,
+    commit: input.commit,
+  };
+  await db
+    .update(failureDiagnoses)
+    .set({ details: { ...details, patchValidationAtFix } })
+    .where(eq(failureDiagnoses.id, diagnosis.id));
+}
+
 /** Record a regression against the diagnosis version the cluster's last fix verified, if one did. */
 async function recordDiagnosisRegressed(
   db: DbClient,
@@ -223,14 +285,21 @@ async function recordDiagnosisRegressed(
 export function changesTouchFiles(changes: ScmChanges | null, paths: string[]): boolean {
   if (paths.length === 0 || !changes?.files?.length) return false;
   const changed = new Set(changes.files.map((file) => file.filename));
-  // Compare on suffixes too: the reporter records repo-relative paths, but a
-  // monorepo diagnosis may name a path relative to a package root.
   return paths.some((path) => {
     for (const candidate of changed) {
-      if (candidate === path || candidate.endsWith(`/${path}`) || path.endsWith(`/${candidate}`)) return true;
+      if (samePath(candidate, path)) return true;
     }
     return false;
   });
+}
+
+/**
+ * Whether two paths name the same file. Compared on suffixes too: the reporter
+ * records repo-relative paths, but a monorepo diagnosis may name a path relative
+ * to a package root.
+ */
+function samePath(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
 /** The commits and files between two commits, or null on any failure. */
@@ -572,10 +641,11 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
     let verification: VerifiedFix['verification'] = 'stopped-failing';
     let healPr: HealPrRef | undefined;
+    let changes: ScmChanges | null | undefined;
     if (repositoryUrl && fromCommit && currentCommit) {
       const files = await diagnosedFiles(db, cluster.id);
       if (files.length > 0 || (await projectHasHealPrs())) {
-        let changes = changesByFromCommit.get(fromCommit);
+        changes = changesByFromCommit.get(fromCommit);
         if (changes === undefined) {
           changes = await fetchRangeChanges(db, run.projectId, repositoryUrl, fromCommit, currentCommit);
           changesByFromCommit.set(fromCommit, changes);
@@ -625,6 +695,17 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       await recordDiagnosisVerified(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>
         console.error('[outcomes] diagnosis verification failed', e),
       );
+    }
+    // The verdict read the range's changes, so the repository and commit are known.
+    if (verification === 'diagnosis-verified' && repositoryUrl && currentCommit) {
+      await checkPatchAtFix(db, {
+        projectId: run.projectId,
+        clusterId: cluster.id,
+        runId,
+        commit: currentCommit,
+        repositoryUrl,
+        changedFiles: (changes?.files ?? []).map((file) => file.filename),
+      }).catch((e) => console.error('[fix-verification] patch check at the fix failed', e));
     }
     await verifyFixAttempts(db, {
       projectId: run.projectId,

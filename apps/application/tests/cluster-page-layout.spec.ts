@@ -274,8 +274,10 @@ test.describe('Cluster situation block on seeded clusters', () => {
     });
   }
 
-  // A verified fix whose diagnosed patch still applies is not confirmed: the state
-  // line offers no reconcile, and Mark resolved waits in the Next line's menu.
+  // A verified fix at whose commit the diagnosed patch still applied is not
+  // confirmed: the state line offers no reconcile, and Mark resolved waits in the
+  // Next line's menu. The seed's verified fix (#10) landed the diagnosed change,
+  // so this runs on a database where another change fixed a diagnosed cluster.
   test('a verified fix whose patch still applies leaves Mark resolved to the Next menu', async ({ page, request }) => {
     let target: number | null = null;
     for (const id of [10, 1, 3, 6, 7]) {
@@ -425,16 +427,21 @@ test.describe('Cluster situation block on seeded clusters', () => {
   }
 
   // Phase 4: the evidence opens on the story and the toolbox on the next step,
-  // independent of which mutable state the seed is in — #10 ships a stored
-  // diagnosis whose next step applies the patch, so its toolbox opens Diagnosis.
-  test('#10 opens the evidence on Timeline, the toolbox on Diagnosis, and never says "AI is not configured"', async ({
+  // independent of which mutable state the seed is in. #10 ships a stored
+  // diagnosis: a step from it opens Diagnosis, and marking the cluster resolved
+  // (its verified fix, while it is open) opens no section.
+  test('#10 opens the evidence on Timeline, the toolbox on its next step, and never says "AI is not configured"', async ({
     page,
     request,
   }) => {
     const res = await request.get('/api/failure-clusters/10');
     test.skip(!res.ok(), 'no cluster #10 on this database');
     const detail = (await res.json()) as { nextStep: { kind: string } };
-    test.skip(detail.nextStep.kind !== 'apply-patch', '#10 is not on the apply-patch step on this database');
+    const fromDiagnosis = ['apply-patch', 'follow-diagnosis'].includes(detail.nextStep.kind);
+    test.skip(
+      !fromDiagnosis && detail.nextStep.kind !== 'mark-resolved',
+      `#10 is on the ${detail.nextStep.kind} step on this database`,
+    );
 
     await page.goto('/failure-clusters/10');
     await waitForHydration(page);
@@ -443,10 +450,12 @@ test.describe('Cluster situation block on seeded clusters', () => {
     // places two or more items — is the default tab, not State.
     await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
 
-    // The toolbox is "More ways to fix" and opens on Diagnosis (the apply-patch
-    // step) with the patch; the reproduce section stays folded.
+    // The toolbox is "More ways to fix" and opens on Diagnosis for a step from
+    // the diagnosis; the reproduce section stays folded.
     await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
-    await expect(page.locator('[data-shot="fix-diagnosis"] [aria-expanded="true"]')).toBeVisible();
+    await expect(
+      page.locator(`[data-shot="fix-diagnosis"] [aria-expanded="${fromDiagnosis ? 'true' : 'false'}"]`),
+    ).toBeVisible();
     await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
 
     // A stored result renders under no provider, so the "AI is not configured"

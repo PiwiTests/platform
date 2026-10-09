@@ -59,8 +59,9 @@ export interface ClusterStateCluster {
   /** The cluster's known tracker issue, when one is pinned (its status drives the reconcile). */
   knownIssue?: { key: string; statusCategory?: string | null } | null;
   /**
-   * The cluster's completed diagnosis has a patch that still applies cleanly to
-   * the current code: a verified fix may then not be in the code yet.
+   * The diagnosed patch still applied to the code at the verified fix's commit,
+   * checked when the fix was verified: the change that fixed the failure was
+   * another one, and the diagnosed change may not be in the code yet.
    */
   diagnosedPatchApplies?: boolean;
 }
@@ -201,8 +202,8 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('ticket-done', 'mark-resolved');
   }
 
-  // A verified fix whose diagnosed patch still applies may not be in the code:
-  // no reconcile here, the Next line leads with the patch.
+  // A verified fix at whose commit the diagnosed patch still applies may not be
+  // the diagnosed change: no reconcile here, the Next line leads with the patch.
   if (cluster.fixVerification === 'diagnosis-verified') {
     t('Fixed in ');
     run(cluster.fixLandedRunId);

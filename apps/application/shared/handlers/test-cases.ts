@@ -530,7 +530,9 @@ export async function getTestRunCase(
   // the same healing / diagnosis facts the toolbox reads, so the top of the page
   // says what to do without re-deriving it in the UI.
   const healing = await getLocatorHealing(db, id).catch(() => null);
-  const patchFacts = failureCluster ? await getClusterPatchFacts(db, failureCluster.id) : null;
+  const patchFacts = failureCluster
+    ? await getClusterPatchFacts(db, failureCluster.id, { fixLandedRunId: failureCluster.fixLandedRunId })
+    : null;
   const situation = verdict
     ? buildSituation({
         why: verdict.why,
@@ -576,6 +578,7 @@ export async function getTestRunCase(
     hasPatch: patchFacts?.hasPatch ?? false,
     patchValidationStatus: patchFacts?.patchValidationStatus ?? null,
     patchAppliesCleanly: patchFacts?.patchAppliesCleanly ?? false,
+    patchAppliesAtFix: patchFacts?.patchAppliesAtFix ?? false,
     why: verdict?.why ?? null,
     errorKind: verdict?.kind ?? null,
     aiConfigured: opts.aiConfigured ?? false,

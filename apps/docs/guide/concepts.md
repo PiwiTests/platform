@@ -190,16 +190,17 @@ blip — leads it as a badge. It reads on the execution page and, condensed, in 
 
 The **one recommended action** a failure page leads with, chosen by a policy rather than offered as a menu —
 apply a diagnosed patch, replace a broken locator, reproduce locally, re-run in CI, mark a cluster resolved.
-The page shows the step, one line on why, and the button to do it; every other action lives in the toolbox.
+The page shows the step, one line on why or on where its change comes from, and the button to do it; every other
+action lives in the toolbox.
 The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step).
 
 ### Cluster state
 
 Where a **failure cluster** stands, said in one sentence with one verb next to a colored dot: *still
-failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *stopped failing*,
-*regressed — the fix did not hold*, *its tracker issue is done*, *resolved*, *ignored*, *snoozed* or *all
-tests quarantined*. It reconciles the human triage status with the
-machine-observed verdict; when they disagree the state line offers the one action that closes the gap. See
+failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *fixed, but the diagnosed patch
+still applies at the fix's commit*, *stopped failing*, *regressed — the fix did not hold*, *resolved*, *ignored*,
+*snoozed* or *all tests quarantined*. It reconciles the human triage status with the machine-observed verdict; when
+they disagree the state line offers the one action that closes the gap, unless the Next line already offers it. See
 [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score

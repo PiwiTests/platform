@@ -108,16 +108,60 @@ describe('computeNextStep — one row per rule', () => {
 });
 
 describe('computeNextStep — precedence between rows', () => {
-  test('a verified fix whose patch still applies goes to the patch, with Mark resolved last in its menu', () => {
-    // The #10 case: verified + open, yet the diagnosis patch still applies cleanly.
+  test('a verified fix whose patch still applied at its commit goes to the patch, with Mark resolved last in its menu', () => {
     const s = step({
       fixVerification: 'diagnosis-verified',
       clusterStatus: 'open',
       diagnosisCompleted: true,
       patchAppliesCleanly: true,
+      patchAppliesAtFix: true,
     });
     expect(s.kind).toBe('apply-patch');
+    expect(s.why).toBe('A fix was verified, but the diagnosed patch still applied to the code at its commit.');
     expect(s.secondary.at(-1)).toEqual({ label: 'Mark resolved', action: 'mark-resolved', payload: { clusterId: 10 } });
+  });
+
+  test('a verified fix whose patch applied only when it was diagnosed is marked resolved', () => {
+    // The #10 case: the patch validated against the code the model was shown,
+    // before the fix; nothing says it still applies at the fix's commit.
+    for (const patchAppliesAtFix of [false, undefined]) {
+      const s = step({
+        fixVerification: 'diagnosis-verified',
+        clusterStatus: 'open',
+        fixLandedRunId: 62,
+        diagnosisCompleted: true,
+        patchAppliesCleanly: true,
+        patchAppliesAtFix,
+      });
+      expect(s.kind).toBe('mark-resolved');
+      expect(s.title).toBe('Mark the cluster resolved — the fix held in run #62');
+    }
+  });
+
+  test('the patch outranks a locator replacement while a verified fix is unconfirmed on an open cluster', () => {
+    const unconfirmed = {
+      fixVerification: 'diagnosis-verified',
+      diagnosisCompleted: true,
+      patchAppliesCleanly: true,
+      patchAppliesAtFix: true,
+      hasHealingRecommendation: true,
+    };
+    const open = step({ ...unconfirmed, clusterStatus: 'open' });
+    expect(open.kind).toBe('apply-patch');
+    expect(open.secondary.map((a) => a.action)).toContain('mark-resolved');
+    // Resolved, the state claims nothing about the fix: healing leads as usual.
+    expect(step({ ...unconfirmed, clusterStatus: 'resolved' }).kind).toBe('replace-locator');
+  });
+
+  test('a patch that still applied at the fix is the step even when its diagnosis-time check was unchecked', () => {
+    const s = step({
+      fixVerification: 'diagnosis-verified',
+      clusterStatus: 'open',
+      diagnosisCompleted: true,
+      patchAppliesCleanly: false,
+      patchAppliesAtFix: true,
+    });
+    expect(s.kind).toBe('apply-patch');
   });
 
   test('a cluster that stopped failing with no fix identified is marked resolved, whatever its patch says', () => {
@@ -135,7 +179,7 @@ describe('computeNextStep — precedence between rows', () => {
   });
 
   test('the patch offers no Mark resolved without a verified fix on an open cluster', () => {
-    const patch = { diagnosisCompleted: true, patchAppliesCleanly: true };
+    const patch = { diagnosisCompleted: true, patchAppliesCleanly: true, patchAppliesAtFix: true };
     for (const s of [
       step(patch),
       step({ ...patch, fixVerification: 'regressed', clusterStatus: 'open' }),

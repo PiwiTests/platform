@@ -37,20 +37,22 @@ import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
-import { storedPatchValidation, type PatchValidationStatus } from '#shared/patch';
+import {
+  patchApplies,
+  patchStillAppliesAtFix,
+  storedPatchValidation,
+  storedPatchValidationAtFix,
+  type PatchValidationStatus,
+} from '#shared/patch';
 import type { BisectResult } from '@piwitests/core/bisect';
 import type { BisectedCommit } from '#shared/reproduce';
 
-/** Whether a stored patch validation reports the patch applying to the current tree. */
-function patchApplies(status: unknown): boolean {
-  return status === 'applies' || status === 'applies-with-offset';
-}
-
 /**
- * The cluster's completed diagnosis reduced to the facts the next-step policy
- * reads: whether a completed diagnosis exists, its one-line summary, the file
- * its patch touches, whether it has a patch and how that patch validated
- * against the code the model was shown.
+ * The cluster's completed diagnosis reduced to the facts the cluster state and
+ * the next-step policy read: whether a completed diagnosis exists, its one-line
+ * summary, the file its patch touches, whether it has a patch and how that
+ * patch validated against the code the model was shown, and whether it still
+ * applied at the commit of the cluster's verified fix.
  */
 export interface ClusterPatchFacts {
   diagnosisCompleted: boolean;
@@ -59,9 +61,15 @@ export interface ClusterPatchFacts {
   hasPatch: boolean;
   patchValidationStatus: PatchValidationStatus | null;
   patchAppliesCleanly: boolean;
+  /** The patch still applied at the commit of the fix that landed in `fixLandedRunId`, its change not there. */
+  patchAppliesAtFix: boolean;
 }
 
-export async function getClusterPatchFacts(db: DrizzleDB, clusterId: number): Promise<ClusterPatchFacts> {
+export async function getClusterPatchFacts(
+  db: DrizzleDB,
+  clusterId: number,
+  cluster: { fixLandedRunId?: number | null } = {},
+): Promise<ClusterPatchFacts> {
   const [diag] = await db
     .select({ status: failureDiagnoses.status, summary: failureDiagnoses.summary, details: failureDiagnoses.details })
     .from(failureDiagnoses)
@@ -74,6 +82,7 @@ export async function getClusterPatchFacts(db: DrizzleDB, clusterId: number): Pr
       hasPatch: false,
       patchValidationStatus: null,
       patchAppliesCleanly: false,
+      patchAppliesAtFix: false,
     };
   }
   const details = (diag.details ?? null) as {
@@ -89,6 +98,7 @@ export async function getClusterPatchFacts(db: DrizzleDB, clusterId: number): Pr
     hasPatch,
     patchValidationStatus: hasPatch ? validationStatus : null,
     patchAppliesCleanly: hasPatch && patchApplies(validationStatus),
+    patchAppliesAtFix: hasPatch && patchStillAppliesAtFix(storedPatchValidationAtFix(details), cluster.fixLandedRunId),
   };
 }
 
@@ -186,7 +196,8 @@ export async function getFailureCluster(
   ]);
 
   // The cluster's known issue — the newest tracker link, one rule for every
-  // surface — and its status, which drives the "ticket is Done — reconcile?" state.
+  // surface — and its status, which drives the ticket-done state (the reconcile
+  // once the failure stopped).
   const knownIssue = knownIssues.get(clusterId) ?? null;
   const reconcileKnownIssue = knownIssue ? { key: knownIssue.key, statusCategory: knownIssue.statusCategory } : null;
 
@@ -244,9 +255,9 @@ export async function getFailureCluster(
     { failureGoesOn: goesOn, now: opts.now },
   );
 
-  // The cluster's diagnosed patch: whether it still applies decides both whether a
-  // verified fix is confirmed and the next step.
-  const patchFacts = await getClusterPatchFacts(db, clusterId);
+  // The cluster's diagnosed patch: whether it still applied at the verified fix's
+  // commit decides both whether that fix is confirmed and the next step.
+  const patchFacts = await getClusterPatchFacts(db, clusterId, { fixLandedRunId: cluster.fixLandedRunId });
 
   const clusterState: ClusterState = computeClusterState(
     {
@@ -265,7 +276,7 @@ export async function getFailureCluster(
       affectedTests: Number(countRow?.affectedTests ?? 0),
       quarantinedTests: quarantinedCount,
       knownIssue: reconcileKnownIssue,
-      diagnosedPatchApplies: patchFacts.diagnosisCompleted && patchFacts.patchAppliesCleanly,
+      diagnosedPatchApplies: patchFacts.patchAppliesAtFix,
     },
     { runIdsNewestFirst: projectRuns.map((r) => r.id), failureGoesOn: goesOn, now: opts.now },
   );
@@ -327,6 +338,7 @@ export async function getFailureCluster(
     hasPatch: patchFacts.hasPatch,
     patchValidationStatus: patchFacts.patchValidationStatus,
     patchAppliesCleanly: patchFacts.patchAppliesCleanly,
+    patchAppliesAtFix: patchFacts.patchAppliesAtFix,
     errorKind: latestErrorKind,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,

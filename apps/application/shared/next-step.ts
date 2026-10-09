@@ -79,6 +79,11 @@ export interface NextStepInput {
   patchValidationStatus?: PatchValidationStatus | null;
   /** The suggested patch is present and validates as applying cleanly to the tree. */
   patchAppliesCleanly?: boolean;
+  /**
+   * The suggested patch still applied at the commit of the verified fix, its
+   * change not there: checked when the fix was verified.
+   */
+  patchAppliesAtFix?: boolean;
 
   /** Verdict facts. */
   why?: FailureWhy | null;
@@ -153,10 +158,15 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   const withExecution = input.executionId != null ? { executionId: input.executionId } : undefined;
 
   const verified = input.fixVerification === 'diagnosis-verified' || input.fixVerification === 'stopped-failing';
-  const hasCleanPatch = input.diagnosisCompleted === true && input.patchAppliesCleanly === true;
-  // A diagnosis-verified fix whose diagnosed patch still applies may not be in the
-  // code: the cluster state says so, and the patch comes before marking resolved.
-  const fixUnconfirmed = input.fixVerification === 'diagnosis-verified' && hasCleanPatch;
+  // A diagnosis-verified fix at whose commit the diagnosed patch still applied may
+  // not be the diagnosed change: the cluster state says so, and on an open
+  // cluster the patch comes first, with Mark resolved in its menu.
+  const fixUnconfirmed =
+    input.fixVerification === 'diagnosis-verified' &&
+    input.diagnosisCompleted === true &&
+    input.patchAppliesAtFix === true;
+  const patchFirst = fixUnconfirmed && input.clusterStatus === 'open';
+  const hasCleanPatch = input.diagnosisCompleted === true && (input.patchAppliesCleanly === true || fixUnconfirmed);
 
   // 1 — a did-not-run cascade: open the failure that blocked this test.
   if (input.status === 'didnotrun' && input.blockedByCase) {
@@ -174,9 +184,9 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   }
 
   // 2 — the failures stopped on an open cluster: mark it resolved. A
-  // diagnosis-verified fix whose patch still applies goes to the patch (row 4),
-  // with Mark resolved in its menu; a cluster that stopped failing with no fix
-  // identified is marked resolved whatever its patch says.
+  // diagnosis-verified fix whose patch still applied at its commit goes to the
+  // patch (row 4); a cluster that stopped failing with no fix identified is
+  // marked resolved whatever its patch says.
   if (verified && input.clusterStatus === 'open' && !fixUnconfirmed) {
     const run = input.fixLandedRunId != null ? ` in run #${input.fixLandedRunId}` : '';
     const fixVerified = input.fixVerification === 'diagnosis-verified';
@@ -205,8 +215,9 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
     };
   }
 
-  // 3 — a locator-resolution failure that healing can repair.
-  if (input.hasHealingRecommendation) {
+  // 3 — a locator-resolution failure that healing can repair, unless the patch
+  // comes first.
+  if (input.hasHealingRecommendation && !patchFirst) {
     return {
       kind: 'replace-locator',
       title: 'Replace the locator',
@@ -226,16 +237,16 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
     return {
       kind: 'apply-patch',
       title: `Apply the diagnosed fix${file ? ` to ${file}` : ''}`,
-      why: 'The diagnosis suggests a patch that applies cleanly to the current code.',
+      why: fixUnconfirmed
+        ? 'A fix was verified, but the diagnosed patch still applied to the code at its commit.'
+        : 'The diagnosis suggests a patch that applies cleanly to the current code.',
       primary: { label: 'Copy git apply', action: 'copy-git-apply', payload: withCluster },
       secondary: [
         { label: 'Download .patch', action: 'download-patch', payload: withCluster },
         { label: 'Open in IDE', action: 'open-in-ide', payload: withCluster },
         { label: 'Read the diagnosis', action: 'read-diagnosis', payload: withCluster },
         // The fix was verified, so whoever knows it is in the code can still close it.
-        ...(fixUnconfirmed && input.clusterStatus === 'open'
-          ? [{ label: 'Mark resolved', action: 'mark-resolved', payload: withCluster }]
-          : []),
+        ...(patchFirst ? [{ label: 'Mark resolved', action: 'mark-resolved', payload: withCluster }] : []),
       ],
     };
   }

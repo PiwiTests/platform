@@ -60,6 +60,50 @@ export function storedPatchValidation(details: unknown): PatchValidation | null 
   return null;
 }
 
+/** Whether a patch validation status says the patch applies (at its stated lines or shifted). */
+export function patchApplies(status: unknown): boolean {
+  return status === 'applies' || status === 'applies-with-offset';
+}
+
+/**
+ * A diagnosis's patch checked again when a fix the diagnosis predicted landed,
+ * against the code at the fix's commit: the validation there, whether the
+ * patch's change is already in that code, and the run and commit of the fix.
+ * Fix verification stores it on the diagnosis details as `patchValidationAtFix`.
+ */
+export interface PatchValidationAtFix extends PatchValidation {
+  /** Every hunk's post-image (context and added lines) is in its file at the fix's commit. */
+  inCode: boolean;
+  runId: number;
+  commit: string;
+}
+
+/** The fix-time check stored on a diagnosis's details, or null when none was stored. */
+export function storedPatchValidationAtFix(details: unknown): PatchValidationAtFix | null {
+  const check = (details as { patchValidationAtFix?: unknown } | null)?.patchValidationAtFix as
+    | Partial<PatchValidationAtFix>
+    | null
+    | undefined;
+  if (!check || typeof check !== 'object' || typeof check.status !== 'string' || typeof check.runId !== 'number') {
+    return null;
+  }
+  return check as PatchValidationAtFix;
+}
+
+/**
+ * Whether the diagnosed patch still applied at the commit of the fix that landed
+ * in `fixLandedRunId`, its change not being there: the fix was another change,
+ * so the diagnosed one may not be in the code yet. False with no check for that
+ * fix.
+ */
+export function patchStillAppliesAtFix(
+  check: PatchValidationAtFix | null | undefined,
+  fixLandedRunId: number | null | undefined,
+): boolean {
+  if (!check || fixLandedRunId == null || check.runId !== fixLandedRunId || check.inCode) return false;
+  return patchApplies(check.status);
+}
+
 /** Strip a leading `a/` or `b/` diff prefix; leave other paths untouched. `/dev/null` → null. */
 export function stripAbPrefix(path: string | null | undefined): string | null {
   if (!path) return null;
@@ -262,4 +306,31 @@ export function validatePatch(
   else status = 'applies';
 
   return { status, filesChecked, filesInPatch: parsed.files.length, errors };
+}
+
+/**
+ * Whether a patch's change is already in the code: every hunk's post-image
+ * (context and added lines) is found in its file. A patch that only adds lines
+ * next to its context still dry-runs as applying once applied, so a fix-time
+ * check reads both. False when the patch does not parse or a file it touches is
+ * not available.
+ */
+export function patchInCode(
+  patch: string | null | undefined,
+  available: Map<string, string> | Record<string, string>,
+): boolean {
+  const parsed = parseUnifiedDiff(patch ?? '');
+  if (parsed.files.length === 0) return false;
+  const files = available instanceof Map ? available : new Map(Object.entries(available));
+  for (const f of parsed.files) {
+    const target = stripAbPrefix(f.newPath) ?? stripAbPrefix(f.oldPath);
+    const content = target ? lookupContent(files, target) : null;
+    if (content == null) return false;
+    const lines = content.split('\n');
+    for (const hunk of f.hunks) {
+      const block = newBlock(hunk);
+      if (block.length === 0 || findBlock(lines, block, Math.max(0, hunk.newStart - 1)) === -1) return false;
+    }
+  }
+  return true;
 }
