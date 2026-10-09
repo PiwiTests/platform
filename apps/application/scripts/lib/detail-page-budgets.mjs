@@ -30,8 +30,12 @@ export const DEFAULT_ROUTES = [
   '/failure-clusters/1',
 ];
 
-/** The port of the server the script boots when it is not given `--url`. */
-export const DEFAULT_MEASURE_PORT = 3050;
+/**
+ * The port of the server the script boots when it is not given `--url`: off
+ * 3000 (the dev server) and off 3050 (the screenshot harness's), so a
+ * measurement and a screenshot run can go side by side.
+ */
+export const DEFAULT_MEASURE_PORT = 3060;
 
 /**
  * The Next actions that copy something, by the id the button carries

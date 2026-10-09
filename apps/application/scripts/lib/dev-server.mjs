@@ -8,6 +8,7 @@
 import { spawn, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { connect } from 'node:net';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,14 +40,40 @@ function demoSeedIsCurrent() {
 }
 
 /**
+ * The machine settings a server on a throwaway database must not pick up from
+ * the shell or from `.env`. `nuxt dev` loads `.env` into the keys that are still
+ * undefined only, so a value set here wins, and the server reads an empty value
+ * as unset. Each one would change what the pages show: a Postgres URL routes the
+ * server away from the seeded SQLite file, S3 storage serves the evidence from
+ * elsewhere, authentication puts a sign-in page in front of every route, an AI
+ * provider turns the Next step of an undiagnosed failure into Diagnose (the
+ * other `PIWI_AI_*` settings are ignored without one), Jira credentials connect
+ * an issue tracker, and a locale or time zone rewrites every date.
+ */
+const THROWAWAY_SERVER_SETTINGS = {
+  PIWI_DATABASE_URL: '',
+  PIWI_STORAGE_TYPE: 'local',
+  PIWI_AUTH_ENABLED: 'false',
+  PIWI_AI_PROVIDER: '',
+  PIWI_AI_API_KEY: '',
+  PIWI_JIRA_BASE_URL: '',
+  PIWI_JIRA_EMAIL: '',
+  PIWI_JIRA_API_TOKEN: '',
+  PIWI_LOCALE: '',
+  PIWI_TIME_ZONE: '',
+};
+
+/**
  * Seed a throwaway database in `dir` from the demo seed, so a measurement reads
  * the same data on every run whatever the local dev database holds. It empties
  * `dir`, regenerates `public/demo/seed.sql` when the seed is missing or no
  * longer hashes to `seed.version.json` (into `dir` first, so the tracked
  * version file stays as it is), and loads it with `app:seed:dev` into
  * `<dir>/piwi.db` with the evidence media under `<dir>/storage`. Returns the
- * environment a server needs to run on that database. Progress goes to stderr,
- * so a script printing JSON on stdout stays parseable.
+ * environment a server needs to run on that database with the default
+ * settings: the database and storage paths, plus `THROWAWAY_SERVER_SETTINGS`
+ * (no AI provider, no issue tracker, no authentication). Progress goes to
+ * stderr, so a script printing JSON on stdout stays parseable.
  */
 export function seedThrowawayDb(dir) {
   rmSync(dir, { recursive: true, force: true });
@@ -62,7 +89,11 @@ export function seedThrowawayDb(dir) {
     });
     copyFileSync(join(output, 'seed.sql'), SEED_SQL);
   }
-  const env = { PIWI_DATABASE_PATH: join(dir, 'piwi.db'), PIWI_STORAGE_PATH: join(dir, 'storage') };
+  const env = {
+    ...THROWAWAY_SERVER_SETTINGS,
+    PIWI_DATABASE_PATH: join(dir, 'piwi.db'),
+    PIWI_STORAGE_PATH: join(dir, 'storage'),
+  };
   console.error(`Seeding a throwaway database in ${dir}…`);
   execSync('npm run app:seed:dev', { cwd: APP_DIR, stdio, env: { ...process.env, ...env } });
   return env;
@@ -94,18 +125,31 @@ export async function waitForHealth(base, timeoutMs = 120_000) {
 }
 
 /**
- * Wait for a stopped server to release the port. Without this a second server
- * fails to bind and the run silently drives the first one, which is still
- * answering.
+ * Whether something already listens on `port` on this machine, HTTP or not:
+ * a TCP connection to `localhost` that opens.
+ */
+export function portInUse(port) {
+  return new Promise((resolve) => {
+    const socket = connect({ port, host: 'localhost' });
+    const done = (inUse) => {
+      socket.destroy();
+      resolve(inUse);
+    };
+    socket.setTimeout(2000, () => done(false));
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
+/**
+ * Wait for a stopped server to release the port, so the next `startServer` on
+ * it does not find the port taken and refuse.
  */
 export async function waitForPortFree(base, timeoutMs = 30_000) {
+  const port = Number(new URL(base).port);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try {
-      await fetch(`${base}/api/health`);
-    } catch {
-      return;
-    }
+    if (!(await portInUse(port))) return;
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error(`server at ${base} did not shut down within ${timeoutMs / 1000}s`);
@@ -118,8 +162,13 @@ export async function waitForPortFree(base, timeoutMs = 30_000) {
  * is added to the server's environment; when it names its own database
  * (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns) the dev database is left
  * alone, otherwise a missing one is created and seeded first.
+ *
+ * It refuses a port something already listens on: `nuxt dev` would quietly bind
+ * another port, and the health check would then pass against the server that
+ * was already there, so the run would drive that server's code and data.
  */
 export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} } = {}) {
+  if (await portInUse(port)) throw new Error(`port ${port} is already in use; stop the server on it first`);
   if (!env.PIWI_DATABASE_PATH) ensureDevDb();
   const desktop = mode === 'desktop';
   const child = spawn('npx', ['nuxt', 'dev', '--port', String(port)], {

@@ -91,13 +91,16 @@ by `data-next-action` and the content by `data-copies`, never by a label. The re
 breach; `--check` exits 1 when there is one, and a route that answers an error fails it too.
 
 Default routes: executions #37, #13, #87, #768, #748 and clusters #10, #2, #5, #1. `--routes`
-overrides them, `--width`/`--height` the viewport, `--port` the port of the server it boots (3050).
+overrides them, `--width`/`--height` the viewport, `--port` the port of the server it boots (3060, off
+the 3050 of `app:screens`, so both can run side by side). It refuses a port something already listens on.
 
 Without `--url` it seeds a throwaway database in `.data/measure/` from the demo seed (regenerating
 `public/demo/seed.sql` first when it no longer matches `seed.version.json`) and boots its own server
-on it, so two runs give the same numbers whatever your dev database holds; this is the run to quote
-in a PR. With `--url` the report says it measured that server's own data: a dev database with a
-connected issue tracker or extra links counts differently, and the budgets do not cover that state.
+on it with no AI provider, no issue tracker, no authentication and the default storage and locale,
+whatever your shell or `.env` sets, so two runs give the same numbers whatever your machine holds;
+this is the run to quote in a PR. With `--url` the report says it measured that server's own data: a
+dev database with a connected issue tracker, an AI provider or extra links counts differently, and
+the budgets do not cover that state.
 
 ## Seeded entry points
 
@@ -130,6 +133,10 @@ clusters without a stored title fall back to the deterministic one.
 - **`fullPage: true` does nothing useful here.** The document does not scroll; the panel does. Use a
   tall viewport or screenshot the panel element.
 - **A route compiles on its first hit** in dev mode — allow a 90 s navigation timeout the first time.
+- **A throwaway server needs its port free.** `app:screens` boots on 3050 and `app:measure` on 3060;
+  both refuse a port something already listens on, since `nuxt dev` would quietly bind another one and
+  the script would then drive the server that was already there. Stop it, or give `app:measure` a
+  `--port`.
 - **Seeding and migrations need the server stopped** (`node scripts/dev-server.mjs --stop` first).
 - **`npm run app:seed:demo` rewrites `public/demo/seed.version.json`.** Revert it (`git checkout --`)
   unless you changed the generator on purpose.
