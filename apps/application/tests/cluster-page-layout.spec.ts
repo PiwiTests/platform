@@ -303,8 +303,8 @@ test.describe('Cluster situation block on seeded clusters', () => {
   });
 
   // The Locator fix section reads the execution the next step checked (the
-  // latest occurrence), and is part of the page's first render after a
-  // client-side navigation rather than added once a fetch lands.
+  // latest occurrence). After a client-side navigation the section and its
+  // panel are in the page's first render, from one healing request.
   for (const id of [2, 5]) {
     test(`#${id} reads its Locator fix from the latest occurrence, in the first render`, async ({ page, request }) => {
       const res = await request.get(`/api/failure-clusters/${id}`);
@@ -325,26 +325,28 @@ test.describe('Cluster situation block on seeded clusters', () => {
 
       await page.goto(`/projects/${detail.project!.id}?tab=failure-clusters`);
       await waitForHydration(page);
-      // A slow healing answer: a page that does not wait for it renders without the section.
-      const healingFetches = new Set<number>();
+      // A slow healing answer: a page or a panel that does not wait for it renders
+      // without the section or without its body.
+      const healingFetches: number[] = [];
       await page.route(/\/api\/test-run-cases\/\d+\/locator-healing/, async (route) => {
         const executionId = /test-run-cases\/(\d+)\//.exec(route.request().url())?.[1];
-        healingFetches.add(Number(executionId));
+        healingFetches.push(Number(executionId));
         await new Promise((resolve) => setTimeout(resolve, 1500));
         await route.continue();
       });
       await page.locator(`a[href="/failure-clusters/${id}"]:visible`).first().click();
       await expect(page.locator('[data-shot="situation-block"]')).toBeVisible();
 
-      // Counted at once, without auto-waiting: the section renders with the page.
+      // Counted at once, without auto-waiting: the section opens on the next step
+      // with its panel's body rendered.
       const section = page.locator('[data-shot="fix-locator-fix"]');
       expect(await section.count()).toBe(1);
-      expect([...healingFetches]).toEqual([latest]);
+      expect(await section.locator('[data-shot="alternative-locators"]').count()).toBe(1);
 
-      const toggle = section.locator('button[aria-expanded]').first();
-      if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
       const recommended = healing.recommendation?.recommended?.locator;
       if (recommended) await expect(section).toContainText(recommended);
+      // One request, for the latest occurrence: the panel renders the page's answer.
+      expect(healingFetches).toEqual([latest]);
     });
   }
 

@@ -492,7 +492,12 @@ test.describe('Situation block on seeded cases', () => {
     await page.goto(`/test-run-cases/${target!.id}`);
     await waitForHydration(page);
 
-    // Folding the section unmounts the panel the actions drive.
+    // Folding the section unmounts the panel the actions drive; mounting it again
+    // renders the page's healing answer without asking for it again.
+    const healingFetches: string[] = [];
+    page.on('request', (r) => {
+      if (/\/locator-healing(\?|$)/.test(r.url())) healingFetches.push(r.url());
+    });
     const section = page.locator('[data-shot="fix-locator-fix"] button[aria-expanded]').first();
     const fold = async () => {
       if ((await section.getAttribute('aria-expanded')) === 'true') await section.click();
@@ -514,6 +519,7 @@ test.describe('Situation block on seeded cases', () => {
     await fold();
     await next.getByRole('button', { name: 'Copy patch' }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(target!.diff);
+    expect(healingFetches).toEqual([]);
   });
 
   test('#682 proposes reproducing locally and opens the Reproduce section, run line first', async ({ page }) => {

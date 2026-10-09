@@ -216,11 +216,11 @@ const isLocatorFailure = computed(() =>
   Boolean(verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
 );
 
-// The Locator fix section rides on the healing data. Hoisting the same fetch the
-// panel makes (shared by key) lets the toolbox add the section only when there
-// is something to show — and never when healing is hidden for this project. When
+// The Locator fix section rides on the healing data. The page fetches it once and
+// hands it to the panel, so the toolbox adds the section only when there is
+// something to show — and never when healing is hidden for this project. When
 // the next step replaces the locator, the page waits for the healing, so the
-// section is in its first render.
+// section and its panel are in the first render.
 const healingLeads = nextStep.value?.kind === 'replace-locator';
 const { data: locatorHealingData } = await useFetch<LocatorHealingResult>(
   () => `/api/test-run-cases/${testCaseId}/locator-healing`,
@@ -908,6 +908,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 v-if="testCase"
                 ref="locatorPanel"
                 :test-runs-case-id="Number(testCaseId)"
+                :healing="locatorHealingData ?? null"
                 :ai-intents="aiIntents"
                 :chrome="false"
                 :has-page-diff="true"

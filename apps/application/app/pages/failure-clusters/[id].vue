@@ -318,10 +318,10 @@ function refresh() {
 const locatorCaseId = latestExecId.value;
 const hasLocatorPanel = computed(() => Boolean(clusterVerdict.value?.isLocatorResolutionFailure && locatorCaseId));
 
-// Hoist the healing fetch (shared with the panel by key) so the Locator fix
+// The page fetches the healing once and hands it to the panel, so the Locator fix
 // section appears only when there is something to show, and never when healing
 // is hidden for this project. When the next step replaces the locator, the page
-// waits for the healing, so the section is in its first render.
+// waits for the healing, so the section and its panel are in the first render.
 const healingLeads = nextStep.value?.kind === 'replace-locator';
 const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
   () => `/api/test-run-cases/${locatorCaseId}/locator-healing`,
@@ -806,6 +806,7 @@ const breadcrumbItems = computed(() => [
               <LocatorHealingPanel
                 ref="clusterLocatorPanel"
                 :test-runs-case-id="locatorCaseId!"
+                :healing="clusterLocatorHealing ?? null"
                 :affected-count="affectedCases.length"
                 :chrome="false"
               />
