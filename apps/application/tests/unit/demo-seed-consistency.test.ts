@@ -393,6 +393,34 @@ describe('evidence rules', () => {
   });
 });
 
+describe('executions as the reporter stores them', () => {
+  test('every retry pass has its failed attempt stored as its own execution, with an error', () => {
+    const passes = q(`select id, test_run_id, test_case_id, browser_name from test_runs_cases
+      where status = 'passed' and retries > 0`);
+    expect(passes.length).toBeGreaterThan(0);
+    for (const p of passes) {
+      const failed = q(`select id, error from test_runs_cases
+        where test_run_id = ${p.test_run_id as number} and test_case_id = ${p.test_case_id as number}
+          and browser_name is ${p.browser_name == null ? 'null' : `'${p.browser_name as string}'`}
+          and retries = 0 and status in ('failed', 'timedOut') and error is not null`);
+      expect(failed.length, `retry pass ${p.id} has its failed attempt`).toBe(1);
+    }
+  });
+
+  test('a test that did not run carries no steps, start time, worker or step events', () => {
+    const rows = q(`select id, steps, started_at, worker_index, step_events, slowest_step
+      from test_runs_cases where status = 'didnotrun'`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(JSON.parse((r.steps as string | null) ?? '[]'), `trc ${r.id} steps`).toEqual([]);
+      expect(r.started_at, `trc ${r.id} started_at`).toBeNull();
+      expect(r.worker_index, `trc ${r.id} worker_index`).toBeNull();
+      expect(r.step_events, `trc ${r.id} step_events`).toBeNull();
+      expect(r.slowest_step, `trc ${r.id} slowest_step`).toBeNull();
+    }
+  });
+});
+
 describe('media wiring', () => {
   test('every demo/** files row references a file that exists on disk', () => {
     const rows = q(`select id, path from files where path like 'demo/%'`);

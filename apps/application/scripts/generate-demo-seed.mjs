@@ -36,6 +36,7 @@ import {
   SCM_REPOS,
   SOURCE_FILES,
   lineOf,
+  buildWebAssertionError,
   buildTestSource,
   buildSourceFrames,
   storyByClusterId,
@@ -456,14 +457,40 @@ const caseIdByKey = new Map(); // `${projectId}\x00${file}\x00${title}` → case
 
 // Cases that are prone to flake (retry-pass) — their `flaky_root_cause` is set
 // coherently instead of at random. Tags and `piwi:` ownership come from the
-// shared demo-test-meta module (the same rules the run simulator uses).
+// shared demo-test-meta module (the same rules the run simulator uses). A case
+// whose failed attempts no dedicated block below writes carries the error its
+// failed attempt reports, as the reporter would capture it.
 
+const darkModeAssertion = "await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');";
 const FLAKY_CASES = {
   1: { title: 'should apply discount code', rootCause: 'timing' },
   2: { title: 'GET /search handles empty query', rootCause: 'network' },
   3: { title: 'Table pagination works correctly', rootCause: 'timing' },
   4: { title: 'Pull to refresh triggers reload', rootCause: 'timing' },
-  5: { title: 'toggles dark mode', rootCause: 'other' },
+  5: {
+    title: 'toggles dark mode',
+    rootCause: 'other',
+    error: buildWebAssertionError({
+      matcher: 'expect(locator).toHaveAttribute(expected)',
+      locator: "locator('html')",
+      expected: '"dark"',
+      received: '"light"',
+      timeoutMs: 5000,
+      callLog: [
+        'Expect "toHaveAttribute" with timeout 5000ms',
+        "waiting for locator('html')",
+        '  9 × locator resolved to <html lang="en" data-theme="light">…</html>',
+        '    - unexpected value "light"',
+      ],
+      frames: [
+        {
+          file: 'tests/admin/settings.spec.ts',
+          line: lineOf(SOURCE_FILES['tests/admin/settings.spec.ts'], darkModeAssertion),
+          column: 40,
+        },
+      ],
+    }),
+  },
 };
 
 for (const proj of DEMO_PROJECTS) {
@@ -1088,7 +1115,8 @@ for (const proj of DEMO_PROJECTS) {
         }
       }
 
-      const steps = buildSteps(proj, caseDuration, caseStartMs);
+      // A test that did not run reports no steps, start time or worker.
+      const steps = isDidNotRunCase ? [] : buildSteps(proj, caseDuration, caseStartMs);
       // Mark the last step of a failing case as the failed one, so the timeline
       // anchors its window and failure marker on a captured step boundary.
       if (isFailedCase && steps.length > 0) {
@@ -1096,7 +1124,7 @@ for (const proj of DEMO_PROJECTS) {
         lastStep.failed = true;
         lastStep.error = { message: (storyEntry.failingCase.error ?? '').split('\n')[0] || 'Test failed' };
       }
-      const slowestStep = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
+      const slowestStep = steps.length > 0 ? steps.reduce((a, b) => (a.duration > b.duration ? a : b)) : null;
 
       // Test annotations — failures link to their cluster, the designated slow
       // case is always marked slow (so timeout hygiene can surface it as a stale
@@ -1173,15 +1201,18 @@ for (const proj of DEMO_PROJECTS) {
         failure_cluster_id: story?.clusterId ?? null,
         retries: isFlakyCase ? 1 : 0,
         // A flaky case has one failed attempt before the passing final one; a
-        // plain case has a single attempt. Mirrors what the reporter collects.
-        attempts: JSON.stringify(
-          isFlakyCase
-            ? [
-                { retry: 0, status: 'failed', duration: Math.round(caseDuration / 2), startedAt: caseStartMs },
-                { retry: 1, status: 'passed', duration: caseDuration, startedAt: caseStartMs + caseDuration },
-              ]
-            : [{ retry: 0, status: caseStatus, duration: caseDuration, startedAt: caseStartMs }],
-        ),
+        // plain case has a single attempt; a test the run never reached has
+        // none. Mirrors what the reporter collects.
+        attempts: isDidNotRunCase
+          ? null
+          : JSON.stringify(
+              isFlakyCase
+                ? [
+                    { retry: 0, status: 'failed', duration: Math.round(caseDuration / 2), startedAt: caseStartMs },
+                    { retry: 1, status: 'passed', duration: caseDuration, startedAt: caseStartMs + caseDuration },
+                  ]
+                : [{ retry: 0, status: caseStatus, duration: caseDuration, startedAt: caseStartMs }],
+            ),
         // Regression/new-flaky signals are computed after generation from the
         // actual per-case history (see below), like the server does.
         is_new_regression: 0,
@@ -1198,8 +1229,8 @@ for (const proj of DEMO_PROJECTS) {
         locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(proj) : null,
         step_events: stepEvents,
         wasted_time_ms: wastedMs,
-        slowest_step: slowestStep.title,
-        slowest_step_duration: slowestStep.duration,
+        slowest_step: slowestStep?.title ?? null,
+        slowest_step_duration: slowestStep?.duration ?? null,
         web_vitals: isDidNotRunCase || noPage ? null : buildWebVitals(proj, isFailedCase),
         page_state: isDidNotRunCase || noPage ? null : buildPageState(proj, storyEntry),
         ai_usage: isDidNotRunCase || noPage ? null : await buildAiUsage(caseDef),
@@ -1213,8 +1244,8 @@ for (const proj of DEMO_PROJECTS) {
               : null,
         test_source: isFailedCase ? buildTestSource(story, storyEntry.failingCase, caseDef.declLine) : null,
         test_source_frames: isFailedCase ? buildSourceFrames(storyEntry.failingCase) : null,
-        worker_index: workerIndex,
-        started_at: caseStartMs,
+        worker_index: isDidNotRunCase ? null : workerIndex,
+        started_at: isDidNotRunCase ? null : caseStartMs,
         did_not_run_reason: isDidNotRunCase ? (reasonByCase.get(caseId) ?? null) : null,
         blocked_by: isDidNotRunCase ? (blockedByByCase.get(caseId) ?? null) : null,
         created_at: caseStartMs,
@@ -1289,8 +1320,17 @@ for (const proj of DEMO_PROJECTS) {
         row.duration = 0;
         row.did_not_run_reason = 'previous-failure';
         row.blocked_by = CASCADE_BLOCKER_LOCATION;
-        row.attempts = JSON.stringify([{ retry: 0, status: 'didnotrun', duration: 0, startedAt: row.started_at }]);
-        // A test that never ran produced no live evidence.
+        row.attempts = JSON.stringify([{ retry: 0, status: 'didnotrun', duration: 0, startedAt: null }]);
+        // A test that never ran reports no start time, worker or steps, and
+        // produced no live evidence.
+        row.started_at = null;
+        row.worker_index = null;
+        row.steps = [];
+        row.locator_pages_payload_id = null;
+        row.slowest_step = null;
+        row.slowest_step_duration = null;
+        row.dialogs = null;
+        row.aria_snapshot = null;
         row.step_events = null;
         row.wasted_time_ms = 0;
         row.web_vitals = null;
@@ -1618,6 +1658,32 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   }
 }
 
+// ── Failed attempts of the other retry passes (post-processing, rng-free) ───
+// The reporter stores every attempt as its own execution. Each remaining test
+// that passed on retry gets its failed first attempt as its own row, with the
+// error its flaky case declares, so its attempts link to real executions.
+{
+  const attemptKey = (row) => `${row.test_run_id}|${row.test_case_id}|${row.browser_name}`;
+  const failedAttempts = new Set(
+    TEST_RUNS_CASES.filter((row) => ['failed', 'timedOut'].includes(row.status) && row.retries === 0).map(attemptKey),
+  );
+  const retryPasses = TEST_RUNS_CASES.filter(
+    (row) => row.status === 'passed' && row.retries > 0 && !failedAttempts.has(attemptKey(row)),
+  );
+  for (const row of retryPasses) {
+    const { projectId } = caseById.get(row.test_case_id);
+    const error = FLAKY_CASES[projectId]?.error;
+    if (!error)
+      throw new Error(`Retry pass ${row.id}: give FLAKY_CASES[${projectId}] the error its failed attempt reports`);
+    splitFlakyExecution(row, {
+      error,
+      requests: NETWORK_REQUESTS.filter((nr) => nr.test_runs_case_id === row.id),
+      failedMs: () => undefined,
+      retryMs: () => undefined,
+    });
+  }
+}
+
 // ── Worker lanes without holes (post-processing, rng-free) ──────────────────
 // A skipped or did-not-run test never ran on a worker — Playwright reports it
 // with no worker index — so it leaves its lane, and the tests after it on that
@@ -1648,7 +1714,9 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   const lanes = new Map();
   const runStart = new Map();
   for (const row of TEST_RUNS_CASES) {
-    runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    if (row.started_at !== null) {
+      runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    }
     if (row.status === 'skipped' || row.status === 'didnotrun') {
       row.worker_index = null;
       continue;
