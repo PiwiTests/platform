@@ -134,10 +134,24 @@ describe('nextStepSourceLine — where the Next step comes from', () => {
     ).toBe('From the AI diagnosis above.');
   });
 
-  test('following the diagnosis says why its patch is not the step', () => {
-    expect(nextStepSourceLine(followDiagnosis, { mostLikely: diagnosisLeads, diagnosis, scope: 'cluster' })).toBe(
-      'From the AI diagnosis above, high confidence. Its patch no longer applies to the current code.',
-    );
+  test.each([
+    [{ hasPatch: true, patchStatus: 'stale-file' }, ' Its patch no longer applies to the current code.'],
+    [{ hasPatch: true, patchStatus: 'invalid' }, ' Its patch is not a valid diff.'],
+    [{ hasPatch: true, patchStatus: 'unchecked' }, ' Its patch could not be checked against the code.'],
+    [{ hasPatch: true, patchStatus: null }, ' Its patch could not be checked against the code.'],
+    [{ hasPatch: false, patchStatus: null }, ' It proposes no patch.'],
+    [{ hasPatch: null, patchStatus: null }, ''],
+  ] as const)('following the diagnosis says why its patch is not the step (%o)', (facts, suffix) => {
+    expect(
+      nextStepSourceLine(followDiagnosis, {
+        mostLikely: diagnosisLeads,
+        diagnosis: { ...diagnosis, ...facts },
+        scope: 'cluster',
+      }),
+    ).toBe(`From the AI diagnosis above, high confidence.${suffix}`);
+  });
+
+  test('the full form ends with why the patch is not the step', () => {
     expect(
       nextStepSourceLine(followDiagnosis, {
         mostLikely: storyLeads,

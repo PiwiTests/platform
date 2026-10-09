@@ -41,6 +41,33 @@ describe('computeNextStep — one row per rule', () => {
     expect(s.kind).toBe('follow-diagnosis');
   });
 
+  test.each([
+    [{ hasPatch: false }, 'A diagnosis explains the failure, but it proposes no patch.'],
+    [
+      { hasPatch: true, patchValidationStatus: 'stale-file' },
+      'A diagnosis explains the failure, but its patch no longer applies to the current code.',
+    ],
+    [
+      { hasPatch: true, patchValidationStatus: 'invalid' },
+      'A diagnosis explains the failure, but its patch is not a valid diff.',
+    ],
+    [
+      { hasPatch: true, patchValidationStatus: 'unchecked' },
+      'A diagnosis explains the failure, but its patch could not be checked against the code.',
+    ],
+    [
+      { hasPatch: true, patchValidationStatus: null },
+      'A diagnosis explains the failure, but its patch could not be checked against the code.',
+    ],
+  ] as Array<[Partial<NextStepInput>, string]>)(
+    '5: the reason says why the patch is not the step (%o)',
+    (facts, why) => {
+      const s = step({ diagnosisCompleted: true, ...facts });
+      expect(s.kind).toBe('follow-diagnosis');
+      expect(s.why).toBe(why);
+    },
+  );
+
   test('6: a regressed fix → see what changed', () => {
     const s = step({ fixVerification: 'regressed', fixCommit: 'demo001' });
     expect(s.kind).toBe('see-what-changed');

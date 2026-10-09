@@ -573,6 +573,8 @@ export async function getTestRunCase(
     diagnosisCompleted: patchFacts?.diagnosisCompleted ?? false,
     diagnosisSummary: patchFacts?.summary ?? null,
     patchFile: patchFacts?.patchFile ?? null,
+    hasPatch: patchFacts?.hasPatch ?? false,
+    patchValidationStatus: patchFacts?.patchValidationStatus ?? null,
     patchAppliesCleanly: patchFacts?.patchAppliesCleanly ?? false,
     why: verdict?.why ?? null,
     errorKind: verdict?.kind ?? null,

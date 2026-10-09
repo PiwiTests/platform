@@ -37,7 +37,7 @@ import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
-import { storedPatchValidation } from '#shared/patch';
+import { storedPatchValidation, type PatchValidationStatus } from '#shared/patch';
 import type { BisectResult } from '@piwitests/core/bisect';
 import type { BisectedCommit } from '#shared/reproduce';
 
@@ -49,12 +49,15 @@ function patchApplies(status: unknown): boolean {
 /**
  * The cluster's completed diagnosis reduced to the facts the next-step policy
  * reads: whether a completed diagnosis exists, its one-line summary, the file
- * its patch touches, and whether that patch validates as applying cleanly.
+ * its patch touches, whether it has a patch and how that patch validated
+ * against the code the model was shown.
  */
 export interface ClusterPatchFacts {
   diagnosisCompleted: boolean;
   summary: string | null;
   patchFile: string | null;
+  hasPatch: boolean;
+  patchValidationStatus: PatchValidationStatus | null;
   patchAppliesCleanly: boolean;
 }
 
@@ -64,19 +67,28 @@ export async function getClusterPatchFacts(db: DrizzleDB, clusterId: number): Pr
     .from(failureDiagnoses)
     .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')));
   if (!diag || diag.status !== 'completed') {
-    return { diagnosisCompleted: false, summary: null, patchFile: null, patchAppliesCleanly: false };
+    return {
+      diagnosisCompleted: false,
+      summary: null,
+      patchFile: null,
+      hasPatch: false,
+      patchValidationStatus: null,
+      patchAppliesCleanly: false,
+    };
   }
   const details = (diag.details ?? null) as {
     suggestedFix?: { patch?: unknown; file?: unknown; description?: unknown };
   } | null;
   const sf = details?.suggestedFix ?? null;
-  const patch = typeof sf?.patch === 'string' ? sf.patch : null;
+  const hasPatch = typeof sf?.patch === 'string' && sf.patch.trim() !== '';
   const validationStatus = storedPatchValidation(details)?.status ?? null;
   return {
     diagnosisCompleted: true,
     summary: diag.summary ?? (typeof sf?.description === 'string' ? sf.description : null),
     patchFile: typeof sf?.file === 'string' ? sf.file : null,
-    patchAppliesCleanly: Boolean(patch) && patchApplies(validationStatus),
+    hasPatch,
+    patchValidationStatus: hasPatch ? validationStatus : null,
+    patchAppliesCleanly: hasPatch && patchApplies(validationStatus),
   };
 }
 
@@ -312,6 +324,8 @@ export async function getFailureCluster(
     diagnosisCompleted: patchFacts.diagnosisCompleted,
     diagnosisSummary: patchFacts.summary,
     patchFile: patchFacts.patchFile,
+    hasPatch: patchFacts.hasPatch,
+    patchValidationStatus: patchFacts.patchValidationStatus,
     patchAppliesCleanly: patchFacts.patchAppliesCleanly,
     errorKind: latestErrorKind,
     aiConfigured: opts.aiConfigured ?? false,

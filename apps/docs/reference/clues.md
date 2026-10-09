@@ -56,7 +56,7 @@ strength. The first combination that matches, in this order, wins:
 | Timing | timeout budget and slow request | *The step used 92 % of the timeout waiting on /api/search.* |
 
 When no combination matches, the strongest clue stands alone. A cluster's completed AI diagnosis leads instead of a
-lone clue, and the clues then read as *supported by N clues*.
+weak story or a lone clue, and the clues then read as *supported by N clues*.
 
 ## Related
 

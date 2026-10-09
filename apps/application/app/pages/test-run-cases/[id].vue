@@ -288,6 +288,7 @@ const nextStepSource = computed(() =>
     diagnosis: mostLikelyDiagnosis.value && {
       ...mostLikelyDiagnosis.value,
       hasPatch: fixPlanData.value?.diagnosis ? Boolean(fixPlanPatch.value) : null,
+      patchStatus: fixPlanData.value?.diagnosis?.patchValidation?.status ?? null,
     },
     healing: locatorHealingData.value ?? null,
     scope: 'execution',

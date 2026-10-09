@@ -351,6 +351,7 @@ const nextStepSource = computed(() =>
     diagnosis: clusterDiagnosis.value && {
       ...clusterDiagnosis.value,
       hasPatch: fixPlan.value?.diagnosis ? Boolean(fixPlan.value.diagnosis.patch) : null,
+      patchStatus: fixPlan.value?.diagnosis?.patchValidation?.status ?? null,
     },
     healing: clusterLocatorHealing.value ?? null,
     scope: 'cluster',

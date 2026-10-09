@@ -12,7 +12,8 @@
  * Pure: no Nuxt imports, shared by the pages, the server and the tests.
  */
 import type { FailureClue, FailureClueCitation, FailureClueStrength, FailureStory } from '#shared/failure-clues';
-import type { NextStep } from '#shared/next-step';
+import { patchShortfall, type NextStep } from '#shared/next-step';
+import type { PatchValidationStatus } from '#shared/patch';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { isAgentDiagnosis } from '#shared/agent-diagnosis';
 import { healingSourcePhrase } from '#shared/healing-source';
@@ -105,14 +106,19 @@ function fromStory(story: FailureStory): MostLikely {
  *   Most likely shows something else; when Most likely is that diagnosis, it
  *   points up at it in a short form instead of saying the summary twice. The
  *   execution page names the diagnosis as the cluster's.
- * - Following a diagnosis adds why its patch is not the step.
+ * - Following a diagnosis adds why its patch is not the step: none proposed, no
+ *   longer applying, not a valid diff, or not checked against the code. Nothing
+ *   is added while the page does not know whether there is a patch.
  * - Replacing a locator names locator healing and what its pick comes from.
  */
 export function nextStepSourceLine(
   step: Pick<NextStep, 'kind' | 'source'> | null | undefined,
   facts: {
     mostLikely: Pick<MostLikely, 'source'> | null | undefined;
-    diagnosis: (MostLikelyDiagnosis & { hasPatch?: boolean | null }) | null | undefined;
+    diagnosis:
+      | (MostLikelyDiagnosis & { hasPatch?: boolean | null; patchStatus?: PatchValidationStatus | null })
+      | null
+      | undefined;
     healing?: Pick<LocatorHealingResult, 'source' | 'recommendation'> | null;
     scope: 'execution' | 'cluster';
   },
@@ -145,9 +151,9 @@ export function nextStepSourceLine(
     const summary = diagnosis.summary.trim();
     line = `From ${who}${confidence}: ${summary}${/[.!?]$/.test(summary) ? '' : '.'}`;
   }
-  if (step.kind === 'follow-diagnosis') {
-    line +=
-      diagnosis.hasPatch === false ? ' It proposes no patch.' : ' Its patch no longer applies to the current code.';
+  if (step.kind === 'follow-diagnosis' && diagnosis.hasPatch != null) {
+    const shortfall = patchShortfall({ hasPatch: diagnosis.hasPatch, status: diagnosis.patchStatus });
+    if (shortfall) line += ` ${shortfall[0]!.toUpperCase()}${shortfall.slice(1)}.`;
   }
   return line;
 }

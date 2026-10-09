@@ -58,9 +58,9 @@ card on **Timeline**. Network, console, Web Vitals, ARIA and alternative-locator
 ### Clues
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence already captured, with no model
-involved. Each carries a **strength** (strong, medium or weak) and a **citation** to the evidence section it came from,
-so a click shows the proof; the **Most likely** line leads with their strong or medium story, else a completed diagnosis,
-else the strongest one, and the AI diagnosis receives them as evidence. Every rule, and when it fires, is listed on
+involved. Each carries a **strength** (strong, medium or weak) and a **citation** to the evidence section it came from;
+the **Most likely** line leads with their strong or medium story, else a completed diagnosis, else a weak story or
+the strongest one, and the AI diagnosis receives them as evidence. Every rule, and when it fires, is listed on
 [Clue rules](/reference/clues).
 
 ### Attempts

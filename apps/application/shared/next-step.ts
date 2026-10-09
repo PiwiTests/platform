@@ -14,6 +14,7 @@ import type { FailureWhy } from '#shared/failure-verdict';
 import type { ParsedErrorKind } from '#shared/error-parse';
 import { shortCommit } from '#shared/scm-urls';
 import type { FlakeExperimentKind, FlakeSuspectStanding } from '#shared/flake-lab';
+import type { PatchValidationStatus } from '#shared/patch';
 
 export type NextStepKind =
   | 'open-blocker'
@@ -73,6 +74,9 @@ export interface NextStepInput {
   diagnosisCompleted?: boolean;
   diagnosisSummary?: string | null;
   patchFile?: string | null;
+  /** The diagnosis proposes a patch, and how it validated against the code the model was shown. */
+  hasPatch?: boolean;
+  patchValidationStatus?: PatchValidationStatus | null;
   /** The suggested patch is present and validates as applying cleanly to the tree. */
   patchAppliesCleanly?: boolean;
 
@@ -118,6 +122,29 @@ const SOURCE_BY_KIND: Partial<Record<NextStepKind, NextStepSource>> = {
 export function computeNextStep(input: NextStepInput): NextStep {
   const step = chooseStep(input);
   return { ...step, source: SOURCE_BY_KIND[step.kind] ?? null };
+}
+
+/**
+ * Why a completed diagnosis's patch is not the step, as a clause ("its patch no
+ * longer applies to the current code"), or null when the facts say it applies.
+ * The follow-diagnosis reason and the Next line's source sentence both say it.
+ */
+export function patchShortfall(patch: {
+  hasPatch?: boolean | null;
+  status?: PatchValidationStatus | null;
+}): string | null {
+  if (patch.hasPatch === false) return 'it proposes no patch';
+  switch (patch.status) {
+    case 'applies':
+    case 'applies-with-offset':
+      return null;
+    case 'stale-file':
+      return 'its patch no longer applies to the current code';
+    case 'invalid':
+      return 'its patch is not a valid diff';
+    default:
+      return 'its patch could not be checked against the code';
+  }
 }
 
 function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
@@ -213,12 +240,13 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
     };
   }
 
-  // 5 — a completed diagnosis whose patch is stale or absent.
+  // 5 — a completed diagnosis whose patch is stale, unchecked, invalid or absent.
   if (input.diagnosisCompleted) {
+    const shortfall = patchShortfall({ hasPatch: input.hasPatch, status: input.patchValidationStatus });
     return {
       kind: 'follow-diagnosis',
       title: 'Follow the diagnosis',
-      why: 'A diagnosis explains the failure, but its patch no longer applies cleanly.',
+      why: `A diagnosis explains the failure${shortfall ? `, but ${shortfall}` : ''}.`,
       primary: { label: 'Read the diagnosis', action: 'read-diagnosis', payload: withCluster },
       secondary: [{ label: 'Re-diagnose', action: 're-diagnose', payload: withCluster }],
     };
