@@ -368,6 +368,142 @@ describe('computeScenarioGaps — retired detectors and the first graph run', ()
   });
 });
 
+describe('computeScenarioGaps — control reach from the locator index', () => {
+  test('a control a test clicks is reached, and the controls no test targets are raised', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'org.spec.ts', title: 'renames the org' });
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'page', key: '/settings', firstSeenRunId: 1, lastSeenRunId: 1 },
+      { projectId: 1, kind: 'control', key: 'button:Save changes', firstSeenRunId: 1, lastSeenRunId: 1 },
+      { projectId: 1, kind: 'control', key: 'button:Delete organization', firstSeenRunId: 1, lastSeenRunId: 1 },
+    ]);
+    for (const key of ['button:Save changes', 'button:Delete organization']) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'page',
+        fromKey: '/settings',
+        toKind: 'control',
+        toKey: key,
+        kind: 'contains',
+        lastSeenAt: new Date(),
+      });
+    }
+    await db.insert(schema.locatorUsages).values({
+      projectId: 1,
+      testCaseId: 1,
+      locator: "getByRole('button', { name: 'Save changes' })",
+      target: "getByRole('button', { name: 'Save changes' })",
+      action: 'click',
+      browserName: 'chromium',
+      callSite: 'org.spec.ts:7:5',
+      lastSeenAt: new Date(),
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const [edge] = await db
+      .select()
+      .from(schema.graphEdges)
+      .where(eq(schema.graphEdges.toKey, 'button:Save changes'))
+      .then((rows) => rows.filter((r) => r.kind === 'reaches'));
+    expect(edge).toMatchObject({ fromKey: '1', evidence: { via: 'locator', action: 'operated' } });
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'control-nobody-exercises' });
+    expect(raised.map((g) => g.subject.key)).toEqual(['button:Delete organization']);
+  });
+
+  test('a locator edge the index stops backing is removed, and a covered-by edge stays as triage wrote it', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'org.spec.ts', title: 'renames the org' },
+      { id: 2, projectId: 1, filePath: 'org.spec.ts', title: 'deletes the org' },
+    ]);
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'control', key: 'button:Save changes', firstSeenRunId: 1, lastSeenRunId: 1 },
+      { projectId: 1, kind: 'control', key: 'button:Delete organization', firstSeenRunId: 1, lastSeenRunId: 1 },
+    ]);
+    const use = (testCaseId: number, name: string) => ({
+      projectId: 1,
+      testCaseId,
+      locator: `getByRole('button', { name: '${name}' })`,
+      target: `getByRole('button', { name: '${name}' })`,
+      action: 'click',
+      browserName: 'chromium',
+      callSite: 'org.spec.ts:7:5',
+      lastSeenAt: new Date(),
+    });
+    await db.insert(schema.locatorUsages).values([use(1, 'Save changes'), use(2, 'Delete organization')]);
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '2',
+      toKind: 'control',
+      toKey: 'button:Delete organization',
+      kind: 'reaches',
+      confidence: 1,
+      origin: 'manual',
+      evidence: { manual: true },
+      lastSeenAt: new Date(),
+    });
+    const reaches = async () =>
+      (await db.select().from(schema.graphEdges))
+        .filter((r) => r.kind === 'reaches')
+        .map((r) => ({ test: r.fromKey, key: r.toKey, origin: r.origin, evidence: r.evidence }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+
+    await gaps.computeScenarioGaps(db, 1);
+    await db.delete(schema.locatorUsages).where(eq(schema.locatorUsages.testCaseId, 1));
+    await gaps.computeScenarioGaps(db, 1);
+
+    expect(await reaches()).toEqual([
+      { test: '2', key: 'button:Delete organization', origin: 'manual', evidence: { manual: true } },
+    ]);
+  });
+});
+
+describe('computeScenarioGaps — exposure from recorded changes', () => {
+  test('a route gap takes churn and escape history from the commits recorded on its handler file', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'orders.spec.ts', title: 'places an order' });
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'route', key: 'POST /api/orders', firstSeenRunId: 1, lastSeenRunId: 1 },
+      { projectId: 1, kind: 'handler', key: 'server/api/orders.post.ts', firstSeenRunId: 1, lastSeenRunId: 1 },
+    ]);
+    const edge = (fromKind: string, fromKey: string, kind: string, toKind: string, toKey: string) => ({
+      projectId: 1,
+      fromKind,
+      fromKey,
+      kind,
+      toKind,
+      toKey,
+      lastSeenAt: new Date(),
+    });
+    await db
+      .insert(schema.graphEdges)
+      .values([
+        edge('test', '1', 'reaches', 'route', 'POST /api/orders'),
+        edge('route', 'POST /api/orders', 'handled-by', 'handler', 'server/api/orders.post.ts'),
+        ...['aaaaaaa1111', 'bbbbbbb2222', 'ccccccc3333'].map((sha) =>
+          edge('commit', sha, 'changes', 'file', 'apps/shop/server/api/orders.post.ts'),
+        ),
+      ]);
+    await db.insert(schema.failureClusters).values({
+      projectId: 1,
+      fingerprint: 'fp',
+      signature: 'TypeError',
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      fixCommit: 'bbbbbbb',
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const [gap] = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    expect(gap!.factors).toMatchObject({ churn: 0.25, escapeHistory: 1, age: 0.1 });
+  });
+});
+
 describe('draftScenario does not leak another project’s test (F3)', () => {
   test('a gap testCaseId from another project is not loaded as the nearest test', async () => {
     // Project 2 owns a secret-titled test; project 1's gap points at its id.

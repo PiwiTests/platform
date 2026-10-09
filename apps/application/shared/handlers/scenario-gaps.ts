@@ -38,8 +38,19 @@ import {
   testRuns,
   testRunsCases,
   bugReports,
+  locatorSnapshots,
+  locatorUsages,
 } from '../../server/database/schema';
-import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
+import {
+  controlNodeKey,
+  fileRouteTarget,
+  filePageTarget,
+  linkNodeKey,
+  routeKeyMatchesTarget,
+  pageKeyMatchesTarget,
+  templateAccessibleName,
+} from '../graph';
+import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
 import { notLabRun } from './probes';
 import { RETIRED_DETECTORS } from './detector-precision';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
@@ -1380,6 +1391,9 @@ export async function computeScenarioGaps(
   const nodeBranchScope = isNull(graphNodes.branch);
   const edgeBranchScope = isNull(graphEdges.branch);
 
+  // The controls and links the tests' locators target, from the locator index.
+  await syncControlReach(db, projectId, latestRunId);
+
   // Reach edges → which test cases reach which nodes. Code reach's `coverage`
   // edges and `file` nodes (every file a test executed) stay out of the node
   // detectors: they are no surface of their own to drift or to be covered once.
@@ -1694,7 +1708,30 @@ export async function computeScenarioGaps(
     ...detectUnprobedDependency(dependencyProbeStatus),
   ];
 
-  const exposure = options.exposure ?? {};
+  // A gap on a route, a handler or a dependency is exposed through the handler
+  // files behind it, ranked by the commits the default branch recorded on them.
+  const handlerFilesOf = (subject: GapSubject): string[] => {
+    if (subject.kind === 'handler') return [subject.key];
+    if (subject.kind === 'route') {
+      return [...routesByHandler].filter(([, routes]) => routes.has(subject.key)).map(([handler]) => handler);
+    }
+    if (subject.kind === 'dependency') {
+      return [...dependenciesByHandler].filter(([, deps]) => deps.has(subject.key)).map(([handler]) => handler);
+    }
+    return [];
+  };
+  for (const gap of detected) {
+    if (gap.files?.length) continue;
+    const files = handlerFilesOf(subjectFromGapKey(gap.key));
+    if (files.length > 0) gap.files = files;
+  }
+  const handlerFiles = [...new Set(detected.flatMap((g) => g.files ?? []))];
+  const exposure: ExposureInputs = {
+    files: new Map([
+      ...(await loadRecordedFileExposure(db, projectId, handlerFiles)),
+      ...(options.exposure?.files ?? []),
+    ]),
+  };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
   await syncFeatureNodes(db, projectId, reachByNode, latestRunId);
@@ -1743,6 +1780,347 @@ async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promi
     )
     .returning({ id: scenarioGaps.id });
   return closed.length;
+}
+
+// ── Exposure from recorded changes ───────────────────────────────────────────
+
+/** Two repo paths name one file when equal, or when one is a path suffix of the other (a monorepo prefix). */
+function samePathOrSuffix(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+/** True when two commit ids name one commit, a short id matching its full one. */
+function sameCommit(a: string, b: string): boolean {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  return x.length >= 7 && y.length >= 7 && (x.startsWith(y) || y.startsWith(x));
+}
+
+/**
+ * Churn and escape history of `files` from what the graph recorded: the commits
+ * of the default branch's `changes` edges (kept for ninety days) that touched
+ * each file, and whether one of them is a failure cluster's fixing commit. Age
+ * needs the file's history from the source control provider, so it is left out.
+ */
+async function loadRecordedFileExposure(
+  db: DrizzleDB,
+  projectId: number,
+  files: string[],
+): Promise<Map<string, FileExposure>> {
+  const out = new Map<string, FileExposure>();
+  if (files.length === 0) return out;
+  const changes = await db
+    .select({ commit: graphEdges.fromKey, file: graphEdges.toKey })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'changes'),
+        eq(graphEdges.fromKind, 'commit'),
+        eq(graphEdges.toKind, 'file'),
+        isNull(graphEdges.branch),
+      ),
+    );
+  if (changes.length === 0) return out;
+  const fixCommits = (
+    await db
+      .select({ fixCommit: failureClusters.fixCommit })
+      .from(failureClusters)
+      .where(and(eq(failureClusters.projectId, projectId), isNotNull(failureClusters.fixCommit)))
+  )
+    .map((c) => c.fixCommit!)
+    .filter(Boolean);
+
+  for (const file of files) {
+    const commits = new Set(changes.filter((c) => samePathOrSuffix(c.file, file)).map((c) => c.commit));
+    if (commits.size === 0) continue;
+    out.set(file, {
+      churn: commits.size,
+      escaped: [...commits].some((commit) => fixCommits.some((fix) => sameCommit(commit, fix))),
+    });
+  }
+  return out;
+}
+
+// ── Control reach from the locator index ─────────────────────────────────────
+
+/** Roles a label, a placeholder or a title names. */
+const LABELLED_ROLES = new Set([
+  'textbox',
+  'searchbox',
+  'combobox',
+  'listbox',
+  'checkbox',
+  'radio',
+  'switch',
+  'spinbutton',
+  'slider',
+]);
+
+/** The graph node a locator names: a control or link by role and name, or only a name. */
+export type LocatorNodeTarget = { by: 'role'; kind: 'control' | 'link'; key: string } | { by: 'name'; name: string };
+
+function stringArg(arg: LocatorArg | undefined): string | null {
+  return arg?.type === 'string' && arg.value.trim() ? arg.value : null;
+}
+
+/**
+ * The node the last locating call of a chain names. `getByRole` with a string
+ * name keys a control (`role:name`) or, for a link, a link node; a label,
+ * placeholder or title names a control without its role. A regex name, a test
+ * id or a CSS selector names nothing here.
+ */
+export function locatorNodeTarget(locator: string): LocatorNodeTarget | null {
+  const calls = tryParseLocatorChain(locator)?.calls.filter((c) => LOCATING_METHODS.has(c.method)) ?? [];
+  const call = calls[calls.length - 1];
+  if (!call) return null;
+  if (call.method === 'getByRole') {
+    const role = stringArg(call.args[0]);
+    const options = call.args[1]?.type === 'object' ? call.args[1].entries : [];
+    const name = stringArg(options.find(([k]) => k === 'name')?.[1]);
+    if (!role || !name) return null;
+    return role === 'link'
+      ? { by: 'role', kind: 'link', key: linkNodeKey(name) }
+      : { by: 'role', kind: 'control', key: controlNodeKey(role, name) };
+  }
+  if (call.method === 'getByLabel' || call.method === 'getByPlaceholder' || call.method === 'getByTitle') {
+    const name = stringArg(call.args[0]);
+    return name ? { by: 'name', name } : null;
+  }
+  return null;
+}
+
+/** One locator use of a test, with the ranked alternatives its call site's snapshot recorded. */
+export interface LocatorReachUse {
+  testCaseId: number;
+  /** The last locating call of the chain (`getByLabel('Email')`). */
+  target: string;
+  /** `click`, `fill`, `expect.toBeVisible`, … */
+  action: string;
+  /** Alternative locators for the same element, best first. */
+  alternatives?: string[];
+}
+
+/** A test's reach to a control or link, and whether it acted on the element or only read or asserted on it. */
+export interface LocatorControlReach {
+  testCaseId: number;
+  kind: 'control' | 'link';
+  key: string;
+  action: 'operated' | 'checked';
+  /** 1 for a role and name in the test's own chain, lower when inferred. */
+  confidence: number;
+}
+
+/**
+ * Resolve locator uses to the control and link nodes of the graph. A use maps
+ * through, in order: its own `getByRole` and name; the first role-and-name
+ * alternative its snapshot recorded; a label, placeholder or title that exactly
+ * one labelled control carries. A use that maps to no known node reaches
+ * nothing, so no edge points at a node the inventory never saw.
+ */
+export function resolveControlReach(
+  uses: LocatorReachUse[],
+  nodes: { controls: ReadonlySet<string>; links: ReadonlySet<string> },
+): LocatorControlReach[] {
+  const known = (kind: 'control' | 'link', key: string) => (kind === 'control' ? nodes.controls : nodes.links).has(key);
+  const byName = new Map<string, string[]>();
+  for (const key of nodes.controls) {
+    const sep = key.indexOf(':');
+    if (!LABELLED_ROLES.has(key.slice(0, sep))) continue;
+    const name = key.slice(sep + 1);
+    byName.set(name, [...(byName.get(name) ?? []), key]);
+  }
+
+  const out = new Map<string, LocatorControlReach>();
+  for (const use of uses) {
+    let hit: { kind: 'control' | 'link'; key: string; confidence: number } | null = null;
+    const own = locatorNodeTarget(use.target);
+    if (own?.by === 'role' && known(own.kind, own.key)) hit = { kind: own.kind, key: own.key, confidence: 1 };
+    for (const alt of hit ? [] : (use.alternatives ?? [])) {
+      const target = locatorNodeTarget(alt);
+      if (target?.by === 'role' && known(target.kind, target.key)) {
+        hit = { kind: target.kind, key: target.key, confidence: 0.9 };
+        break;
+      }
+    }
+    if (!hit && own?.by === 'name') {
+      const candidates = byName.get(templateAccessibleName(own.name)) ?? [];
+      if (candidates.length === 1) hit = { kind: 'control', key: candidates[0]!, confidence: 0.8 };
+    }
+    if (!hit) continue;
+
+    const action = isInteractionAction(use.action) ? 'operated' : 'checked';
+    const id = `${use.testCaseId}\x00${hit.kind}\x00${hit.key}`;
+    const prev = out.get(id);
+    out.set(id, {
+      testCaseId: use.testCaseId,
+      kind: hit.kind,
+      key: hit.key,
+      action: prev?.action === 'operated' || action === 'operated' ? 'operated' : 'checked',
+      confidence: Math.max(prev?.confidence ?? 0, hit.confidence),
+    });
+  }
+  return [...out.values()];
+}
+
+/** True when a snapshot's captured location is the use's project-relative call site. */
+function sameCallSite(location: string, callSite: string): boolean {
+  const loc = location.replace(/\\/g, '/');
+  return loc === callSite || loc.endsWith(`/${callSite}`);
+}
+
+/**
+ * Write a `reaches` edge from each test to the controls and links its locators
+ * target on the default branch, from the locator index and its snapshots. Only
+ * nodes the page inventory recorded can be reached, and each edge says whether
+ * the test acted on the element or only asserted on it. A locator edge the
+ * index no longer backs is removed; a covered-by edge from triage is left as it is.
+ */
+async function syncControlReach(db: DrizzleDB, projectId: number, runId: number | null): Promise<void> {
+  const nodeRows = await db
+    .select({ kind: graphNodes.kind, key: graphNodes.key })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        isNull(graphNodes.branch),
+        isNull(graphNodes.prunedAt),
+        inArray(graphNodes.kind, ['control', 'link']),
+      ),
+    );
+  const nodes = {
+    controls: new Set(nodeRows.filter((n) => n.kind === 'control').map((n) => n.key)),
+    links: new Set(nodeRows.filter((n) => n.kind === 'link').map((n) => n.key)),
+  };
+
+  const useRows =
+    nodeRows.length === 0
+      ? []
+      : await db
+          .select({
+            testCaseId: locatorUsages.testCaseId,
+            target: locatorUsages.target,
+            action: locatorUsages.action,
+            callSite: locatorUsages.callSite,
+          })
+          .from(locatorUsages)
+          .where(and(eq(locatorUsages.projectId, projectId), eq(locatorUsages.branch, '')))
+          .groupBy(locatorUsages.testCaseId, locatorUsages.target, locatorUsages.action, locatorUsages.callSite);
+
+  const snapshotRows =
+    useRows.length === 0
+      ? []
+      : await db
+          .select({
+            testCaseId: locatorSnapshots.testCaseId,
+            location: locatorSnapshots.location,
+            alternatives: locatorSnapshots.alternatives,
+          })
+          .from(locatorSnapshots)
+          .innerJoin(testCases, eq(testCases.id, locatorSnapshots.testCaseId))
+          .where(eq(testCases.projectId, projectId));
+  const snapshotsByTest = new Map<number, Array<{ location: string; alternatives: string[] }>>();
+  for (const r of snapshotRows) {
+    if (!r.location) continue;
+    let alternatives: string[] = [];
+    try {
+      const parsed = typeof r.alternatives === 'string' ? JSON.parse(r.alternatives) : r.alternatives;
+      if (Array.isArray(parsed)) {
+        alternatives = parsed
+          .map((a) => (a && typeof a === 'object' ? (a as { locator?: unknown }).locator : null))
+          .filter((l): l is string => typeof l === 'string');
+      }
+    } catch {
+      // A malformed snapshot offers no alternative.
+    }
+    const list = snapshotsByTest.get(r.testCaseId) ?? [];
+    list.push({ location: r.location, alternatives });
+    snapshotsByTest.set(r.testCaseId, list);
+  }
+
+  const reach = resolveControlReach(
+    useRows.map((u) => ({
+      testCaseId: u.testCaseId,
+      target: u.target,
+      action: u.action,
+      alternatives: u.callSite
+        ? snapshotsByTest.get(u.testCaseId)?.find((snap) => sameCallSite(snap.location, u.callSite))?.alternatives
+        : undefined,
+    })),
+    nodes,
+  );
+
+  const current = new Set(reach.map((r) => `${r.testCaseId}\x00${r.kind}\x00${r.key}`));
+  const existing = await db
+    .select({
+      id: graphEdges.id,
+      fromKey: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      evidence: graphEdges.evidence,
+    })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'reaches'),
+        eq(graphEdges.fromKind, 'test'),
+        inArray(graphEdges.toKind, ['control', 'link']),
+        eq(graphEdges.origin, 'observed'),
+        isNull(graphEdges.branch),
+      ),
+    );
+  const stale = existing
+    .filter(
+      (e) =>
+        (e.evidence as { via?: unknown } | null)?.via === 'locator' &&
+        !current.has(`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`),
+    )
+    .map((e) => e.id);
+  for (let i = 0; i < stale.length; i += 100) {
+    await db.delete(graphEdges).where(inArray(graphEdges.id, stale.slice(i, i + 100)));
+  }
+  if (reach.length === 0) return;
+
+  const now = new Date();
+  const values = reach.map((r) => ({
+    projectId,
+    fromKind: 'test',
+    fromKey: String(r.testCaseId),
+    toKind: r.kind,
+    toKey: r.key,
+    kind: 'reaches',
+    branch: null,
+    confidence: r.confidence,
+    origin: 'observed',
+    evidence: { via: 'locator', action: r.action } as any,
+    firstSeenRunId: runId,
+    lastSeenRunId: runId,
+    lastSeenAt: now,
+  }));
+  for (let i = 0; i < values.length; i += 100) {
+    await db
+      .insert(graphEdges)
+      .values(values.slice(i, i + 100))
+      .onConflictDoUpdate({
+        target: [
+          graphEdges.projectId,
+          graphEdges.fromKind,
+          graphEdges.fromKey,
+          graphEdges.kind,
+          graphEdges.toKind,
+          graphEdges.toKey,
+        ],
+        targetWhere: isNull(graphEdges.branch),
+        set: {
+          confidence: sql`excluded.confidence`,
+          evidence: sql`excluded.evidence`,
+          lastSeenRunId: sql`excluded.last_seen_run_id`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+        },
+        setWhere: ne(graphEdges.origin, 'manual'),
+      });
+  }
 }
 
 /**

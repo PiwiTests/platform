@@ -16,6 +16,7 @@ import {
   detectNewControl,
   detectLocatorBreakAhead,
 } from '../../shared/handlers/scenario-gaps';
+import * as gaps from '../../shared/handlers/scenario-gaps';
 
 describe('detectControlNobodyExercises', () => {
   test('flags a control on pages that no test targets', () => {
@@ -312,5 +313,56 @@ describe('renderScenarioDraft', () => {
       evidence: [],
     });
     expect(draft.text).toContain('No reached path to this gap');
+  });
+});
+
+describe('control reach from the locator index', () => {
+  const nodes = {
+    controls: new Set(['button:Save', 'textbox:Email', 'combobox:Role', 'textbox:Name', 'checkbox:Name']),
+    links: new Set(['link:Users']),
+  };
+
+  test('a role and name maps to its control or link', () => {
+    expect(gaps.locatorNodeTarget("getByRole('button', { name: 'Save' })")).toEqual({
+      by: 'role',
+      kind: 'control',
+      key: 'button:Save',
+    });
+    expect(gaps.locatorNodeTarget("getByRole('navigation').getByRole('link', { name: 'Users' })")).toEqual({
+      by: 'role',
+      kind: 'link',
+      key: 'link:Users',
+    });
+    expect(gaps.locatorNodeTarget("getByLabel('Email')")).toEqual({ by: 'name', name: 'Email' });
+    expect(gaps.locatorNodeTarget("getByRole('button', { name: /Cart, \\d+ items?/ })")).toBeNull();
+    expect(gaps.locatorNodeTarget("getByTestId('submit')")).toBeNull();
+  });
+
+  test('a use reaches a known node through its own chain, its snapshot, or a unique label', () => {
+    const reach = gaps.resolveControlReach(
+      [
+        { testCaseId: 1, target: "getByRole('button', { name: 'Save' })", action: 'click' },
+        { testCaseId: 1, target: "getByRole('button', { name: 'Save' })", action: 'expect.toBeEnabled' },
+        { testCaseId: 2, target: "getByRole('link', { name: 'Users' })", action: 'expect.toBeVisible' },
+        {
+          testCaseId: 3,
+          target: "getByTestId('save')",
+          action: 'click',
+          alternatives: ["getByTestId('save')", "getByRole('button', { name: 'Save' })"],
+        },
+        { testCaseId: 4, target: "getByLabel('Email')", action: 'fill' },
+        // Two labelled controls share the name, so the label names neither.
+        { testCaseId: 5, target: "getByLabel('Name')", action: 'fill' },
+        // A control the inventory never recorded reaches nothing.
+        { testCaseId: 6, target: "getByRole('button', { name: 'Delete' })", action: 'click' },
+      ],
+      nodes,
+    );
+    expect(reach.sort((a, b) => a.testCaseId - b.testCaseId)).toEqual([
+      { testCaseId: 1, kind: 'control', key: 'button:Save', action: 'operated', confidence: 1 },
+      { testCaseId: 2, kind: 'link', key: 'link:Users', action: 'checked', confidence: 1 },
+      { testCaseId: 3, kind: 'control', key: 'button:Save', action: 'operated', confidence: 0.9 },
+      { testCaseId: 4, kind: 'control', key: 'textbox:Email', action: 'operated', confidence: 0.8 },
+    ]);
   });
 });
