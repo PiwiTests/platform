@@ -11,6 +11,20 @@ import { PROJECT } from '#shared/test-project-names';
  * failure cuts a request that runs on past it, and the axis marks the cut with
  * an arrow at the edge.
  */
+async function openNetwork(page: Page) {
+  await page
+    .getByRole('tablist', { name: 'Evidence sections' })
+    .getByRole('tab', { name: /^Network/ })
+    .click();
+}
+
+/** A request's line on the Network tab, found by its path. */
+function networkRow(page: Page, path: string) {
+  return page
+    .locator('[data-shot="evidence-card"] button')
+    .filter({ has: page.locator('code', { hasText: new RegExp(`^${path}$`) }) });
+}
+
 test.describe('Timeline durations', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -123,6 +137,19 @@ test.describe('Timeline durations', () => {
     await expect(row(PAGE_REQUEST)).toContainText('180ms');
     await expect(row(PAGE_REQUEST).locator('[data-standout]')).toHaveCount(0);
     await expect(row("page.goto('/checkout')").locator('[data-standout]')).toHaveCount(0);
+  });
+
+  test('the Network tab colors the same requests the same way', async ({ page }) => {
+    await page.goto(`/test-run-cases/${failedCaseId}`);
+    await waitForHydration(page);
+    await openNetwork(page);
+
+    const quote = networkRow(page, '/api/quote').locator('[data-standout]');
+    await expect(quote).toHaveAttribute('data-standout', 'share');
+    await expect(quote).toHaveAttribute('title', /longer than the whole test/);
+    await expect(quote).toContainText('9s');
+    await expect(networkRow(page, '/checkout')).toContainText('180ms');
+    await expect(networkRow(page, '/checkout').locator('[data-standout]')).toHaveCount(0);
   });
 
   test('a bar the window cuts ends in an arrow; the whole test cuts none', async ({ page }) => {
@@ -274,5 +301,17 @@ test.describe('Usual durations', () => {
     // Steps and requests as quick as usual stay neutral.
     await expect(row("page.waitForLoadState('networkidle')").locator('[data-standout]')).toHaveCount(0);
     await expect(row(PAGE_REQUEST).locator('[data-standout]')).toHaveCount(0);
+  });
+
+  test('the Network tab colors the slow request against its usual time too', async ({ page }) => {
+    await page.goto(`/test-run-cases/${failedCaseId}`);
+    await waitForHydration(page);
+    await openNetwork(page);
+
+    const report = networkRow(page, '/api/report/2').locator('[data-standout]');
+    await expect(report).toHaveAttribute('data-standout', 'usual');
+    await expect(report).toContainText('1.6s');
+    await expect(report).toContainText('usually 300ms');
+    await expect(networkRow(page, '/reports').locator('[data-standout]')).toHaveCount(0);
   });
 });

@@ -359,11 +359,12 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
 
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
-- **A duration on the execution timeline** (a step or a request) is a `DurationValue`, never `Math.round(ms) + ' ms'`,
-  and is colored only when `durationStandout` (`#shared/duration-standout`) says it stands out in its test or against
-  its usual time (the `usual` the timeline sends with it, from `getUsualDurations`), in the one tone of
-  `app/utils/duration-tone.ts`. Never color it by a fixed threshold at the call site. The Network tab and the
-  trace's request list still color a request by fixed thresholds (500 ms, 1 s): they are not the model for new code.
+- **A duration in an execution's evidence** (a step or a request, on the Timeline, the Network tab or the trace's
+  request list) is a `DurationValue`, never `Math.round(ms) + ' ms'`, and is colored only when `durationStandout`
+  (`#shared/duration-standout`) says it stands out in its test or against its usual time (the `usual` the timeline
+  sends with it, from `getUsualDurations`), in the one tone of `app/utils/duration-tone.ts`. Never color it by a fixed
+  threshold at the call site. The Timeline and the Network tab read the timeline through `useExecutionTimeline`, one
+  key per execution. Web Vitals keep their standard rating bands, in `text-error` and the warning tone.
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale

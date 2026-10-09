@@ -315,6 +315,42 @@ test.describe('Test-run-case page', () => {
     await expect(page.locator('[data-shot="evidence-card"]').getByText('slowest')).toHaveCount(0);
   });
 
+  test('the Network tab colors a request by the same rule, from the timeline the page already read', async ({
+    page,
+  }) => {
+    const timelineCalls: string[] = [];
+    page.on('request', (req) => {
+      if (/\/api\/test-run-cases\/\d+\/timeline/.test(req.url())) timelineCalls.push(req.url());
+    });
+    // Vue only reports mismatches in a dev build; in a production run this stays empty.
+    const hydrationErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.text().includes('Hydration completed but contains mismatches')) hydrationErrors.push(msg.text());
+    });
+
+    await page.goto(`/test-run-cases/${failedCaseId}`);
+    await waitForHydration(page);
+    const tablist = page.getByRole('tablist', { name: 'Evidence sections' });
+    await tablist.getByRole('tab', { name: /^Network/ }).click();
+
+    // Both requests are quick next to the 8 s test: plain milliseconds, neither colored.
+    const card = page.locator('[data-shot="evidence-card"]');
+    await expect(card.getByText('180ms').first()).toBeVisible();
+    await expect(card.getByText('90ms').first()).toBeVisible();
+    await expect(card.locator('[data-standout]')).toHaveCount(0);
+
+    // The page reads the timeline once (with the server render when it opens on
+    // the Timeline): switching tabs never fetches it again.
+    const calls = timelineCalls.length;
+    expect(calls).toBeLessThanOrEqual(1);
+    await tablist.getByRole('tab', { name: /^Timeline/ }).click();
+    await expect(page.getByRole('table')).toBeVisible();
+    await tablist.getByRole('tab', { name: /^Network/ }).click();
+    await expect(card.getByText('180ms').first()).toBeVisible();
+    expect(timelineCalls).toHaveLength(calls);
+    expect(hydrationErrors).toEqual([]);
+  });
+
   test("the steps table renders the 1.63 subtitle, and a step's title opens its parameters", async ({ page }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);

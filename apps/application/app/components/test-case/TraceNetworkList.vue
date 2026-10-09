@@ -3,14 +3,21 @@
  * The "Full trace" network view: every request the page made (all resource
  * types) on a shared relative waterfall, with the failing action's window
  * shaded so the requests in flight at the moment of failure stand out.
- * Clicking a row opens the detail drawer (headers, timings, body preview).
+ * A request's duration and bar take the one warning tone only when the
+ * duration stands out in the test (`durationStandout`, by its share: the
+ * trace's requests have no usual duration), a failed request's bar keeps the
+ * failed outcome color. Clicking a row opens the detail drawer (headers,
+ * timings, body preview).
  */
 import type { TraceNetworkEntry, TraceNetworkResponse } from '~~/types/api';
+import { durationStandout, standoutReasonText, type DurationStandout } from '#shared/duration-standout';
 
 const props = defineProps<{
   data: TraceNetworkResponse;
   runId: number | null;
   testRunsCaseId: number;
+  /** The test's duration, in ms — a request's duration stands out against it. */
+  testDurationMs?: number | null;
 }>();
 
 type Filter = 'all' | 'failed' | 'duringFailure';
@@ -65,14 +72,22 @@ const windowStyle = computed<Record<string, string> | null>(() => {
   return { left: `${left}%`, width: `${width}%` };
 });
 
+function standoutOf(entry: TraceNetworkEntry): DurationStandout | null {
+  return durationStandout({ ms: entry.duration, testMs: props.testDurationMs });
+}
+function standoutTitle(entry: TraceNetworkEntry): string | undefined {
+  const standout = standoutOf(entry);
+  return standout ? `${formatDuration(entry.duration)}, ${standoutReasonText(standout, formatDuration)}` : undefined;
+}
+
 function barColor(entry: TraceNetworkEntry): string {
-  if (entry.failed) return 'bg-red-500';
-  if (entry.duration > 1000) return 'bg-orange-400';
-  return 'bg-gray-400 dark:bg-gray-500';
+  if (standoutOf(entry)) return STANDOUT_BAR_CLASS;
+  if (entry.failed) return STATUS_PALETTE.failed.bg;
+  return DURATION_BAR_CLASS;
 }
 
 function rowAccent(entry: TraceNetworkEntry): string {
-  if (entry.failed) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
+  if (entry.failed) return 'border-l-2 border-l-status-failed';
   if (entry.duringFailure) return 'border-l-2 border-l-amber-400 dark:border-l-amber-600';
   return 'border-l-2 border-l-transparent';
 }
@@ -96,7 +111,7 @@ function openDrawer(entry: TraceNetworkEntry) {
         :ui="{ list: 'gap-2', trigger: 'px-1.5' }"
       />
       <span v-if="data.failingWindow" class="hidden sm:flex items-center gap-1.5 text-xs text-gray-400">
-        <span class="inline-block w-3 h-2 rounded-sm bg-red-500/10 border border-red-300 dark:border-red-800" />
+        <span class="inline-block w-3 h-2 rounded-sm bg-status-failed/10 border border-status-failed/40" />
         failing action
       </span>
     </div>
@@ -136,22 +151,22 @@ function openDrawer(entry: TraceNetworkEntry) {
           </span>
           <span
             class="ml-1 shrink-0 text-xs tabular-nums"
-            :class="
-              entry.duration > 1000
-                ? 'text-red-600 font-medium'
-                : entry.duration > 500
-                  ? 'text-orange-500'
-                  : 'text-gray-500'
-            "
+            :data-standout="standoutOf(entry)?.reason"
+            :title="standoutTitle(entry)"
           >
-            <DurationValue :ms="entry.duration" unit-class="opacity-60" />
+            <DurationValue
+              :ms="entry.duration"
+              :class="standoutOf(entry) ? STANDOUT_TEXT_CLASS : DURATION_TEXT_CLASS"
+              unit-class="opacity-60"
+              :no-title="Boolean(standoutOf(entry))"
+            />
           </span>
         </div>
         <!-- Waterfall track: this request's span, with the failing window shaded behind it -->
         <div class="relative h-1.5 mt-1 rounded bg-gray-100 dark:bg-gray-800 overflow-hidden">
           <div
             v-if="windowStyle"
-            class="absolute inset-y-0 bg-red-500/10 border-x border-red-300/60 dark:border-red-800/60"
+            class="absolute inset-y-0 bg-status-failed/10 border-x border-status-failed/30"
             :style="windowStyle"
           />
           <div class="absolute inset-y-0 rounded-full" :class="barColor(entry)" :style="barStyle(entry)" />

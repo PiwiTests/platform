@@ -263,7 +263,8 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
 
 `app/composables/` covers cross-component state and behaviour — auth and dashboard shell, run streaming
 (`useRunStream`, `useNotificationStream`), diagnosis (`useClusterDiagnosis`, `useStreamingDiagnosis`,
-`useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`), fold/tree state
+`useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline`, an
+execution's failure timeline under one key for its Timeline and Network tabs), fold/tree state
 (`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), settings derivation (`useSettingsNav`,
 `useSettingsEnvState`), analytics scope, the run page's retry command (`useRunRetryCommand` — one failing set and one
 shared mode for every copy button on the page), IDE preferences (`useOpenInIde`), desktop detection (`useIsDesktop`,

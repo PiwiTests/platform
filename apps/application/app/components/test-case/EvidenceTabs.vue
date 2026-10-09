@@ -294,6 +294,24 @@ watch(tabs, (list) => {
   }
 });
 
+// The failure timeline, held here for the Timeline and Network tabs so a tab
+// switch never fetches it again: the Network tab colors each request against
+// the usual duration it carries, by the request's index.
+const { data: timeline } = useExecutionTimeline(
+  testRunsCaseId,
+  () => hasError.value && (activeTab.value === 'timeline' || activeTab.value === 'network'),
+);
+const usualByRequest = computed(
+  () =>
+    new Map(
+      hasError.value
+        ? (timeline.value?.lanes.network ?? []).flatMap((item) =>
+            item.usual != null ? [[item.ref.index, item.usual] as const] : [],
+          )
+        : [],
+    ),
+);
+
 // The Screen tab is one strip of views of the page at the failure: the page's
 // own (Screenshot, DOM, Accessibility tree), then the visual diff and the page
 // diff once their cards report a diff, then the video when one was recorded.
@@ -559,6 +577,8 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :test-runs-case-id="testRunsCaseId"
           :has-trace="hasTrace"
           :derived-from-trace="networkDerived"
+          :test-duration-ms="testCase?.duration ?? null"
+          :usual-by-index="usualByRequest"
         />
         <SectionCard v-else embedded title="">
           <EvidenceEmptyState :state="networkState" compact />

@@ -38,6 +38,7 @@
 import type { FailureTimeline, TimelineItem, TimelineLane, TimelineLanes } from '#shared/failure-timeline';
 import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
+import { useExecutionTimeline } from '~/composables/useExecutionTimeline';
 import { useTimelineTypeFilter } from '~/composables/useTimelineTypeFilter';
 import {
   TIMELINE_TYPES,
@@ -100,15 +101,15 @@ const props = defineProps<{
 }>();
 
 // The axis only exists for a failure; a passing execution reads its steps off the
-// prop and never needs the timeline build. The cluster page swaps the execution in
-// place, so a new one refetches (or clears) the axis.
-const { data, execute, clear } = await useFetch<FailureTimeline>(
-  () => `/api/test-run-cases/${props.testRunsCaseId}/timeline`,
-  { immediate: props.hasError !== false, watch: false },
+// prop and never needs the timeline build. The timeline is the one the evidence
+// card shares with its Network tab; the cluster page swaps the execution in
+// place, so a new one refetches the axis.
+const { data: fetchedTimeline } = await useExecutionTimeline(
+  () => props.testRunsCaseId,
+  () => props.hasError !== false,
 );
-watch(
-  () => [props.testRunsCaseId, props.hasError] as const,
-  ([, hasError]) => (hasError !== false ? void execute() : clear()),
+const data = computed<FailureTimeline | undefined>(() =>
+  props.hasError !== false ? (fetchedTimeline.value ?? undefined) : undefined,
 );
 
 const locator = useClusterSectionLocator();

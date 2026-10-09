@@ -3477,6 +3477,24 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `network-tab-durations${suffix}`,
+    description: suffix
+      ? 'The Network tab at phone width: the 28.4 s quote request in the same tone as on the Timeline, the others neutral'
+      : 'Network tab of execution 37: only the 28.4 s quote request colored, as on the Timeline (timeline-durations)',
+    // Execution 37: the quote request outlasts the 30 s test, every other
+    // request is quick, so it is the one line in the warning tone.
+    route: '/test-run-cases/37',
+    viewport: suffix ? { width: 390, height: 1600 } : { width: 1280, height: 1000 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab(/^Network/);
+      await page.locator('[data-shot="evidence-card"] [data-standout]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'timeline-usual-duration',
     description:
