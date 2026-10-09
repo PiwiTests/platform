@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
@@ -661,6 +662,13 @@ test.describe('Situation block on seeded cases', () => {
     await fold();
     await next.getByRole('button', { name: 'Copy apply command' }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(gitApplyCommand(target!.diff));
+
+    // Download .patch, in the menu, saves the same diff for a shell without heredocs.
+    const download = page.waitForEvent('download');
+    await next.getByRole('button', { name: 'More next-step actions' }).click();
+    await page.getByRole('menuitem', { name: 'Download .patch' }).click();
+    const saved = await (await download).path();
+    expect(readFileSync(saved, 'utf8').trimEnd()).toBe(target!.diff.trimEnd());
     expect(healingFetches).toEqual([]);
   });
 

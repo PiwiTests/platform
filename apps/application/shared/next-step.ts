@@ -221,8 +221,9 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   }
 
   // 3 — a locator-resolution failure that healing can repair, unless the patch
-  // comes first. The edit of the failing line is the change to apply; without
-  // one, the recommended locator is.
+  // comes first. The edit of the failing line is the change to apply, as an
+  // apply command or a .patch file for a shell without heredocs; without one,
+  // the recommended locator is.
   if (input.hasHealingRecommendation && !patchFirst) {
     const replace = {
       kind: 'replace-locator' as const,
@@ -237,7 +238,11 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
       return {
         ...replace,
         primary: { label: 'Copy apply command', action: 'copy-git-apply', payload: withExecution },
-        secondary: [{ label: 'Copy locator', action: 'copy-locator', payload: withExecution }, ...pick],
+        secondary: [
+          { label: 'Copy locator', action: 'copy-locator', payload: withExecution },
+          { label: 'Download .patch', action: 'download-patch', payload: withExecution },
+          ...pick,
+        ],
       };
     }
     return {

@@ -29,7 +29,7 @@ export interface NextStepActionHandlers {
    * and open-in-IDE actions read it, so they copy what the row shows.
    */
   change: () => NextStepChange | null;
-  /** Base filename for the downloaded patch; defaults to the cluster id. */
+  /** Base filename for the downloaded patch; defaults to one naming the cluster. */
   patchBaseName?: () => string;
   /** The project the open-in-IDE link resolves against. */
   ideProject?: () => { id?: number | string | null; name?: string | null } | null | undefined;
@@ -163,7 +163,9 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
       }
       case 'download-patch': {
         const patch = loadedChange()?.copyText;
-        if (patch) downloadPatch(patch, handlers.patchBaseName?.() ?? `piwi-fix-cluster-${handlers.clusterId() ?? ''}`);
+        const clusterId = handlers.clusterId();
+        const fallback = clusterId != null ? `piwi-fix-cluster-${clusterId}` : 'piwi-fix';
+        if (patch) downloadPatch(patch, handlers.patchBaseName?.() ?? fallback);
         break;
       }
       case 'full-patch':

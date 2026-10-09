@@ -23,18 +23,25 @@ describe('computeNextStep — one row per rule', () => {
     expect(s.kind).toBe('replace-locator');
   });
 
-  test('3: with an edit of the failing line, the apply command first and the locator next', () => {
+  test('3: with an edit of the failing line, the apply command first, the locator next, the .patch file in the menu', () => {
     const s = step({ hasHealingRecommendation: true, healingEditAvailable: true });
     expect(s.primary).toMatchObject({ label: 'Copy apply command', action: 'copy-git-apply' });
-    expect(s.secondary.map((a) => a.label)).toEqual(['Copy locator', 'Pick from snapshot', 'All alternatives']);
-    expect(s.secondary[0]!.action).toBe('copy-locator');
+    expect(s.secondary.map((a) => a.label)).toEqual([
+      'Copy locator',
+      'Download .patch',
+      'Pick from snapshot',
+      'All alternatives',
+    ]);
+    expect(s.secondary.map((a) => a.action).slice(0, 2)).toEqual(['copy-locator', 'download-patch']);
   });
 
   test('3: without an edit, the recommended locator is the change, and nothing offers an apply command', () => {
     const s = step({ hasHealingRecommendation: true, healingEditAvailable: false });
     expect(s.primary).toMatchObject({ label: 'Copy locator', action: 'copy-locator' });
     expect(s.secondary.map((a) => a.label)).toEqual(['Pick from snapshot', 'All alternatives']);
-    expect([s.primary, ...s.secondary].some((a) => a.action === 'copy-git-apply')).toBe(false);
+    expect(
+      [s.primary, ...s.secondary].some((a) => a.action === 'copy-git-apply' || a.action === 'download-patch'),
+    ).toBe(false);
   });
 
   test('4: a completed diagnosis whose patch applies cleanly', () => {
