@@ -232,6 +232,10 @@ export async function getFailureCluster(
     { failureGoesOn: goesOn, now: opts.now },
   );
 
+  // The cluster's diagnosed patch: whether it still applies decides both whether a
+  // verified fix is confirmed and the next step.
+  const patchFacts = await getClusterPatchFacts(db, clusterId);
+
   const clusterState: ClusterState = computeClusterState(
     {
       status: cluster.status ?? 'open',
@@ -249,13 +253,13 @@ export async function getFailureCluster(
       affectedTests: Number(countRow?.affectedTests ?? 0),
       quarantinedTests: quarantinedCount,
       knownIssue: reconcileKnownIssue,
+      diagnosedPatchApplies: patchFacts.diagnosisCompleted && patchFacts.patchAppliesCleanly,
     },
     { runIdsNewestFirst: projectRuns.map((r) => r.id), failureGoesOn: goesOn, now: opts.now },
   );
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
   // healing and error kind, plus the cluster's diagnosed patch and fix state.
-  const patchFacts = await getClusterPatchFacts(db, clusterId);
   let hasHealingRecommendation = false;
   let latestErrorKind: ReturnType<typeof parsePlaywrightError>['kind'] | null = null;
   let flakeLab: FlakeLabStepFacts | null = null;

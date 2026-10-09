@@ -18,6 +18,7 @@ export type ClusterStateKind =
   | 'failing-assigned'
   | 'quiet'
   | 'fix-verified-open'
+  | 'fix-unconfirmed'
   | 'stopped-failing-open'
   | 'ticket-done'
   | 'regressed'
@@ -57,6 +58,11 @@ export interface ClusterStateCluster {
   quarantinedTests: number;
   /** The cluster's known tracker issue, when one is pinned (its status drives the reconcile). */
   knownIssue?: { key: string; statusCategory?: string | null } | null;
+  /**
+   * The cluster's completed diagnosis has a patch that still applies cleanly to
+   * the current code: a verified fix may then not be in the code yet.
+   */
+  diagnosedPatchApplies?: boolean;
 }
 
 export interface ClusterStateProject {
@@ -182,19 +188,31 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('regressed', cluster.status === 'resolved' ? 'reopen' : null);
   }
 
-  // The ticket closed and the failure stopped: offer to reconcile (the
-  // resolve-on-close policy does this automatically when it is on). A failure
-  // that goes on keeps its own sentence; the Issue line names the ticket.
+  // The ticket closed and the failure stopped: the sentence says the failure
+  // stopped, while the Issue line names the ticket and the Next line asks to
+  // resolve; the state offers the reconcile (the resolve-on-close policy does it
+  // automatically when it is on). A failure that goes on keeps its own sentence.
   const doneTicket = ticketReconcileKey(cluster, { failureGoesOn: project.failureGoesOn ?? true, now });
   if (doneTicket) {
-    t(`${doneTicket} is Done — mark this cluster resolved?`);
+    const rel = relativeTimeAgo(cluster.lastSeenAt, now);
+    t(`Stopped failing, last seen${rel ? ` ${rel}` : ''} in `);
+    run(cluster.lastSeenRunId);
+    t('.');
     return done('ticket-done', 'mark-resolved');
   }
 
+  // A verified fix whose diagnosed patch still applies may not be in the code:
+  // no reconcile here, the Next line leads with the patch.
   if (cluster.fixVerification === 'diagnosis-verified') {
     t('Fixed in ');
     run(cluster.fixLandedRunId);
     const commit = cluster.fixCommit?.trim() ? shortCommit(cluster.fixCommit.trim()) : null;
+    if (cluster.diagnosedPatchApplies) {
+      t(
+        `${commit ? ` (${commit})` : ''}, but the diagnosed patch still applies, so the change may not be in the code yet.`,
+      );
+      return done('fix-unconfirmed', null);
+    }
     t(`${commit ? ` (${commit})` : ''} and verified, still marked open.`);
     return done('fix-verified-open', 'mark-resolved');
   }

@@ -56,11 +56,15 @@ describe('cluster-state ticket-done reconcile', () => {
   // The failure stopped: it was last seen before the latest finished run.
   const project = { runIdsNewestFirst: [30, 20, 10], failureGoesOn: false, now };
 
-  test('offers to mark resolved when the ticket is Done', () => {
+  test('says the failure stopped and offers to mark resolved when the ticket is Done', () => {
     const state = computeClusterState({ ...base, knownIssue: { key: 'PROJ-123', statusCategory: 'done' } }, project);
     expect(state.kind).toBe('ticket-done');
     expect(state.action).toBe('mark-resolved');
-    expect(state.sentence).toContain('PROJ-123 is Done');
+    // The Issue line names the ticket and the Next line asks to resolve: the
+    // state says what happened.
+    expect(state.sentence).toBe('Stopped failing, last seen 20 days ago in run #10.');
+    expect(state.sentence).not.toContain('PROJ-123');
+    expect(state.parts.find((p) => p.kind === 'run')).toMatchObject({ id: 10 });
   });
 
   test('a regression under a Done ticket keeps the regression, with no reconcile', () => {

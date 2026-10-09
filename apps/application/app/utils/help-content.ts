@@ -81,7 +81,7 @@ export const HELP_TOPICS = {
   },
   'cluster.state': {
     title: 'Cluster state',
-    text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
+    text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, fixed while its diagnosed patch still applies (the change may not be in the code yet), stopped failing, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it, unless the Next line offers it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
     doc: 'features/failure-clusters#the-state-line',
   },
 

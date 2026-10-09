@@ -2,8 +2,9 @@ import type { ClusterStateKind } from '#shared/cluster-state';
 
 /**
  * The color a cluster's state reads in at a glance — red still failing, green
- * fixed, amber quiet or parked, neutral resolved / ignored / snoozed — as the
- * state line's dot class and as the situation block's edge (none when neutral).
+ * fixed, amber quiet, parked or fixed while its diagnosed patch still applies,
+ * neutral resolved / ignored / snoozed — as the state line's dot class and as
+ * the situation block's edge (none when neutral).
  */
 export interface ClusterStateColor {
   dot: string;
@@ -22,6 +23,7 @@ const BY_KIND: Record<ClusterStateKind, ClusterStateColor> = {
   quiet: WARNING,
   quarantined: WARNING,
   'fix-verified-open': SUCCESS,
+  'fix-unconfirmed': WARNING,
   'stopped-failing-open': SUCCESS,
   'ticket-done': SUCCESS,
   resolved: SUCCESS,

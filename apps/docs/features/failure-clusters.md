@@ -96,13 +96,13 @@ the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
 ### The state line
 
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a colored dot:
-*still failing*, *not seen for N runs*, *fixed and verified, still open*, *stopped failing*, *ticket Done*,
-*regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When an open
-cluster stopped failing, or its ticket is Done and the latest finished run no longer fails it, the page offers **one
-action**, *Mark resolved*; a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
-own. Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
-the cluster for a day, a week or until it recurs. Changing the status, from the inbox, a list, bulk triage or an
-agent, keeps the triage note and the lines Piwi added to it.
+*still failing*, *not seen for N runs*, *fixed and verified, still open*, *fixed, but the diagnosed patch still
+applies*, *stopped failing*, *regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests
+quarantined*. When an open cluster stopped failing, or its ticket is Done and the latest finished run no longer fails
+it, the page offers **one action**, *Mark resolved*, which a fix whose patch still applies keeps in the **Next** menu;
+a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. Beside it, **Triage** sets the status (open /
+resolved / ignored), a note and the assignee, and [snoozes](#snoozing) the cluster. Every status change keeps the
+triage note and the lines Piwi added to it.
 
 ### Occurrences over time
 

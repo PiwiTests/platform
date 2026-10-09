@@ -81,7 +81,7 @@ describe('computeNextStep — one row per rule', () => {
 });
 
 describe('computeNextStep — precedence between rows', () => {
-  test('a clean patch beats mark-resolved (a truly-landed fix leaves a stale patch)', () => {
+  test('a verified fix whose patch still applies goes to the patch, with Mark resolved last in its menu', () => {
     // The #10 case: verified + open, yet the diagnosis patch still applies cleanly.
     const s = step({
       fixVerification: 'diagnosis-verified',
@@ -90,6 +90,33 @@ describe('computeNextStep — precedence between rows', () => {
       patchAppliesCleanly: true,
     });
     expect(s.kind).toBe('apply-patch');
+    expect(s.secondary.at(-1)).toEqual({ label: 'Mark resolved', action: 'mark-resolved', payload: { clusterId: 10 } });
+  });
+
+  test('a cluster that stopped failing with no fix identified is marked resolved, whatever its patch says', () => {
+    const s = step({
+      fixVerification: 'stopped-failing',
+      clusterStatus: 'open',
+      fixLandedRunId: 62,
+      diagnosisCompleted: true,
+      patchAppliesCleanly: true,
+    });
+    expect(s.kind).toBe('mark-resolved');
+    expect(s.title).toBe('Mark the cluster resolved — it stopped failing in run #62');
+    expect(s.why).toContain('no fix identified');
+    expect(`${s.title} ${s.why}`).not.toMatch(/fix held|fix was verified/);
+  });
+
+  test('the patch offers no Mark resolved without a verified fix on an open cluster', () => {
+    const patch = { diagnosisCompleted: true, patchAppliesCleanly: true };
+    for (const s of [
+      step(patch),
+      step({ ...patch, fixVerification: 'regressed', clusterStatus: 'open' }),
+      step({ ...patch, fixVerification: 'diagnosis-verified', clusterStatus: 'resolved' }),
+    ]) {
+      expect(s.kind).toBe('apply-patch');
+      expect(s.secondary.map((a) => a.action)).not.toContain('mark-resolved');
+    }
   });
 
   test('the blocker row wins over everything', () => {

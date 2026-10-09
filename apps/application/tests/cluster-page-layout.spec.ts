@@ -274,6 +274,67 @@ test.describe('Cluster situation block on seeded clusters', () => {
     });
   }
 
+  // A verified fix whose diagnosed patch still applies is not confirmed: the state
+  // line offers no reconcile, and Mark resolved waits in the Next line's menu.
+  test('a verified fix whose patch still applies leaves Mark resolved to the Next menu', async ({ page, request }) => {
+    let target: number | null = null;
+    for (const id of [10, 1, 3, 6, 7]) {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      if (!res.ok()) continue;
+      const detail = (await res.json()) as { clusterState: { kind: string; action: string | null } };
+      if (detail.clusterState.kind === 'fix-unconfirmed') {
+        expect(detail.clusterState.action).toBeNull();
+        target = id;
+        break;
+      }
+    }
+    test.skip(target == null, 'no seeded cluster with a verified fix whose diagnosed patch still applies');
+
+    await page.goto(`/failure-clusters/${target}`);
+    await waitForHydration(page);
+    const state = page.locator('[data-shot="cluster-state"]');
+    await expect(state.locator('[data-shot="cluster-state-sentence"]')).toContainText(
+      'the diagnosed patch still applies',
+    );
+    await expect(state.getByRole('button', { name: 'Mark resolved', exact: true })).toHaveCount(0);
+
+    const next = page.locator('[data-shot="next-step"]');
+    await expect(next).toHaveAttribute('data-next-kind', 'apply-patch');
+    await next.getByRole('button', { name: 'More next-step actions' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Mark resolved' })).toBeVisible();
+    await page.keyboard.press('Escape');
+  });
+
+  // A Done ticket on a failure that stopped: the Issue line names the ticket and
+  // the Next line asks to resolve, so the state line says what happened.
+  test('a Done ticket on a stopped failure: the state says it stopped, without the ticket', async ({
+    page,
+    request,
+  }) => {
+    let target: { id: number; key: string } | null = null;
+    for (const id of [10, 2, 1]) {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      if (!res.ok()) continue;
+      const detail = (await res.json()) as {
+        clusterState: { kind: string };
+        knownIssue: { key: string } | null;
+      };
+      if (detail.clusterState.kind === 'ticket-done' && detail.knownIssue) {
+        target = { id, key: detail.knownIssue.key };
+        break;
+      }
+    }
+    test.skip(target == null, 'no seeded cluster whose Done ticket stopped failing');
+
+    await page.goto(`/failure-clusters/${target!.id}`);
+    await waitForHydration(page);
+    const sentence = page.locator('[data-shot="cluster-state-sentence"]');
+    await expect(sentence).toContainText(/^Stopped failing, last seen .* in run #\d+\.$/);
+    await expect(sentence).not.toContainText(target!.key);
+    await expect(page.locator('[data-shot="issue-line"]')).toContainText(target!.key);
+    await expect(page.locator('[data-shot="next-step"]')).toHaveAttribute('data-next-kind', 'mark-resolved');
+  });
+
   // One Most likely rule on both failure pages: the expected line is computed
   // from the API with the shared helper, then read on each page.
   type DiagnosisFacts = { status: string; summary: string | null; confidence: string | null; provider?: string | null };

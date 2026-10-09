@@ -127,6 +127,9 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
 
   const verified = input.fixVerification === 'diagnosis-verified' || input.fixVerification === 'stopped-failing';
   const hasCleanPatch = input.diagnosisCompleted === true && input.patchAppliesCleanly === true;
+  // A diagnosis-verified fix whose diagnosed patch still applies may not be in the
+  // code: the cluster state says so, and the patch comes before marking resolved.
+  const fixUnconfirmed = input.fixVerification === 'diagnosis-verified' && hasCleanPatch;
 
   // 1 — a did-not-run cascade: open the failure that blocked this test.
   if (input.status === 'didnotrun' && input.blockedByCase) {
@@ -143,15 +146,21 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
     };
   }
 
-  // 2 — the fix held: mark the cluster resolved. A fix that truly landed leaves
-  // its patch stale against the tree, so a still-clean patch (row 4) wins over
-  // marking resolved.
-  if (verified && input.clusterStatus === 'open' && !hasCleanPatch) {
+  // 2 — the failures stopped on an open cluster: mark it resolved. A
+  // diagnosis-verified fix whose patch still applies goes to the patch (row 4),
+  // with Mark resolved in its menu; a cluster that stopped failing with no fix
+  // identified is marked resolved whatever its patch says.
+  if (verified && input.clusterStatus === 'open' && !fixUnconfirmed) {
     const run = input.fixLandedRunId != null ? ` in run #${input.fixLandedRunId}` : '';
+    const fixVerified = input.fixVerification === 'diagnosis-verified';
     return {
       kind: 'mark-resolved',
-      title: `Mark the cluster resolved — the fix held${run}`,
-      why: 'The failures stopped and the fix was verified, but the cluster is still marked open.',
+      title: fixVerified
+        ? `Mark the cluster resolved — the fix held${run}`
+        : `Mark the cluster resolved — it stopped failing${run}`,
+      why: fixVerified
+        ? 'The failures stopped and the fix was verified, but the cluster is still marked open.'
+        : 'The failures stopped with no fix identified, but the cluster is still marked open.',
       primary: { label: 'Mark resolved', action: 'mark-resolved', payload: withCluster },
       secondary: [{ label: 'Reopen if it comes back', action: 'reopen', payload: withCluster }],
     };
@@ -196,6 +205,10 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
         { label: 'Download .patch', action: 'download-patch', payload: withCluster },
         { label: 'Open in IDE', action: 'open-in-ide', payload: withCluster },
         { label: 'Read the diagnosis', action: 'read-diagnosis', payload: withCluster },
+        // The fix was verified, so whoever knows it is in the code can still close it.
+        ...(fixUnconfirmed && input.clusterStatus === 'open'
+          ? [{ label: 'Mark resolved', action: 'mark-resolved', payload: withCluster }]
+          : []),
       ],
     };
   }
