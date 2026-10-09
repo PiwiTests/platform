@@ -4,7 +4,8 @@
  * fails, on which commit and author, then whether it is the latest execution of
  * its test, with one link to the newest one when it is not. One meta style; the
  * commit sits in a code chip. Below `sm` the latest part starts its own line, so
- * "Not the latest" reads as a fact of its own on a phone.
+ * "Not the latest" reads as a fact of its own on a phone; the link wraps with
+ * its separator.
  */
 import type { SituationLine } from '#shared/situation';
 
@@ -27,7 +28,9 @@ const latestLink = computed(() => props.latest?.parts.filter((p) => p.kind === '
       ><span aria-hidden="true" class="max-sm:hidden"> · </span
       ><span data-testid="execution-meta-latest" class="max-sm:block max-sm:mt-0.5"
         ><SituationParts :parts="latestSentence" /><template v-if="latestLink.length"
-          ><span aria-hidden="true"> · </span><SituationParts :parts="latestLink" /></template></span
+          >{{ ' '
+          }}<span class="whitespace-nowrap"
+            ><span aria-hidden="true">· </span><SituationParts :parts="latestLink" /></span></template></span
     ></template>
   </p>
 </template>
