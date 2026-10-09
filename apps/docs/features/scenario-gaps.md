@@ -20,6 +20,11 @@ and page visits of every run.
 > **Observed reach, not coverage.** A gap says a test *observably reached* something, or that nothing did, measured
 > from real runs, never from instrumented code coverage. "No edge" means "no evidence", not "proof of absence".
 
+<figure>
+  <img src="/diagrams/test-map-graph.svg" alt="Tests reach pages and routes; routes lead to handlers and dependencies; nodes colored by gap class">
+  <figcaption>Three rows of a Test Map: a route whose test missed a probe, a page only one test reaches, and surface no test reaches.</figcaption>
+</figure>
+
 ## What a gap is
 
 A **[detector](/guide/concepts#detector)** reads the Test Map and the last 30 runs and reports one kind of gap: a
@@ -55,15 +60,30 @@ The tab opens on the **feature map**: one circle per feature (from the
 worst open gap, and linked to the features it shares nodes with. The ranked list beside it carries every feature,
 however many.
 
+<figure>
+  <img src="/screenshots/scenario-gaps-feature-map.png" alt="Feature map: four feature circles colored by worst gap, beside their counts">
+  <figcaption>Four features of an admin console, linked through the routes they share.</figcaption>
+</figure>
+
 A feature, or a gap's node, opens in the **feature graph**: the node in the middle, what leads into it on the left,
 what it leads to on the right, nodes colored by class and edges by kind. The picture shows the most severe few of each
 kind; the **neighbors** list under it has every neighbor, with its relation, worst gap and reaching tests. Click a
 node to recenter on it. Agents walk the same graph with the
 [`get_feature_graph`](/reference/mcp-tools#get_feature_graph) MCP tool.
 
+<figure>
+  <img src="/screenshots/scenario-gaps-graph.png" alt="Feature graph centered on the page /settings/api-tokens and its neighbors">
+  <figcaption>A page one test reaches: what leads to it on the left, what it contains, links to and loads on the right.</figcaption>
+</figure>
+
 ## Triage
 
 Every gap takes the same four verbs as an inbox item:
+
+<figure>
+  <img src="/screenshots/scenario-gaps-tab.png" alt="Five ranked gaps of the Users feature with evidence and triage verbs">
+  <figcaption>Gaps of one feature, ranked, each with its evidence and the inbox verbs.</figcaption>
+</figure>
 
 - **Accept** copies a draft test skeleton to your clipboard: a title from the gap, the `piwi:` annotations of the
   nearest test, the path from a reached page to the gap as steps, and a TODO where the assertion goes.
@@ -79,6 +99,10 @@ the detector no longer finds it, for example once its node gains a trusted test,
 closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
 The map is recomputed after every run and nightly.
 
+<figure>
+  <img src="/diagrams/scenario-gaps-loop.svg" alt="Sources feed the Test Map, detectors, ranking and delivery; triage flows back">
+</figure>
+
 Every verdict is also a labeled example: accepted and covered-by count *for* a detector, dismissed as *wrong* counts
 *against* it. A detector below 60% precision on a project with twenty or more verdicts **mutes itself** there: its
 rows leave the pull-request comment, and the Gaps tab and **Settings → About** say so.
@@ -93,7 +117,7 @@ to your channels. Agents list and draft gaps with
 
 ## What feeds the map
 
-Every run adds the routes its tests requested on the application's own origin and the pages they navigated to. Three
+Every run adds the routes its tests requested on the application's own origin and the page each test ended on. Three
 optional sources add the rest:
 
 - **The page inventory.** With `capturePageInventory` on (off by default), the reporter records the controls (role
@@ -127,6 +151,10 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
 
 The Test Map and its server probes are optional: [decline](/operate/capabilities#declining-a-capability) either per
 project or for the instance, and these surfaces disappear.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

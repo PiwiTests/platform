@@ -253,6 +253,7 @@ const emptyText = computed(() =>
       <p class="text-sm text-highlighted leading-relaxed">
         Proposed tests that do not exist yet, ranked by exposure. Every line is observed reach, never instrumented
         coverage.
+        <HelpHint topic="project.gaps" />
       </p>
       <div class="flex items-center gap-2 shrink-0">
         <USelect
@@ -311,7 +312,12 @@ const emptyText = computed(() =>
     <EmptyState v-else-if="gaps.length === 0" icon="i-lucide-radar" :text="emptyText" />
 
     <template v-else>
-      <SectionCard v-for="group in grouped" :key="group.feature" :title="group.feature">
+      <SectionCard
+        v-for="group in grouped"
+        :key="group.feature"
+        :title="group.feature"
+        :data-shot="`gaps-group-${group.feature}`"
+      >
         <div class="divide-y divide-default">
           <div v-for="gap in group.items" :key="gap.id" class="py-3 space-y-2" :data-shot="`gap-${gap.id}`">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">

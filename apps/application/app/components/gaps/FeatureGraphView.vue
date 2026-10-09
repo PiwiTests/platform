@@ -277,7 +277,7 @@ function select(node: { kind: string; key: string }) {
     <LoadingState v-else-if="loading && !graph" />
     <EmptyState v-else-if="!graph || !seed" icon="i-lucide-radar" text="No graph for this node" />
     <template v-else>
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2" data-shot="feature-graph-seed">
         <span class="text-sm font-mono text-highlighted">{{ seed.kind }}:{{ seed.key }}</span>
         <UBadge v-if="seed.class" :color="gapClassBadgeColor(seed.class)" variant="subtle" size="sm">{{
           seed.class
@@ -290,7 +290,7 @@ function select(node: { kind: string; key: string }) {
         >
       </div>
 
-      <div v-if="neighbors.length > 0" ref="scroller" class="overflow-x-auto">
+      <div v-if="neighbors.length > 0" ref="scroller" class="overflow-x-auto" data-shot="feature-graph-picture">
         <svg
           :width="layout.width"
           :height="layout.height"

@@ -918,6 +918,7 @@ describe('demo examples hold in the seed', () => {
     'lab',
     'resources',
     'incident',
+    'gaps',
   ]);
   const ROUTE_ENTITIES = [
     { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
@@ -974,6 +975,15 @@ describe('demo examples hold in the seed', () => {
         `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
       );
       expect(row?.rule, `${id}: the run is flagged as an incident`).toBeTruthy();
+    }
+    if (want.gaps) {
+      expect(want.project, `${id}: gaps needs a project`).toBeTruthy();
+      for (const detector of want.gaps.detectors) {
+        const open = q(
+          `select id from scenario_gaps where project_id = ${want.project!.id} and status = 'open' and detector = '${detector}'`,
+        );
+        expect(open.length, `${id}: an open ${detector} gap`).toBeGreaterThan(0);
+      }
     }
     if (want.cluster) {
       expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(

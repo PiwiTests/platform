@@ -271,8 +271,8 @@ request never shows up as missing on the default branch. See [Scenario gaps & th
 
 ### Reach
 
-A test **reaches** a route or a page when a real run observes it doing so: a request to the route, or a navigation to
-the page. A control is reached only when triage records a covering test for it. Reach is measured from runs, never
+A test **reaches** a route or a page when a real run observes it doing so: a request to the route, or the test ending
+on the page. A control is reached only when triage records a covering test for it. Reach is measured from runs, never
 from instrumented code coverage, which is why the docs and the dashboard say *observed reach* rather than *coverage*.
 A flaky, quarantined or skipped test's reach does not count as trusted.
 
