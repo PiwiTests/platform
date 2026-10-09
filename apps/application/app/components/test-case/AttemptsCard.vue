@@ -114,7 +114,7 @@ function suspectLink(suspect: FlakeSuspect): string {
 }
 
 function attemptLabel(retry: number): string {
-  return retry === 0 ? 'Attempt 1' : `Retry ${retry}`;
+  return `Attempt ${retry + 1}`;
 }
 </script>
 
