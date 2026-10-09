@@ -15,6 +15,7 @@ import { test, expect } from './fixtures';
 import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
+import { waitForHydration } from './utils';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -372,7 +373,9 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
     mock.requireTags = true;
     try {
       await page.goto(`/failure-clusters/${clusters.dialog}`);
-      const open = page.locator('[data-shot="cluster-create-issue"]').first();
+      // The Issue line renders on the server: click once the page is interactive.
+      await waitForHydration(page);
+      const open = page.locator('[data-shot="issue-line-create"]').first();
       await expect(open).toBeVisible({ timeout: 30_000 });
       await open.click();
       const dialog = page.getByRole('dialog');

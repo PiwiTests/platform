@@ -2,7 +2,7 @@
  * Shared utilities for locator healing — pure functions that work in both
  * Node.js and browser (Web Crypto) environments.
  */
-import type { RankedLocator, NarrowingSuggestion } from './locator-healing.types';
+import type { RankedLocator, NarrowingSuggestion, LocatorHealingResult } from './locator-healing.types';
 import { sha256Hex } from './utils/hash';
 import { compareVersions } from './piwi-env-vars';
 import { locatorCallValues, parseLeafLocatorCall } from '#shared/locator-chain';
@@ -10,6 +10,28 @@ import { locatorCallValues, parseLeafLocatorCall } from '#shared/locator-chain';
 // The recommended-fix ladder lives in `@piwitests/core`, shared with the browser
 // extension; re-exported so app/server code keeps importing it from here.
 export { CONVENTION_STABILITY_FLOOR, LOCATOR_FAMILY, recommendLocatorFix } from '@piwitests/core/locator-fix';
+
+/** The fields of a healing answer that say whether it has replacement locators. */
+type HealingLists = Pick<
+  LocatorHealingResult,
+  'source' | 'fromDiffRename' | 'fromElementMatch' | 'fromPriorSuccess' | 'fromAriaSnapshot'
+>;
+
+/**
+ * True when a healing answer has replacement locators to show: a source other
+ * than `none` and at least one ranked list, whichever rung of the lookup filled
+ * it (the run's own diff, the failing page, a prior pass or the ARIA snapshot).
+ * The Locator fix section and its panel both show on this one rule.
+ */
+export function hasHealingAlternatives(healing: HealingLists | null | undefined): boolean {
+  if (!healing || healing.source === 'none') return false;
+  return Boolean(
+    healing.fromDiffRename?.length ||
+    healing.fromElementMatch?.length ||
+    healing.fromPriorSuccess?.length ||
+    healing.fromAriaSnapshot?.length,
+  );
+}
 
 /** Playwright's first release with `locator.visible()`. */
 const VISIBLE_MIN_VERSION = '1.63';

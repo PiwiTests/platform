@@ -102,6 +102,59 @@ describe('global search', () => {
       projects: [],
       runs: [],
       cases: [],
+      clusters: [],
     });
+  });
+});
+
+describe('failure clusters in the global search', () => {
+  beforeAll(async () => {
+    await db.insert(schema.failureClusters).values([
+      {
+        id: 40,
+        projectId: MINE,
+        fingerprint: 'fp-40',
+        signature: 'TimeoutError: locator.click',
+        title: 'Pay button click times out',
+        errorType: 'timeout',
+        firstSeenRunId: 100,
+        lastSeenRunId: 100,
+      },
+      {
+        id: 41,
+        projectId: 1,
+        fingerprint: 'fp-41',
+        signature: 'Error: expect(received).toBe(expected)',
+        errorType: 'assertion',
+        firstSeenRunId: 100,
+        lastSeenRunId: 100,
+      },
+    ]);
+    await db.insert(schema.entityLinks).values([
+      { failureClusterId: 40, url: 'https://acme.atlassian.net/browse/CHK-101', provider: 'jira', key: 'CHK-101' },
+      { failureClusterId: 40, url: 'https://github.com/acme/shop/pull/7', provider: 'github-pr', key: '#7' },
+    ]);
+  });
+
+  test('finds a cluster by the key of an issue linked to it, naming the key', async () => {
+    const res = await searchProjectsTestRunsCases(db as never, 'chk-101', 'all');
+    expect(res.clusters.map((c) => [c.id, c.issueKey])).toEqual([[40, 'CHK-101']]);
+  });
+
+  test('finds a cluster by its title or signature once, whatever links it has', async () => {
+    const res = await searchProjectsTestRunsCases(db as never, 'pay button', 'all');
+    expect(res.clusters.map((c) => [c.id, c.issueKey])).toEqual([[40, null]]);
+    const bySignature = await searchProjectsTestRunsCases(db as never, 'toBe(expected)', 'all');
+    expect(bySignature.clusters.map((c) => c.id)).toEqual([41]);
+  });
+
+  test('finds a cluster by its number, written with or without #', async () => {
+    expect((await searchProjectsTestRunsCases(db as never, '#41', 'all')).clusters.map((c) => c.id)).toEqual([41]);
+    expect((await searchProjectsTestRunsCases(db as never, '41', 'all')).clusters.map((c) => c.id)).toContain(41);
+  });
+
+  test("keeps clusters outside the caller's projects out", async () => {
+    const res = await searchProjectsTestRunsCases(db as never, 'CHK-101', new Set([1]));
+    expect(res.clusters).toEqual([]);
   });
 });

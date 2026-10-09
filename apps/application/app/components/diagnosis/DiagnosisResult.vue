@@ -3,7 +3,7 @@ import type { FailureDiagnosis } from '~~/server/database/schema';
 import { formatRelativeTime } from '~/utils';
 import { DIAGNOSIS_SECTION_SHORT, isKnownSectionId } from '#shared/diagnosis-sections';
 import { escapeHtml } from '#shared/markdown-to-html';
-import { storedPatchValidation } from '#shared/patch';
+import { storedPatchValidation, type PatchValidation } from '#shared/patch';
 import { diagnosisAuthorLabel, isAgentDiagnosis } from '#shared/agent-diagnosis';
 
 const props = defineProps<{
@@ -231,7 +231,7 @@ async function copyDiagnosis() {
   }
 }
 
-const patchValidation = computed(() => storedPatchValidation(details.value));
+const patchValidation = computed<PatchValidation | null>(() => storedPatchValidation(details.value));
 
 const categoryColors: Record<string, 'error' | 'warning' | 'info' | 'secondary' | 'neutral'> = {
   'app-bug': 'error',
@@ -491,7 +491,9 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
 
         <PatchBlock
           v-if="details.suggestedFix.patch"
-          class="mt-2"
+          data-shot="diagnosis-patch"
+          data-copies="copy-git-apply"
+          class="mt-2 scroll-mt-4"
           :patch="details.suggestedFix.patch"
           :validation="patchValidation"
           :download-name="`piwi-diagnosis-${diagnosis?.id ?? 'fix'}`"

@@ -38,12 +38,6 @@ const emptyQuality = (): QualityCounts => ({
 const modelKey = (provider: string | null | undefined, model: string | null | undefined) =>
   `${provider ?? ''}\u0000${model ?? ''}`;
 
-/** The status of the validation stored with a diagnosis' suggested patch. */
-export function patchValidationStatus(details: unknown): string | null {
-  const status: unknown = storedPatchValidation(details)?.status;
-  return typeof status === 'string' ? status : null;
-}
-
 /** A patch whose hunks were checked against the source: it applies, or it does not. */
 const CHECKED_PATCH = new Set(['applies', 'applies-with-offset', 'stale-file', 'invalid']);
 const APPLYING_PATCH = new Set(['applies', 'applies-with-offset']);
@@ -67,7 +61,7 @@ async function readQuality(db: DrizzleDB, since: Date): Promise<Map<string, Qual
       const row = tally(r.provider, r.model);
       if (r.feedback === 'up' || r.feedback === 'down') row.rated++;
       if (r.feedback === 'up') row.helpful++;
-      const status = patchValidationStatus(r.details);
+      const status = storedPatchValidation(r.details)?.status;
       if (status && CHECKED_PATCH.has(status)) row.patchesChecked++;
       if (status && APPLYING_PATCH.has(status)) row.patchesApplying++;
     }

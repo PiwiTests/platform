@@ -10,23 +10,33 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull, notInArray } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
+import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
 import { computeNextStep } from '../next-step';
-import { getClusterPatchFacts } from './failure-clusters';
+import { describeDidNotRun } from '../did-not-run';
+import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
+import { getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
-import { eligibleRunSql } from '../run-eligibility';
+import { eligibleRunSql, UNFINISHED_RUN_STATUSES } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
-import { isFailedStatus } from '../utils/test-counts';
+import { FAILED_STATUS_KEYS, finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
+import {
+  attachUsualDurations,
+  buildUsualDurations,
+  USUAL_MIN_SAMPLES,
+  type UsualDurations,
+  type UsualRequestRow,
+} from '../duration-standout';
 import {
   buildFailureClues,
   type FailureClue,
@@ -48,7 +58,7 @@ import type { FlatStep } from '@piwitests/core/step-analysis';
 import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
-import { clusterKnownIssues } from './known-issues';
+import { clusterIssueFilings, clusterKnownIssues } from './known-issues';
 
 /**
  * A test case with its header stats, recent executions and clusters. Executions
@@ -210,15 +220,62 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
     .limit(50);
 }
 
+/**
+ * The executions of a test newer than one execution: its later attempts in the
+ * same run, and every attempt in a run that started later (a tie on the start
+ * time goes to the higher run id), newest first. Every Playwright project and
+ * every branch, lab runs left out; `summarizeNewerExecutions` keeps the
+ * execution's own project. Fifty rows at most.
+ */
+export async function getNewerExecutions(
+  db: DrizzleDB,
+  ref: { testCaseId: number; runId: number; runStartTime: Date | null; retries: number },
+): Promise<NewerExecutionRow[]> {
+  const laterRun = ref.runStartTime
+    ? or(
+        gt(testRuns.startTime, ref.runStartTime),
+        and(eq(testRuns.startTime, ref.runStartTime), gt(testRuns.id, ref.runId)),
+      )
+    : gt(testRuns.id, ref.runId);
+  return db
+    .select({
+      id: testRunsCases.id,
+      runId: testRuns.id,
+      status: testRunsCases.status,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+      failureClusterId: testRunsCases.failureClusterId,
+      startTime: testRuns.startTime,
+    })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(
+      and(
+        eq(testRunsCases.testCaseId, ref.testCaseId),
+        notLabRun(testRuns.origin),
+        or(laterRun, and(eq(testRuns.id, ref.runId), gt(testRunsCases.retries, ref.retries))),
+      ),
+    )
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id), desc(testRunsCases.retries))
+    .limit(50);
+}
+
 export async function getTestRunCase(
   db: DrizzleDB,
   id: number,
   // Custom wasted-wait patterns; null = the defaults are in effect, so the
   // stored wasted_time_ms (computed at ingest) is authoritative.
   wastedPatterns: readonly string[] | null = null,
-  // Server-only signals the next-step policy reads; the demo and MCP callers
-  // omit them.
-  opts: { aiConfigured?: boolean; ciRerunAvailable?: boolean; flakeLabCiAvailable?: boolean; now?: Date } = {},
+  // Server-only signals the next-step policy reads, and the owner of a spec file
+  // the repository's CODEOWNERS names; the demo omits them all, the MCP tools
+  // pass only the owner.
+  opts: {
+    aiConfigured?: boolean;
+    ciRerunAvailable?: boolean;
+    flakeLabCiAvailable?: boolean;
+    resolveOwner?: (filePath: string) => Promise<string | null>;
+    now?: Date;
+  } = {},
 ) {
   const [trc] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
   if (!trc) return null;
@@ -229,7 +286,7 @@ export async function getTestRunCase(
   // Every attempt is its own execution row (unique on run + test case + retries
   // + browser), so each stored attempt maps to the sibling row that holds it.
   const siblingRows = await db
-    .select({ id: testRunsCases.id, retries: testRunsCases.retries })
+    .select({ id: testRunsCases.id, retries: testRunsCases.retries, status: testRunsCases.status })
     .from(testRunsCases)
     .where(
       and(
@@ -245,6 +302,27 @@ export async function getTestRunCase(
         executionId: executionByRetry.get(a.retry) ?? null,
       }))
     : null;
+
+  // A pass that needed a retry has no error of its own: its headline, steps and
+  // `why` come from the last failed attempt of the same run, test and browser.
+  const retries = trc.retries ?? 0;
+  const passedOnRetry = trc.status === 'passed' && retries > 0;
+  const failedSibling = passedOnRetry
+    ? (siblingRows as Array<{ id: number; retries: number | null; status: string }>)
+        .filter((r) => (r.retries ?? 0) < retries && isFailedStatus(r.status))
+        .sort((a, b) => (b.retries ?? 0) - (a.retries ?? 0))[0]
+    : undefined;
+  const [failedAttempt] = failedSibling
+    ? await db
+        .select({
+          id: testRunsCases.id,
+          retries: testRunsCases.retries,
+          error: testRunsCases.error,
+          steps: testRunsCases.steps,
+        })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.id, failedSibling.id))
+    : [];
 
   const [[testCase], [testRun], reportList, attachmentList] = await Promise.all([
     db
@@ -295,6 +373,7 @@ export async function getTestRunCase(
   }
 
   let failureCluster = null;
+  let ticketDoneKey: string | null = null;
   if (trc.failureClusterId) {
     const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, trc.failureClusterId));
     if (cluster) {
@@ -316,9 +395,53 @@ export async function getTestRunCase(
           category: failureDiagnoses.category,
           confidence: failureDiagnoses.confidence,
           summary: failureDiagnoses.summary,
+          provider: failureDiagnoses.provider,
         })
         .from(failureDiagnoses)
-        .where(eq(failureDiagnoses.clusterId, cluster.id));
+        .where(and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster')));
+
+      // The cluster's issue, where its filings stand, and its own links, newest
+      // first as the cluster page lists them: the execution's Details shows them
+      // beside its own, read-only.
+      const [knownIssues, filings, clusterLinks] = await Promise.all([
+        clusterKnownIssues(db, [cluster.id]),
+        clusterIssueFilings(db, [cluster.id]),
+        db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, cluster.id)).orderBy(desc(entityLinks.id)),
+      ]);
+      const knownIssue = knownIssues.get(cluster.id) ?? null;
+
+      // A Done issue on a failure that goes on calls for a new issue, and on one
+      // that stopped, for marking the cluster resolved: the rules the cluster page
+      // follows. Read only when the issue is Done.
+      let goesOn: boolean | null = null;
+      if (knownIssue?.statusCategory === 'done') {
+        const [latestFinished] = await db
+          .select({ id: testRuns.id, startTime: testRuns.startTime })
+          .from(testRuns)
+          .where(
+            and(eq(testRuns.projectId, cluster.projectId), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
+          )
+          .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+          .limit(1);
+        const [lastSeen] = await db
+          .select({ id: testRuns.id, startTime: testRuns.startTime })
+          .from(testRuns)
+          .where(eq(testRuns.id, cluster.lastSeenRunId));
+        goesOn = failureGoesOn(lastSeen ?? null, latestFinished ?? null);
+      }
+      ticketDoneKey =
+        goesOn === null
+          ? null
+          : ticketReconcileKey(
+              {
+                status: cluster.status ?? 'open',
+                fixVerification: cluster.fixVerification ?? null,
+                snoozedUntil: cluster.snoozedUntil ?? null,
+                snoozeMode: cluster.snoozeMode ?? null,
+                knownIssue,
+              },
+              { failureGoesOn: goesOn, now: opts.now },
+            );
 
       failureCluster = {
         id: cluster.id,
@@ -339,15 +462,20 @@ export async function getTestRunCase(
         fixLandedRunId: cluster.fixLandedRunId ?? null,
         fixLandedAt: cluster.fixLandedAt ?? null,
         assignee: cluster.assignee ?? null,
-        knownIssue: (await clusterKnownIssues(db, [cluster.id])).get(cluster.id) ?? null,
+        knownIssue,
+        failureGoesOn: goesOn,
+        issueFilingQueued: filings.queued.has(cluster.id),
+        issueFilingFailure: filings.failures.get(cluster.id) ?? null,
+        links: clusterLinks,
       };
     }
   }
 
-  const [networkRequestRows, linksForCaseRun, linksForTestCase, quarantineRows] = await Promise.all([
+  const [networkRequestRows, linksForCaseRun, linksForTestCase, linksForRun, quarantineRows] = await Promise.all([
     db.select().from(networkRequests).where(eq(networkRequests.testRunsCaseId, trc.id)),
     db.select().from(entityLinks).where(eq(entityLinks.testRunsCaseId, trc.id)),
     testCase ? db.select().from(entityLinks).where(eq(entityLinks.testCaseId, testCase.id)) : Promise.resolve([]),
+    db.select().from(entityLinks).where(eq(entityLinks.testRunId, trc.testRunId)),
     db
       .select({ id: quarantinedTests.id })
       .from(quarantinedTests)
@@ -443,32 +571,63 @@ export async function getTestRunCase(
   const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
-  // cluster and owner — built from what is already loaded above. The owner
-  // here is the test's own annotation; the server route layers CODEOWNERS on.
+  // cluster and owner — built from what is already loaded above, and for a retry
+  // pass from its failed attempt, with no cluster: that attempt's page carries
+  // it. The owner is the test's own annotation, else the one `resolveOwner`
+  // finds for its spec file.
   const scm = ((testRun?.metadata as RunMetadata | null)?.scm ?? null) as {
     commit?: string | null;
     branch?: string | null;
     author?: string | null;
     commitMessage?: string | null;
   } | null;
+  const verdictError = failedAttempt ? failedAttempt.error : trc.error;
+  const codeOwner =
+    verdictError?.trim() && !testCase?.owner && testCase?.filePath && opts.resolveOwner
+      ? await opts.resolveOwner(testCase.filePath)
+      : null;
   const verdict = buildFailureVerdict({
-    error: trc.error,
-    steps: trc.steps,
+    error: verdictError,
+    steps: failedAttempt ? failedAttempt.steps : trc.steps,
     status: trc.status,
     retries: trc.retries,
     isNewRegression: trc.isNewRegression,
     isNewFlaky: trc.isNewFlaky,
     runId: trc.testRunId,
     scm,
-    cluster: failureCluster ? { ...failureCluster, sampleError: null, filePath: testCase?.filePath ?? null } : null,
-    owner: testCase?.owner ?? null,
+    cluster:
+      failureCluster && !failedAttempt
+        ? { ...failureCluster, sampleError: null, filePath: testCase?.filePath ?? null }
+        : null,
+    owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
+    fromAttempt: failedAttempt ? { retry: failedAttempt.retries ?? 0, executionId: failedAttempt.id } : null,
   });
+  // A retry pass is one with or without its failed attempt stored: the policy
+  // reads it from the status alone when there is no verdict.
+  const why = verdict?.why ?? (passedOnRetry ? 'passed-on-retry' : null);
 
-  // The situation sentence and the single next step — built from the verdict and
+  // The situation lines and the single next step, built from the verdict and
   // the same healing / diagnosis facts the toolbox reads, so the top of the page
   // says what to do without re-deriving it in the UI.
   const healing = await getLocatorHealing(db, id).catch(() => null);
-  const patchFacts = failureCluster ? await getClusterPatchFacts(db, failureCluster.id) : null;
+  const healingFacts = await getHealingStepFacts(db, testCase?.projectId, healing);
+  const patchFacts = failureCluster
+    ? await getClusterPatchFacts(db, failureCluster.id, { fixLandedRunId: failureCluster.fixLandedRunId })
+    : null;
+  // Whether a newer execution of the test, in the same Playwright project,
+  // failed again or passed: sent for every execution, and said under a failing
+  // one's headline.
+  const latest = testRun
+    ? summarizeNewerExecutions(
+        { runId: trc.testRunId, browserName: trc.browserName ?? null, failureClusterId: trc.failureClusterId ?? null },
+        await getNewerExecutions(db, {
+          testCaseId: trc.testCaseId,
+          runId: trc.testRunId,
+          runStartTime: testRun.startTime ?? null,
+          retries: trc.retries ?? 0,
+        }),
+      )
+    : null;
   const situation = verdict
     ? buildSituation({
         why: verdict.why,
@@ -477,7 +636,11 @@ export async function getTestRunCase(
         owner: verdict.owner,
         clusterStatus: failureCluster?.status ?? null,
         assignee: failureCluster?.assignee ?? null,
-        knownIssue: failureCluster?.knownIssue ?? null,
+        latest,
+        attempt: verdict.attempt
+          ? { failedRetry: verdict.attempt.retry, failedExecutionId: verdict.attempt.executionId, passedRetry: retries }
+          : null,
+        newFlaky: Boolean(trc.isNewFlaky),
         now: opts.now,
       })
     : null;
@@ -485,10 +648,10 @@ export async function getTestRunCase(
   // fix. Flaky: a retry pass, or a failure that is not a new regression of a test
   // whose history both fails and passes.
   const flaked =
-    verdict?.why === 'passed-on-retry' ||
-    verdict?.why === 'new-flaky' ||
+    why === 'passed-on-retry' ||
+    why === 'new-flaky' ||
     (isFailedStatus(trc.status) &&
-      verdict?.why !== 'new-regression' &&
+      why !== 'new-regression' &&
       trc.testCaseId != null &&
       (await mayHaveFlakeSuspects(db, trc.testCaseId).catch(() => false)));
   const flakeLab =
@@ -500,19 +663,64 @@ export async function getTestRunCase(
           () => null,
         )
       : null;
+  // A test that did not run gives its reason as one sentence, and its next step
+  // opens what stopped it: the blocking failure, the run's one failure, or the run.
+  const didNotRun =
+    trc.status === 'didnotrun'
+      ? describeDidNotRun({
+          reason: trc.didNotRunReason,
+          blockedByCase,
+          runFailedTests: testRun?.failedTests ?? null,
+        })
+      : null;
+  // The run's one failed test, when a max-failures cutoff has a single one to
+  // open, counted like the sentence's failed count: one final attempt per test
+  // and browser. A test that failed on every retry opens its last attempt; a
+  // test that passed on retry is not a failure. The failed rows and the retries
+  // are the only rows that can be or replace a final failed attempt.
+  const runFailedFinals =
+    trc.status === 'didnotrun' &&
+    !blockedByCase &&
+    trc.didNotRunReason === 'max-failures' &&
+    (testRun?.failedTests ?? 0) <= 1
+      ? finalAttempts(
+          await db
+            .select({
+              id: testRunsCases.id,
+              testCaseId: testRunsCases.testCaseId,
+              browserName: testRunsCases.browserName,
+              retries: testRunsCases.retries,
+              status: testRunsCases.status,
+            })
+            .from(testRunsCases)
+            .where(
+              and(
+                eq(testRunsCases.testRunId, trc.testRunId),
+                or(inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]), gt(testRunsCases.retries, 0)),
+              ),
+            ),
+        ).filter((r) => isFailedStatus(r.status))
+      : [];
   const nextStep = computeNextStep({
     status: trc.status,
     blockedByCase: blockedByCase ? { id: blockedByCase.id, title: blockedByCase.title } : null,
+    didNotRunReason: trc.didNotRunReason ?? null,
+    runId: trc.testRunId,
+    runFailedExecutionId: runFailedFinals.length === 1 ? runFailedFinals[0]!.id : null,
     clusterStatus: failureCluster?.status ?? null,
     fixVerification: failureCluster?.fixVerification ?? null,
     fixLandedRunId: failureCluster?.fixLandedRunId ?? null,
     fixCommit: failureCluster?.fixCommit ?? null,
-    hasHealingRecommendation: Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended),
+    ticketDoneKey,
+    ...healingFacts,
     diagnosisCompleted: patchFacts?.diagnosisCompleted ?? false,
     diagnosisSummary: patchFacts?.summary ?? null,
     patchFile: patchFacts?.patchFile ?? null,
+    hasPatch: patchFacts?.hasPatch ?? false,
+    patchValidationStatus: patchFacts?.patchValidationStatus ?? null,
     patchAppliesCleanly: patchFacts?.patchAppliesCleanly ?? false,
-    why: verdict?.why ?? null,
+    patchAppliesAtFix: patchFacts?.patchAppliesAtFix ?? false,
+    why,
     errorKind: verdict?.kind ?? null,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,
@@ -572,12 +780,14 @@ export async function getTestRunCase(
     blockedBy: trc.blockedBy ?? null,
     blockedByCase,
     blockedTests,
+    didNotRun,
     failureCluster,
     verdict,
     situation,
+    latest,
     nextStep,
     quarantined,
-    testRun: testRun ? { ...testRunPublic, project, reports: reportList } : testRun,
+    testRun: testRun ? { ...testRunPublic, project, reports: reportList, links: linksForRun } : testRun,
     attachments: attachmentList,
     links: linksForCaseRun,
     stableLinks: linksForTestCase,
@@ -626,6 +836,9 @@ export async function getLastPassPageState(
  * epoch timestamps cannot be mixed with, so no trace anchor is fed here —
  * `failureAt` comes from the failed step (or `startedAt + duration`), and the
  * card links out to the trace viewer instead.
+ *
+ * Each step and request carries its usual duration (`getUsualDurations`), the
+ * baseline a duration that stands out is compared with.
  */
 export async function getFailureTimeline(
   db: DrizzleDB,
@@ -640,7 +853,16 @@ export async function getFailureTimeline(
     db.select({ filePath: testCases.filePath }).from(testCases).where(eq(testCases.id, trc.testCaseId)),
   ]);
 
-  return buildFailureTimeline({
+  const requests = networkRequestRows.map((nr) => ({
+    method: nr.method,
+    url: nr.url,
+    status: nr.status,
+    duration: nr.duration,
+    startTime: nr.startTime ?? undefined,
+    serverLogs: nr.serverLogs,
+    serverTraces: nr.serverTraces,
+  }));
+  const timeline = buildFailureTimeline({
     startedAt: trc.startedAt,
     duration: trc.duration,
     timeout: trc.timeout,
@@ -652,16 +874,72 @@ export async function getFailureTimeline(
     dialogs: trc.dialogs,
     specFile: testCase?.filePath ?? null,
     traceCallsites: opts.traceCallsites ?? null,
-    networkRequests: networkRequestRows.map((nr) => ({
-      method: nr.method,
-      url: nr.url,
-      status: nr.status,
-      duration: nr.duration,
-      startTime: nr.startTime ?? undefined,
-      serverLogs: nr.serverLogs,
-      serverTraces: nr.serverTraces,
-    })),
+    networkRequests: requests,
   });
+  if (timeline.lanes.steps.length === 0 && timeline.lanes.network.length === 0) return timeline;
+
+  const usual = await getUsualDurations(db, {
+    testCaseId: trc.testCaseId,
+    browserName: trc.browserName ?? null,
+    excludeId: id,
+  });
+  return attachUsualDurations(timeline, { steps: trc.steps, networkRequests: requests }, usual);
+}
+
+/** How many of a test's last passing executions its usual durations read. */
+const USUAL_DURATION_EXECUTIONS = 5;
+
+/**
+ * The usual duration of each step and request route of one test: the median
+ * over its last `USUAL_DURATION_EXECUTIONS` passing executions on the same
+ * browser, in runs eligible as a baseline (no lab or investigation run, no
+ * environment incident), the execution being read left out. Two bounded
+ * queries: the executions' steps, then their requests.
+ */
+export async function getUsualDurations(
+  db: DrizzleDB,
+  opts: { testCaseId: number; browserName: string | null; excludeId: number },
+): Promise<UsualDurations> {
+  const conds = [
+    eq(testRunsCases.testCaseId, opts.testCaseId),
+    sql`${testRunsCases.status} = 'passed'`,
+    ne(testRunsCases.id, opts.excludeId),
+    eligibleRunSql('baseline'),
+  ];
+  if (opts.browserName) conds.push(eq(testRunsCases.browserName, opts.browserName));
+  const past: Array<{ id: number; steps: unknown }> = await db
+    .select({ id: testRunsCases.id, steps: testRunsCases.steps })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(...conds))
+    .orderBy(desc(testRunsCases.createdAt), desc(testRunsCases.id))
+    .limit(USUAL_DURATION_EXECUTIONS);
+  if (past.length < USUAL_MIN_SAMPLES) return buildUsualDurations([]);
+
+  const requestRows: Array<UsualRequestRow & { testRunsCaseId: number }> = await db
+    .select({
+      testRunsCaseId: networkRequests.testRunsCaseId,
+      method: networkRequests.method,
+      url: networkRequests.url,
+      status: networkRequests.status,
+      duration: networkRequests.duration,
+    })
+    .from(networkRequests)
+    .where(
+      inArray(
+        networkRequests.testRunsCaseId,
+        past.map((row) => row.id),
+      ),
+    );
+  const requestsByExecution = new Map<number, UsualRequestRow[]>();
+  for (const row of requestRows) {
+    const list = requestsByExecution.get(row.testRunsCaseId) ?? [];
+    list.push(row);
+    requestsByExecution.set(row.testRunsCaseId, list);
+  }
+  return buildUsualDurations(
+    past.map((row) => ({ steps: row.steps, networkRequests: requestsByExecution.get(row.id) ?? [] })),
+  );
 }
 
 /** One execution's flattened steps plus the timing the timeline positions them against. */

@@ -346,8 +346,10 @@ function formatLead(at: number, failureAt: number): string {
 
 /** A short, single-line form of the failing locator's identity. */
 interface LocatorTarget {
-  /** The accessible name / text the locator was built around, lower-cased. */
+  /** The accessible name / text the locator was built around, as the test wrote it. */
   name: string | null;
+  /** The same name lower-cased, to match case-insensitively. */
+  nameNeedle: string | null;
   /** The role, when the error names one. */
   role: string | null;
   /** The test id, when the error names one. */
@@ -357,14 +359,14 @@ interface LocatorTarget {
 /** Pull the name/role/testId the failing locator was built from. */
 function readLocatorTarget(parsed: ParsedPlaywrightError | null): LocatorTarget {
   const locator = parsed?.leafLocator ?? parsed?.locator ?? null;
-  if (!locator) return { name: null, role: null, testId: null };
+  if (!locator) return { name: null, nameNeedle: null, role: null, testId: null };
   const role = /getByRole\(\s*['"`]([^'"`]+)['"`]/.exec(locator)?.[1] ?? null;
   const name =
     /\bname:\s*['"`]([^'"`]+)['"`]/.exec(locator)?.[1] ??
     /getBy(?:Text|Label|Placeholder|AltText|Title)\(\s*['"`]([^'"`]+)['"`]/.exec(locator)?.[1] ??
     null;
   const testId = /getByTestId\(\s*['"`]([^'"`]+)['"`]/.exec(locator)?.[1] ?? null;
-  return { name: name ? name.toLowerCase() : null, role, testId };
+  return { name, nameNeedle: name ? name.toLowerCase() : null, role, testId };
 }
 
 /** "7 of this test's 8 failures and 3 of its 44 passes". */
@@ -668,7 +670,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   if (parsed && BLOCKED_STATES.has(parsed.lastState)) {
     const aria = str(ariaTextPreferJson(input.ariaSnapshotJson, input.ariaSnapshot)).toLowerCase();
     const roleName = target.role ? target.role.toLowerCase() : null;
-    const nameNeedle = target.name;
+    const nameNeedle = target.nameNeedle;
     const present =
       aria.length > 0 &&
       (!roleName || aria.includes(roleName)) &&

@@ -13,6 +13,13 @@ const { data, refresh } = await useFetch<{ connections: ConnectionSummary[]; can
 );
 
 const connections = computed(() => data.value?.connections ?? []);
+// The create-issue entry points read the shared tracker status: read it again
+// when a connection is added or removed, so they follow without a reload.
+const { refresh: refreshTrackerStatus } = useTrackerStatus();
+watch(
+  () => connections.value.map((c) => c.id).join(','),
+  () => void refreshTrackerStatus(),
+);
 const canStoreSecrets = computed(() => data.value?.canStoreSecrets ?? true);
 function connectionsFor(provider: IntegrationProviderName): ConnectionSummary[] {
   return connections.value.filter((c) => c.provider === provider);

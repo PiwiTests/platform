@@ -3,7 +3,7 @@ import { getTestRunCase } from '#shared/handlers/test-cases';
 import { testRunsCases } from '../../database/schema';
 import { requireResolvedProjectAccess, requireRouteId, resolveTestRunCaseProjectId } from '../../utils/project-access';
 import { resolveWastedSettings } from '../../utils/wasted-settings';
-import { resolveOwners } from '../../utils/scm/ownership';
+import { codeownersOwnerResolver } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
 import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
 
@@ -44,21 +44,15 @@ export default eventHandler(async (event) => {
     aiConfigured: aiConfig != null,
     ciRerunAvailable: ciRerun?.available ?? false,
     flakeLabCiAvailable: flakeLabCi?.available ?? false,
+    // A test with no `piwi:owner` annotation still has an owner when the
+    // repository's CODEOWNERS names one for its spec file.
+    resolveOwner: codeownersOwnerResolver(db, projectId),
   })) as any;
   if (!result) {
     throw apiError({
       statusCode: 404,
       message: 'Test run case not found',
     });
-  }
-
-  // A test with no `piwi:owner` annotation still has an owner when the
-  // repository's CODEOWNERS names one for its spec file.
-  if (result.verdict && !result.verdict.owner && result.filePath) {
-    const test = { filePath: result.filePath as string, owner: null };
-    const resolved = await resolveOwners(db, projectId, [test]).catch(() => new Map());
-    const owner = resolved.get(test)?.owner;
-    if (owner) result.verdict.owner = { name: owner, source: 'codeowners' };
   }
 
   return result;

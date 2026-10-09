@@ -166,10 +166,36 @@ preview and the runnable command) · `/test-runs/[id]` · `/test-cases/[id]` (st
 case across runs) · `/test-run-cases/[id]` (one execution) · `/failure-clusters/[id]` · `/analytics` (the viewer's default dashboard) + `/analytics/d/[id]` (one dashboard, `?tv=1` for TV mode) + `/analytics/dashboards` · `/settings/*` ·
 `/docs` (in-app API reference) · `/mcp` · `/login`, `/forgot-password`, `/reset-password` (public, layout-free).
 
-`/test-run-cases/[id]` is **diagnosis-first**: a failing execution opens on a **Diagnosis** tab (full-width error card,
-then a right rail of verdict/cluster/AI cards beside a left evidence funnel); a passing one opens on **Steps** with an
-**Artifacts** tab. Both keep **Performance** and **History**. The tab is synced to `?tab=` with legacy aliases, and the
-page `provide`s a section locator so an AI citation can reveal and scroll to the matching evidence block.
+**Failure pages.** `/test-run-cases/[id]` (one execution) and `/failure-clusters/[id]` read top to bottom in one
+column. Both open on `SituationBlock`: an identity kicker, the headline as the page's `h1`, then labelled rows in the
+order of `SITUATION_ROWS` (`app/utils/situation-rows.ts`), the explanation, then the action, then the context (Most
+likely `StoryLine`, Situation, State `ClusterStateLine`, Next `NextStepLine`, Cluster, Issue `IssueLine`,
+Occurrences, What changed `WhatChangedLine`, The suite; a page fills the rows it has) and a facts line
+(`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. On the execution page a meta line under the
+headline (`ExecutionMetaLine`) says since when it fails, on which commit, and whether a newer execution of the test
+failed again or passed, and the Cluster row names the cluster, then its ticket (`SituationParts` in the lead of
+`IssueLine`); the cluster page has an Issue row instead. A test that passed on retry takes its headline from its
+failed attempt's row (`FailureVerdict.attempt`), which the meta line names and links. The rows are built in the
+handlers the demo shares (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from
+`shared/situation.ts` (with `shared/latest-execution.ts` over `getNewerExecutions`), `shared/cluster-state.ts` and
+`computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's action id into behavior on both pages, copying
+the change the row shows (`buildNextStepChange`, `app/utils/next-step-change.ts`). Both pages choose Most likely
+and word where the Next step's change comes from with `shared/most-likely.ts` (`pickMostLikely`,
+`nextStepSourceLine`), one rule for the two; a test that did not run gives its reason as Most likely instead
+(`DidNotRunLine`, from `describeDidNotRun` in `shared/did-not-run.ts`), and its Next opens the blocking failure or
+the run (`open-blocker`, `open-run`). Under the block, the execution page shows `EvidenceTabs` (opening on the tab
+`useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the
+one the next step points at open) and History (`HistoryStrip`). The cluster page shows the section the next step points
+at as a card of its own (`Toolbox` with `lead`; the sections, their order and the step each serves are in
+`app/utils/fix-sections.ts`), then `ClusterInvestigation` when there is a diff to browse, `ClusterAffectedTests` (its
+selection picks the execution the evidence shows, with several tests), `EvidenceTabs`, More ways to fix with the other
+sections folded, then the history, folded to one line each: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`,
+opened by the occurrence sparkline) and `ClusterActivity`. Both
+pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites,
+and `useEvidenceHint` hands the evidence card what Most likely cites, whose tabs and timeline rows it marks
+(`citedItemIds`, `app/utils/timeline-rows.ts`).
+`/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
+two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
 
 ### Components (`app/components/`)
 
@@ -179,11 +205,15 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shared/`                                                               | Cross-page primitives and widgets — see below                                                                                                                                                                                   |
 | `run/`                                                                  | Run detail: summary, cases table, workers timeline, comparison, slow endpoints, failure groups, reports, the Resources tab (`RunResources`, formatting in `app/utils/resources.ts`)                                             |
-| `test-case/`                                                            | Single-execution detail: summary, verdict, cluster card, AI card, evidence, console/network, DOM/ARIA, history                                                                                                                  |
-| `cluster/`                                                              | Failure-cluster detail: summary, per-case evidence tabs, investigation + baseline picker, commit browser                                                                                                                        |
+| `test-case/`                                                            | Single-execution detail: the facts line, the evidence tabs and their cards (timeline, screen, source, network, console, state, performance, attempts, locators), the did-not-run line, clues; the test page's flakiness tab     |
+| `cluster/`                                                              | Failure-cluster detail: the state, what-changed and facts lines, the occurrence sparkline and trend, the affected-tests selector, investigation + baseline picker, commit browser, activity, fixed-before matches               |
 | `diagnosis/`                                                            | AI diagnosis panel: context preview + coverage strip, result with evidence citations, export                                                                                                                                    |
+| `integrations/`                                                         | Issue trackers: the Issue line both failure pages share, the create and link dialogs, the Jira connection, the project binding and its field defaults, the integration activity                                                 |
 | `project/`                                                              | Project detail charts, flaky list, cluster list, SCM changes, subscribe bell                                                                                                                                                    |
 | `analytics/`                                                            | Cross-project widgets (component map in `app/utils/analytics-widgets.ts`), and the dashboard page: `DashboardPage`, `DashboardBody` (view, editor, TV mode), `DashboardSwitcher`, `AddWidgetSlideover`, `WidgetConfigSlideover` |
+| `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps, the evidence, the generated spec                                                                                                                                           |
+| `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
+| `notifications/`, `reports/`                                            | Notification channels and subscription scope; quality reports: the schedule form and list, previews, snapshots                                                                                                                  |
 | `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner/simulator                                                                                                            |
 
 Shared building blocks worth knowing before writing new markup (`AGENTS.md` makes reuse a rule):
@@ -200,7 +230,7 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   phone), `FilterBar` (environment, branch, branch policy via `BranchPolicySelect`, full runs only) and
   `HiddenRunsNote` (what the filters hide, with the action that shows it).
 - **Data display** — `StatTile` + `StatTileGrid` (auto-fitting, no per-page breakpoints), `TableScroller`,
-  `FilterToolbar`, `ChartCard` (header + `legend`), the SVG chart primitives `ChartFrame` (self-measuring plot area,
+  `FilterToolbar`, `ChartCard` (header + `legend`; `foldKey` folds it to one line), the SVG chart primitives `ChartFrame` (self-measuring plot area,
   y-axis) / `ChartTooltip` / `ChartMarkerLines` / `ChartLegend` / `ChartMarkerTooltip`, `MiniRunBars`,
   `DurationValue` (tight `210ms` via
   the pure `splitDuration`), `CodeBlock`, `MarkdownPreview`, `DiffPatch` / `DiffFile`, `LocatorCode` (a locator
@@ -228,12 +258,18 @@ Shared building blocks worth knowing before writing new markup (`AGENTS.md` make
   `app/utils/lightbox.ts`),
   `VideoPlayer`, `TraceListItem`, `LocatorHealingPanel` / `LocatorAlternativeRow`,
   `SnapshotLocatorPicker`, `EnvironmentDiffCard`, `DataLocationCard`.
+- **Failure pages** — `SituationBlock` (the labelled block the failure pages and a bug report open on: its rows in
+  `SITUATION_ROWS`, the status color on its left edge), `FailureHeadline` (the one-line headline, its locator in a chip when it
+  is the `h1`), `StatusChip` in the block's identity kicker, `StoryLine` (Most likely), `NextStepLine` (the one
+  recommended step, its actions emitted as ids the page handles through `useNextStepActions`), `Toolbox` (More ways
+  to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a row of squares).
 
 ### Composables & utils
 
 `app/composables/` covers cross-component state and behaviour — auth and dashboard shell, run streaming
 (`useRunStream`, `useNotificationStream`), diagnosis (`useClusterDiagnosis`, `useStreamingDiagnosis`,
-`useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`), fold/tree state
+`useDiagnosisNotification`), timeline (`useTimelineModel`, `useTimelineViewport`, and `useExecutionTimeline`, an
+execution's failure timeline under one key for its Timeline and Network tabs), fold/tree state
 (`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), settings derivation (`useSettingsNav`,
 `useSettingsEnvState`), analytics scope, the run page's retry command (`useRunRetryCommand` — one failing set and one
 shared mode for every copy button on the page), IDE preferences (`useOpenInIde`), desktop detection (`useIsDesktop`,
@@ -245,7 +281,11 @@ shared mode for every copy button on the page), IDE preferences (`useOpenInIde`)
 `performance-hints.ts`, `ide-links.ts`, `help-content.ts`, `settings-metadata.ts`, `openapi.ts` / `openapi-console.ts`,
 `status-palette.ts` (`STATUS_PALETTE` / `statusPalette` — the test outcome colors every bar, chart, history cell,
 timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `pass-rate.ts`
-(the one threshold set and color scale for every colored pass rate, heatmap cells included), `chart.ts` (the
+(the one threshold set and color scale for every colored pass rate, heatmap cells included), `duration-tone.ts` (the
+one tone of a timeline duration that stands out in its test, by the rule of
+`shared/duration-standout.ts`: at least 1 s, and a third of the test or much slower than its usual time over the
+last passing runs; that module also holds the much-slower rule, the usual durations the timeline sends, and the step
+match key the Attempts tab's `shared/attempt-diff.ts` compares attempts with), `chart.ts` (the
 per-chart series definitions the plots and their legends share, and the tick/stack/bar geometry behind the SVG
 charts). `retry-command.ts` (`buildRetryCommand` — `file-line` / `grep` / `file` modes,
 shell-escaped, capped at 4096 chars; `buildTitleGrepFlag` — the regex-escaped, shell-quoted `-g` flag the fix plan and

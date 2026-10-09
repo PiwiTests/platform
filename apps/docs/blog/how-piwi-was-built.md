@@ -47,7 +47,7 @@ Keeping the history was step zero. The real work is turning "the run is red" int
 This is the part that changed the most. At the start, Piwi did roughly what its inspiration did: it kept the HTML report and the trace so you could go back and look. Over time it moved **from storing reports to rebuilding the failure on one screen**.
 
 <figure>
-  <img src="/screenshots/gather-evidence.png" alt="A failing execution laid out diagnosis-first: error and call log, wasted waits, evidence sections and a verdict">
+  <img src="/screenshots/gather-evidence.png" alt="A failing execution laid out diagnosis-first: the headline, the most likely cause, the next step with the patch it copies and the cluster, then the evidence card open on its Timeline">
   <figcaption>One failing execution, diagnosis-first: the error, the wasted waits, the evidence, and a verdict, on one screen.</figcaption>
 </figure>
 
@@ -77,7 +77,7 @@ So a diagnosis is built around a diff. Piwi finds the last run where the whole s
 Then it checks the model's work. Every suggested patch is dry-run against your real source, on the server, before you see it, and shown with a badge: applies cleanly, applies with an offset, or does not apply. **A wrong patch is worse than none**, so the model is told to return no patch at all unless it can quote the lines it is changing. Applying it is still your edit. A coverage map shows exactly which evidence the model was given, and one click copies that same bundle so you can paste it into your own assistant instead.
 
 <figure>
-  <img src="/screenshots/ai-diagnosis.png" alt="A failure cluster page with the AI diagnosis result: category, confidence, root cause, evidence and a suggested fix">
+  <img src="/screenshots/ai-diagnosis.png" alt="The AI diagnosis of a failure cluster: category, confidence, root cause, evidence and a suggested fix with its validated patch">
   <figcaption>A diagnosed cluster: category, confidence, root cause and a validated patch, next to the evidence it came from.</figcaption>
 </figure>
 

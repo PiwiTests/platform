@@ -36,9 +36,16 @@ import {
   SCM_REPOS,
   SOURCE_FILES,
   lineOf,
+  buildWebAssertionError,
   buildTestSource,
   buildSourceFrames,
   storyByClusterId,
+  FAILURE_TEARDOWN_MS,
+  failingCallDuration,
+  failingStep,
+  authoredFailureSteps,
+  authoredBeforeEachMs,
+  storyEvidenceTimes,
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
@@ -456,14 +463,40 @@ const caseIdByKey = new Map(); // `${projectId}\x00${file}\x00${title}` → case
 
 // Cases that are prone to flake (retry-pass) — their `flaky_root_cause` is set
 // coherently instead of at random. Tags and `piwi:` ownership come from the
-// shared demo-test-meta module (the same rules the run simulator uses).
+// shared demo-test-meta module (the same rules the run simulator uses). A case
+// whose failed attempts no dedicated block below writes carries the error its
+// failed attempt reports, as the reporter would capture it.
 
+const darkModeAssertion = "await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');";
 const FLAKY_CASES = {
   1: { title: 'should apply discount code', rootCause: 'timing' },
   2: { title: 'GET /search handles empty query', rootCause: 'network' },
   3: { title: 'Table pagination works correctly', rootCause: 'timing' },
   4: { title: 'Pull to refresh triggers reload', rootCause: 'timing' },
-  5: { title: 'toggles dark mode', rootCause: 'other' },
+  5: {
+    title: 'toggles dark mode',
+    rootCause: 'other',
+    error: buildWebAssertionError({
+      matcher: 'expect(locator).toHaveAttribute(expected)',
+      locator: "locator('html')",
+      expected: '"dark"',
+      received: '"light"',
+      timeoutMs: 5000,
+      callLog: [
+        'Expect "toHaveAttribute" with timeout 5000ms',
+        "waiting for locator('html')",
+        '  9 × locator resolved to <html lang="en" data-theme="light">…</html>',
+        '    - unexpected value "light"',
+      ],
+      frames: [
+        {
+          file: 'tests/admin/settings.spec.ts',
+          line: lineOf(SOURCE_FILES['tests/admin/settings.spec.ts'], darkModeAssertion),
+          column: 40,
+        },
+      ],
+    }),
+  },
 };
 
 for (const proj of DEMO_PROJECTS) {
@@ -633,15 +666,34 @@ const SEED_FIRST_REQUEST_OFFSET_MS = 120;
 const SEED_REQUEST_GAP_MS = 35;
 
 /**
+ * A framework segment's share `f` of a test lasting `durationMs`, clamped
+ * between `min` and `max` ms so it stays visible without overflowing a short test.
+ */
+function segmentMs(durationMs, f, min, max) {
+  return Math.max(min, Math.min(max, Math.round(durationMs * f)));
+}
+
+/** The `Before Hooks` parts of a test lasting `durationMs`: its context and page fixtures, then its beforeEach hook. */
+function seedBeforeHooks(durationMs) {
+  return {
+    context: segmentMs(durationMs, 0.04, 40, 120),
+    page: segmentMs(durationMs, 0.03, 30, 90),
+    beforeEach: segmentMs(durationMs, 0.06, 60, 200),
+  };
+}
+
+/**
  * Build realistic `step_events` for a seeded case: the `Before Hooks` and
  * `After Hooks` sections with the hooks and fixtures they ran (as the reporter
  * records them), framework-injected waits, and — for wait-heavy cases — an
  * explicit `Wait for timeout` sleep that counts as wasted time under the
- * default wasted-wait patterns. Segment offsets are emitted as absolute epoch ms
+ * default wasted-wait patterns. `beforeHooks` sizes the before hooks (a case
+ * running authored steps passes the beforeEach hook that holds them, 0 when
+ * its spec has none). Segment offsets are emitted as absolute epoch ms
  * anchored to the case's start so the timeline can place each segment. Returns
  * the events plus the total wasted ms (sum of the explicit timeout sleeps).
  */
-function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
+function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy, beforeHooks = null) {
   const events = [];
   let offset = 0;
   const seg = (title, category, duration, status, loc = null, hooks = null) => {
@@ -650,17 +702,13 @@ function buildSeedStepEvents(caseStartMs, caseDuration, location, waitHeavy) {
     events.push(event);
     offset += duration;
   };
-  // Each framework segment is a fraction of the test duration, clamped so it
-  // stays visible without overflowing short tests.
-  const frac = (f, min, max) => Math.max(min, Math.min(max, Math.round(caseDuration * f)));
+  const frac = (f, min, max) => segmentMs(caseDuration, f, min, max);
 
-  const context = frac(0.04, 40, 120);
-  const page = frac(0.03, 30, 90);
-  const beforeEach = frac(0.06, 60, 200);
+  const { context, page, beforeEach } = beforeHooks ?? seedBeforeHooks(caseDuration);
   seg('Before Hooks', 'hook', context + page + beforeEach, 'passed', null, [
     { title: 'Fixture "context"', category: 'fixture', duration: context },
     { title: 'Fixture "page"', category: 'fixture', duration: page },
-    { title: 'beforeEach hook', category: 'hook', duration: beforeEach },
+    ...(beforeEach > 0 ? [{ title: 'beforeEach hook', category: 'hook', duration: beforeEach }] : []),
   ]);
   // Framework-injected navigation wait — not wasted.
   seg('Wait for load state', 'wait', frac(0.1, 80, 600), 'passed');
@@ -731,6 +779,57 @@ function buildSteps(proj, caseDuration, caseStartMs) {
     }
   }
   return out;
+}
+
+/** A placed story step (`at`, ms from the test start) in the stored form, with its absolute `startTime`. */
+function storedStep({ at, ...step }, caseStartMs) {
+  const { title, duration, category, ...rest } = step;
+  return { title, duration, category, startTime: caseStartMs + at, ...rest };
+}
+
+/**
+ * The steps of a failing story case and how long it ran, from its error: the
+ * failing call ends the steps, and lasts until the test timeout, for its own
+ * action or expect timeout, or as long as the step it stands in for when it
+ * failed without one. A case with authored steps runs those, stretched by how
+ * fast this run drew it, once its fixtures are set up, and its beforeEach hook
+ * (`beforeHooks`) holds the authored steps its spec runs there; any other runs
+ * the project's themed steps with the failing call in place of the last one,
+ * and a `test.step` around that one grows to hold it. `drawnMs` is the
+ * duration drawn for the case, kept when the error says nothing about time.
+ */
+function storyFailureLayout(proj, failing, drawnMs, avgMs, caseStartMs) {
+  const scale = drawnMs / avgMs;
+  const { context, page } = seedBeforeHooks(drawnMs);
+  const authored = authoredFailureSteps(failing, { scale, startMs: context + page });
+  if (authored) {
+    const step = authored.at(-1);
+    return {
+      steps: authored.map((s) => storedStep(s, caseStartMs)),
+      step,
+      durationMs: step.at + step.duration + FAILURE_TEARDOWN_MS,
+      beforeHooks: { context, page, beforeEach: authoredBeforeEachMs(failing, { scale }) },
+    };
+  }
+  const steps = buildSteps(proj, drawnMs, caseStartMs);
+  const last = steps[steps.length - 1];
+  const at = last.startTime - caseStartMs;
+  const duration = failingCallDuration(failing.call, at, last.duration);
+  steps[steps.length - 1] = storedStep(failingStep(failing, at, duration), caseStartMs);
+  const end = last.startTime + duration;
+  for (const parent of steps.slice(0, -1)) {
+    const holdsLast =
+      parent.category === 'test.step' &&
+      parent.startTime <= last.startTime &&
+      parent.startTime + parent.duration >= last.startTime + last.duration;
+    if (holdsLast) parent.duration = Math.max(parent.duration, end - parent.startTime);
+  }
+  return {
+    steps,
+    step: { at, duration },
+    durationMs: duration === last.duration ? drawnMs : at + duration + FAILURE_TEARDOWN_MS,
+    beforeHooks: null,
+  };
 }
 
 /**
@@ -874,6 +973,30 @@ const CASCADE_BLOCKED_TITLES = [
   'should display cart total correctly',
 ];
 
+/** The test timeout a story's error reports for a case, in ms; null when its error is no test timeout. */
+function storyTestTimeoutOf(caseId) {
+  const call = storyByCaseId.get(caseId)?.failingCase.call;
+  return call?.timeout === 'test' ? call.timeoutMs : null;
+}
+
+/**
+ * Effective per-test timeout (ms), stable per test case across runs. Most tests
+ * keep a healthy 20s budget that timeout-hygiene never flags (its headroom
+ * stays under the 20s floor); the designated slow case keeps a tripled 90s
+ * budget it no longer needs, and one non-slow case per project is deliberately
+ * oversized at 120s — so the demo shows both opportunity kinds (stale
+ * test.slow() and oversized-timeout). A case whose story error is a test
+ * timeout keeps the timeout that error reports, and one whose failing call
+ * timed out on its own gets a test timeout that leaves room for it.
+ */
+function caseTimeoutOf(caseId, isSlowCase, oversizedCaseId) {
+  const reported = storyTestTimeoutOf(caseId);
+  if (reported) return reported;
+  const base = isSlowCase ? 90000 : caseId === oversizedCaseId ? 120000 : 20000;
+  const callTimeout = storyByCaseId.get(caseId)?.failingCase.call.timeoutMs ?? 0;
+  return callTimeout >= base ? 2 * callTimeout : base;
+}
+
 for (const proj of DEMO_PROJECTS) {
   const cfg = PROJECT_CONFIGS[proj.id];
   const caseIds = caseIdsByProject[proj.id];
@@ -890,6 +1013,9 @@ for (const proj of DEMO_PROJECTS) {
         `${proj.id}\x00${proj.cases.find((c) => c.title === FLAKY_CASES[proj.id].title)?.file}\x00${FLAKY_CASES[proj.id].title}`,
       )
     : null;
+  // The project's oversized case: its second case, or the next one whose
+  // timeout no story error reports.
+  const oversizedCaseId = caseIds.find((id, k) => k >= 1 && id !== flakyCaseId && !storyTestTimeoutOf(id));
 
   // Decide which stories fire on which runs (deterministic). A story is
   // eligible once its suspect commit has landed (and, for environment-driven
@@ -1065,12 +1191,19 @@ for (const proj of DEMO_PROJECTS) {
       const storyForCase = storyByCaseId.get(caseId)?.story ?? null;
 
       const caseStatus = isFailedCase ? 'failed' : isDidNotRunCase ? 'didnotrun' : 'passed';
-      const caseDuration = isDidNotRunCase
+      const drawnDuration = isDidNotRunCase
         ? 0
         : Math.max(500, Math.round(avgTestDuration + (rng() - 0.5) * 0.3 * avgTestDuration));
 
       const workerIndex = j % SEED_WORKER_COUNT;
       const caseStartMs = runStartMs + workerCursorMs[workerIndex];
+
+      // A failing case runs its story: its steps end on the call its error
+      // names, and its duration follows that error.
+      const failure = isFailedCase
+        ? storyFailureLayout(proj, storyEntry.failingCase, drawnDuration, avgTestDuration, caseStartMs)
+        : null;
+      const caseDuration = failure ? failure.durationMs : drawnDuration;
 
       if (story) {
         const stats = clusterStats[story.clusterId];
@@ -1088,15 +1221,11 @@ for (const proj of DEMO_PROJECTS) {
         }
       }
 
-      const steps = buildSteps(proj, caseDuration, caseStartMs);
-      // Mark the last step of a failing case as the failed one, so the timeline
-      // anchors its window and failure marker on a captured step boundary.
-      if (isFailedCase && steps.length > 0) {
-        const lastStep = steps[steps.length - 1];
-        lastStep.failed = true;
-        lastStep.error = { message: (storyEntry.failingCase.error ?? '').split('\n')[0] || 'Test failed' };
-      }
-      const slowestStep = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
+      // A test that did not run reports no steps, start time or worker.
+      const steps = failure?.steps ?? (isDidNotRunCase ? [] : buildSteps(proj, caseDuration, caseStartMs));
+      // Where the story puts its own requests, console entries and dialog.
+      const evidenceTimes = failure ? storyEvidenceTimes(story, failure.step) : null;
+      const slowestStep = steps.length > 0 ? steps.reduce((a, b) => (a.duration > b.duration ? a : b)) : null;
 
       // Test annotations — failures link to their cluster, the designated slow
       // case is always marked slow (so timeout hygiene can surface it as a stale
@@ -1112,9 +1241,10 @@ for (const proj of DEMO_PROJECTS) {
       }
 
       // Timeline step events: every executed case shows hooks/fixtures/waits;
-      // ~1/3 of long-enough cases also carry an explicit wasted `Wait for timeout`.
+      // ~1/3 of long-enough cases also carry an explicit wasted `Wait for timeout`,
+      // except a case running its authored steps, which never sleeps.
       // Did-not-run cases never executed, so they have no step events.
-      const waitHeavy = !isDidNotRunCase && caseDuration >= 1500 && j % 3 === 0;
+      const waitHeavy = !isDidNotRunCase && !failure?.beforeHooks && caseDuration >= 1500 && j % 3 === 0;
       const { stepEvents, wastedMs } = isDidNotRunCase
         ? { stepEvents: null, wastedMs: 0 }
         : buildSeedStepEvents(
@@ -1122,6 +1252,7 @@ for (const proj of DEMO_PROJECTS) {
             caseDuration,
             `${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`,
             waitHeavy,
+            failure?.beforeHooks,
           );
 
       // Themed browser console. Failing cases carry only what the story says a
@@ -1132,7 +1263,7 @@ for (const proj of DEMO_PROJECTS) {
         consoleLogs = story.evidence.consoleOnFail.map((entry, idx) => ({
           type: entry.type,
           text: entry.text,
-          timestamp: caseStartMs + Math.round(caseDuration * 0.6) + idx * 40,
+          timestamp: caseStartMs + evidenceTimes.console[idx],
           location: entry.location,
         }));
       } else if (!isFailedCase && !isDidNotRunCase && proj.consolePassing && rng() < 0.3) {
@@ -1148,18 +1279,11 @@ for (const proj of DEMO_PROJECTS) {
       // closes just before the failure so it lands in the failure window.
       const dialogs =
         isFailedCase && !noPage && story?.evidence.dialogOnFail
-          ? [{ ...story.evidence.dialogOnFail, closedAt: caseStartMs + Math.round(caseDuration * 0.95) }]
+          ? [{ ...story.evidence.dialogOnFail, closedAt: caseStartMs + evidenceTimes.dialogClosedAt }]
           : null;
 
-      // Effective per-test timeout (ms), stable per test case across runs. Most
-      // tests keep a healthy 20s budget that timeout-hygiene never flags (its
-      // headroom stays under the 20s floor); the designated slow case keeps a
-      // tripled 90s budget it no longer needs, and one non-slow case per project
-      // is deliberately oversized at 120s — so the demo shows both opportunity
-      // kinds (stale test.slow() and oversized-timeout).
       const isSlowCase = Boolean(flakyCaseId) && caseId === flakyCaseId;
-      const isOversizedCase = !isSlowCase && caseId === caseIds[1];
-      const caseTimeout = isSlowCase ? 90000 : isOversizedCase ? 120000 : 20000;
+      const caseTimeout = caseTimeoutOf(caseId, isSlowCase, oversizedCaseId);
 
       const trcIdVal = trcId++;
       TEST_RUNS_CASES.push({
@@ -1173,15 +1297,18 @@ for (const proj of DEMO_PROJECTS) {
         failure_cluster_id: story?.clusterId ?? null,
         retries: isFlakyCase ? 1 : 0,
         // A flaky case has one failed attempt before the passing final one; a
-        // plain case has a single attempt. Mirrors what the reporter collects.
-        attempts: JSON.stringify(
-          isFlakyCase
-            ? [
-                { retry: 0, status: 'failed', duration: Math.round(caseDuration / 2), startedAt: caseStartMs },
-                { retry: 1, status: 'passed', duration: caseDuration, startedAt: caseStartMs + caseDuration },
-              ]
-            : [{ retry: 0, status: caseStatus, duration: caseDuration, startedAt: caseStartMs }],
-        ),
+        // plain case has a single attempt; a test the run never reached has
+        // none. Mirrors what the reporter collects.
+        attempts: isDidNotRunCase
+          ? null
+          : JSON.stringify(
+              isFlakyCase
+                ? [
+                    { retry: 0, status: 'failed', duration: Math.round(caseDuration / 2), startedAt: caseStartMs },
+                    { retry: 1, status: 'passed', duration: caseDuration, startedAt: caseStartMs + caseDuration },
+                  ]
+                : [{ retry: 0, status: caseStatus, duration: caseDuration, startedAt: caseStartMs }],
+            ),
         // Regression/new-flaky signals are computed after generation from the
         // actual per-case history (see below), like the server does.
         is_new_regression: 0,
@@ -1198,8 +1325,8 @@ for (const proj of DEMO_PROJECTS) {
         locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(proj) : null,
         step_events: stepEvents,
         wasted_time_ms: wastedMs,
-        slowest_step: slowestStep.title,
-        slowest_step_duration: slowestStep.duration,
+        slowest_step: slowestStep?.title ?? null,
+        slowest_step_duration: slowestStep?.duration ?? null,
         web_vitals: isDidNotRunCase || noPage ? null : buildWebVitals(proj, isFailedCase),
         page_state: isDidNotRunCase || noPage ? null : buildPageState(proj, storyEntry),
         ai_usage: isDidNotRunCase || noPage ? null : await buildAiUsage(caseDef),
@@ -1213,8 +1340,8 @@ for (const proj of DEMO_PROJECTS) {
               : null,
         test_source: isFailedCase ? buildTestSource(story, storyEntry.failingCase, caseDef.declLine) : null,
         test_source_frames: isFailedCase ? buildSourceFrames(storyEntry.failingCase) : null,
-        worker_index: workerIndex,
-        started_at: caseStartMs,
+        worker_index: isDidNotRunCase ? null : workerIndex,
+        started_at: isDidNotRunCase ? null : caseStartMs,
         did_not_run_reason: isDidNotRunCase ? (reasonByCase.get(caseId) ?? null) : null,
         blocked_by: isDidNotRunCase ? (blockedByByCase.get(caseId) ?? null) : null,
         created_at: caseStartMs,
@@ -1225,11 +1352,21 @@ for (const proj of DEMO_PROJECTS) {
 
       if (!isDidNotRunCase) {
         // Requests fire one after another from shortly after the test starts,
-        // so the execution page can order them by start time.
+        // so the execution page can order them by start time. A failing case's
+        // own requests sit where its story puts them, around the failing step,
+        // and the requests the failure stops short of never go out.
+        const storyRequests = isFailedCase ? (story.evidence.failingNetwork ?? []) : [];
+        const unreached = isFailedCase ? (story.evidence.unreachedNetwork ?? []) : [];
+        const storyIndex = (req) => storyRequests.findIndex((o) => o.method === req.method && o.url === req.url);
         let requestStartMs = caseStartMs + SEED_FIRST_REQUEST_OFFSET_MS;
         for (const req of buildNetwork(proj, storyEntry)) {
-          const startTime = requestStartMs;
-          requestStartMs += (req.duration ?? 0) + SEED_REQUEST_GAP_MS;
+          if (unreached.some((o) => o.method === req.method && o.url === req.url)) continue;
+          const own = storyIndex(req);
+          const startTime =
+            own >= 0
+              ? Math.max(caseStartMs + SEED_FIRST_REQUEST_OFFSET_MS, caseStartMs + evidenceTimes.requests[own])
+              : requestStartMs;
+          if (own < 0) requestStartMs += (req.duration ?? 0) + SEED_REQUEST_GAP_MS;
           NETWORK_REQUESTS.push({
             id: nrId++,
             test_runs_case_id: trcIdVal,
@@ -1289,8 +1426,17 @@ for (const proj of DEMO_PROJECTS) {
         row.duration = 0;
         row.did_not_run_reason = 'previous-failure';
         row.blocked_by = CASCADE_BLOCKER_LOCATION;
-        row.attempts = JSON.stringify([{ retry: 0, status: 'didnotrun', duration: 0, startedAt: row.started_at }]);
-        // A test that never ran produced no live evidence.
+        row.attempts = JSON.stringify([{ retry: 0, status: 'didnotrun', duration: 0, startedAt: null }]);
+        // A test that never ran reports no start time, worker or steps, and
+        // produced no live evidence.
+        row.started_at = null;
+        row.worker_index = null;
+        row.steps = [];
+        row.locator_pages_payload_id = null;
+        row.slowest_step = null;
+        row.slowest_step_duration = null;
+        row.dialogs = null;
+        row.aria_snapshot = null;
         row.step_events = null;
         row.wasted_time_ms = 0;
         row.web_vitals = null;
@@ -1618,6 +1764,32 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   }
 }
 
+// ── Failed attempts of the other retry passes (post-processing, rng-free) ───
+// The reporter stores every attempt as its own execution. Each remaining test
+// that passed on retry gets its failed first attempt as its own row, with the
+// error its flaky case declares, so its attempts link to real executions.
+{
+  const attemptKey = (row) => `${row.test_run_id}|${row.test_case_id}|${row.browser_name}`;
+  const failedAttempts = new Set(
+    TEST_RUNS_CASES.filter((row) => ['failed', 'timedOut'].includes(row.status) && row.retries === 0).map(attemptKey),
+  );
+  const retryPasses = TEST_RUNS_CASES.filter(
+    (row) => row.status === 'passed' && row.retries > 0 && !failedAttempts.has(attemptKey(row)),
+  );
+  for (const row of retryPasses) {
+    const { projectId } = caseById.get(row.test_case_id);
+    const error = FLAKY_CASES[projectId]?.error;
+    if (!error)
+      throw new Error(`Retry pass ${row.id}: give FLAKY_CASES[${projectId}] the error its failed attempt reports`);
+    splitFlakyExecution(row, {
+      error,
+      requests: NETWORK_REQUESTS.filter((nr) => nr.test_runs_case_id === row.id),
+      failedMs: () => undefined,
+      retryMs: () => undefined,
+    });
+  }
+}
+
 // ── Worker lanes without holes (post-processing, rng-free) ──────────────────
 // A skipped or did-not-run test never ran on a worker — Playwright reports it
 // with no worker index — so it leaves its lane, and the tests after it on that
@@ -1648,7 +1820,9 @@ const FLAKE_FIX_DEMO = { caseId: null, failedRowsMs: [], failedCountMs: [], fail
   const lanes = new Map();
   const runStart = new Map();
   for (const row of TEST_RUNS_CASES) {
-    runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    if (row.started_at !== null) {
+      runStart.set(row.test_run_id, Math.min(runStart.get(row.test_run_id) ?? Infinity, row.started_at));
+    }
     if (row.status === 'skipped' || row.status === 'didnotrun') {
       row.worker_index = null;
       continue;
@@ -2502,9 +2676,9 @@ const FAILURE_DIAGNOSES = [
     category: 'infrastructure',
     confidence: 'high',
     summary:
-      'Checkout Pay button click times out — the payment form renders slowly on CI and the click races the render.',
+      'Checkout Pay click times out: the Pay button stays disabled until the price quote answers, and on CI the quote takes 28 s, so the click is still waiting when the 30 s test timeout hits.',
     root_cause:
-      'The click is interrupted by the 30 000 ms test timeout because the Pay button is present but not yet interactive. A recent commit added a third-party payment SDK fetched before the form is enabled; on a loaded CI runner that pushes interactivity past the timeout. Combined with CI variability this fails intermittently.',
+      'The Pay button stays disabled until POST /api/checkout/quote answers. On failing runs that request takes 28.4 s, so locator.click waits on a disabled button until the 30 000 ms test timeout interrupts it. The helper clicks without waiting for the quote, and the test has no time budget for a quote that slow. The suspect commit also gates the form on a third-party payment SDK, which adds to the wait on a loaded CI runner, so the failure comes and goes with CI load.',
     details: JSON.stringify({
       confidenceScore: 82,
       severity: 'high',
@@ -2514,33 +2688,34 @@ const FAILURE_DIAGNOSES = [
           category: 'infrastructure',
           likelihood: 82,
           rootCause:
-            'Slow CI runner renders the payment form too late; the click exceeds the 30s test timeout before the button becomes interactive.',
+            'The checkout quote answers in 28 s on loaded CI runners; the Pay button stays disabled until then, so the click is still waiting when the 30 s test timeout hits.',
           evidence: [
-            'Failure rate correlates with high-load CI runs [recurrenceFlakiness]',
+            'POST /api/checkout/quote takes 28.4 s on failing runs [networkRequests]',
             'The call log shows the button resolved but disabled at click time [executionError]',
+            'The console warns the quote is still pending after 20 s [console]',
           ],
         },
         {
           category: 'test-bug',
           likelihood: 38,
-          rootCause: 'The payment helper clicks without an explicit wait for the quote to resolve.',
-          evidence: ['No waitForLoadState/waitFor precedes the click in fillPaymentDetails [testSource]'],
+          rootCause: 'The payment helper clicks Pay without waiting for the quote response it depends on.',
+          evidence: ['Nothing in fillPaymentDetails waits on the quote request before the click [testSource]'],
         },
       ],
       evidence: [
         'The test timeout interrupts locator.click in both affected tests [executionError]',
-        'The SCM diff adds a third-party payment SDK fetched before the form is enabled [scmInvestigation]',
-        'The checkout quote request takes 28s on failing runs [networkRequests]',
+        'POST /api/checkout/quote takes 28.4 s on failing runs [networkRequests]',
+        'The SCM diff gates the form on a third-party payment SDK [scmInvestigation]',
         'The full call stack from the trace pins the timeout inside the checkout flow helper [traceCallStack]',
         'Recurs on high-load CI runs [recurrenceFlakiness]',
       ],
       investigationSteps: [
-        'Re-run the cluster on a low-load runner to confirm CI variability is the driver',
-        'Check whether the payment form fires a network-idle event before becoming interactive',
+        'Time POST /api/checkout/quote on a low-load runner to confirm CI load is the driver',
+        'Check why the quote endpoint takes longer than 20 s under load',
       ],
       preventionTips: [
-        'Await page.waitForLoadState("networkidle") before interacting with dynamically loaded payment forms',
-        'Add a CI-aware timeout multiplier for payment-related actions',
+        'Wait on the request a control depends on (page.waitForResponse) before interacting with it',
+        'Mark flows that wait on slow backend calls with test.slow() instead of raising the global timeout',
       ],
       suggestedFix: storyFix(1),
       patchValidation: appliesPatch,
@@ -2740,9 +2915,9 @@ const FAILURE_DIAGNOSES = [
     category: 'app-bug',
     confidence: 'high',
     summary:
-      'Users table renders 50 rows instead of 25 — server-driven pagination shipped with the API default page size.',
+      'Users table renders 51 rows instead of 26: 50 users under the header instead of 25, because server-driven pagination shipped with the API default page size.',
     root_cause:
-      'The row-count assertion fails deterministically: the users endpoint now returns 50 rows per page. The server-driven pagination change replaced the dashboard page size (25) with the API default (50), so the table renders two pages worth of rows and the test correctly catches the regression.',
+      'The row-count assertion fails deterministically: the table renders 51 rows, the header plus 50 users, where the test expects 26, the header plus 25, because the users endpoint now returns 50 rows per page. The server-driven pagination change replaced the dashboard page size (25) with the API default (50), so the table renders two pages worth of rows and the test correctly catches the regression.',
     details: JSON.stringify({
       confidenceScore: 88,
       severity: 'medium',
@@ -2796,7 +2971,7 @@ const FAILURE_DIAGNOSES = [
 ];
 
 // Diagnosis version history — a snapshot of an earlier, lower-confidence take on
-// cluster 1 that was superseded when the SCM diff revealed the payment SDK. Powers
+// cluster 1 that the network capture of the slow price quote superseded. Powers
 // the "previous versions" dropdown on the cluster diagnosis panel.
 const FAILURE_DIAGNOSIS_VERSIONS = [
   {
@@ -2812,7 +2987,7 @@ const FAILURE_DIAGNOSIS_VERSIONS = [
     confidence: 'medium',
     summary: 'Earlier take: likely a missing explicit wait in the payment helper before the Pay click.',
     root_cause:
-      'Initial assessment attributed the timeout purely to a missing explicit wait in the payment helper, before the SCM diff surfaced the newly added third-party payment SDK that delays interactivity.',
+      'Initial assessment attributed the timeout purely to a missing explicit wait in the payment helper, before the network capture showed the 28 s price quote the Pay button waits on.',
     details: JSON.stringify({
       confidenceScore: 58,
       severity: 'medium',
@@ -4125,11 +4300,16 @@ const D_MS = `(SELECT delta_sec FROM _rebase) * 1000`;
 
 // Shift a JSON array column's per-element ms timestamp (`$.field`) in place,
 // preserving element order (json_each iterates in array order). Elements that
-// carry no `$.field` are left untouched, so a shift never writes a null key.
+// carry no `$.field` (a did-not-run attempt's null `startedAt`) keep their
+// value, so a shift never writes a null key. An untouched object goes through
+// json(): SQLite 3.45 (libsql, which app:seed:dev and the server use) drops
+// the JSON subtype of a bare `value` in a CASE branch, and json_group_array
+// would then store the object as a quoted string.
 const shiftJsonMs = (table, column, field) =>
   `UPDATE ${table} SET ${column} = (SELECT json_group_array(` +
   `CASE WHEN json_extract(value, '$.${field}') IS NOT NULL ` +
-  `THEN json_set(value, '$.${field}', json_extract(value, '$.${field}') + ${D_MS}) ELSE value END) ` +
+  `THEN json_set(value, '$.${field}', json_extract(value, '$.${field}') + ${D_MS}) ` +
+  `WHEN type IN ('object', 'array') THEN json(value) ELSE value END) ` +
   `FROM json_each(${table}.${column})) ` +
   `WHERE ${column} IS NOT NULL AND json_valid(${column});`;
 

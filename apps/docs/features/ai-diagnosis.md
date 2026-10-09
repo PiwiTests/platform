@@ -66,15 +66,15 @@ A diagnosis is grounded in your actual run, not a generic "ask AI" button. Each 
 - **Suggested fix** and **prevention tips**
 
 <figure>
-  <img src="/screenshots/ai-diagnosis.png" alt="The AI diagnosis in the toolbox of a failure cluster page">
-  <figcaption>The AI diagnosis in a cluster page's toolbox: category, confidence, root cause, evidence and a suggested fix.</figcaption>
+  <img src="/screenshots/ai-diagnosis.png" alt="The AI diagnosis of a failure cluster on the cluster page">
+  <figcaption>The AI diagnosis of a failure cluster: category, confidence, root cause, evidence and a suggested fix.</figcaption>
 </figure>
 
 ## Diagnosing one execution
 
 A cluster page diagnoses every failure that shares a fingerprint. On a single failing
 [execution](./evidence#one-execution-diagnosis-first), the **Diagnosis** section of **More ways to fix** shows the
-cluster's completed diagnosis with an **Open** link to it; without one, it diagnoses just that execution, with the same
+cluster's diagnosis summary and patch with an **Open** link; without one, it diagnoses just that execution, with the same
 panel and model: handy when a failure has not clustered yet. Execution and cluster
 diagnoses are stored separately, and running one never overwrites the other.
 
@@ -98,12 +98,13 @@ repository connection is set up on [Source control](/guide/source-control).
 
 ### Validated patches
 
-Every suggested patch is checked before it reaches you, by dry-running each hunk against the source files the model
-was shown. The patch carries one badge: **Applies cleanly**, **Applies with offset** (`git apply` should still succeed),
-**Does not apply** (the file diverged), **Invalid diff**, or **Unverified** (the file was not in the context). The model
+Every suggested patch is dry-run, hunk by hunk, against the source files the model was shown. The patch carries one
+badge: **Applies cleanly**, **Applies with offset** (`git apply` should still succeed),
+**Does not apply** (the file diverged), **Invalid diff**, or **Unverified** (the file was not in the context). When a
+fix is [verified](./failure-clusters#did-the-fix-work), the patch is checked again at the fix's commit. The model
 is told to return no patch unless it can quote the lines it changes. Applying a patch is always manual: **Copy**,
-**Copy `git apply` command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
-deterministic locator edits rather than model output.
+**Copy apply command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
+deterministic locator edits.
 
 ## Diagnoses written by an agent
 

@@ -10,7 +10,7 @@ import {
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { buildFixPlan } from '../fix-plan';
-import { enrichFixPlanOwnership } from '../scm/ownership';
+import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
 import { getNetworkRequests, getFailureGroups } from '#shared/handlers/test-runs';
 import {
   getTestCase,
@@ -37,6 +37,7 @@ import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTar
 import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
 import { storedPatchValidation } from '#shared/patch';
 import { parseFixAttempt } from '#shared/fix-attempts';
+import type { LatestExecution } from '#shared/latest-execution';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
 import { clusterTrailerLine } from '#shared/commit-trailers';
 import { parseSetRunIncident } from '#shared/run-incident';
@@ -107,7 +108,7 @@ import {
 } from '../../database/schema';
 import { buildDiagnosisContext, buildClusterDiagnosisContext } from '../ai-context';
 import { stripAnsi } from '#shared/error-fingerprint';
-import { caseHeadline } from '#shared/failure-verdict';
+import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS } from '#shared/mcp-tools';
 import { collectReportBundle } from '#shared/reports/collect';
 import { assertDashboardScope } from '#shared/reports/request';
@@ -1031,13 +1032,17 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!plan) return null;
     const enriched = await enrichFixPlanOwnership(db, cluster.projectId, plan);
 
-    // Additive: the story, the situation sentence and the computed next step,
+    // Additive: the story, the situation and the computed next step,
     // read on the cluster's latest occurrence through the shared handlers.
     const clusterDetail = await getFailureCluster(db, clusterId).catch(() => null);
     const latestId = clusterDetail?.latestTestRunsCaseId ?? null;
     const [cluesResult, detail] = await Promise.all([
       latestId ? getFailureClues(db, latestId).catch(() => null) : Promise.resolve(null),
-      latestId ? getTestRunCase(db, latestId).catch(() => null) : Promise.resolve(null),
+      latestId
+        ? getTestRunCase(db, latestId, null, {
+            resolveOwner: codeownersOwnerResolver(db, cluster.projectId),
+          }).catch(() => null)
+        : Promise.resolve(null),
     ]);
     const story = cluesResult?.story ?? null;
     const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
@@ -1852,7 +1857,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── search ─────────────────────────────────────────────────────────────────
   async search(db, params, ctx) {
     const q = String(params.q ?? '').trim();
-    if (q.length < 2) return { projects: [], runs: [], cases: [] };
+    if (q.length < 2) return { projects: [], runs: [], cases: [], clusters: [] };
     const res = await searchProjectsTestRunsCases(db, q, ctx.scope);
     return {
       projects: res.projects.map((p: any) => dropNulls({ id: p.id, name: p.name, label: p.label || null })),
@@ -1868,6 +1873,15 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       ),
       cases: res.cases.map((c: any) =>
         dropNulls({ testCaseId: c.id, title: c.title, filePath: c.filePath, projectId: c.projectId }),
+      ),
+      clusters: res.clusters.map((c) =>
+        dropNulls({
+          id: c.id,
+          name: c.name,
+          status: c.status,
+          projectId: c.projectId,
+          issueKey: c.issueKey,
+        }),
       ),
     };
   },
@@ -1986,9 +2000,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (outcome.fieldErrors?.length) {
       throw new Error(`${outcome.error} Pass values Jira accepts in \`fields\`, keyed by field id.`);
     }
-    if (outcome.status !== 'done') {
-      throw new Error(outcome.error || 'Filing the issue did not complete; it is queued for retry');
+    if (outcome.status === 'pending') {
+      throw new Error(
+        `Filing the issue is queued: the tracker did not answer${outcome.error ? ` (${outcome.error})` : ''}. Piwi retries it and links the issue to the cluster once it is created.`,
+      );
     }
+    if (outcome.status !== 'done') throw new Error(outcome.error || 'Filing the issue did not complete');
     return dropNulls({
       key: outcome.key,
       url: outcome.url,
@@ -2246,7 +2263,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── explain_failure ────────────────────────────────────────────────────────
   async explain_failure(db, params, ctx) {
     const id = numericParam(params.executionId, 'executionId');
-    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
+    const projectId = await resolveTestRunCaseProjectId(db, id);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
 
     const [row] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
     if (!row) return null;
@@ -2269,13 +2288,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         : Promise.resolve(null),
       getFailureClues(db, id).catch(() => null),
       getPageDiff(db, id).catch(() => null),
-      getTestRunCase(db, id).catch(() => null),
+      getTestRunCase(db, id, null, { resolveOwner: codeownersOwnerResolver(db, projectId) }).catch(() => null),
     ]);
 
     const rec = healing && healing.source !== 'none' ? healing.recommendation?.recommended : null;
     const story = cluesResult?.story ?? null;
     const nextStep = (detail as { nextStep?: unknown } | null)?.nextStep ?? null;
     const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
+    const latest = (detail as { latest?: LatestExecution | null } | null)?.latest ?? null;
+    // A retry pass has no error of its own: its verdict reads the failed attempt's,
+    // and names that attempt's execution.
+    const verdict = (detail as { verdict?: FailureVerdict | null } | null)?.verdict ?? null;
+    const failedAttempt = verdict?.attempt ?? null;
+    const didNotRun = (detail as { didNotRun?: { text?: string } | null } | null)?.didNotRun ?? null;
 
     return dropNulls({
       executionId: id,
@@ -2283,12 +2308,22 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       title: tc?.title || null,
       filePath: tc?.filePath || null,
       status: row.status,
-      headline: caseHeadline(row)?.headline ?? null,
+      headline: caseHeadline(row)?.headline ?? verdict?.headline ?? null,
+      failedAttempt: failedAttempt ? { executionId: failedAttempt.executionId, retry: failedAttempt.retry } : null,
       error: trunc(row.error, 1500),
       story: story
         ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
         : null,
       situation: situation?.text || null,
+      didNotRun: didNotRun?.text || null,
+      latest: latest
+        ? dropNulls({
+            isLatest: latest.isLatest,
+            executionId: latest.newest?.executionId ?? null,
+            runId: latest.newest?.runId ?? null,
+            status: latest.newest?.status ?? null,
+          })
+        : null,
       nextStep: nextStep ?? null,
       clues: cluesResult ? compactClues(cluesResult) : null,
       clusterId: row.failureClusterId || null,

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * A failure cluster's activity: the fix attempts reported on it, with each
- * outcome the runs gave them, and the writes agents made to it over MCP. Shown
- * only once there is something to show.
+ * outcome the runs gave them, the writes agents made to it over MCP, and what
+ * Piwi wrote to its tracker issue. Shown only once there is something to show,
+ * folded by default to one line that peeks at the newest entry.
  */
 import type { ClusterActivityItem } from '#shared/handlers/cluster-activity';
 import type { HelpTopicKey } from '~/utils/help-content';
@@ -38,14 +39,21 @@ function who(item: ClusterActivityItem): string | null {
 </script>
 
 <template>
-  <SectionCard
+  <CollapsibleSectionCard
     v-if="items.length"
     title="Activity"
     icon="i-lucide-history"
     :count="items.length"
     :help="help"
+    storage-key="cluster-activity"
     data-shot="cluster-activity"
   >
+    <template #folded>
+      {{ items[0]!.text }}
+      <ClientOnly>
+        <span :title="prettyDateFormat(items[0]!.at)"> · {{ formatRelativeTime(items[0]!.at) }}</span>
+      </ClientOnly>
+    </template>
     <ol class="space-y-2">
       <li v-for="(item, i) in items" :key="i" class="flex items-start gap-2">
         <span class="mt-1.5 size-2 shrink-0 rounded-full" :class="dotClass(item)" aria-hidden="true" />
@@ -71,5 +79,5 @@ function who(item: ClusterActivityItem): string | null {
         </div>
       </li>
     </ol>
-  </SectionCard>
+  </CollapsibleSectionCard>
 </template>

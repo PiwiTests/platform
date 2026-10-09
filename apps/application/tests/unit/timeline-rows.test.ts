@@ -1,7 +1,17 @@
 import { describe, test, expect } from 'vitest';
 import { buildFailureTimeline } from '#shared/failure-timeline';
 import type { PerformanceStep } from '~~/types/api';
-import { buildStepTreeView, groupRowsBySection, sectionSummaryText } from '~/utils/timeline-rows';
+import {
+  MIN_BAR_PERCENT,
+  barPlace,
+  buildStepTreeView,
+  citedItemIds,
+  groupRowsBySection,
+  sectionSummaryText,
+  testTrack,
+  windowCutText,
+  windowCuts,
+} from '~/utils/timeline-rows';
 import {
   afterAllFailure,
   beforeAllFailure,
@@ -179,5 +189,161 @@ describe('buildFailureTimeline with an error the test caught', () => {
     const probe = tl.lanes.steps.find((s) => s.label.includes('toBeVisible'))!;
     expect(probe.failed).toBeUndefined();
     expect(probe.at).toBeLessThan(tl.window.start);
+  });
+});
+
+describe('duration bars on the test clock', () => {
+  const T0 = 1_700_000_000_000;
+  /** A 4.4 s test whose 3 s click fails, plus whatever evidence `extra` adds. */
+  const timeline = (extra: { consoleAt?: number; request?: { at: number; duration: number } } = {}) =>
+    buildFailureTimeline({
+      startedAt: T0,
+      duration: 4_400,
+      status: 'failed',
+      steps: [
+        { title: 'goto /checkout', category: 'pw:api', duration: 1_400, startTime: T0 },
+        { title: 'click Pay', category: 'pw:api', duration: 3_000, startTime: T0 + 1_400, error: 'timed out' },
+      ],
+      consoleLogs:
+        extra.consoleAt != null ? [{ type: 'log', text: 'early', timestamp: T0 + extra.consoleAt, location: 'x' }] : [],
+      networkRequests: extra.request
+        ? [
+            {
+              method: 'POST',
+              url: '/api/checkout/quote',
+              status: 200,
+              duration: extra.request.duration,
+              startTime: T0 + extra.request.at,
+            },
+          ]
+        : [],
+    });
+  const stepBars = (tl: ReturnType<typeof timeline>) => {
+    const track = testTrack(tl, 4_400);
+    return tl.lanes.steps.map((step) => barPlace(step.at, step.duration, track));
+  };
+
+  test('places each step from the test start, as a share of the test', () => {
+    const [goto, click] = stepBars(timeline());
+    expect(goto!.left).toBe(0);
+    expect(goto!.width).toBeCloseTo(31.8, 1);
+    expect(click!.left).toBeCloseTo(31.8, 1);
+    expect(click!.width).toBeCloseTo(68.2, 1);
+  });
+
+  test('evidence stamped before the test started leaves the step bars where they are', () => {
+    const plain = stepBars(timeline());
+    for (const before of [-3_000, -10_000]) {
+      const tl = timeline({ consoleAt: before });
+      expect(tl.testStart).toBe(-before);
+      const bars = stepBars(tl);
+      bars.forEach((bar, i) => {
+        expect(bar.left).toBeCloseTo(plain[i]!.left, 6);
+        expect(bar.width).toBeCloseTo(plain[i]!.width, 6);
+      });
+      // The early entry itself sits at the start of the track, never before it.
+      const early = barPlace(tl.lanes.console[0]!.at, null, testTrack(tl, 4_400));
+      expect(early).toEqual({ left: 0, width: MIN_BAR_PERCENT });
+    }
+  });
+
+  test('a request that outlasts the test runs to the end of its track', () => {
+    const tl = timeline({ request: { at: 1_000, duration: 28_400 } });
+    const bar = barPlace(tl.lanes.network[0]!.at, tl.lanes.network[0]!.duration, testTrack(tl, 4_400));
+    expect(bar.left).toBeCloseTo((1_000 / 4_400) * 100, 6);
+    expect(bar.left + bar.width).toBe(100);
+  });
+
+  test('without a test duration, the track runs from the test start to the timeline end', () => {
+    const tl = timeline({ consoleAt: -3_000 });
+    expect(testTrack(tl, null)).toEqual({ start: 3_000, length: tl.end - tl.origin - 3_000 });
+  });
+
+  test('a short bar keeps its minimum width, even at the end of the track', () => {
+    expect(barPlace(0, 0, { start: 0, length: 10_000 })).toEqual({ left: 0, width: MIN_BAR_PERCENT });
+    expect(barPlace(10_000, 0, { start: 0, length: 10_000 })).toEqual({
+      left: 100 - MIN_BAR_PERCENT,
+      width: MIN_BAR_PERCENT,
+    });
+  });
+});
+
+describe('window cuts', () => {
+  const window = { start: 1_000, end: 2_000 };
+
+  test('names the edges of the window a bar crosses', () => {
+    expect(windowCuts({ at: 1_200, duration: 300 }, window)).toEqual({ start: false, end: false });
+    expect(windowCuts({ at: 500, duration: 1_000 }, window)).toEqual({ start: true, end: false });
+    expect(windowCuts({ at: 1_500, duration: 1_000 }, window)).toEqual({ start: false, end: true });
+    expect(windowCuts({ at: 500, duration: 5_000 }, window)).toEqual({ start: true, end: true });
+    expect(windowCuts({ at: 1_500 }, window)).toEqual({ start: false, end: false });
+  });
+
+  test('the tooltip says both when the window cuts a bar on both sides', () => {
+    expect(windowCutText({ start: false, end: false })).toBeNull();
+    expect(windowCutText({ start: true, end: false })).toBe('Started before this window');
+    expect(windowCutText({ start: false, end: true })).toBe('Runs on past this window');
+    expect(windowCutText({ start: true, end: true })).toBe('Started before and runs on past this window');
+  });
+});
+
+describe('the rows the Most likely line cites', () => {
+  const T0 = 1_700_000_000_000;
+  const tl = buildFailureTimeline({
+    startedAt: T0,
+    duration: 6_000,
+    status: 'failed',
+    steps: [
+      { title: 'goto /checkout', category: 'pw:api', duration: 800, startTime: T0 },
+      { title: 'fill Email', category: 'pw:api', duration: 400, startTime: T0 + 900 },
+      { title: 'click Pay', category: 'pw:api', duration: 3_000, startTime: T0 + 1_400, error: 'timed out' },
+    ],
+    consoleLogs: [
+      { type: 'log', text: 'ready', timestamp: T0 + 500, location: 'x' },
+      { type: 'warning', text: 'quote still pending', timestamp: T0 + 2_500, location: 'x' },
+    ],
+    networkRequests: [
+      { method: 'GET', url: '/checkout', status: 200, duration: 180, startTime: T0 + 100 },
+      {
+        method: 'POST',
+        url: '/api/quote',
+        status: 200,
+        duration: 9_000,
+        startTime: T0 + 1_000,
+        serverLogs: [{ level: 'error', message: 'quote service timed out', timestamp: T0 + 4_000 }],
+      },
+    ],
+  });
+  const items = Object.values(tl.lanes).flat();
+  const cited = (citations: Parameters<typeof citedItemIds>[1]) => [...citedItemIds(items, citations)].sort();
+
+  test('a request or a console entry cited by index is its own row', () => {
+    expect(cited([{ section: 'networkRequests', index: 1 }])).toEqual(['network-1']);
+    expect(cited([{ section: 'console', index: 1 }])).toEqual(['console-1']);
+    expect(
+      cited([
+        { section: 'networkRequests', index: 1 },
+        { section: 'console', index: 1 },
+      ]),
+    ).toEqual(['console-1', 'network-1']);
+  });
+
+  test("a request's backend logs cite the request's row", () => {
+    expect(cited([{ section: 'serverLogs', index: 1 }])).toEqual(['network-1']);
+    expect(cited([{ section: 'backendLogs', index: 1 }])).toEqual(['network-1']);
+  });
+
+  test('a step cited by index is its row; the failing steps, or the steps with no index, are the failed step', () => {
+    expect(cited([{ section: 'steps', index: 1 }])).toEqual(['step-1']);
+    expect(cited([{ section: 'steps' }])).toEqual(['step-2']);
+    expect(cited([{ section: 'failingSteps' }])).toEqual(['step-2']);
+    expect(cited([{ section: 'failingSteps', index: 0 }])).toEqual(['step-2']);
+  });
+
+  test('a section with no row, or a list cited with no index, marks nothing', () => {
+    expect(cited([{ section: 'ariaSnapshot' }, { section: 'executionError' }, { section: 'appState' }])).toEqual([]);
+    expect(cited([{ section: 'networkRequests' }, { section: 'console' }])).toEqual([]);
+    expect(cited([{ section: 'networkRequests', index: 7 }])).toEqual([]);
+    expect(cited([])).toEqual([]);
   });
 });

@@ -17,7 +17,8 @@ import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
-import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { HeadlinePart } from '#shared/describe-failure';
+import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { AccessSummary, InstanceRole } from '#shared/permissions';
 export type { TestMetadata, TestSourceFrame };
 export type { ClusterState } from '#shared/cluster-state';
@@ -28,6 +29,19 @@ export interface OccurrenceSeriesPoint {
   runId: number;
   startedAt: string | Date | null;
   occurrences: number;
+}
+
+/**
+ * The headline of a cluster's latest occurrence, or of its first one (the stored
+ * sample error) when the latest execution carries no error.
+ */
+export interface ClusterLatestHeadline {
+  parts: HeadlinePart[];
+  /** A second, shorter fact the headline left out, or null. */
+  detail: string | null;
+  source: 'latest' | 'first';
+  /** The run the occurrence it reads failed in. */
+  runId: number;
 }
 
 // ============================================================================
@@ -1075,6 +1089,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   latestTestRunsCaseId: number | null;
   /** The test case that latest occurrence belongs to. */
   latestTestCaseId: number | null;
+  /** The latest occurrence's headline, the page's heading when it says more than the cluster's name. */
+  latestHeadline: ClusterLatestHeadline | null;
   diagnosis: DiagnosisCompact | null;
   project: { id: number; name: string; label: string | null } | null;
   affectedTestCases: Array<{
@@ -1089,12 +1105,23 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   }>;
   /** Known-issue links pinned to this cluster (Jira / GitHub issue, etc.). */
   links: EntityLinkInfo[];
+  /** The cluster's known issue: its newest tracker link. Every surface names this one. */
+  knownIssue: KnownIssueRef | null;
+  /** An issue filing for this cluster waits on the tracker; the outbox retries it. */
+  issueFilingQueued: boolean;
+  /** The cluster's newest issue filing failed for good, with the tracker's reason; filing again replaces it. */
+  issueFilingFailure: IssueFilingFailure | null;
   /** Effective owner of the cluster's tests: `piwi:owner` annotation or CODEOWNERS. */
   owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   /** Inbox triage: assignee (overrides the owner) and snooze state. */
   assignee: string | null;
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
+  /**
+   * The failure goes on: the cluster was last seen in the project's latest finished
+   * run or a later one. A Done issue then calls for a new one.
+   */
+  failureGoesOn: boolean;
   /** One sentence with one verb for the cluster's state, and the control that changes it. */
   clusterState: ClusterState;
   /** Occurrences per run over the project's last 20 runs, oldest first. */
@@ -1438,6 +1465,8 @@ export interface DiagnosisCompact {
   category: string | null;
   confidence: string | null;
   summary: string | null;
+  /** `agent` when an agent wrote it; otherwise the AI provider. */
+  provider?: string | null;
 }
 
 /**

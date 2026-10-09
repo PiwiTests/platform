@@ -2,7 +2,9 @@
 /**
  * Performance evidence for one execution: the performance hints, what the test
  * cost its worker and browser processes when the reporter measured it, then the
- * captured Web Vitals (navigation timing, paint, Core Web Vitals). Shows the
+ * captured Web Vitals (navigation timing, paint, Core Web Vitals). A Web Vital
+ * is rated on its standard bands: a poor value in the error color, one that
+ * needs improvement in the warning tone, a good one uncolored. Shows the
  * three-state empty message when no Web Vitals were recorded.
  */
 import type { WebVitals } from '~~/types/api';
@@ -19,6 +21,14 @@ defineProps<{
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
 }>();
+
+/** A Web Vital's tone on its bands: above `poor` is poor, above `fair` needs improvement; none is muted. */
+function ratingClass(value: number | null | undefined, fair: number, poor: number): string {
+  if (value == null) return 'text-muted';
+  if (value > poor) return 'text-error';
+  if (value > fair) return 'text-warning-700 dark:text-warning-400';
+  return '';
+}
 </script>
 
 <template>
@@ -78,52 +88,28 @@ defineProps<{
           <StatTile
             label="TTFB"
             hint="Time to first byte"
-            :value-class="
-              webVitals.navigation.ttfb > 600
-                ? 'text-red-600'
-                : webVitals.navigation.ttfb > 200
-                  ? 'text-orange-500'
-                  : 'text-green-600'
-            "
+            :value-class="ratingClass(webVitals.navigation.ttfb, 200, 600)"
           >
             <DurationValue :ms="webVitals.navigation.ttfb" />
           </StatTile>
           <StatTile
             label="DOM Interactive"
             hint="DOM interactive"
-            :value-class="
-              webVitals.navigation.domInteractive > 3000
-                ? 'text-red-600'
-                : webVitals.navigation.domInteractive > 1500
-                  ? 'text-orange-500'
-                  : 'text-green-600'
-            "
+            :value-class="ratingClass(webVitals.navigation.domInteractive, 1500, 3000)"
           >
             <DurationValue :ms="webVitals.navigation.domInteractive" />
           </StatTile>
           <StatTile
             label="DOMContentLoaded"
             hint="DOMContentLoaded"
-            :value-class="
-              webVitals.navigation.domContentLoaded > 3000
-                ? 'text-red-600'
-                : webVitals.navigation.domContentLoaded > 1500
-                  ? 'text-orange-500'
-                  : 'text-green-600'
-            "
+            :value-class="ratingClass(webVitals.navigation.domContentLoaded, 1500, 3000)"
           >
             <DurationValue :ms="webVitals.navigation.domContentLoaded" />
           </StatTile>
           <StatTile
             label="Load Complete"
             hint="Page fully loaded"
-            :value-class="
-              webVitals.navigation.loadComplete > 5000
-                ? 'text-red-600'
-                : webVitals.navigation.loadComplete > 3000
-                  ? 'text-orange-500'
-                  : 'text-green-600'
-            "
+            :value-class="ratingClass(webVitals.navigation.loadComplete, 3000, 5000)"
           >
             <DurationValue :ms="webVitals.navigation.loadComplete" />
           </StatTile>
@@ -140,13 +126,7 @@ defineProps<{
           <StatTile
             v-if="webVitals.paint.firstContentfulPaint !== undefined"
             label="First Contentful Paint (FCP)"
-            :value-class="
-              webVitals.paint.firstContentfulPaint > 3000
-                ? 'text-red-600'
-                : webVitals.paint.firstContentfulPaint > 1800
-                  ? 'text-orange-500'
-                  : 'text-green-600'
-            "
+            :value-class="ratingClass(webVitals.paint.firstContentfulPaint, 1800, 3000)"
           >
             <DurationValue :ms="webVitals.paint.firstContentfulPaint" />
           </StatTile>
@@ -155,45 +135,15 @@ defineProps<{
         <!-- Core Web Vitals — Google rating bands; missing values render "n/a"
              without alarm colors (INP is often absent in short tests). -->
         <StatTileGrid v-if="webVitals.vitals" min-tile-width="10rem" class="pt-2 border-t">
-          <StatTile
-            label="Largest Contentful Paint (LCP)"
-            :value-class="
-              webVitals.vitals.lcp == null
-                ? 'text-gray-400'
-                : webVitals.vitals.lcp > 4000
-                  ? 'text-red-600'
-                  : webVitals.vitals.lcp > 2500
-                    ? 'text-orange-500'
-                    : 'text-green-600'
-            "
-          >
+          <StatTile label="Largest Contentful Paint (LCP)" :value-class="ratingClass(webVitals.vitals.lcp, 2500, 4000)">
             <DurationValue :ms="webVitals.vitals.lcp" fallback="n/a" />
           </StatTile>
           <StatTile
             label="Cumulative Layout Shift (CLS)"
             :value="webVitals.vitals.cls != null ? String(webVitals.vitals.cls) : 'n/a'"
-            :value-class="
-              webVitals.vitals.cls == null
-                ? 'text-gray-400'
-                : webVitals.vitals.cls > 0.25
-                  ? 'text-red-600'
-                  : webVitals.vitals.cls > 0.1
-                    ? 'text-orange-500'
-                    : 'text-green-600'
-            "
+            :value-class="ratingClass(webVitals.vitals.cls, 0.1, 0.25)"
           />
-          <StatTile
-            label="Interaction to Next Paint (INP)"
-            :value-class="
-              webVitals.vitals.inp == null
-                ? 'text-gray-400'
-                : webVitals.vitals.inp > 500
-                  ? 'text-red-600'
-                  : webVitals.vitals.inp > 200
-                    ? 'text-orange-500'
-                    : 'text-green-600'
-            "
-          >
+          <StatTile label="Interaction to Next Paint (INP)" :value-class="ratingClass(webVitals.vitals.inp, 200, 500)">
             <DurationValue :ms="webVitals.vitals.inp" fallback="n/a" />
           </StatTile>
         </StatTileGrid>

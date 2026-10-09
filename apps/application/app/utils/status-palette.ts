@@ -18,6 +18,8 @@ export interface StatusPaletteEntry {
   text: string;
   /** Pressed filter chip: tinted background and matching text. */
   chip: string;
+  /** A row in this outcome among neutral rows: a faint background its text stays readable on. */
+  tint: string;
 }
 
 export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
@@ -27,6 +29,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-passed',
     text: 'text-emerald-700 dark:text-emerald-400',
     chip: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    tint: 'bg-emerald-50 dark:bg-emerald-950/30',
   },
   failed: {
     color: 'var(--color-status-failed)',
@@ -34,6 +37,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-failed',
     text: 'text-rose-700 dark:text-rose-400',
     chip: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+    tint: 'bg-rose-50 dark:bg-rose-950/30',
   },
   flaky: {
     color: 'var(--color-status-flaky)',
@@ -41,6 +45,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-flaky',
     text: 'text-purple-700 dark:text-purple-400',
     chip: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    tint: 'bg-purple-50 dark:bg-purple-950/30',
   },
   skipped: {
     color: 'var(--color-status-skipped)',
@@ -48,6 +53,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-skipped',
     text: 'text-zinc-500 dark:text-zinc-400',
     chip: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300',
+    tint: 'bg-zinc-50 dark:bg-zinc-800/40',
   },
   // A `test.fixme()` skip: a second grey, stronger than a plain skip, since the
   // test is known broken rather than deliberately out of scope.
@@ -57,6 +63,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-fixme',
     text: 'text-zinc-700 dark:text-zinc-300',
     chip: 'bg-zinc-300 text-zinc-800 dark:bg-zinc-600 dark:text-zinc-100',
+    tint: 'bg-zinc-100 dark:bg-zinc-800/60',
   },
   didnotrun: {
     color: 'var(--color-status-didnotrun)',
@@ -64,6 +71,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-didnotrun',
     text: 'text-amber-700 dark:text-amber-400',
     chip: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    tint: 'bg-amber-50 dark:bg-amber-950/30',
   },
   running: {
     color: 'var(--color-status-running)',
@@ -71,6 +79,7 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     ring: 'ring-status-running',
     text: 'text-blue-700 dark:text-blue-400',
     chip: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    tint: 'bg-blue-50 dark:bg-blue-950/30',
   },
 };
 

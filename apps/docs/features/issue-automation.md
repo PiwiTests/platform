@@ -44,20 +44,24 @@ A fresh binding starts with one rule: two occurrences in two runs on the default
 - **The default branch when it persists** — the default branch in `staging`, three occurrences in two runs over a day.
 
 Whatever the rules say, a cluster is **never** filed automatically when it is resolved, ignored or snoozed, when an issue
-already tracks it, or when it looks flaky (one of its tests passed on a retry since it first failed, or every one passed
+still tracks it or its filing is queued, or when it looks flaky (one of its tests passed on a retry since it first failed, or every one passed
 at the commit it failed at), unless *Leave out failures that look flaky* is off. Two more guards hold:
 
 - **An open issue in the tracker already carries the failure's labels** (`piwi-cluster-<id>` or `piwi-fp-<hash>`):
-  Piwi leaves the link to a person, and the activity list says which issue it found.
+  Piwi leaves the link to a person. The cluster's Activity and Issue line name the issue it found and offer *Link an
+  issue*, beside a Done issue too. An issue the cluster already links is left for the next sync to read back.
 - **The daily cap**: at most this many issues filed automatically per project in any 24 hours (default 5).
 
 With [owner routes](./issue-tracking#the-project-binding), an issue goes to the route of the cluster's owner (its
 assignee, else the `piwi:owner` annotation, else CODEOWNERS). A failure whose owner matches no route is filed only with
 *File owners with no matching route into the default project* on.
 
-The issue is filed through the same path as a click: the same body, labels and dedupe, the same [required
-fields](./issue-tracking#required-jira-fields). An automatic create the tracker would refuse for a field the binding
-leaves empty is recorded as a failed action, naming the field.
+The issue is filed through the same path as a click: the same body, labels and [dedupe by
+cluster](./issue-tracking#what-it-does-exactly), the same [required fields](./issue-tracking#required-jira-fields). An
+issue that is Done, or whose link was removed, no longer tracks the failure, so a rule files a new one. The exception
+is a Done issue the [reopen transition](./issue-tracking#keep-the-ticket-honest) is moving out of Done after a
+regression: until the next sync reads that issue back, a rule files nothing beside it. An automatic create the tracker
+would refuse for a field the binding leaves empty is recorded as a failed action, naming the field.
 
 ### Preview
 

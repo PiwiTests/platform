@@ -10,6 +10,7 @@ import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
 import { ProjectRole } from '#shared/permissions';
 import { createMember } from './utils/access';
+import { waitForHydration } from './utils';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -249,12 +250,16 @@ test.describe.serial('Integrations — create an issue', () => {
     expect(execution.failureCluster.knownIssue.key).toBe(createdKey);
 
     await page.goto(`/test-run-cases/${executionId}`);
-    const tracked = page.getByTestId('situation-issue');
+    const tracked = page.getByTestId('issue-line-key');
     await expect(tracked).toHaveText(createdKey);
     await expect(tracked).toHaveAttribute('href', new RegExp(`/browse/${createdKey}$`));
 
+    // The run's rows load after hydration; the first visit compiles the run page on the dev server.
     await page.goto(`/test-runs/${runId}`);
-    await expect(page.getByTestId('issue-key-chip').filter({ hasText: createdKey }).first()).toBeVisible();
+    await waitForHydration(page);
+    await expect(page.getByTestId('issue-key-chip').filter({ hasText: createdKey }).first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test('a duplicate create is a no-op that returns the same issue', async ({ request }) => {

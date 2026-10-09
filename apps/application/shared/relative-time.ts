@@ -1,6 +1,6 @@
 /**
  * Small, deterministic relative-time and duration wording shared by the
- * situation sentence and the cluster-state sentence. Pure: no locale, no
+ * situation lines and the cluster-state sentence. Pure: no locale, no
  * Nuxt, no date library — one dominant unit, plainly spelled, so two callers
  * phrase "1 day ago" and "2 days" the same way.
  */

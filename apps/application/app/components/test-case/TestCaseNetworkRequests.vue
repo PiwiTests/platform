@@ -1,10 +1,23 @@
 <script setup lang="ts">
+/**
+ * The execution's captured requests, failures and requests with backend logs
+ * first, each with its status, its backend logs and spans, and its duration.
+ * A duration takes the one warning tone (`app/utils/duration-tone.ts`) only
+ * when it stands out by the timeline's rule (`durationStandout`): in the test,
+ * or against the request's usual duration, which then shows beside it. With a
+ * trace, the *Full trace* view lists every request the page made.
+ */
 import type { NetworkRequest, ServerLogEntry, ServerSpanEntry } from '~~/types/api';
+import { durationStandout, standoutReasonText, type DurationStandout } from '#shared/duration-standout';
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
 const props = defineProps<{
   requests: NetworkRequest[];
+  /** The test's duration, in ms — a request's duration stands out against it. */
+  testDurationMs?: number | null;
+  /** Each request's usual duration over the test's last passing runs, in ms, by its index in `requests`. */
+  usualByIndex?: ReadonlyMap<number, number> | null;
   /** Run + case ids and trace presence — enable the "Full trace" go-deeper view. */
   runId?: number | null;
   testRunsCaseId?: number | null;
@@ -17,6 +30,8 @@ const props = defineProps<{
   derivedFromTrace?: boolean;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
+  /** The request a citation just opened (its index in `requests`): ringed, and shown whatever the filter. */
+  highlightIndex?: number | null;
 }>();
 
 const cardComponent = computed(() =>
@@ -62,6 +77,17 @@ watch(
   () => view.value === 'trace',
   (isTrace) => {
     if (isTrace) loadTraceNet();
+  },
+  { immediate: true },
+);
+
+// A cited request shows in the captured list, whatever filter or view was open.
+watch(
+  () => props.highlightIndex,
+  (index) => {
+    if (index == null || index >= props.requests.length) return;
+    filter.value = 'all';
+    manualView.value = 'captured';
   },
   { immediate: true },
 );
@@ -121,6 +147,8 @@ interface DecoratedRequest extends NetworkRequest {
   failed: boolean;
   hasDetail: boolean;
   path: string;
+  /** Why the request's duration stands out, or null when it does not. */
+  standout: DurationStandout | null;
 }
 
 interface SpanBar extends ServerSpanEntry {
@@ -160,7 +188,7 @@ function buildWaterfall(spans: ServerSpanEntry[]): SpanBar[] {
 
 /** Bar color for a span by outcome, then kind. */
 function spanColor(s: ServerSpanEntry): string {
-  if (s.status === 'error') return 'bg-red-400 dark:bg-red-500';
+  if (s.status === 'error') return STATUS_PALETTE.failed.bg;
   if (s.kind === 'db') return 'bg-violet-400 dark:bg-violet-500';
   if (s.kind === 'client') return 'bg-sky-400 dark:bg-sky-500';
   if (s.kind === 'internal') return 'bg-gray-400 dark:bg-gray-500';
@@ -230,9 +258,21 @@ const decorated = computed<DecoratedRequest[]>(() => {
       failed: req.status >= 400 || !!req.failure,
       hasDetail: logs.length > 0 || spans.length > 0,
       path: toPath(req.url),
+      standout: durationStandout({
+        ms: req.duration,
+        testMs: props.testDurationMs,
+        usualMs: props.usualByIndex?.get(i),
+      }),
     };
   });
 });
+
+/** A standing-out duration's hover: the duration and why it stands out. */
+function standoutTitle(req: DecoratedRequest): string | undefined {
+  return req.standout && req.duration != null
+    ? `${formatDuration(req.duration)}, ${standoutReasonText(req.standout, formatDuration)}`
+    : undefined;
+}
 
 const totals = computed(() => {
   let failed = 0;
@@ -274,7 +314,7 @@ const filterItems = computed(() => [
 
 /** Accent border for a request row based on the worst signal it carries. */
 function rowAccent(r: DecoratedRequest): string {
-  if (r.errorLogCount > 0 || r.status >= 500 || r.failure) return 'border-l-2 border-l-red-400 dark:border-l-red-600';
+  if (r.errorLogCount > 0 || r.status >= 500 || r.failure) return 'border-l-2 border-l-status-failed';
   if (r.failed || r.warnLogCount > 0) return 'border-l-2 border-l-amber-400 dark:border-l-amber-600';
   return 'border-l-2 border-l-transparent';
 }
@@ -296,7 +336,7 @@ function rowAccent(r: DecoratedRequest): string {
         <TraceDerivedChip v-if="derivedFromTrace" />
         <template v-if="view === 'captured'">
           <div v-if="totals.errorLogs > 0 || totals.warnLogs > 0" class="flex items-center gap-2 text-xs">
-            <span v-if="totals.errorLogs > 0" class="flex items-center gap-1 text-red-600 dark:text-red-400">
+            <span v-if="totals.errorLogs > 0" class="flex items-center gap-1" :class="STATUS_PALETTE.failed.text">
               <UIcon name="i-lucide-octagon-alert" class="size-3.5" />{{ totals.errorLogs }}
             </span>
             <span v-if="totals.warnLogs > 0" class="flex items-center gap-1 text-amber-600 dark:text-amber-400">
@@ -305,6 +345,7 @@ function rowAccent(r: DecoratedRequest): string {
           </div>
           <UTabs
             v-model="filter"
+            color="neutral"
             :items="filterItems"
             size="xs"
             variant="link"
@@ -314,6 +355,7 @@ function rowAccent(r: DecoratedRequest): string {
         <UTabs
           v-if="hasTrace"
           v-model="view"
+          color="neutral"
           :items="viewItems"
           size="xs"
           variant="pill"
@@ -330,6 +372,7 @@ function rowAccent(r: DecoratedRequest): string {
         :data="traceNet"
         :run-id="runId ?? null"
         :test-runs-case-id="testRunsCaseId ?? 0"
+        :test-duration-ms="testDurationMs ?? null"
       />
       <p v-else class="text-xs text-gray-400 py-2">No network activity recorded in this trace.</p>
     </template>
@@ -338,8 +381,9 @@ function rowAccent(r: DecoratedRequest): string {
       <div
         v-for="req in visibleRequests"
         :key="req._index"
-        :class="rowAccent(req)"
-        class="rounded bg-gray-50/60 dark:bg-gray-800/40"
+        :class="[rowAccent(req), req._index === highlightIndex ? CITED_ROW_CLASS : '']"
+        class="rounded bg-gray-50/60 dark:bg-gray-800/40 transition-shadow"
+        :data-cited="req._index === highlightIndex ? '' : undefined"
       >
         <!-- Request line -->
         <button
@@ -382,7 +426,8 @@ function rowAccent(r: DecoratedRequest): string {
           <code class="truncate text-xs flex-1 min-w-0" :title="req.url">{{ req.path }}</code>
           <code
             v-if="req.failure"
-            class="truncate text-xs text-red-600 dark:text-red-400 min-w-0 max-w-[45%]"
+            class="truncate text-xs min-w-0 max-w-[45%]"
+            :class="STATUS_PALETTE.failed.text"
             :title="req.failure"
             >{{ req.failure }}</code
           >
@@ -396,7 +441,8 @@ function rowAccent(r: DecoratedRequest): string {
 
           <span
             v-if="req.errorLogCount > 0"
-            class="shrink-0 inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400"
+            class="shrink-0 inline-flex items-center gap-1 text-xs"
+            :class="STATUS_PALETTE.failed.text"
             :title="`${req.errorLogCount} backend error log(s)`"
           >
             <UIcon name="i-lucide-octagon-alert" class="size-3.5" />{{ req.errorLogCount }}
@@ -411,7 +457,7 @@ function rowAccent(r: DecoratedRequest): string {
 
           <span
             v-if="req.serverMs != null"
-            class="shrink-0 inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 tabular-nums"
+            class="shrink-0 inline-flex items-center gap-1 text-xs text-muted tabular-nums"
             :title="`Server-side processing time (${req.spans.length} span${req.spans.length === 1 ? '' : 's'})`"
           >
             <UIcon name="i-lucide-server" class="size-3.5" /><DurationValue :ms="req.serverMs" no-title />
@@ -425,16 +471,19 @@ function rowAccent(r: DecoratedRequest): string {
             {{ formatRelativeTime(req.startTime) }}
           </span>
           <span
-            class="ml-1 shrink-0 text-xs tabular-nums"
-            :class="
-              (req.duration ?? 0) > 1000
-                ? 'text-red-600 font-medium'
-                : (req.duration ?? 0) > 500
-                  ? 'text-orange-500'
-                  : 'text-gray-500'
-            "
+            class="ml-1 shrink-0 inline-flex items-baseline gap-1.5 text-xs tabular-nums"
+            :data-standout="req.standout?.reason"
+            :title="standoutTitle(req)"
           >
-            <DurationValue :ms="req.duration" unit-class="opacity-60" />
+            <DurationValue
+              :ms="req.duration"
+              :class="req.standout ? STANDOUT_TEXT_CLASS : DURATION_TEXT_CLASS"
+              unit-class="opacity-60"
+              :no-title="Boolean(req.standout)"
+            />
+            <span v-if="req.standout?.reason === 'usual'" class="text-muted" data-testid="usual-duration"
+              >usually <DurationValue :ms="req.standout.usual" unit-class="opacity-60" no-title
+            /></span>
           </span>
         </button>
 
@@ -458,7 +507,7 @@ function rowAccent(r: DecoratedRequest): string {
               }}</span>
               <span
                 class="truncate font-mono"
-                :class="span.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-300'"
+                :class="span.status === 'error' ? STATUS_PALETTE.failed.text : 'text-gray-600 dark:text-gray-300'"
                 >{{ span.name }}</span
               >
             </div>
@@ -521,7 +570,9 @@ function rowAccent(r: DecoratedRequest): string {
       <span>
         Want to go deeper? Record traces (<code>trace: 'retain-on-failure'</code>) to see every request with headers,
         timing and bodies here.
-        <DocLink to="features/evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
+        <DocLink to="features/evidence#trace-powered-deep-views" no-icon :class="['text-inherit', SENTENCE_LINK_CLASS]"
+          >Learn more</DocLink
+        >
       </span>
     </p>
   </component>

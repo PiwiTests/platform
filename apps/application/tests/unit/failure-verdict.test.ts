@@ -137,6 +137,28 @@ describe('buildFailureVerdict', () => {
     );
   });
 
+  test("a retry pass read from its failed attempt's error names that attempt and passed on retry", () => {
+    const verdict = buildFailureVerdict({
+      error: PAY_ERROR,
+      status: 'passed',
+      retries: 1,
+      runId: 9,
+      fromAttempt: { retry: 0, executionId: 41 },
+    });
+    expect(verdict!.headline).toBe(
+      "getByRole('button', { name: 'Pay' }) never became enabled — click timed out after 30 s",
+    );
+    expect(verdict!.why).toBe('passed-on-retry');
+    expect(verdict!.attempt).toEqual({ retry: 0, executionId: 41 });
+  });
+
+  test("the attempt is null when the headline is the execution's own error", () => {
+    expect(buildFailureVerdict({ error: PAY_ERROR, status: 'failed', runId: 9 })!.attempt).toBeNull();
+    expect(
+      buildFailureVerdict({ error: PAY_ERROR, status: 'failed', runId: 9, fromAttempt: null })!.attempt,
+    ).toBeNull();
+  });
+
   test('falls back to the deterministic cluster title when the cluster has no AI title', () => {
     const verdict = buildFailureVerdict({
       error: PAY_ERROR,

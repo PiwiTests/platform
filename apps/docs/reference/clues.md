@@ -8,8 +8,8 @@ lang: en-US
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence Piwi already stores for a failing
 execution; no model is involved. The **Most likely** line of the [situation block](/guide/first-failure#_2-most-likely-why)
-leads with the strongest clue or the story it belongs to, and the same clues are handed to the
-[AI diagnosis](/features/ai-diagnosis) as evidence to confirm or refute. What a clue is on the page is described on
+leads with a strong or medium story, else the cluster's completed AI diagnosis, else a weak story or the strongest
+clue, and the same clues are handed to the [AI diagnosis](/features/ai-diagnosis) as evidence to confirm or refute. What a clue is on the page is described on
 [Failure evidence](/features/evidence#clues).
 
 ## Rules
@@ -38,7 +38,7 @@ after it.
 | Known flake suspect<br>`known-flake-suspect` | strong when a [Flake Lab](/features/flake-lab) experiment reproduced the suspect, else weak | This failure shows one of its test's [suspects](/features/flaky-tests#suspects), when it shows several, the one an experiment reproduced, else the highest ranked: a slow or failed route, a test alongside or just before, load or a browser. The detail gives this failure's value and the suspect's counts, and, once reproduced, the arm against its control ("3 of 4 under delay GET /api/cart 1.8 s, against 0 of 10 without"). |
 
 Clues are ranked by strength, then by membership of the story, then by how close they sit to the moment of failure, and
-the list is capped at eight. An earlier fix that regressed is not a clue: the situation sentence carries it.
+the list is capped at eight. An earlier fix that regressed is not a clue: the execution's **Cluster** line carries it.
 
 ## Stories
 
@@ -56,7 +56,7 @@ strength. The first combination that matches, in this order, wins:
 | Timing | timeout budget and slow request | *The step used 92 % of the timeout waiting on /api/search.* |
 
 When no combination matches, the strongest clue stands alone. A cluster's completed AI diagnosis leads instead of a
-lone clue, and the clues then read as *supported by N clues*.
+weak story or a lone clue, and the clues then read as *supported by N clues*.
 
 ## Related
 

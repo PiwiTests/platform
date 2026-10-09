@@ -25,6 +25,51 @@ export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset
  */
 export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
 
+/**
+ * The color of a card's header icon: `SectionCard`'s default, and the cards that
+ * draw their own header (the evidence card). Every header icon is marked
+ * `data-card-icon`.
+ */
+export const CARD_ICON_CLASS = 'text-primary';
+
+/**
+ * The selected tab of a content-level tab strip: a neutral raised surface and the
+ * strongest text, never the primary color, which belongs to the page's primary
+ * action. The evidence card's tab strip uses it.
+ */
+export const SELECTED_TAB_CLASS = 'bg-elevated text-highlighted font-medium';
+
+/**
+ * The selected option of a segmented control or view switch (a row of options
+ * on a raised track, such as the timeline's window switch): the option lifted
+ * onto the page's own surface, in the strongest text, never the primary color.
+ */
+export const SEGMENTED_SELECTED_CLASS = 'bg-default shadow-sm text-highlighted font-medium';
+
+/**
+ * The selected row of a list that picks what the page shows (an affected test,
+ * the opened attempt): a raised surface inside a neutral ring, never the primary
+ * color.
+ */
+export const SELECTED_ROW_CLASS = 'bg-elevated ring-1 ring-inset ring-accented';
+
+/**
+ * The current item in a strip of small status-colored marks (this execution in
+ * its test's history, this attempt among the retries): a ring in the strongest
+ * neutral, set off the mark by the page's own background so it reads on any
+ * status color in both themes.
+ */
+export const CURRENT_ITEM_RING_CLASS = 'ring-2 ring-offset-1 ring-offset-bg ring-inverted';
+
+/**
+ * A row of the evidence card a citation just opened (a request, a console
+ * entry): a neutral ring the card takes off again after `CITED_ROW_MS`.
+ */
+export const CITED_ROW_CLASS = 'ring-2 ring-inset ring-inverted';
+
+/** How long a row a citation opened stays ringed, in ms. */
+export const CITED_ROW_MS = 2000;
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;
@@ -284,6 +329,12 @@ export function formatStatusLabel(status: string): string {
 /** Status label for one execution: a pass that needed a retry reads "passed on retry". */
 export function formatExecutionStatus(status: string, retries?: number | null): string {
   return statusPaletteKey(status, retries) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
+}
+
+/** The status chip's label: the execution's status in sentence case ("Passed on retry", "Didn't run"). */
+export function statusChipLabel(status: string, retries?: number | null): string {
+  const label = formatExecutionStatus(status, retries);
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 /**

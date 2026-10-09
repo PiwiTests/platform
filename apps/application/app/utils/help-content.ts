@@ -44,7 +44,7 @@ export const HELP_TOPICS = {
   // ── Issue tracking ──────────────────────────────────────────────────────
   'integrations.create-issue': {
     title: 'Create issue',
-    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links the issue back as the known issue, so the key travels to the inbox, Slack, email and PR comments. Filing twice for the same cluster is a no-op — the modal offers to link an existing issue instead.',
+    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links it to the failure’s cluster as its known issue, so the key shows on the cluster page, on every execution of the cluster, in the inbox, Slack, email and PR comments. Filing again for the same cluster, from its page or one of its executions, names the issue already filed until that issue is Done or unlinked; then it files a new one, and a Done issue stays linked. A filing Jira refused shows beside the ticket on both pages, with Jira’s reason. The modal offers to link an existing issue instead.',
     doc: 'features/issue-tracking#what-it-does-exactly',
   },
   'integrations.required-fields': {
@@ -54,7 +54,7 @@ export const HELP_TOPICS = {
   },
   'integrations.known-issue': {
     title: 'Known issue',
-    text: 'The tracker issue this cluster is tracked by. Its key and status show wherever the cluster appears; the action becomes Open in Jira once it exists.',
+    text: 'The tracker issue this cluster is tracked by: the newest Jira issue, or issue on a connected tracker, linked to it. Linking or filing another keeps the earlier one linked, and the new one takes its place. Its key and status show on the cluster page’s Issue line, at the end of an execution’s Cluster line, and wherever the cluster is listed.',
     doc: 'features/issue-tracking#the-key-travels',
   },
   'integrations.run-scope': {
@@ -91,8 +91,35 @@ export const HELP_TOPICS = {
   },
   'cluster.state': {
     title: 'Cluster state',
-    text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
+    text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, fixed while the diagnosed patch still applies at the commit of the fix (the change may not be in the code yet), stopped failing, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it, unless the Next line offers it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
     doc: 'features/failure-clusters#the-state-line',
+  },
+  // What changed, when the configuration is what is missing.
+  'cluster.scm-no-commit': {
+    title: 'Commit not recorded',
+    text: 'The runs record no commit, so Piwi has no range to read. The reporter reads the commit from the Git checkout the tests run in (`collectScmInfo`, on by default): run them from a clone of the repository.',
+    doc: 'guide/source-control#troubleshooting',
+  },
+  'cluster.scm-no-repository': {
+    title: 'Repository unknown',
+    text: 'The runs record their commits but no repository URL, so Piwi cannot list the commits in this range. The reporter takes the URL from the `origin` remote of the checkout the tests run in; until it has one, **More actions › Copy git log** lists the range in your own clone.',
+    doc: 'guide/source-control#troubleshooting',
+  },
+  'cluster.scm-unsupported-host': {
+    title: 'Host not supported',
+    text: 'Piwi reads commits from GitHub, Bitbucket, GitLab and the self-hosted GitLab hosts you list. For another host, **More actions › Copy git log** lists the range in your own clone.',
+    doc: 'guide/source-control#troubleshooting',
+    envVars: ['PIWI_SCM_GITLAB_HOSTS'],
+  },
+  'cluster.scm-fetch-failed': {
+    title: 'Changes not read',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → Repository access**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    doc: 'guide/source-control#troubleshooting',
+  },
+  'cluster.scm-host-error': {
+    title: 'Host error',
+    text: 'Piwi asked the host for the commits in this range with the SCM token set, and the host answered with the error the line shows. A 403 or a 404 means the token cannot read this repository: give it read access to the repository contents. A rate limit or a server error passes with time: open the cluster again later. Until then, **More actions › Copy git log** lists the range in your own clone.',
+    doc: 'guide/source-control#troubleshooting',
   },
 
   // ── Analytics ─────────────────────────────────────────────────────────
@@ -448,7 +475,7 @@ export const HELP_TOPICS = {
   },
   'cluster.occurrence-trend': {
     title: 'Occurrences over time',
-    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. Probe runs are left out.',
+    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. It opens on the days since the cluster was first seen, a week at least and a year at most, or on the last 90 days when the run that first saw it is no longer kept; the menu also offers the last 30, 90 and 365 days. Probe runs are left out.',
     doc: 'features/failure-clusters#occurrences-over-time',
   },
   'project.targets': {
@@ -575,15 +602,17 @@ export const HELP_TOPICS = {
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
-    text: 'One block that answers three questions: what broke (the headline, built from the Playwright error itself), what is most likely behind it (the story that chains the deterministic clues, or the diagnosis when one completed), what is going on (since when, on which commit, in how many other tests, who owns it — one sentence), and what to do next (one action chosen by a policy). Every clue, the raw error and the rest of the facts are one click away.',
+    text: "One block, read top to bottom; every clue, the raw error and the rest of the facts are one click away.\n\n- **Headline** — what broke, built from the Playwright error itself, and under it since when, on which commit, and whether a newer execution of the test failed again or passed; for a test that passed on retry, its failed attempt's error, naming that attempt\n- **Most likely** — a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue, as on the cluster page; for a test that did not run, the test that blocked it or where the run stopped\n- **Next** — one action chosen by a policy, with the change it copies and where it comes from\n- **Cluster** — the cluster the failure belongs to, with its issue",
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {
     title: 'Evidence',
     text: [
-      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the page at the failure, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at.',
+      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
       '',
+      '- **Timeline** colors a step’s or a request’s duration only when it stands out, and **Network** a request’s by the same rule: at least 1 s, and either a third of the test or more, or twice its usual time and 1 s more, the usual time being the median over the last five passing runs on the same browser (shown under it). A step with parameters opens them from its title, and an arrow at the edge of the axis marks a bar that runs on outside the window.',
       '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
+      '- **Most likely** marks what it cites: a dot on the tab that holds it, and "Cited by Most likely" on the timeline rows. A citation opens the tab and rings the request or console entry it names for a moment.',
       '- **An empty tab** says whether the evidence was never captured, captured with nothing to show, or does not apply.',
     ].join('\n'),
     doc: 'features/evidence#one-execution-diagnosis-first',
@@ -601,12 +630,12 @@ export const HELP_TOPICS = {
   },
   'cluster.activity': {
     title: 'Activity',
-    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it.',
+    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it, and what Piwi wrote to the cluster’s tracker issue: the issue it filed, by hand or by a rule, its comments, its moves and its description updates, and a filing a rule left to a person because an open issue already carried the failure’s labels.',
     doc: 'features/agent-skills#what-agents-report-back',
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page; open the others as you need them.',
+    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page: on an execution in this card, on a cluster as a card of its own under the situation block. Open the others as you need them.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {
@@ -629,7 +658,7 @@ export const HELP_TOPICS = {
       '',
       '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything.',
       '- **Type chips** hide or show the steps, requests, console entries, dialogs and backend logs in the window. **Only** or Alt-click shows just one type; the failing step and the last shown type always stay. The line beside them says what is hidden, and the choice is remembered in this browser.',
-      '- **The list below** reads it chronologically — click a line to jump to that step, console entry or request.',
+      '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
       '',
       'When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
@@ -699,7 +728,7 @@ export const HELP_TOPICS = {
   },
   'cluster.known-issue': {
     title: 'Known issue',
-    text: 'Pin the Jira ticket, GitHub issue or PR that tracks this cluster. The link’s key travels with the cluster wherever it is listed, so a triaged cluster shows what is already being done about it.',
+    text: 'Every link pinned to this cluster, also listed in the Details of each of its executions. The newest Jira issue, or issue on a connected tracker, is the cluster’s known issue and travels with it wherever it is listed; earlier issues and other links, such as a GitHub issue or a pull request, stay listed here.',
   },
   'cluster.scm': {
     title: 'What changed',

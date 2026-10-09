@@ -10,6 +10,8 @@ import { validatePatch } from '#shared/patch';
 import { allDemoSourceFiles } from '~~/app/demo/demo-scm';
 import { FAILURE_STORIES, SCM_REPOS, SIMULATOR_ERRORS, storyForCase } from '#shared/demo/failure-stories.mjs';
 import { parseAriaCandidates } from '#shared/locator-fingerprint';
+import { parsePlaywrightError } from '#shared/error-parse';
+import { extractStepLocatorUse, renderLocatorChain, tryParseLocatorChain } from '#shared/locator-chain';
 import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
@@ -27,6 +29,8 @@ interface Row {
 }
 
 let db: import('sql.js').Database;
+// The regenerated seed script, as app:seed:dev and the demo SPA load it.
+let seedSql: string;
 // The seed's newest generation-time timestamp (seconds), which the load-time
 // rebase maps to "now". Read back from the rebase statement itself.
 let anchorSec: number;
@@ -59,7 +63,7 @@ function tempOutDir(): string {
 }
 
 beforeAll(async () => {
-  const seedSql = regenerate(tempOutDir());
+  seedSql = regenerate(tempOutDir());
   anchorSec = Number(/AS INTEGER\) - (\d+)\) AS delta_sec/.exec(seedSql)![1]);
 
   const initSqlJs = (await import('sql.js')).default;
@@ -137,6 +141,130 @@ describe('cluster ↔ case ↔ file coherence', () => {
       const last = frames[frames.length - 1];
       expect(last?.[1], `last frame file for "${r.title}"`).toBe(story.specFile);
     }
+  });
+
+  interface FailingRow {
+    id: number;
+    started_at: number;
+    duration: number;
+    timeout: number;
+    error: string;
+    steps: string;
+    console_logs: string | null;
+    failure_cluster_id: number;
+  }
+  const failingStoryRows = () =>
+    q(`select id, started_at, duration, timeout, error, steps, console_logs, failure_cluster_id
+      from test_runs_cases where failure_cluster_id is not null`) as unknown as FailingRow[];
+  const lastStepOf = (r: FailingRow) =>
+    (JSON.parse(r.steps) as Array<Record<string, unknown> & { startTime: number; duration: number }>).at(-1)!;
+  const canonical = (locator: string) => {
+    const chain = tryParseLocatorChain(locator);
+    return chain ? renderLocatorChain(chain) : locator;
+  };
+  // The step action Playwright reports for each call the stories fail on.
+  const STEP_ACTION: Record<string, string> = { click: 'click', fill: 'fill', waitForSelector: 'waitFor' };
+
+  test('every failing story execution ends on the step its error names', () => {
+    const rows = failingStoryRows();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const parsed = parsePlaywrightError(r.error);
+      const last = lastStepOf(r);
+      expect(last.failed, `trc ${r.id}: last step failed`).toBe(true);
+      if (parsed.locator) {
+        const use = extractStepLocatorUse(last);
+        expect(use?.locator, `trc ${r.id}: locator`).toBe(canonical(parsed.locator));
+        const action = parsed.assertion ? `expect.${parsed.assertion}` : STEP_ACTION[parsed.action ?? ''];
+        expect(use?.action, `trc ${r.id}: action`).toBe(action);
+      } else if (parsed.action === 'goto') {
+        expect(last.title, `trc ${r.id}: navigation`).toBe('Navigate');
+        expect((last.params as { url?: string }).url, `trc ${r.id}: url`).toBe(parsed.url);
+      } else {
+        expect(last.title, `trc ${r.id}: assertion`).toBe(`Expect "${parsed.assertion}"`);
+      }
+    }
+  });
+
+  test('a test-timeout error runs its execution to that timeout and stores it', () => {
+    const rows = failingStoryRows().filter((r) => parsePlaywrightError(r.error).kind === 'test-timeout');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const { timeoutMs } = parsePlaywrightError(r.error);
+      expect(r.timeout, `trc ${r.id}: stored timeout`).toBe(timeoutMs);
+      expect(r.duration, `trc ${r.id}: duration`).toBeGreaterThanOrEqual(timeoutMs!);
+      const last = lastStepOf(r);
+      expect(last.startTime + last.duration - r.started_at, `trc ${r.id}: failing step ends at the timeout`).toBe(
+        timeoutMs,
+      );
+    }
+  });
+
+  test('an action or expect timeout is the duration of the failing step', () => {
+    const rows = failingStoryRows().filter((r) =>
+      ['action-timeout', 'assertion-timeout', 'navigation'].includes(parsePlaywrightError(r.error).kind),
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      const { timeoutMs } = parsePlaywrightError(r.error);
+      expect(lastStepOf(r).duration, `trc ${r.id}: failing step duration`).toBe(timeoutMs);
+      expect(r.timeout, `trc ${r.id}: room for the call's own timeout`).toBeGreaterThan(timeoutMs!);
+    }
+  });
+
+  test("every story's own request and console entry happen inside its execution", () => {
+    const rows = failingStoryRows();
+    for (const r of rows) {
+      const story = FAILURE_STORIES.find((s) => s.clusterId === r.failure_cluster_id)!;
+      const end = r.started_at + r.duration;
+      for (const declared of story.evidence.failingNetwork ?? []) {
+        const [req] = q(`select start_time from network_requests
+          where test_runs_case_id = ${r.id} and method = '${declared.method}' and url = '${declared.url}'`);
+        expect(req, `trc ${r.id}: ${declared.method} ${declared.url}`).toBeTruthy();
+        expect(req!.start_time as number, `trc ${r.id}: request start`).toBeGreaterThanOrEqual(r.started_at);
+        expect(req!.start_time as number, `trc ${r.id}: request start`).toBeLessThanOrEqual(end);
+      }
+      for (const entry of JSON.parse(r.console_logs ?? '[]') as Array<{ timestamp: number }>) {
+        expect(entry.timestamp, `trc ${r.id}: console entry`).toBeGreaterThanOrEqual(r.started_at);
+        expect(entry.timestamp, `trc ${r.id}: console entry`).toBeLessThanOrEqual(end);
+      }
+    }
+  });
+
+  test('an execution running its authored steps never sleeps, and its before hooks hold its beforeEach steps', () => {
+    const rows = q(`select trc.id, trc.steps, trc.step_events, trc.wasted_time_ms, trc.failure_cluster_id, tc.title
+      from test_runs_cases trc join test_cases tc on tc.id = trc.test_case_id
+      where trc.failure_cluster_id is not null`);
+    let checked = 0;
+    for (const r of rows) {
+      const story = FAILURE_STORIES.find((s) => s.clusterId === r.failure_cluster_id)!;
+      const before = story.failingCases.find((fc) => fc.title === r.title)?.before;
+      if (!before) continue;
+      checked++;
+      expect(r.wasted_time_ms ?? 0, `trc ${r.id}: wasted time`).toBe(0);
+      const events = JSON.parse(r.step_events as string) as Array<{
+        title: string;
+        startedAt: number;
+        duration: number;
+        status: string;
+      }>;
+      expect(
+        events.filter((e) => e.status === 'wasted'),
+        `trc ${r.id}: sleeps`,
+      ).toEqual([]);
+      const hooks = events.find((e) => e.title === 'Before Hooks')!;
+      const hooksEnd = hooks.startedAt + hooks.duration;
+      const steps = JSON.parse(r.steps as string) as Array<{ startTime: number; duration: number }>;
+      const inHook = before.filter((step) => step.hook === 'beforeEach').length;
+      // The fixtures come first; the beforeEach steps end with the before hooks and the body follows.
+      expect(steps[0]!.startTime, `trc ${r.id}: first step after the fixtures`).toBeGreaterThan(hooks.startedAt);
+      if (inHook > 0) {
+        const last = steps[inHook - 1]!;
+        expect(last.startTime + last.duration, `trc ${r.id}: beforeEach steps end with the hooks`).toBe(hooksEnd);
+      }
+      expect(steps[inHook]!.startTime, `trc ${r.id}: the body starts after the hooks`).toBeGreaterThanOrEqual(hooksEnd);
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   test('cluster fingerprint matches the real recomputation of its sample_error', async () => {
@@ -258,6 +386,49 @@ describe('suggested-fix patches and SCM references', () => {
     }
   });
 
+  test('the checkout story patch applies at its stated lines, hunk after hunk', () => {
+    const story = FAILURE_STORIES.find((s) => s.key === 'checkout-pay-timeout')!;
+    const patch = story.diagnosis.fix.patch;
+    expect(patch.match(/^@@ /gm)?.length, 'hunks').toBeGreaterThan(1);
+    const result = validatePatch(patch, allDemoSourceFiles());
+    expect(result.status, result.errors.join('; ')).toBe('applies');
+  });
+
+  test('no story patch, seeded diagnosis or demo AI template recommends networkidle', () => {
+    for (const story of FAILURE_STORIES) {
+      expect(story.diagnosis.fix.patch, story.key).not.toContain('networkidle');
+      expect(story.diagnosis.fix.description, story.key).not.toContain('networkidle');
+    }
+    const stored = [
+      ...q('select cluster_id, summary, root_cause, details from failure_diagnoses'),
+      ...q('select cluster_id, summary, root_cause, details from failure_diagnosis_versions'),
+    ];
+    expect(stored.length).toBeGreaterThan(0);
+    for (const d of stored) {
+      expect(`${d.summary} ${d.root_cause} ${d.details}`, `diagnosis of cluster ${d.cluster_id}`).not.toMatch(
+        /networkidle|network-idle/i,
+      );
+    }
+    const template = readFileSync(join(rootDir, 'app/demo/api/ai.ts'), 'utf-8');
+    expect(template).not.toMatch(/networkidle|network-idle/i);
+  });
+
+  test('a seeded diagnosis of a count assertion quotes the counts its error shows', () => {
+    const diagnoses = q('select cluster_id, summary from failure_diagnoses');
+    let checked = 0;
+    for (const d of diagnoses) {
+      const story = FAILURE_STORIES.find((s) => s.clusterId === d.cluster_id)!;
+      for (const fc of story.failingCases) {
+        const counts = /toHaveCount[\s\S]*?Expected: (\d+)\nReceived: (\d+)/.exec(fc.error);
+        if (!counts) continue;
+        checked++;
+        expect(d.summary, `cluster ${d.cluster_id} expected count`).toContain(counts[1]);
+        expect(d.summary, `cluster ${d.cluster_id} received count`).toContain(counts[2]);
+      }
+    }
+    expect(checked, 'a count-assertion story carries a stored diagnosis').toBeGreaterThan(0);
+  });
+
   test('every story suspect commit exists in its project SCM history', () => {
     for (const story of FAILURE_STORIES) {
       const repo = SCM_REPOS[story.projectId as keyof typeof SCM_REPOS];
@@ -346,6 +517,34 @@ describe('evidence rules', () => {
         declared.some((d) => d.method === r.method && d.url === r.url),
         `network request ${r.method} ${r.url} (trc ${r.test_runs_case_id}) has server_logs but isn't a declared failing request`,
       ).toBe(true);
+    }
+  });
+});
+
+describe('executions as the reporter stores them', () => {
+  test('every retry pass has its failed attempt stored as its own execution, with an error', () => {
+    const passes = q(`select id, test_run_id, test_case_id, browser_name from test_runs_cases
+      where status = 'passed' and retries > 0`);
+    expect(passes.length).toBeGreaterThan(0);
+    for (const p of passes) {
+      const failed = q(`select id, error from test_runs_cases
+        where test_run_id = ${p.test_run_id as number} and test_case_id = ${p.test_case_id as number}
+          and browser_name is ${p.browser_name == null ? 'null' : `'${p.browser_name as string}'`}
+          and retries = 0 and status in ('failed', 'timedOut') and error is not null`);
+      expect(failed.length, `retry pass ${p.id} has its failed attempt`).toBe(1);
+    }
+  });
+
+  test('a test that did not run carries no steps, start time, worker or step events', () => {
+    const rows = q(`select id, steps, started_at, worker_index, step_events, slowest_step
+      from test_runs_cases where status = 'didnotrun'`);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) {
+      expect(JSON.parse((r.steps as string | null) ?? '[]'), `trc ${r.id} steps`).toEqual([]);
+      expect(r.started_at, `trc ${r.id} started_at`).toBeNull();
+      expect(r.worker_index, `trc ${r.id} worker_index`).toBeNull();
+      expect(r.step_events, `trc ${r.id} step_events`).toBeNull();
+      expect(r.slowest_step, `trc ${r.id} slowest_step`).toBeNull();
     }
   });
 });
@@ -505,8 +704,7 @@ describe('evidence timing survives the load-time rebase', () => {
     steps: string;
   }
 
-  // Executed cases only: a didnotrun case has duration 0 and no real span, so
-  // its illustrative steps have no window to sit inside.
+  // Executed cases only: a didnotrun case has no steps and no span.
   function executedCasesWithSteps(): StepRow[] {
     return q(`
       select id, started_at, duration, steps from test_runs_cases
@@ -917,4 +1115,38 @@ describe('environment incidents', () => {
       where json_extract(r.metadata, '$.incident') is not null and trc.is_new_regression = 1`);
     expect(rows[0]!.n).toBe(0);
   });
+});
+
+describe('the seed loaded through libsql, as app:seed:dev and the server load it', () => {
+  // libsql bundles an older SQLite than sql.js, and the load-time rebase
+  // rewrites the JSON arrays element by element: every element must come back
+  // an object, or REST and MCP read a string spelled out character by character.
+  test('every JSON array element stays an object through the rebase', async () => {
+    const { createClient } = await import('@libsql/client');
+    const client = createClient({ url: ':memory:' });
+    try {
+      await client.executeMultiple(seedSql);
+      const columns: Array<[string, string]> = [
+        ['test_runs_cases', 'steps'],
+        ['test_runs_cases', 'step_events'],
+        ['test_runs_cases', 'attempts'],
+        ['test_runs_cases', 'console_logs'],
+        ['test_runs_cases', 'dialogs'],
+        ['network_requests', 'server_logs'],
+      ];
+      for (const [table, column] of columns) {
+        const res = await client.execute(`select t.id, e.type from ${table} t, json_each(t.${column}) e
+          where t.${column} is not null and json_valid(t.${column}) and e.type <> 'object'`);
+        expect(res.rows, `${table}.${column}: elements that are not objects`).toEqual([]);
+      }
+      // A test the serial cascade never ran keeps its attempt, with no start time.
+      const res = await client.execute(`select attempts from test_runs_cases
+        where status = 'didnotrun' and attempts is not null limit 1`);
+      expect(JSON.parse(String(res.rows[0]!.attempts))).toEqual([
+        { retry: 0, status: 'didnotrun', duration: 0, startedAt: null },
+      ]);
+    } finally {
+      client.close();
+    }
+  }, 60_000);
 });

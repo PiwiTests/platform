@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * The tests a cluster affects — the evidence selector. Rows sort by their latest
- * failure; clicking a row selects it (`selectedCaseId`, v-model), which switches
- * the page's evidence, story and second headline to that test's latest execution,
- * and the selected row shows its run and an *Open execution →* link. The
- * checkboxes stay for the bulk bar: *Move to a new cluster* (the extract endpoint)
- * and *Quarantine*.
+ * The tests a cluster affects — the evidence selector, shown when the cluster
+ * has several. Rows sort by their latest failure; clicking a row selects it
+ * (`selectedCaseId`, v-model), which switches the page's evidence and story to
+ * that test's latest execution; the Evidence card names it. The checkboxes stay
+ * for the bulk bar: *Move to a new cluster* (the extract endpoint) and
+ * *Quarantine*.
  */
 import type { TestCaseResult } from '~~/types/api';
 import { errorMessage } from '~/utils';
@@ -24,9 +24,6 @@ const props = defineProps<{
   cases: AffectedCase[];
   /** The selected test whose evidence is shown (v-model). */
   selectedCaseId?: number;
-  /** The selected test's run and execution, for its trailing links. */
-  selectedRunId?: number | null;
-  selectedExecId?: number | null;
   projectId?: string | number | null;
   projectKey?: string | number | null;
   projectName?: string | null;
@@ -135,6 +132,7 @@ async function quarantineSelected() {
   <SectionCard
     icon="i-lucide-list-checks"
     :title="`Affected tests (${cases.length})`"
+    subtitle="The evidence below shows the selected test."
     data-shot="cluster-affected-tests"
   >
     <div class="rounded-lg border border-default overflow-hidden">
@@ -152,35 +150,13 @@ async function quarantineSelected() {
         :project-name="projectName"
         @toggle="toggle(c.testCaseId)"
         @select="emit('update:selectedCaseId', c.testCaseId)"
-      >
-        <!-- The selected row carries its run and the link to that execution. -->
-        <template v-if="c.testCaseId === selectedCaseId && selectedExecId" #subline>
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-            <NuxtLink
-              v-if="selectedRunId"
-              :to="`/test-runs/${selectedRunId}`"
-              class="text-primary hover:underline tabular-nums"
-              @click.stop
-            >
-              run #{{ selectedRunId }}
-            </NuxtLink>
-            <span v-if="selectedRunId" class="text-dimmed">·</span>
-            <NuxtLink
-              :to="`/test-run-cases/${selectedExecId}`"
-              class="inline-flex items-center gap-1 text-primary hover:underline"
-              @click.stop
-            >
-              Open execution <UIcon name="i-lucide-arrow-right" class="size-3.5" />
-            </NuxtLink>
-          </div>
-        </template>
-      </TestRow>
+      />
     </div>
 
     <!-- Bulk bar -->
     <div
       v-if="canSelect && selectedCount"
-      class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5"
+      class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-default bg-elevated p-2.5"
     >
       <span class="text-sm font-medium">{{ selectedCount }} selected</span>
       <span class="flex-1" />
@@ -198,7 +174,7 @@ async function quarantineSelected() {
       <UButton
         v-if="canQuarantine"
         size="xs"
-        color="warning"
+        color="neutral"
         variant="outline"
         icon="i-lucide-shield-alert"
         :loading="quarantining"

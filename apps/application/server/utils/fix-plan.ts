@@ -97,8 +97,8 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
       rootCause: diagnosisRow.rootCause,
       summary: diagnosisRow.summary,
       patch,
-      // Prefer the validation stored at diagnosis time; fall back to a
-      // structural re-parse so a plan always says whether the patch is usable.
+      // The validation stored at diagnosis time; with none stored, a structural
+      // re-parse, so a plan always says whether the patch is usable.
       patchValidation: storedPatchValidation(details) ?? (patch ? validatePatch(patch, new Map()) : null),
     };
   }

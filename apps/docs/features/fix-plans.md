@@ -14,19 +14,24 @@ A **fix plan** gathers everything Piwi knows about a failure cluster into one an
 
 The same plan is reachable three ways:
 
-- **On the cluster page** — the recommended action leads as the **Next** line and the failing tests are the **Affected tests** selector; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
+- **On the cluster page** — the recommended action leads as the **Next** line, and the section it points at sits right under the situation block as its own card, above the **Affected tests** selector and the evidence; everything else lives in [**More ways to fix**](#more-ways-to-fix), the folded toolbox below the evidence: the diagnosis and its patch, the locator fix, the verify command, the reproduce recipe, and a **Copy as Markdown** action for a ticket.
 - **As Markdown**: the REST API returns the same rendering as plain text, so an export or a script can drop it straight into an issue (see the [API docs](https://piwitests.dev/demo/docs)).
 - **For agents** — the `get_fix_plan` [MCP tool](/reference/mcp-tools#get_fix_plan) returns the structured plan, so a coding agent gets in one call what a person reads on the card.
 
-The last part makes it a loop, not a lookup: the plan names a Playwright command scoped to the affected spec files and (up to five) test titles, and Piwi records the fix once they pass — so the work is confirmed, not guessed at.
+The plan also names a Playwright command scoped to the affected spec files and (up to five) test titles, and Piwi records the fix once they pass.
 
 ## The next step
 
-Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **mark resolved** a verified-but-open cluster, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when it is stale), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation, **diagnose with AI**, else **reproduce locally**. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
+Both the cluster and the [execution](./evidence#one-execution-diagnosis-first) page lead with a single **Next** line — one action chosen for you, with a word on why, not a row of equal buttons. A policy picks it from what the page knows, first match wins: open a **blocking** failure, **open the run** when the run stopped before the test, **mark resolved** a verified-but-open cluster (unless the diagnosis verified the fix and its patch still applies at the fix's commit: the patch comes first, with *Mark resolved* in its menu) or one whose ticket is Done and that stopped failing, **replace the locator** when [healing](./locator-healing) has one, **apply the diagnosed patch** (or follow the diagnosis when its patch is stale, unchecked or missing), **see what changed** when a fix regressed, **compare attempts** on a retry pass, **re-run in CI** for a crash or failed navigation, **diagnose with AI**, else **reproduce locally**. A step that copies a change says where it comes from: the AI diagnosis with its confidence (and its summary when **Most likely** shows another explanation), or locator healing and what it captured the locator from. For a code change the line shows the change itself, up to six lines of the patch or the failing and the recommended locator, with how many lines it leaves out. **Copy apply command** copies `git apply` with the whole patch inline, to run at the repository root (bash, zsh, Git Bash) (**Download .patch** is the portable route), **Copy locator** copies the recommended locator (the primary without a line to rewrite), and **Full patch** opens the whole patch in the Diagnosis section below. Where the fix is a code change, the step's **···** menu also holds **Copy retry command**; every other action lives in the toolbox below.
+
+<figure>
+  <img src="/screenshots/next-step-change.png" alt="The Next line of a failure cluster: Replace the locator, the edit it copies as a diff under its call site, where the edit comes from, and the Copy apply command button">
+  <figcaption>A locator step shows the edit it copies, where the edit goes, and where the replacement comes from.</figcaption>
+</figure>
 
 ## More ways to fix
 
-Both pages end in one **More ways to fix** toolbox. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default; the section the next step points at opens with the page, and you unfold the rest as needed.
+Both pages carry one **More ways to fix** toolbox, below the evidence and above the history. Each way to fix, verify or reproduce is a section folded to one line (a label and a one-line summary), so no code block opens by default. The section the next step points at opens with the page: inside the toolbox on an execution, and on a cluster as its own card under the situation block, with the rest folded below the evidence. You unfold the rest as needed.
 
 ## Reproduce and bisect
 

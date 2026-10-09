@@ -1,17 +1,22 @@
 /**
  * Automatic creation: after a run, file an issue for each cluster that failed
  * in it and that the project's rules now qualify, with no person clicking.
+ * It runs once the run's fix verification is done, so a regression's reopen
+ * transition is already queued when the rules read whether an issue tracks
+ * the cluster.
  *
  * The rules and guards live in `#shared/integrations/automation` and read the
  * facts `gatherAutoCreateFacts` collects. On top of them, this holds to the
  * daily cap, leaves alone a failure an open issue in the tracker already
- * carries the labels of (a person links that one; the activity list says so),
- * and files through the same `createIssue` path a click takes, so dedupe,
- * owner routes, required fields and the outbox apply unchanged. The issue
- * opens with what the rule counted.
+ * carries the labels of (a person links that one; the activity list and the
+ * failure pages' Issue line say so, and an issue the cluster already links is
+ * left to the sync to read back), and files through the same `createIssue`
+ * path a click takes, so the per-cluster dedupe (a Done issue or a removed link
+ * no longer answers), owner routes, required fields and the outbox apply
+ * unchanged. The issue opens with what the rule counted.
  */
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import { projects, testRuns, testRunsCases } from '../../database/schema';
+import { entityLinks, projects, testRuns, testRunsCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { automaticFiling, evaluateAutoCreate } from '#shared/integrations/automation';
@@ -29,7 +34,8 @@ import { missingRequiredFields } from '#shared/integrations/fields';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import type { IssueTracker, TrackerIssue } from './types';
 import { createIssue } from './create';
-import { recordRefusedAction } from './actions';
+import { findActionByKey, recordRefusedAction, retireAction, type CreateIssueResult } from './actions';
+import { filedIssueStillTracks } from './entity-links';
 import { bindingLocale, readProjectIntegration } from './binding';
 import { createTracker, getConnectionRow } from './connections';
 import { getCreateFields } from './fields';
@@ -50,6 +56,29 @@ async function openLabeledIssue(
     if (open) return open;
   }
   return null;
+}
+
+/** Whether the cluster already links an issue with this key. */
+async function clusterLinksKey(db: DbClient, clusterId: number, key: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: entityLinks.id })
+    .from(entityLinks)
+    .where(and(eq(entityLinks.failureClusterId, clusterId), eq(entityLinks.key, key)))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Retire the cluster's filing once the issue it filed no longer tracks the
+ * cluster (Done, or its link removed), as a new create would: a skip recorded
+ * under the filing's key then gets its own row instead of leaving the old
+ * filing in place.
+ */
+async function retireUntrackedFiling(db: DbClient, dedupeKey: string, clusterId: number): Promise<void> {
+  const filed = await findActionByKey(db, dedupeKey);
+  if (filed?.status !== 'done') return;
+  const result = filed.result as CreateIssueResult | null;
+  if (!(await filedIssueStillTracks(db, 'failure_cluster', clusterId, result))) await retireAction(db, filed.id);
 }
 
 /** CODEOWNERS for a file, the owner of a cluster nobody was assigned and whose tests declare none. */
@@ -128,13 +157,18 @@ export async function runTrackerAutomation(db: DbClient, runId: number): Promise
     const existing = await openLabeledIssue(tracker, clusterId, cluster.fingerprint).catch(() => undefined);
     if (existing === undefined) continue;
     if (existing) {
+      // One of the cluster's own issues, open in the tracker though the last
+      // sync read it Done: it tracks the cluster, and the next sync says so.
+      if (await clusterLinksKey(db, clusterId, existing.key)) continue;
+      const dedupeKey = createIssueKey('failure_cluster', clusterId, binding.connectionId);
+      await retireUntrackedFiling(db, dedupeKey, clusterId);
       await recordRefusedAction(db, {
         connectionId: binding.connectionId,
         projectId: run.projectId,
         kind: 'create-issue',
         entityType: 'failure_cluster',
         entityId: clusterId,
-        dedupeKey: createIssueKey('failure_cluster', clusterId, binding.connectionId),
+        dedupeKey,
         payload: { automatic: null, existingKey: existing.key },
         requestedBy: null,
         status: 'skipped',
@@ -162,7 +196,8 @@ export async function runTrackerAutomation(db: DbClient, runId: number): Promise
       console.error(`[integrations] automatic creation for cluster ${clusterId} failed`, e);
       return null;
     });
-    if (outcome?.status === 'done' || outcome?.status === 'pending') {
+    // An issue already filed for the cluster is not a new one.
+    if ((outcome?.status === 'done' && !outcome.alreadyFiled) || outcome?.status === 'pending') {
       capacity--;
       filed++;
     }

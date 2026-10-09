@@ -117,27 +117,33 @@ test.describe('Performance UI Tests', () => {
   });
 
   test('should show steps and hints on test case detail page', async ({ page }) => {
-    // Get a test case ID with performance data
+    // The slow form test: its 5 s navigation takes a third of the 15 s test.
     const response = await page.request.get(`/api/projects/${projectId}`);
     const projectData = await response.json();
     const runId = projectData.testRuns[0].id;
 
     const runResponse = await page.request.get(`/api/test-runs/${runId}`);
     const runData = await runResponse.json();
-    const testCaseWithSteps = runData.testCases.find((tc: { slowestStep: string | null }) => tc.slowestStep !== null);
+    const slowForm = runData.testCases.find((tc: { title: string }) => tc.title === 'form submission is slow');
+    expect(slowForm?.executionId).toBeTruthy();
 
-    if (testCaseWithSteps) {
-      await page.goto(`/test-run-cases/${testCaseWithSteps.executionId}`);
-      await waitForHydration(page);
+    await page.goto(`/test-run-cases/${slowForm.executionId}`);
+    await waitForHydration(page);
 
-      // The step table lives in the evidence Timeline tab — the tab is the
-      // heading, so the block does not repeat "Failure timeline" / "Steps".
-      await page.getByRole('tab', { name: /^Timeline/ }).click();
-      await expect(page.getByRole('table')).toBeVisible();
-      // The slowest step is tagged in the table (the `md`-and-up view; the phone
-      // card list below `md` carries its own copy, hidden at this width).
-      await expect(page.getByRole('table').getByText('slowest')).toBeVisible();
-    }
+    // The step table lives in the evidence Timeline tab — the tab is the
+    // heading, so the block does not repeat "Failure timeline" / "Steps".
+    await page.getByRole('tab', { name: /^Timeline/ }).click();
+    const table = page.getByRole('table');
+    await expect(table).toBeVisible();
+    // Only the duration that stands out in the test is colored (the `md`-and-up
+    // view; the phone card list below `md` carries its own copy, hidden at this
+    // width): the 5 s navigation, not the 100 ms fill.
+    const row = (text: string) => table.locator('tr', { hasText: text });
+    await expect(row('page.goto(http://localhost/form)').locator('[data-standout]')).toHaveAttribute(
+      'data-standout',
+      'share',
+    );
+    await expect(row('locator.fill(email)').locator('[data-standout]')).toHaveCount(0);
   });
 
   test('should show performance tab in page navigation', async ({ page }) => {

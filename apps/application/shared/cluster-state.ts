@@ -1,9 +1,8 @@
 /**
  * The cluster state: one sentence with one verb that says whether a failure
  * cluster is still failing, fixed, regressed, resolved, ignored, snoozed or
- * quarantined — and the single control that changes it. It replaces the four
- * contradicting status signals (a segmented button, a verification badge, its
- * own sentence and a snooze menu) with one line the reader can act on.
+ * quarantined — and the single control that changes it, as one line the reader
+ * can act on.
  *
  * Pure: it reads the cluster's stored fields and the project's run order (which
  * run is latest, how recent the last occurrence is) and never queries anything.
@@ -18,6 +17,7 @@ export type ClusterStateKind =
   | 'failing-assigned'
   | 'quiet'
   | 'fix-verified-open'
+  | 'fix-unconfirmed'
   | 'stopped-failing-open'
   | 'ticket-done'
   | 'regressed'
@@ -57,12 +57,64 @@ export interface ClusterStateCluster {
   quarantinedTests: number;
   /** The cluster's known tracker issue, when one is pinned (its status drives the reconcile). */
   knownIssue?: { key: string; statusCategory?: string | null } | null;
+  /**
+   * The diagnosed patch still applied to the code at the verified fix's commit,
+   * checked when the fix was verified: the change that fixed the failure was
+   * another one, and the diagnosed change may not be in the code yet.
+   */
+  diagnosedPatchApplies?: boolean;
 }
 
 export interface ClusterStateProject {
   /** The project's run ids, newest first (by start time). */
   runIdsNewestFirst: number[];
+  /**
+   * Whether the failure goes on (`failureGoesOn`). A Done ticket is reconciled
+   * only once it stopped; unset reads as going on.
+   */
+  failureGoesOn?: boolean;
   now?: Date;
+}
+
+/** A run as the failure-goes-on rule reads it: its id and its start time. */
+export interface RunPoint {
+  id: number;
+  startTime: string | Date | number | null;
+}
+
+/**
+ * Whether a cluster's failure goes on: it was last seen in the project's latest
+ * finished run or in a later one, or no run has finished yet. A run still in
+ * progress never counts as one the failure skipped. Runs are ordered by start
+ * time, then by id when two started in the same second.
+ */
+export function failureGoesOn(
+  lastSeen: RunPoint | null | undefined,
+  latestFinished: RunPoint | null | undefined,
+): boolean {
+  if (!latestFinished) return true;
+  if (!lastSeen) return false;
+  if (lastSeen.id === latestFinished.id) return true;
+  const seen = toEpochMs(lastSeen.startTime) ?? -Infinity;
+  const finished = toEpochMs(latestFinished.startTime) ?? -Infinity;
+  return seen > finished || (seen === finished && lastSeen.id > latestFinished.id);
+}
+
+/**
+ * The key of the Done ticket to reconcile the cluster with, or null: the cluster
+ * is open, not snoozed, its fix did not regress, its known ticket is Done and the
+ * failure stopped. The cluster state then offers to mark it resolved, and so
+ * does the next step on both failure pages.
+ */
+export function ticketReconcileKey(
+  cluster: Pick<ClusterStateCluster, 'status' | 'fixVerification' | 'snoozedUntil' | 'snoozeMode' | 'knownIssue'>,
+  opts: { failureGoesOn: boolean; now?: Date },
+): string | null {
+  if (cluster.status !== 'open' || cluster.fixVerification === 'regressed' || opts.failureGoesOn) return null;
+  const snooze = { snoozedUntil: cluster.snoozedUntil ?? null, snoozeMode: cluster.snoozeMode ?? null };
+  if (isCurrentlySnoozed(snooze, opts.now ?? new Date())) return null;
+  const issue = cluster.knownIssue;
+  return issue?.key && issue.statusCategory === 'done' ? issue.key : null;
 }
 
 /**
@@ -125,13 +177,6 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     return done('snoozed', 'unsnooze');
   }
 
-  // The ticket has been closed but the cluster is still open — offer to reconcile
-  // (the resolve-on-close policy does this automatically when it is on).
-  if (cluster.status === 'open' && cluster.knownIssue?.key && cluster.knownIssue.statusCategory === 'done') {
-    t(`${cluster.knownIssue.key} is Done — mark this cluster resolved?`);
-    return done('ticket-done', 'mark-resolved');
-  }
-
   // Fix verification: a fix that regressed, held, or stopped the failures. It is
   // a stronger claim than the quarantine overlay below — a fix that landed
   // outranks tests that are merely parked.
@@ -142,10 +187,32 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     t(' — the fix did not hold.');
     return done('regressed', cluster.status === 'resolved' ? 'reopen' : null);
   }
+
+  // The ticket closed and the failure stopped: the sentence says the failure
+  // stopped, while the Issue line names the ticket and the Next line asks to
+  // resolve; the state offers the reconcile (the resolve-on-close policy does it
+  // automatically when it is on). A failure that goes on keeps its own sentence.
+  const doneTicket = ticketReconcileKey(cluster, { failureGoesOn: project.failureGoesOn ?? true, now });
+  if (doneTicket) {
+    const rel = relativeTimeAgo(cluster.lastSeenAt, now);
+    t(`Stopped failing, last seen${rel ? ` ${rel}` : ''} in `);
+    run(cluster.lastSeenRunId);
+    t('.');
+    return done('ticket-done', 'mark-resolved');
+  }
+
+  // A verified fix at whose commit the diagnosed patch still applies may not be
+  // the diagnosed change: no reconcile here, the Next line leads with the patch.
   if (cluster.fixVerification === 'diagnosis-verified') {
     t('Fixed in ');
     run(cluster.fixLandedRunId);
     const commit = cluster.fixCommit?.trim() ? shortCommit(cluster.fixCommit.trim()) : null;
+    if (cluster.diagnosedPatchApplies) {
+      t(
+        `${commit ? ` (${commit})` : ''}, but the diagnosed patch still applies, so the change may not be in the code yet.`,
+      );
+      return done('fix-unconfirmed', null);
+    }
     t(`${commit ? ` (${commit})` : ''} and verified, still marked open.`);
     return done('fix-verified-open', 'mark-resolved');
   }
@@ -187,7 +254,7 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
     const rel = relativeTimeAgo(cluster.lastSeenAt, now);
     t(`Still failing — last seen${rel ? ` ${rel}` : ''} in `);
     run(cluster.lastSeenRunId);
-    t(', open, unassigned.');
+    t('.');
     flakeEvidence();
     return done('failing', null);
   }

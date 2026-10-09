@@ -3,6 +3,12 @@ import type { EntityLinkInfo } from '~~/types/api';
 import { getProviderIcon } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 
+/**
+ * A pinned link as a chip: the provider icon, the key and title as one link to
+ * the page (a new tab), the synced status, and a remove button for writers. The
+ * chip wraps inside a narrow container rather than overflowing it, and the
+ * remove button shows on hover, on keyboard focus and on touch screens.
+ */
 const props = defineProps<{
   link: EntityLinkInfo;
   removable?: boolean;
@@ -17,31 +23,36 @@ const displayLabel = computed(() => {
 });
 
 const providerIcon = computed(() => getProviderIcon(props.link.provider as any));
+const name = computed(() => props.link.key || displayLabel.value);
 </script>
 
 <template>
   <span
-    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 group hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+    class="inline-flex max-w-full items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 group hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
   >
     <UIcon :name="providerIcon" class="w-3.5 h-3.5 shrink-0" />
 
-    <span v-if="link.key" class="font-mono text-primary font-medium">{{ link.key }}</span>
+    <a
+      :href="safeHttpUrl(link.url) ?? undefined"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex min-w-0 items-center gap-1.5 hover:underline focus-visible:underline outline-none"
+      :title="link.title ? `${link.title} (${link.url})` : link.url"
+      data-testid="link-chip-open"
+    >
+      <span v-if="link.key" class="font-mono text-primary font-medium whitespace-nowrap">{{ link.key }}</span>
+      <span v-if="link.title || !link.key" class="max-w-48 truncate">{{ displayLabel }}</span>
+    </a>
 
-    <span class="max-w-48 truncate" :title="link.title || link.url">{{ displayLabel }}</span>
-
-    <UBadge v-if="link.statusText" :color="(link.statusColor as any) || 'neutral'" variant="subtle" size="xs">
+    <UBadge
+      v-if="link.statusText"
+      :color="(link.statusColor as any) || 'neutral'"
+      variant="subtle"
+      size="xs"
+      class="whitespace-nowrap"
+    >
       {{ link.statusText }}
     </UBadge>
-
-    <UButton
-      :to="safeHttpUrl(link.url) ?? undefined"
-      target="_blank"
-      size="xs"
-      variant="ghost"
-      color="neutral"
-      icon="i-lucide-external-link"
-      class="opacity-0 group-hover:opacity-100 transition-opacity -my-1"
-    />
 
     <UButton
       v-if="removable"
@@ -49,7 +60,9 @@ const providerIcon = computed(() => getProviderIcon(props.link.provider as any))
       variant="ghost"
       color="error"
       icon="i-lucide-x"
-      class="opacity-0 group-hover:opacity-100 transition-opacity -my-1"
+      :aria-label="`Remove ${name}`"
+      :title="`Remove ${name}`"
+      class="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity -my-1"
       @click="emit('remove', link.id)"
     />
   </span>

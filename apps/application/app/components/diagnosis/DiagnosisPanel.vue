@@ -15,7 +15,7 @@ import { extractCitedSectionIds } from '#shared/diagnosis-sections';
 import { isDiagnosisStale, stalenessReason } from '#shared/diagnosis-staleness';
 import { isAgentDiagnosis } from '#shared/agent-diagnosis';
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
-import { formatRelativeTime, errorMessage } from '~/utils';
+import { formatRelativeTime } from '~/utils';
 
 const props = withDefaults(
   defineProps<{
@@ -26,7 +26,8 @@ const props = withDefaults(
     projectId?: number | null;
     /**
      * Keep *Show context* and *Copy prompt* out of the panel; the page renders
-     * them in its own More menu and drives them via the exposed methods.
+     * them in its own More menu, opening the context through the exposed method
+     * and copying the prompt from the same context endpoint.
      */
     contextInMenu?: boolean;
     // ── Cluster scope only ──
@@ -47,7 +48,7 @@ const props = withDefaults(
 
 const isCluster = props.scope === 'cluster';
 
-// The prompt/context endpoint — scope-agnostic downstream (CopyAiPromptButton, copyPrompt()).
+// The prompt/context endpoint — scope-agnostic downstream (CopyAiPromptButton).
 const contextEndpoint = computed(() =>
   isCluster
     ? `/api/failure-clusters/${props.clusterId}/context`
@@ -271,27 +272,13 @@ watch(
   () => fetchVersionCount(),
 );
 
-// ── Re-diagnose / Copy prompt (exposed for the page's More menu) ─────────────
+// ── Re-diagnose (exposed for the page's next step) ───────────────────────────
 const canReDiagnose = computed(() =>
   Boolean(canRun.value && aiStatus.value?.configured && diagnosis.value?.status === 'completed'),
 );
 
-const promptToast = useToast();
-const { copy: copyPromptText } = useCopy();
-async function copyPrompt() {
-  try {
-    const base = (useRuntimeConfig().app?.baseURL ?? '/').replace(/\/$/, '');
-    const response = await fetch(`${base}${contextEndpoint.value}?format=prompt`);
-    if (!response.ok) throw new Error(`Request failed (${response.status})`);
-    copyPromptText(await response.text(), { toast: 'AI prompt copied' });
-  } catch (error) {
-    promptToast.add({ title: 'Could not copy the prompt', description: errorMessage(error), color: 'error' });
-  }
-}
-
 defineExpose({
   openContext: () => (showAiContext.value = true),
-  copyPrompt,
   openHistory: () => (showHistory.value = true),
   reDiagnose: () => diagnose(true),
   canReDiagnose,

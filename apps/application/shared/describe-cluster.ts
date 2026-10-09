@@ -143,6 +143,15 @@ export function clusterSignatureLine(cluster: DescribableCluster): string | null
   return cluster.signature && cluster.signature !== name ? cluster.signature : null;
 }
 
+/**
+ * The error type a cluster shows beside its number, or null when it names no
+ * kind: an empty type and `unknown`, the classifier's catch-all, say nothing.
+ */
+export function clusterErrorTypeLabel(type: string | null | undefined): string | null {
+  const t = type?.trim();
+  return t && t !== 'unknown' ? t : null;
+}
+
 /** Concrete element states that a headline can carry but a deterministic name does not. */
 const HEADLINE_STATE_PHRASES = [
   'not found',

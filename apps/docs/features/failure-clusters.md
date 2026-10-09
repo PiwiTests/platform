@@ -13,8 +13,8 @@ into a **failure inbox**: the problems you still owe a decision.
 
 ## How failures are grouped
 
-Failed executions that share the same **error fingerprint** join one cluster, so twenty stack traces read as
-*"20 failures, 3 root causes"*. Clustering is always on and needs no configuration.
+Failed executions sharing an **error fingerprint** join one cluster, so twenty stack traces read as
+*"20 failures, 3 root causes"*. Clustering is always on.
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
   emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
@@ -22,7 +22,7 @@ Failed executions that share the same **error fingerprint** join one cluster, so
   role) still tells different failures apart.
 - It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
   cause reached from several spec files stays one cluster.
-- The fingerprint is always computed from the error the cluster was created from, so an improved normalization
+- The fingerprint is computed from the error the cluster was created from, so an improved normalization
   regroups clusters in place and keeps their triage, notes and diagnoses.
 - A run's **Tests** tab can group its failures by cluster, each group with its triage status; the
   `get_failure_groups` [MCP tool](/reference/mcp-tools#get_failure_groups) adds a **worker-correlation** flag: "the
@@ -70,48 +70,51 @@ and stay in sync, and you can **[file the issue from the failure](/features/issu
 ## Owners and assignees
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
-cluster page (not the inbox) falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the cluster to a person:
+cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. **Assigning** the cluster to a person overrides it:
 an assignee takes precedence over the derived owner, and the **Mine** queue matches either one against the
-signed-in user (by name or email, best effort).
+signed-in user (by name or email).
 
 ## The cluster page
 
-A cluster page leads with the same situation block as a failing execution ([Your first
-failure](/guide/first-failure)), across every test that shares the failure. The heading is the cluster's name (its
-[AI title](./ai-diagnosis) when one exists), and three lines are specific to a cluster:
+A cluster page leads with a failing execution's situation block ([Your first
+failure](/guide/first-failure)), across every test sharing the failure. The heading is the latest failure's
+headline when it says more (a timeout, a count) than the cluster's name, which sits under it.
+Three lines are cluster-specific:
 
-- **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*.
+- **The state line**, right above **Next**.
+- **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*;
+  a single test is named, *quarantined* if it is.
 - **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
-  **See the changes** leading to the diff. When there is nothing to diff it says why and what would fix it (no passing
-  run yet, runs that record no commit or repository URL, a host Piwi does not read, or a private repository without
-  an [SCM token](/guide/source-control)), and keeps what still works: the range on the host's **Compare** page,
-  **Copy git log** for your own checkout, and **Browse commits** to pick a baseline. The same commit on both sides
-  means the change is not in the code.
-- **The state line**, below.
+  **See the changes** for the diff. When setup is missing (runs that record no commit or repository URL, a host Piwi
+  does not read, or an [SCM token](/guide/source-control) missing or refused), it shows the range, the host's error
+  and **Compare** page, and a help hint on what to set up; **More actions › Copy git log** lists the range in your
+  checkout. With no passing run yet, **Browse commits** picks a baseline. The same commit on both sides means the
+  change is not in the code.
 
-The **Affected tests** list selects which test's latest execution the evidence shows; its **Move to a new cluster**
-[splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The diagnosis, the locator fix, verify and reproduce sit in
-the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox.
+With several tests, the **Affected tests** list picks the one the evidence shows; **Move to a new cluster**
+[splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The fix section **Next** points at leads under the block;
+the rest fold into [**More ways to fix**](./fix-plans#more-ways-to-fix).
 
 ### The state line
 
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a colored dot:
-*still failing*, *not seen for N runs*, *fixed and verified, still open*, *stopped failing*, *ticket Done*,
-*regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests quarantined*. When the runs or the
-tracker say an open cluster is done, the line offers the **one action** that reconciles them, *Mark resolved*; a
-snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. A regression reopens a resolved cluster on its
-own. Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and snoozes
-the cluster for a day, a week or until it recurs. Changing the status, from the inbox, a list, bulk triage or an
-agent, keeps the triage note and the lines Piwi added to it.
+*still failing*, *not seen for N runs*, *fixed and verified, still open*, *fixed, but the diagnosed patch still
+applies*, *stopped failing*, *regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests
+quarantined*. When an open cluster stopped failing, or its ticket is Done and the latest finished run no longer fails
+it, the page offers **one action**, *Mark resolved*, which a fix whose patch still applies keeps in the **Next** menu;
+a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. Beside it, **Triage** sets the status (open /
+resolved / ignored), a note and the assignee, and [snoozes](#snoozing) the cluster. A status change keeps the
+triage note and the lines Piwi added.
 
 ### Occurrences over time
 
-A chart counts the cluster's failures per day, week or month, marking when its **fix landed**.
+Folded under the fixes, a chart counts failures per day, week or month since first seen, marking the **fix landed**;
+the sparkline opens it.
 
 ## Did the fix work?
 
 When a run executes every test a cluster covers and they all pass, Piwi records the fix: the run, the commit, and how
-long the cluster was open. Three verdicts, because they are not the same claim:
+long the cluster was open. Three verdicts, each a different claim:
 
 | Verdict | Means |
 |---|---|

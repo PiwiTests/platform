@@ -1,8 +1,9 @@
 /**
  * What the automatic-creation rules read about a project's clusters, from the
  * database: the runs each failed in (branch, environment, start, failures), its
- * tests' tags, its owner, whether an issue tracks it, whether it is snoozed and
- * whether its tests show flakiness. Shared by the server's run trigger and
+ * tests' tags, its owner, whether an issue still tracks it (as a new filing
+ * reads it) or a filing for it is queued, whether it is snoozed and whether its
+ * tests show flakiness. Shared by the server's run trigger and
  * settings preview and by the demo's preview, so all decide on the same facts
  * through `#shared/integrations/automation`.
  */
@@ -20,7 +21,7 @@ import { eligibleRunSql } from '../run-eligibility';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import { isCurrentlySnoozed } from '../inbox-queues';
 import { describeCluster } from '../describe-cluster';
-import { clusterKnownIssues } from './known-issues';
+import { clusterIssueFilings, clusterKnownIssues, clusterReopenings, knownIssueTracks } from './known-issues';
 import type { DrizzleDB } from './db';
 
 /** Failing (cluster, run) rows read per call, newest first: well past what a threshold needs. */
@@ -69,8 +70,9 @@ export async function gatherAutoCreateFacts(
   const clusters = await db.select().from(failureClusters).where(inArray(failureClusters.id, ids));
   if (clusters.length === 0) return out;
 
-  const [tracked, failureRows, testRows] = await Promise.all([
+  const [knownIssues, filings, failureRows, testRows] = await Promise.all([
     clusterKnownIssues(db, ids),
+    clusterIssueFilings(db, ids),
     db
       .select({
         clusterId: testRunsCases.failureClusterId,
@@ -109,6 +111,7 @@ export async function gatherAutoCreateFacts(
       .groupBy(testRunsCases.failureClusterId, testRunsCases.testCaseId),
   ]);
 
+  const reopenings = await clusterReopenings(db, knownIssues);
   const testIds = [...new Set(testRows.map((row) => row.testCaseId))];
   const [tests, retryPasses] = testIds.length
     ? await Promise.all([
@@ -170,6 +173,12 @@ export async function gatherAutoCreateFacts(
     const flaky =
       cluster.flakeEvidenceRunId != null ||
       clusterTests.some((row) => (retryPassRun.get(row.testCaseId) ?? 0) >= cluster.firstSeenRunId);
+    // Tracked as a new filing reads it: an issue that still tracks the cluster
+    // (a Done one no longer does, unless a reopen is moving it out of Done), or
+    // a filing the tracker has not answered yet.
+    const tracked =
+      filings.queued.has(cluster.id) ||
+      knownIssueTracks(knownIssues.get(cluster.id), { reopening: reopenings.has(cluster.id) });
 
     out.set(cluster.id, {
       clusterId: cluster.id,
@@ -179,7 +188,7 @@ export async function gatherAutoCreateFacts(
       lastSeenRunId: cluster.lastSeenRunId,
       status: cluster.status,
       snoozed: isCurrentlySnoozed(cluster, now),
-      tracked: tracked.has(cluster.id),
+      tracked,
       flaky,
       tags,
       owner,

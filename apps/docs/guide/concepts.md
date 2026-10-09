@@ -176,29 +176,34 @@ The **one explanation** a failure page leads with. When several [clues](/feature
 (deterministic, rule-based findings) form a known combination, Piwi chains them into a single sentence —
 *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"* — at the strongest
 member's strength, with every clue folded under it. When no combination matches, the story is the strongest
-clue alone; when a cluster has a completed [AI diagnosis](/features/ai-diagnosis), that leads instead.
+clue alone. A cluster's completed [AI diagnosis](/features/ai-diagnosis) leads instead of a weak story or a lone
+clue, never instead of a strong or medium story, by one rule on the execution and the cluster page.
 
 ### Situation
 
-The **one sentence of context** under the explanation: since when the failure has been happening (and on
-which commit and author), how many other tests share the cause and the cluster they join, whether an earlier
-fix regressed, and who owns it. An exceptional case — a new regression, a pass on retry, an infrastructure
-blip — leads it as a badge. It reads on the execution page and, condensed, in [alerts](/features/notifications).
+The **context** of a failing execution, in two places on its page. The line under the headline says since when
+the failure has been happening (on which commit and author) and whether a newer execution of the test, in the same
+Playwright project, failed again or passed, with a link to the newest one. The **Cluster** line says how many other
+tests share the cause and the cluster they join, its status, whether an earlier fix did not hold and who owns it,
+then the cluster's issue. An exceptional case (a new regression, a newly flaky test, an infrastructure blip) leads
+the line under the headline; for a test that passed on retry, the line says which attempt failed. It reads on the
+execution page and, condensed, in [alerts](/features/notifications).
 
 ### Next step
 
 The **one recommended action** a failure page leads with, chosen by a policy rather than offered as a menu —
 apply a diagnosed patch, replace a broken locator, reproduce locally, re-run in CI, mark a cluster resolved.
-The page shows the step, one line on why, and the button to do it; every other action lives in the toolbox.
+The page shows the step, the change it copies with where that change comes from (or one line on why), and the button
+to do it; every other action lives in the toolbox.
 The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step).
 
 ### Cluster state
 
 Where a **failure cluster** stands, said in one sentence with one verb next to a colored dot: *still
-failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *stopped failing*,
-*regressed — the fix did not hold*, *its tracker issue is done*, *resolved*, *ignored*, *snoozed* or *all
-tests quarantined*. It reconciles the human triage status with the
-machine-observed verdict; when they disagree the state line offers the one action that closes the gap. See
+failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *fixed, but the diagnosed patch
+still applies at the fix's commit*, *stopped failing*, *regressed — the fix did not hold*, *resolved*, *ignored*,
+*snoozed* or *all tests quarantined*. It reconciles the human triage status with the machine-observed verdict; when
+they disagree the state line offers the one action that closes the gap, unless the Next line already offers it. See
 [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score

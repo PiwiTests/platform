@@ -197,34 +197,68 @@ export function buildCrashError({ action, callLog, frames }) {
 // ── Unified-diff derivation (keeps suggested-fix patches glued to the sources) ──
 
 /**
- * Build a single-hunk unified diff from the file's actual source lines, so the
- * hunk header and context can never drift from the content `validatePatch`
- * checks it against.
+ * Build a unified diff from the file's actual source lines, so the hunk
+ * headers and context can never drift from the content `validatePatch` checks
+ * it against.
+ *
+ * One edit gives one hunk. Several edits give one hunk each, and edits whose
+ * context lines overlap or touch share a hunk, the way `git diff` groups them.
  *
  * @param {string} file Repo-relative path.
  * @param {string[]} source Full file content as lines.
- * @param {{ at: number, remove?: number, add?: string[], context?: number }} op
+ * @param {PatchEdit | PatchEdit[]} edits One edit, or several on distinct lines.
+ * @returns {string}
+ *
+ * @typedef {{ at: number, remove?: number, add?: string[], context?: number }} PatchEdit
  *   `at` — 1-based line where the change starts; `remove` — how many lines are
  *   deleted there (default 0); `add` — lines inserted in their place;
  *   `context` — unchanged lines shown around the change (default 1).
- * @returns {string}
  */
-export function derivePatch(file, source, { at, remove = 0, add = [], context = 1 }) {
-  const before = source.slice(Math.max(0, at - 1 - context), at - 1);
-  const removed = source.slice(at - 1, at - 1 + remove);
-  const after = source.slice(at - 1 + remove, at - 1 + remove + context);
-  const oldStart = at - before.length;
-  const oldCount = before.length + removed.length + after.length;
-  const newCount = before.length + add.length + after.length;
-  return [
-    `--- a/${file}`,
-    `+++ b/${file}`,
-    `@@ -${oldStart},${oldCount} +${oldStart},${newCount} @@`,
-    ...before.map((l) => ` ${l}`),
-    ...removed.map((l) => `-${l}`),
-    ...add.map((l) => `+${l}`),
-    ...after.map((l) => ` ${l}`),
-  ].join('\n');
+export function derivePatch(file, source, edits) {
+  const changes = (Array.isArray(edits) ? edits : [edits])
+    .map(({ at, remove = 0, add = [], context = 1 }) => ({
+      at,
+      remove,
+      add,
+      // The 1-based first and last source lines the hunk shows for this edit.
+      from: Math.max(1, at - context),
+      to: Math.min(source.length, at - 1 + remove + context),
+    }))
+    .sort((a, b) => a.at - b.at);
+
+  /** @type {Array<{ from: number, to: number, changes: typeof changes }>} */
+  const hunks = [];
+  for (const change of changes) {
+    const last = hunks.at(-1);
+    if (last && change.from <= last.to + 1) {
+      last.to = Math.max(last.to, change.to);
+      last.changes.push(change);
+    } else {
+      hunks.push({ from: change.from, to: change.to, changes: [change] });
+    }
+  }
+
+  const out = [`--- a/${file}`, `+++ b/${file}`];
+  // Lines added minus lines removed by the hunks already written.
+  let shift = 0;
+  for (const hunk of hunks) {
+    const body = [];
+    let line = hunk.from;
+    let added = 0;
+    let removed = 0;
+    for (const change of hunk.changes) {
+      for (; line < change.at; line++) body.push(` ${source[line - 1]}`);
+      for (let i = 0; i < change.remove; i++, line++) body.push(`-${source[line - 1]}`);
+      body.push(...change.add.map((l) => `+${l}`));
+      added += change.add.length;
+      removed += change.remove;
+    }
+    for (; line <= hunk.to; line++) body.push(` ${source[line - 1]}`);
+    const oldCount = hunk.to - hunk.from + 1;
+    out.push(`@@ -${hunk.from},${oldCount} +${hunk.from + shift},${oldCount - removed + added} @@`, ...body);
+    shift += added - removed;
+  }
+  return out.join('\n');
 }
 
 // ── Spec & app sources ──────────────────────────────────────────────────────
@@ -868,13 +902,117 @@ const PAY_CALL_LOG = [
 
 /**
  * @typedef {{ file: string, line: number, column: number, fn?: string }} StoryFrame
- * @typedef {{ title: string, failingLine: number, column: number, frames: StoryFrame[], error: string }} FailingCase
+ * @typedef {{ title: string, category: string, subtitle?: string, params?: Record<string, string>, location?: string, duration?: number, hook?: 'beforeEach' }} StoryStep
+ * @typedef {StoryStep & { timeoutMs: number | null, timeout: 'test' | 'action' | 'expect' | null, location: string }} FailingCall
+ * @typedef {{ title: string, failingLine: number, column: number, frames: StoryFrame[], error: string, call: FailingCall, before?: StoryStep[] }} FailingCase
  */
 
-/** Build a failing case entry: frames innermost-first; the error carries them. */
-function failingCase(title, specFile, failingLine, column, buildErr, extraInnerFrames = []) {
-  const frames = [...extraInnerFrames, { file: specFile, line: failingLine, column }];
-  return { title, failingLine, column, frames, error: buildErr(frames) };
+// ── The failing call, as the step Playwright reports for it ──
+// `timeout` names whose timeout the error reports: the test's, the action's or
+// the expect's; null when the call failed without one.
+
+const testTimeout = (ms) => ({ timeoutMs: ms, timeout: 'test' });
+const actionTimeout = (ms) => ({ timeoutMs: ms, timeout: 'action' });
+const expectTimeout = (ms) => ({ timeoutMs: ms, timeout: 'expect' });
+const noTimeout = { timeoutMs: null, timeout: null };
+
+const clickCall = (locator, timeout = noTimeout) => ({
+  title: 'Click',
+  category: 'action',
+  subtitle: locator,
+  params: { locator },
+  ...timeout,
+});
+const fillCall = (locator, value, timeout = noTimeout) => ({
+  title: `Fill "${value}"`,
+  category: 'input',
+  subtitle: locator,
+  params: { locator, value },
+  ...timeout,
+});
+const waitForSelectorCall = (locator, timeout = noTimeout) => ({
+  title: 'Wait for selector',
+  category: 'wait',
+  subtitle: locator,
+  params: { locator },
+  ...timeout,
+});
+const navigateCall = (url, absoluteUrl, timeout = noTimeout) => ({
+  title: 'Navigate',
+  category: 'navigation',
+  subtitle: url,
+  params: { url: absoluteUrl },
+  ...timeout,
+});
+const expectCall = (matcher, locator, timeout = noTimeout) => ({
+  title: `Expect "${matcher}"`,
+  category: 'assertion',
+  ...(locator ? { subtitle: locator, params: { locator } } : {}),
+  ...timeout,
+});
+
+/**
+ * Build a failing case entry: frames innermost-first; the error carries them.
+ * `call` is the failing call's step, located at the innermost frame; `before`,
+ * when given, lists the steps the test ran before it, in order.
+ */
+function failingCase(title, specFile, failingLine, column, buildErr, extraInnerFrames, { call, before } = {}) {
+  const frames = [...(extraInnerFrames ?? []), { file: specFile, line: failingLine, column }];
+  const inner = frames[0];
+  return {
+    title,
+    failingLine,
+    column,
+    frames,
+    error: buildErr(frames),
+    call: { ...call, location: `${inner.file}:${inner.line}:${inner.column}` },
+    ...(before ? { before } : {}),
+  };
+}
+
+/** `file:line:col` of a call in an authored source: the line holding `needle`, the column of `method(`. */
+function callSite(file, needle, method, nth = 0) {
+  const line = lineOf(SOURCE_FILES[file], needle, nth);
+  return `${file}:${line}:${SOURCE_FILES[file][line - 1].indexOf(`${method}(`) + 1}`;
+}
+
+/**
+ * The steps a checkout test runs before the helper's Pay click, as Playwright
+ * reports them: the beforeEach navigation, the email of the `nth` test that
+ * fills it, `extra` steps of the test itself, then the helper's card fields.
+ * Durations are typical for a CI runner, in ms.
+ *
+ * @param {number} nth @param {StoryStep[]} [extra]
+ * @returns {StoryStep[]}
+ */
+function checkoutStepsBefore(nth, extra = []) {
+  const spec = 'tests/checkout/checkout.spec.ts';
+  const helper = 'tests/helpers/payment.ts';
+  const field = (label, value, needle, file, duration, n = 0) => ({
+    ...fillCall(`getByLabel('${label}')`, value),
+    location: callSite(file, needle, 'fill', n),
+    duration,
+  });
+  return [
+    {
+      ...navigateCall('/checkout', 'https://shop.example.com/checkout'),
+      location: callSite(spec, "await page.goto('/checkout');", 'goto'),
+      duration: 900,
+      hook: 'beforeEach',
+    },
+    field(
+      'Email address',
+      'buyer@example.com',
+      "await page.getByLabel('Email address').fill('buyer@example.com');",
+      spec,
+      420,
+      nth,
+    ),
+    ...extra,
+    field('Card number', '4242 4242 4242 4242', "await page.getByLabel('Card number').fill(TEST_CARD);", helper, 380),
+    field('Expiry date', '12/30', "await page.getByLabel('Expiry date').fill('12/30');", helper, 260),
+    field('CVV', '123', "await page.getByLabel('CVV').fill('123');", helper, 240),
+  ];
 }
 
 export const FAILURE_STORIES = [
@@ -894,6 +1032,7 @@ export const FAILURE_STORIES = [
         9,
         (frames) => buildTestTimeoutError({ timeoutMs: 30000, action: 'locator.click', callLog: PAY_CALL_LOG, frames }),
         [{ file: 'tests/helpers/payment.ts', line: payClickLine, column: 51, fn: 'fillPaymentDetails' }],
+        { call: clickCall(checkoutPayLocator, testTimeout(30000)), before: checkoutStepsBefore(0) },
       ),
       failingCase(
         'should complete checkout with PayPal',
@@ -902,6 +1041,20 @@ export const FAILURE_STORIES = [
         9,
         (frames) => buildTestTimeoutError({ timeoutMs: 30000, action: 'locator.click', callLog: PAY_CALL_LOG, frames }),
         [{ file: 'tests/helpers/payment.ts', line: payClickLine, column: 51, fn: 'fillPaymentDetails' }],
+        {
+          call: clickCall(checkoutPayLocator, testTimeout(30000)),
+          before: checkoutStepsBefore(1, [
+            {
+              ...clickCall("getByRole('button', { name: 'Continue with PayPal' })"),
+              location: callSite(
+                'tests/checkout/checkout.spec.ts',
+                "getByRole('button', { name: 'Continue with PayPal' }).click()",
+                'click',
+              ),
+              duration: 650,
+            },
+          ]),
+        },
       ),
     ],
     aria:
@@ -920,8 +1073,12 @@ export const FAILURE_STORIES = [
           type: 'warning',
           text: '[checkout] price quote still pending after 20s — Pay stays disabled',
           location: 'https://shop.example.com/assets/checkout-D4kXqz.js:1:48211',
+          // The page's own timer, 20 s into the quote request.
+          intoSlowRequestMs: 20040,
         },
       ],
+      // The quote starts once the card fields are filled and is still in
+      // flight when the test timeout stops the Pay click.
       failingNetwork: [
         {
           method: 'POST',
@@ -931,6 +1088,8 @@ export const FAILURE_STORIES = [
           resourceType: 'fetch',
         },
       ],
+      // The payment authorization the Pay click sends never goes out.
+      unreachedNetwork: [{ method: 'POST', url: 'https://shop.example.com/api/payments/authorize' }],
       // A confirm dialog left open at the failure moment blocks the page until
       // it is dismissed, so the Pay action never resolves.
       dialogOnFail: {
@@ -947,12 +1106,22 @@ export const FAILURE_STORIES = [
       area: 'checkout / payment',
       fix: {
         description:
-          'Wait for the network to settle before clicking, so the click no longer races the third-party form render.',
+          'Wait for the price quote the Pay button depends on, and give the flow the time the quote takes on CI.',
         file: 'tests/helpers/payment.ts',
-        patch: derivePatch('tests/helpers/payment.ts', PAYMENT_HELPER, {
-          at: payClickLine,
-          add: ["  await page.waitForLoadState('networkidle');"],
-        }),
+        patch: derivePatch('tests/helpers/payment.ts', PAYMENT_HELPER, [
+          {
+            at: lineOf(PAYMENT_HELPER, "import type { Page } from '@playwright/test';"),
+            remove: 1,
+            add: ["import { test, type Page } from '@playwright/test';"],
+            context: 3,
+          },
+          {
+            at: lineOf(PAYMENT_HELPER, "await page.getByLabel('Card number').fill(TEST_CARD);"),
+            add: ['  test.slow();', "  const quoteResponse = page.waitForResponse('**/api/checkout/quote');"],
+            context: 3,
+          },
+          { at: payClickLine, add: ['  await quoteResponse;'], context: 3 },
+        ]),
       },
     },
     media: {
@@ -984,6 +1153,18 @@ export const FAILURE_STORIES = [
             callLog: [`waiting for getByLabel('Email address')`],
             frames,
           }),
+        [],
+        {
+          call: fillCall("getByLabel('Email address')", 'buyer@example.com', actionTimeout(10000)),
+          before: [
+            {
+              ...navigateCall('/checkout', 'https://shop.example.com/checkout'),
+              location: callSite('tests/checkout/checkout.spec.ts', "await page.goto('/checkout');", 'goto'),
+              duration: 900,
+              hook: 'beforeEach',
+            },
+          ],
+        },
       ),
     ],
     aria:
@@ -1029,6 +1210,8 @@ export const FAILURE_STORIES = [
             body: ['Expected: 200', 'Received: 500'],
             frames,
           }),
+        [],
+        { call: expectCall('toBe') },
       ),
       failingCase(
         'GET /auth/me returns current user',
@@ -1041,6 +1224,8 @@ export const FAILURE_STORIES = [
             body: ['Expected: 200', 'Received: 500'],
             frames,
           }),
+        [],
+        { call: expectCall('toBe') },
       ),
     ],
     aria: null,
@@ -1109,6 +1294,8 @@ export const FAILURE_STORIES = [
             body: ['Expected substring: "confirmed"', 'Received string:    "payment_pending"'],
             frames,
           }),
+        [],
+        { call: expectCall('toContain') },
       ),
     ],
     aria: null,
@@ -1162,6 +1349,8 @@ export const FAILURE_STORIES = [
             callLog: ["waiting for locator('.modal.is-open') to be visible"],
             frames,
           }),
+        [],
+        { call: waitForSelectorCall("locator('.modal.is-open')", actionTimeout(5000)) },
       ),
       failingCase(
         'Modal with large content scrolls correctly',
@@ -1175,6 +1364,8 @@ export const FAILURE_STORIES = [
             callLog: ["waiting for locator('.modal.is-open') to be visible"],
             frames,
           }),
+        [],
+        { call: waitForSelectorCall("locator('.modal.is-open')", actionTimeout(5000)) },
       ),
     ],
     aria: '- document:\n  - main:\n    - heading "Modal"\n    - button "Open modal"',
@@ -1233,6 +1424,8 @@ export const FAILURE_STORIES = [
             callLog: ["waiting for getByRole('button')"],
             frames,
           }),
+        [],
+        { call: clickCall("getByRole('button')") },
       ),
     ],
     aria: '- document:\n  - section:\n    - button "Primary"\n    - button "Disabled" [disabled]\n    - button "Loading…"',
@@ -1281,6 +1474,11 @@ export const FAILURE_STORIES = [
             callLog: ['navigating to "https://m.shop.example.com/", waiting until "load"'],
             frames,
           }),
+        [],
+        {
+          call: navigateCall('https://m.shop.example.com/', 'https://m.shop.example.com/', actionTimeout(30000)),
+          before: [],
+        },
       ),
       failingCase(
         'Back gesture navigates correctly',
@@ -1294,10 +1492,21 @@ export const FAILURE_STORIES = [
             callLog: ['navigating to "https://m.shop.example.com/products/42", waiting until "load"'],
             frames,
           }),
+        [],
+        {
+          call: navigateCall(
+            'https://m.shop.example.com/products/42',
+            'https://m.shop.example.com/products/42',
+            actionTimeout(30000),
+          ),
+          before: [],
+        },
       ),
     ],
     aria: '- document:\n  - navigation "Loading…"\n  - img "Hero"',
     evidence: {
+      // The landing page requests its hero once its script runs, and the
+      // image is still loading when the navigation gives up on "load".
       failingNetwork: [
         {
           method: 'GET',
@@ -1306,6 +1515,7 @@ export const FAILURE_STORIES = [
           duration: 27800,
           resourceType: 'image',
           contentType: 'image/png',
+          intoStepMs: 2400,
         },
       ],
     },
@@ -1352,6 +1562,8 @@ export const FAILURE_STORIES = [
             ],
             frames,
           }),
+        [],
+        { call: fillCall("getByLabel('Delivery notes')", 'Leave at the door') },
       ),
     ],
     // The page is gone after the crash — nothing to snapshot.
@@ -1413,6 +1625,8 @@ export const FAILURE_STORIES = [
             frames,
             ansi: true,
           }),
+        [],
+        { call: expectCall('toBeVisible', "getByRole('button', { name: 'Export CSV' })", expectTimeout(5000)) },
       ),
     ],
     aria:
@@ -1468,6 +1682,8 @@ export const FAILURE_STORIES = [
             ],
             frames,
           }),
+        [],
+        { call: expectCall('toHaveCount', "getByRole('row')", expectTimeout(5000)) },
       ),
     ],
     aria: '- document:\n  - main:\n    - heading "Users"\n    - table "Users":\n      - row "Name Email Role"\n      - row "Ada Lovelace ada@example.com admin"',
@@ -1540,6 +1756,111 @@ export function buildSourceFrames(failing) {
     line: f.line,
     snippet: renderSnippet(SOURCE_FILES[f.file], { declLine: f.line, failingLine: f.line, context: 8 }),
   }));
+}
+
+// ── Failure timing (where a story's failing step and evidence sit in its execution) ──
+
+/** How long the test runs on after its failing call: the after hooks and fixture teardown, in ms. */
+export const FAILURE_TEARDOWN_MS = 250;
+
+/** A request at least this slow is in flight through the failing step (the clue engine's default threshold). */
+const SLOW_STORY_REQUEST_MS = 1500;
+
+/**
+ * How long a failing call lasts, in ms: until the test timeout for a test
+ * timeout (`at` is when the call started, in ms from the test start), its own
+ * timeout for an action or expect timeout, `fallbackMs` when it failed without one.
+ *
+ * @param {FailingCall} call @param {number} at @param {number} fallbackMs
+ */
+export function failingCallDuration(call, at, fallbackMs) {
+  if (call.timeout === 'test') return Math.max(1, call.timeoutMs - at);
+  if (call.timeout === 'action' || call.timeout === 'expect') return call.timeoutMs;
+  return fallbackMs;
+}
+
+/**
+ * The failing call as a stored step, failed with the first line of the case's
+ * error, starting `at` ms from the test start.
+ *
+ * @param {FailingCase} failing @param {number} at @param {number} duration
+ */
+export function failingStep(failing, at, duration) {
+  const { title, category, subtitle, params, location } = failing.call;
+  return {
+    title,
+    duration,
+    category,
+    at,
+    ...(subtitle ? { subtitle } : {}),
+    ...(params ? { params } : {}),
+    location,
+    failed: true,
+    error: { message: failing.error.split('\n')[0] },
+  };
+}
+
+/** An authored duration at `scale`, in ms. */
+const scaledMs = (duration, scale) => Math.round((duration ?? 0) * scale);
+
+/**
+ * The steps of a failing case that carries its authored steps, ending with the
+ * failing call: each with `at`, in ms from the test start, and its `duration`.
+ * The first starts at `startMs`, once the test's fixtures are set up; `scale`
+ * stretches the authored durations, as a slower or faster runner would. Null
+ * when the case carries none.
+ *
+ * @param {FailingCase} failing @param {{ scale?: number, startMs?: number, fallbackMs?: number }} [opts]
+ */
+export function authoredFailureSteps(failing, { scale = 1, startMs = 0, fallbackMs = 500 } = {}) {
+  if (!failing.before) return null;
+  let at = startMs;
+  // The step as the reporter sends it: no timeout keys, no hook marker.
+  const steps = failing.before.map(({ duration, timeoutMs: _ms, timeout: _kind, hook: _hook, ...step }) => {
+    const ms = scaledMs(duration, scale);
+    const out = { title: step.title, duration: ms, category: step.category, at, ...step };
+    at += ms;
+    return out;
+  });
+  steps.push(failingStep(failing, at, failingCallDuration(failing.call, at, fallbackMs)));
+  return steps;
+}
+
+/**
+ * How long the beforeEach hook of a case with authored steps runs, in ms at
+ * `scale`: the authored steps it holds, 0 when its spec has no beforeEach.
+ *
+ * @param {FailingCase} failing @param {{ scale?: number }} [opts]
+ */
+export function authoredBeforeEachMs(failing, { scale = 1 } = {}) {
+  return (failing.before ?? [])
+    .filter((step) => step.hook === 'beforeEach')
+    .reduce((sum, step) => sum + scaledMs(step.duration, scale), 0);
+}
+
+/**
+ * Where a story's own evidence sits around its failing step, in ms from the
+ * test start: a slow request starts `intoStepMs` (default 30 ms) into the step
+ * and is still in flight through it, any other request ends 40 ms before the
+ * step starts; a console entry with `intoSlowRequestMs` is logged that long
+ * after the slow request started, any other 250 ms before the step; the dialog
+ * closes 150 ms before the failure.
+ *
+ * @param {FailureStory} story @param {{ at: number, duration: number }} step
+ * @returns {{ requests: number[], console: number[], dialogClosedAt: number }}
+ */
+export function storyEvidenceTimes(story, step) {
+  const network = story.evidence.failingNetwork ?? [];
+  const requests = network.map((req) =>
+    req.duration >= SLOW_STORY_REQUEST_MS ? step.at + (req.intoStepMs ?? 30) : Math.max(0, step.at - 40 - req.duration),
+  );
+  const slowIndex = network.findIndex((req) => req.duration >= SLOW_STORY_REQUEST_MS);
+  const console = (story.evidence.consoleOnFail ?? []).map((entry, i) =>
+    entry.intoSlowRequestMs != null && slowIndex >= 0
+      ? requests[slowIndex] + entry.intoSlowRequestMs
+      : Math.max(0, step.at - 250 + i * 40),
+  );
+  return { requests, console, dialogClosedAt: step.at + step.duration - 150 };
 }
 
 // ── Simulator exports ───────────────────────────────────────────────────────

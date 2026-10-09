@@ -306,8 +306,14 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
     expect(c.clusterState.action).toBe('mark-resolved');
   });
 
-  test('resolve-on-close auto-resolves the cluster', async ({ request }) => {
+  test('resolve-on-close auto-resolves the cluster when the ticket moves to Done', async ({ request }) => {
     await request.put(`/api/projects/${projectId}/integrations`, { data: binding(connectionId, true) });
+    // The ticket is already Done: no move, so the policy leaves the cluster open.
+    await runSync(request);
+    expect((await clusterJson(request)).status).toBe('open');
+    // Reopened, then closed again: that move resolves the cluster.
+    mock.setStatus('In Progress', 'indeterminate');
+    await runSync(request);
     mock.setStatus('Done', 'done');
     await runSync(request);
     await expect.poll(async () => (await clusterJson(request)).status, { timeout: 10_000 }).toBe('resolved');

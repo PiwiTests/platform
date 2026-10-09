@@ -23,11 +23,15 @@ vi.mock('../../server/utils/notifications/emit', () => ({
 let changedFiles: string[] = [];
 let changedCommits: Array<{ sha: string; message: string; fullMessage?: string }> = [];
 let commitAuthor: { name: string; email: string } | null = null;
+// The repository's files at the run's commit, by repo-relative path.
+let filesAtRef: Record<string, string> = {};
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
     fetchChanges: async () => ({ commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) }),
     getCommitAuthor: async () => commitAuthor,
     getDefaultBranch: async () => 'main',
+    fetchFileAtRef: async (path: string) =>
+      path in filesAtRef ? { path, content: filesAtRef[path]!, truncated: false } : null,
   }),
 }));
 
@@ -37,6 +41,7 @@ vi.mock('../../server/utils/scm', () => ({
 delete process.env.PIWI_DATABASE_URL;
 const { verifyClusterFixes, appendTriageNote, classifyQuietRun, healKeysFromCommits } =
   await import('../../server/utils/fix-verification');
+const { getClusterPatchFacts, getFailureCluster } = await import('../../shared/handlers/failure-clusters');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -92,12 +97,21 @@ async function markSeen(clusterId: number, runId: number) {
   await db.update(schema.failureClusters).set({ lastSeenRunId: runId }).where(eq(schema.failureClusters.id, clusterId));
 }
 
-async function insertDiagnosis(clusterId: number, file: string) {
+/**
+ * A completed cluster diagnosis whose patch changes the line `a` into `b` in
+ * `file`, with the validation it stored when it was made, if any.
+ */
+async function insertDiagnosis(clusterId: number, file: string, opts: { validated?: 'applies' } = {}) {
   await db.insert(schema.failureDiagnoses).values({
     clusterId,
     scope: 'cluster',
     status: 'completed',
-    details: { suggestedFix: { patch: `--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-a\n+b\n` } },
+    details: {
+      suggestedFix: { patch: `--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-a\n+b\n` },
+      ...(opts.validated
+        ? { patchValidation: { status: opts.validated, filesChecked: 1, filesInPatch: 1, errors: [] } }
+        : {}),
+    },
   });
 }
 
@@ -123,6 +137,7 @@ beforeEach(() => {
   changedFiles = [];
   changedCommits = [];
   commitAuthor = null;
+  filesAtRef = {};
 });
 
 describe('appendTriageNote', () => {
@@ -459,6 +474,81 @@ describe('verifyClusterFixes — diagnosis outcomes', () => {
     await verifyClusterFixes(db, red);
 
     expect(await diagnosisOutcomes(clusterId)).toEqual([]);
+  });
+});
+
+describe("verifyClusterFixes — the diagnosed patch at the fix's commit", () => {
+  // A diagnosis-verified fix on a cluster whose diagnosis validated its patch
+  // against the code the model was shown, before the fix. The cluster is then
+  // reopened, as the state line and the next step speak about open clusters.
+  async function verifiedFix(commit: string, files: { changed: string[]; atFix: Record<string, string> }) {
+    const failing = await insertRun('failed', `${commit}-red`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    await insertDiagnosis(clusterId, 'src/checkout.ts', { validated: 'applies' });
+    changedFiles = files.changed;
+    filesAtRef = files.atFix;
+
+    const green = await insertRun('passed', commit);
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    await db.update(schema.failureClusters).set({ status: 'open' }).where(eq(schema.failureClusters.id, clusterId));
+    const [diagnosis] = await db
+      .select({ details: schema.failureDiagnoses.details })
+      .from(schema.failureDiagnoses)
+      .where(eq(schema.failureDiagnoses.clusterId, clusterId));
+    const check = (diagnosis!.details as { patchValidationAtFix?: Record<string, unknown> }).patchValidationAtFix;
+    return { clusterId, green, check };
+  }
+
+  test('the fix is the diagnosed change: the patch validated before it says nothing, the cluster reads fixed', async () => {
+    const { clusterId, green, check } = await verifiedFix('fa1000', {
+      changed: ['src/checkout.ts'],
+      atFix: { 'src/checkout.ts': 'b\n' },
+    });
+    expect(check).toMatchObject({ status: 'stale-file', inCode: true, runId: green, commit: 'fa1000' });
+
+    const facts = await getClusterPatchFacts(db as never, clusterId, { fixLandedRunId: green });
+    // Validated when it was diagnosed, before the fix: it applied then.
+    expect(facts.patchAppliesCleanly).toBe(true);
+    expect(facts.patchAppliesAtFix).toBe(false);
+
+    const detail = (await getFailureCluster(db as never, clusterId))!;
+    expect(detail.clusterState.kind).toBe('fix-verified-open');
+    expect(detail.clusterState.action).toBe('mark-resolved');
+    expect(detail.nextStep.kind).toBe('mark-resolved');
+  });
+
+  test('another change fixed it: the patch still applies at the fix, so the fix is unconfirmed', async () => {
+    // The patch names the path relative to a package root; the range's changed
+    // files give its repository path.
+    const { clusterId, green, check } = await verifiedFix('fa2000', {
+      changed: ['apps/web/src/checkout.ts'],
+      atFix: { 'apps/web/src/checkout.ts': 'a\n' },
+    });
+    expect(check).toMatchObject({ status: 'applies', inCode: false, runId: green, commit: 'fa2000' });
+
+    expect((await getClusterPatchFacts(db as never, clusterId, { fixLandedRunId: green })).patchAppliesAtFix).toBe(
+      true,
+    );
+    // The check belongs to that fix: another fix run is not covered by it.
+    expect((await getClusterPatchFacts(db as never, clusterId, { fixLandedRunId: green + 1 })).patchAppliesAtFix).toBe(
+      false,
+    );
+
+    const detail = (await getFailureCluster(db as never, clusterId))!;
+    expect(detail.clusterState.kind).toBe('fix-unconfirmed');
+    expect(detail.clusterState.action).toBeNull();
+    expect(detail.nextStep.kind).toBe('apply-patch');
+    expect(detail.nextStep.secondary.map((a) => a.action)).toContain('mark-resolved');
+  });
+
+  test('a file the check cannot read claims nothing', async () => {
+    const { clusterId, green, check } = await verifiedFix('fa3000', { changed: ['src/checkout.ts'], atFix: {} });
+    expect(check).toMatchObject({ status: 'unchecked', inCode: false, runId: green });
+    expect((await getClusterPatchFacts(db as never, clusterId, { fixLandedRunId: green })).patchAppliesAtFix).toBe(
+      false,
+    );
   });
 });
 

@@ -3,9 +3,9 @@
     "id": 781,
     "testCaseId": 46,
     "status": "failed",
-    "duration": 5324,
+    "duration": 10075,
     "browserName": "Chromium",
-    "startedAt": 1788462176000,
+    "startedAt": 1791255474000,
     "locks": [],
     "shardIndex": null
   },
@@ -29,19 +29,21 @@
     "lastCallLogLine": "unexpected value \"51\"",
     "lastStateLine": "unexpected value \"51\"",
     "messageHead": "Error: expect(locator).toHaveCount(expected) failed\nLocator:  getByRole('row')\nExpected: 26\nReceived: 51\nTimeout:  5000ms",
+    "customMessage": null,
     "topFrame": "tests/admin/users.spec.ts:7",
     "isNavigationFailure": false,
     "isLocatorResolutionFailure": false
   },
   "timeline": {
-    "origin": 1788462176000,
-    "end": 1788462181324,
-    "failureAt": 5324,
+    "origin": 1791255474000,
+    "end": 1791255484075,
+    "testStart": 0,
+    "failureAt": 9825,
     "failedStep": {
       "index": 13,
-      "label": "Expect \"toBeVisible\" getByText('Saved')",
+      "label": "Expect \"toHaveCount\" getByRole('row')",
       "at": 4825,
-      "duration": 499
+      "duration": 5000
     },
     "lanes": {
       "steps": [
@@ -255,7 +257,7 @@
           "id": "step-11",
           "lane": "steps",
           "at": 4159,
-          "duration": 1165,
+          "duration": 5666,
           "label": "Assert table state",
           "status": "passed",
           "kind": "step",
@@ -291,19 +293,24 @@
           "id": "step-13",
           "lane": "steps",
           "at": 4825,
-          "duration": 499,
-          "label": "Expect \"toBeVisible\" getByText('Saved')",
+          "duration": 5000,
+          "label": "Expect \"toHaveCount\" getByRole('row')",
           "status": "failed",
           "kind": "step",
           "ref": {
             "section": "steps",
             "index": 13
           },
-          "origin": null,
+          "origin": {
+            "file": "tests/admin/users.spec.ts",
+            "line": 7,
+            "function": null,
+            "chain": []
+          },
           "group": "Assert table state",
-          "subtitle": "getByText('Saved')",
+          "subtitle": "getByRole('row')",
           "params": {
-            "locator": "getByText('Saved')"
+            "locator": "getByRole('row')"
           },
           "category": "assertion",
           "failed": true
@@ -327,7 +334,7 @@
         {
           "id": "network-1",
           "lane": "network",
-          "at": 375,
+          "at": 4445,
           "duration": 340,
           "label": "GET https://admin.example.com/api/users?page=1",
           "status": "200",
@@ -340,7 +347,7 @@
         {
           "id": "network-2",
           "lane": "network",
-          "at": 750,
+          "at": 375,
           "duration": 57,
           "label": "GET https://admin.example.com/api/orgs/current",
           "status": "200",
@@ -358,7 +365,7 @@
     "estimated": false,
     "window": {
       "start": 0,
-      "end": 5324
+      "end": 10075
     }
   },
   "healing": {
@@ -415,7 +422,7 @@
     "baseline": {
       "runId": 62,
       "executionId": 701,
-      "startTime": 1788715996000,
+      "startTime": 1791509294000,
       "environment": "production"
     },
     "baselineNote": null,
@@ -441,7 +448,8 @@
       "url": "https://admin.example.com/api/metrics?range=30d",
       "status": 200,
       "duration": 220,
-      "startTime": 1788462176120,
+      "startTime": 1791255474120,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -449,7 +457,8 @@
       "url": "https://admin.example.com/api/users?page=1",
       "status": 200,
       "duration": 340,
-      "startTime": 1788462176375,
+      "startTime": 1791255478445,
+      "failure": null,
       "serverLogs": null
     },
     {
@@ -457,7 +466,8 @@
       "url": "https://admin.example.com/api/orgs/current",
       "status": 200,
       "duration": 57,
-      "startTime": 1788462176750,
+      "startTime": 1791255474375,
+      "failure": null,
       "serverLogs": null
     }
   ],
@@ -475,14 +485,14 @@
       "testCaseId": 46,
       "title": "Users table paginates 25 rows per page",
       "status": "failed",
-      "startedAt": 1788462176000
+      "startedAt": 1791255474000
     },
     {
       "id": 785,
       "testCaseId": 50,
       "title": "exports the monthly report as CSV",
       "status": "passed",
-      "startedAt": 1788462181524
+      "startedAt": 1791255484275
     }
   ],
   "lockHolders": [],
@@ -492,5 +502,97 @@
     "fixVerification": "diagnosis-verified"
   },
   "timeout": 20000,
-  "slowRequestMs": null
+  "slowRequestMs": null,
+  "flakeSuspects": [
+    {
+      "id": "slow-route:GET /api/users",
+      "kind": "slow-route",
+      "label": "GET /api/users slower (≥340 ms)",
+      "sentence": "GET /api/users took 340 ms or more in 8 of 8 failures and 0 of 4 passes.",
+      "counts": {
+        "failuresWith": 8,
+        "failures": 8,
+        "passesWith": 0,
+        "passes": 4
+      },
+      "condition": {
+        "kind": "delay",
+        "route": "GET /api/users",
+        "ms": 300
+      },
+      "conditionLabel": "delay to 300 ms",
+      "route": "GET /api/users",
+      "thresholdMs": 340,
+      "lift": 5.4,
+      "executionIds": [711, 721, 731, 741, 751, 761, 771, 781]
+    },
+    {
+      "id": "alongside:49",
+      "kind": "alongside",
+      "label": "renders the revenue chart alongside",
+      "sentence": "renders the revenue chart was running in 8 of 8 failures and 1 of 4 passes.",
+      "counts": {
+        "failuresWith": 8,
+        "failures": 8,
+        "passesWith": 1,
+        "passes": 4
+      },
+      "condition": {
+        "kind": "alongside",
+        "testCaseId": 49,
+        "title": "renders the revenue chart"
+      },
+      "conditionLabel": "run together",
+      "testCaseId": 49,
+      "title": "renders the revenue chart",
+      "sharedRoutes": [],
+      "approximate": true,
+      "lift": 2.7,
+      "executionIds": [711, 721, 731, 741, 751, 761, 771, 781]
+    },
+    {
+      "id": "alongside:51",
+      "kind": "alongside",
+      "label": "updates the organization name alongside",
+      "sentence": "updates the organization name was running in 7 of 8 failures and 1 of 4 passes.",
+      "counts": {
+        "failuresWith": 7,
+        "failures": 8,
+        "passesWith": 1,
+        "passes": 4
+      },
+      "condition": {
+        "kind": "alongside",
+        "testCaseId": 51,
+        "title": "updates the organization name"
+      },
+      "conditionLabel": "run together",
+      "testCaseId": 51,
+      "title": "updates the organization name",
+      "sharedRoutes": [],
+      "approximate": false,
+      "lift": 2.4000000000000004,
+      "executionIds": [711, 721, 731, 751, 761, 771, 781]
+    },
+    {
+      "id": "load",
+      "kind": "load",
+      "label": "5 or more other tests running at once",
+      "sentence": "5 or more other tests were running at once in 7 of 8 failures and 1 of 4 passes.",
+      "counts": {
+        "failuresWith": 7,
+        "failures": 8,
+        "passesWith": 1,
+        "passes": 4
+      },
+      "condition": {
+        "kind": "cpu",
+        "rate": 4
+      },
+      "conditionLabel": "CPU ×4",
+      "thresholdCount": 5,
+      "lift": 2.4000000000000004,
+      "executionIds": [721, 731, 741, 751, 761, 771, 781]
+    }
+  ]
 }

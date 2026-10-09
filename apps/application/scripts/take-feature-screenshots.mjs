@@ -370,6 +370,74 @@ function reportCaughtError(request, base) {
 }
 
 /**
+ * A report test whose two last passing runs click *Load report* in 600 ms and
+ * fetch the report in 300 ms, then a failure where both take several times as
+ * long, though neither takes a third of the 9 s test: the timeline colors them
+ * against their usual time. Start times are offsets from the test's start.
+ */
+const USUAL_DURATION_CASE = { title: 'opens the monthly report', location: 'tests/reports.spec.ts:8:3', retries: 0 };
+const USUAL_DURATION_ERROR =
+  'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: "12 rows"\nReceived: "0 rows"\n\n    at tests/reports.spec.ts:14:52';
+
+function usualDurationCase(startTime, { failed, duration, clickMs, reportId, reportMs }) {
+  const steps = [
+    { title: "page.goto('/reports')", category: 'navigation', at: 0, duration: 1200 },
+    { title: "page.waitForLoadState('networkidle')", category: 'wait', at: 1300, duration: 2600 },
+    { title: "getByRole('button', { name: 'Load report' }).click()", category: 'action', at: 4000, duration: clickMs },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      at: 4100 + clickMs,
+      duration: 3,
+      ...(failed ? { failed: true } : {}),
+    },
+  ];
+  const requests = [
+    { method: 'GET', url: 'https://reports.example.com/reports', duration: 180, at: 100, resourceType: 'document' },
+    {
+      method: 'GET',
+      url: `https://reports.example.com/api/report/${reportId}`,
+      duration: reportMs,
+      at: 4100,
+      resourceType: 'fetch',
+    },
+  ];
+  return {
+    ...USUAL_DURATION_CASE,
+    status: failed ? 'failed' : 'passed',
+    duration,
+    startedAt: startTime,
+    ...(failed ? { error: USUAL_DURATION_ERROR } : {}),
+    steps: steps.map(({ at, ...step }) => ({ ...step, startTime: startTime + at })),
+    networkRequests: requests.map(({ at, ...req }) => ({ ...req, status: 200, startTime: startTime + at })),
+  };
+}
+
+/** The usual-duration execution its scene opens, reported once per session. */
+let usualDurationExecution;
+
+function reportUsualDuration(request, base) {
+  usualDurationExecution ??= (async () => {
+    const projectName = 'reports-e2e';
+    for (const hoursAgo of [2, 1]) {
+      const startTime = Date.now() - hoursAgo * 60 * 60_000;
+      const passing = { failed: false, duration: 5000, clickMs: 600, reportId: hoursAgo, reportMs: 300 };
+      await ingestRun(request, base, { projectName, testCase: usualDurationCase(startTime, passing), startTime });
+    }
+    const startTime = Date.now() - 15_000;
+    const failing = { failed: true, duration: 9000, clickMs: 2500, reportId: 3, reportMs: 1600 };
+    const { executionId } = await ingestRun(request, base, {
+      projectName,
+      testCase: usualDurationCase(startTime, failing),
+      startTime,
+    });
+    if (!executionId) throw new Error('the usual-duration run has no execution');
+    return executionId;
+  })();
+  return usualDurationExecution;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -587,6 +655,24 @@ const READY_INSPECTION = {
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  */
+/**
+ * Opens a cluster page's Diagnosis: it is the card under the situation block when
+ * the next step comes from the diagnosis, and otherwise a folded section of More
+ * ways to fix, which this unfolds.
+ */
+async function openDiagnosisSection(page) {
+  const folded = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded="false"]');
+  if (await folded.count()) await folded.first().click();
+  await page.locator('[data-shot="cluster-diagnosis"]').waitFor({ timeout: 90000 });
+}
+
+/** `run` for a scene of a cluster's Diagnosis: open it, then capture the scene's `of`. */
+async function openClusterDiagnosis({ page, shoot, settle }) {
+  await openDiagnosisSection(page);
+  await settle();
+  await shoot();
+}
+
 /**
  * `prepare` for a scene that needs a signed-in viewer, such as a project's
  * Members, which exist with authentication on only: signs in with
@@ -904,6 +990,21 @@ async function prepareJiraSceneConnection({ base, request }) {
     },
   });
   jiraSceneConnectionId = (await created.json()).connection.id;
+}
+
+/** The scene Jira connection, and PROJ-131 linked to cluster 1 when it is missing, so the cluster is tracked. */
+async function prepareClusterOneTracked({ base, request }) {
+  await prepareJiraSceneConnection({ base, request });
+  const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
+  if (links.items?.some((l) => l.key === 'PROJ-131')) return;
+  await request.post(`${base}/api/links`, {
+    data: {
+      entityType: 'failure_cluster',
+      entityId: 1,
+      url: 'http://127.0.0.1:9/browse/PROJ-131',
+      title: 'Pay button click times out',
+    },
+  });
 }
 
 /**
@@ -1295,10 +1396,12 @@ const SCENES = [
     { suffix: '-mobile', width: 375 },
   ].map(({ suffix, width }) => ({
     name: `cluster-activity${suffix}`,
-    description: `A failure cluster’s Activity section with reported fix attempts, at ${width} px`,
+    description: `A failure cluster’s Activity section with reported fix attempts, unfolded, at ${width} px`,
     prepare: prepareClusterActivity,
     route: '/failure-clusters/2',
     viewport: { width, height: 1400 },
+    // The card is folded to one line by default.
+    expand: ['[data-shot="cluster-activity"]'],
     of: '[data-shot="cluster-activity"]',
     pad: 8,
   })),
@@ -1409,7 +1512,9 @@ const SCENES = [
     {
       shot: 'cluster-occurrence-trend',
       route: '/failure-clusters/3',
-      what: 'a failure cluster’s occurrences over time',
+      what: 'a failure cluster’s occurrences over time, unfolded',
+      // The card is folded to one line by default.
+      expand: [`[data-shot="cluster-occurrence-trend"]`],
     },
     { shot: 'project-targets', route: '/projects/1?tab=settings&section=targets', what: 'the project targets form' },
     {
@@ -1417,7 +1522,7 @@ const SCENES = [
       route: '/projects/1?tab=settings&section=browser-extension',
       what: 'the browser extension URL patterns of a project, with the origins its suite visited',
     },
-  ].flatMap(({ shot, route, what }) =>
+  ].flatMap(({ shot, route, what, expand }) =>
     [
       { suffix: '', width: 1280 },
       { suffix: '-mobile', width: 375 },
@@ -1426,11 +1531,14 @@ const SCENES = [
       description: `${what[0].toUpperCase()}${what.slice(1)}, at ${width} px`,
       route,
       viewport: { width, height: 1800 },
+      ...(expand && { expand }),
       of: `[data-shot="${shot}"]`,
       async run({ page, shoot, settle }) {
         const target = page.locator(`[data-shot="${shot}"]`).first();
         await target.waitFor({ timeout: 90000 });
         await target.scrollIntoViewIfNeeded();
+        // Unfolding clicked the header: move the pointer off the chart so no tooltip shows.
+        if (expand) await page.mouse.move(0, 0);
         await settle();
         await shoot();
       },
@@ -2067,10 +2175,11 @@ const SCENES = [
         });
       }
     },
-    route: '/failure-clusters/10',
+    // A cluster no scene links an issue to, so its Issue line keeps Create issue.
+    route: '/failure-clusters/4',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
-      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      await page.locator('[data-shot="issue-line-create"]').first().click();
       await page.getByRole('dialog').waitFor();
       // The preview renders once the draft resolves.
       await page
@@ -2083,25 +2192,17 @@ const SCENES = [
     },
   },
   {
-    name: 'cluster-issue-chip',
-    description: 'Cluster state line with the known-issue chip and the Open in Jira action',
+    name: 'cluster-issue-line',
+    description:
+      "Cluster situation block: the latest failure's headline as the heading, the cluster's name under it, and the Issue line naming the cluster's Jira issue and its status",
     tags: ['docs'],
     out: 'docs',
-    // Pin a Jira issue to the cluster so its key shows on the state line.
+    // Pin a Jira issue to the cluster so its key shows on the Issue line. The
+    // scene connection's host makes the URL a Jira issue on any database.
     async prepare({ base, request }) {
-      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
-      if (!list.connections?.some((c) => c.provider === 'jira')) {
-        await request.post(`${base}/api/integrations/connections`, {
-          data: {
-            provider: 'jira',
-            name: 'Jira',
-            baseUrl: 'http://127.0.0.1:9',
-            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
-          },
-        });
-      }
+      await prepareJiraSceneConnection({ base, request });
       const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=10`)).json();
-      if (!links.links?.some((l) => l.provider === 'jira')) {
+      if (!links.items?.some((l) => l.key === 'PROJ-128')) {
         await request.post(`${base}/api/links`, {
           data: {
             entityType: 'failure_cluster',
@@ -2113,8 +2214,8 @@ const SCENES = [
       }
     },
     route: '/failure-clusters/10',
-    viewport: { width: 1280, height: 700 },
-    of: '[data-shot="cluster-state"]',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
     pad: 12,
   },
   {
@@ -2228,7 +2329,7 @@ const SCENES = [
           },
         });
       });
-      await page.locator('[data-shot="cluster-create-issue"]').first().click();
+      await page.locator('[data-shot="issue-line-create"]').first().click();
       const dialog = page.getByRole('dialog');
       await dialog.locator('[data-shot="create-issue-fields"]').waitFor({ timeout: 15000 });
       await dialog.getByTestId('create-issue-missing').waitFor();
@@ -2320,6 +2421,18 @@ const SCENES = [
     route: '/test-run-cases/533',
     viewport: { width: 1280, height: 1300 },
     of: '[data-shot="alternative-locators"]',
+    pad: 12,
+  },
+  {
+    name: 'next-step-change',
+    description: 'The Next line of a locator step: the call site, the edit it copies as a diff, its source and button',
+    tags: ['docs'],
+    out: 'docs',
+    // Cluster 2's latest occurrence has a locator edit captured from the last
+    // passing run, so its step replaces the locator and copies an apply command.
+    route: '/failure-clusters/2',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="next-step"]',
     pad: 12,
   },
   {
@@ -2443,7 +2556,8 @@ const SCENES = [
   },
   {
     name: 'ai-diagnosis',
-    description: 'Failure cluster page: the AI diagnosis card at the foot of the cluster page (dark)',
+    description:
+      'Failure cluster page: the AI diagnosis, as the card under the situation block when the next step comes from it, else unfolded in More ways to fix (dark)',
     tags: ['docs'],
     out: 'docs',
     // Cluster 10 ships a stored, "diagnosis-verified" diagnosis in the demo seed.
@@ -2452,6 +2566,7 @@ const SCENES = [
     of: '[data-shot="cluster-diagnosis"]',
     pad: 12,
     colorScheme: 'dark',
+    run: openClusterDiagnosis,
     // The stored diagnosis renders with or without a provider, but run this
     // scene with the server's AI env vars set (PIWI_AI_PROVIDER / PIWI_AI_API_KEY
     // / PIWI_AI_MODEL) so the illustration shows the configured panel (Re-diagnose
@@ -2577,6 +2692,7 @@ const SCENES = [
       // AI)": start the server with PIWI_AI_PROVIDER=anthropic and any
       // PIWI_AI_API_KEY. The stored diagnosis means no model is ever called.
       route: '/failure-clusters/10',
+      prepareShot: openDiagnosisSection,
       scrollTo: '[data-shot="diagnosis-result"]',
       scrollOffset: 16,
     },
@@ -2605,7 +2721,7 @@ const SCENES = [
       route: '/test-cases/1',
       charts: true,
     },
-  ].map(({ scrollTo, scrollOffset = 72, ...scene }) => ({
+  ].map(({ scrollTo, scrollOffset = 72, prepareShot, ...scene }) => ({
     ...scene,
     tags: ['docs', 'readme'],
     out: 'docs',
@@ -2615,6 +2731,7 @@ const SCENES = [
     colorScheme: 'light',
     ...(scrollTo && {
       async run({ page, shoot, settle }) {
+        if (prepareShot) await prepareShot(page);
         const target = page.locator(scrollTo).first();
         await target.waitFor({ timeout: 90000 });
         // The dashboard scrolls inside its content panel, not the document, so
@@ -2811,10 +2928,9 @@ const SCENES = [
   },
   {
     name: 'execution-history',
-    description: 'Execution page opened straight onto its History tab (duration trend + executions)',
-    route: '/test-run-cases/229?tab=history',
+    description: "Execution page: the History block, this test's recent executions as a strip",
+    route: '/test-run-cases/229',
     viewport: { width: 1280, height: 1000 },
-    charts: true,
     of: '[data-shot="execution-history"]',
     pad: 12,
   },
@@ -3052,14 +3168,14 @@ const SCENES = [
 
   {
     name: 'step-params',
-    description: "Whole-test steps table: a step's muted subtitle and its open Parameters disclosure",
+    description: "Whole-test steps table: a step's muted subtitle and its parameters, opened from its title",
     route: '/projects',
     viewport: { width: 1280, height: 2400 },
     of: 'table',
     pad: 12,
     async run({ page, base, goto, shoot }) {
       // Find a failing execution whose steps carry the 1.63 params shape, then
-      // open its Timeline tab, expand every step, and open a Parameters disclosure.
+      // open its Timeline tab on the whole test and open the first step's parameters.
       const projects = await (await page.request.get(`${base}/api/projects`)).json();
       const projectList = Array.isArray(projects) ? projects : (projects.items ?? projects.projects ?? []);
       let execId = null;
@@ -3082,8 +3198,8 @@ const SCENES = [
       await page.getByRole('tab', { name: /^Timeline/ }).click();
       const whole = page.getByRole('button', { name: 'Whole test' });
       if (await whole.count()) await whole.click();
-      const disclosure = page.locator('table [data-testid="step-params"]:visible').first();
-      await disclosure.getByText(/Parameters/).click();
+      await page.locator('table [data-testid="step-params-toggle"]:visible').first().click();
+      await page.locator('table [data-testid="step-params"]:visible').first().waitFor({ timeout: 10_000 });
       await page.evaluate(() => document.fonts.ready);
       await page.waitForTimeout(300);
       await shoot();
@@ -3287,8 +3403,8 @@ const SCENES = [
   ...['', '-mobile'].map((suffix) => ({
     name: `what-changed-no-repository${suffix}`,
     description: suffix
-      ? 'The cluster situation block at phone width, for runs without a repository URL'
-      : 'Cluster situation block for runs that record commits but no repository URL: the range, why, the docs, the git log',
+      ? 'The cluster situation block at phone width, for runs without a repository URL: the range and its help hint'
+      : 'Cluster situation block for runs that record commits but no repository URL: What changed keeps the range and a help hint',
     route: '/projects',
     viewport: suffix ? { width: 375, height: 1200 } : { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
@@ -3298,9 +3414,7 @@ const SCENES = [
     },
     async run({ page, goto, settle, shoot }) {
       await goto(`/failure-clusters/${this.clusterId}`);
-      await page
-        .locator('[data-shot="what-changed"]', { hasText: 'since the last passing run' })
-        .waitFor({ timeout: 60_000 });
+      await page.locator('[data-testid="what-changed-range"]').waitFor({ timeout: 60_000 });
       await settle();
       await shoot();
     },
@@ -3345,6 +3459,97 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `timeline-durations${suffix}`,
+    description: suffix
+      ? 'The timeline at phone width: the step and request cards, only the 28 s Pay click and the 28.4 s request colored'
+      : 'Timeline tab: durations colored only where they stand out (the 28 s Pay click, the 28.4 s request), the cut bar ending in an arrow',
+    // Execution 37: five sub-second steps, then a Pay click the 30 s test
+    // timeout stops after 28 s, and a 28.4 s request that outlasts the test,
+    // which the window around the failure cuts.
+    route: '/test-run-cases/37',
+    viewport: suffix ? { width: 375, height: 2400 } : { width: 1280, height: 1400 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async run({ openTab, settle, shoot }) {
+      await openTab('Timeline');
+      await settle();
+      await shoot();
+    },
+  })),
+  ...['', '-mobile'].map((suffix) => ({
+    name: `network-tab-durations${suffix}`,
+    description: suffix
+      ? 'The Network tab at phone width: the 28.4 s quote request in the same tone as on the Timeline, the others neutral'
+      : 'Network tab of execution 37: only the 28.4 s quote request colored, as on the Timeline (timeline-durations)',
+    // Execution 37: the quote request outlasts the 30 s test, every other
+    // request is quick, so it is the one line in the warning tone.
+    route: '/test-run-cases/37',
+    viewport: suffix ? { width: 390, height: 1600 } : { width: 1280, height: 1000 },
+    of: '[data-shot="evidence-card"]',
+    pad: suffix ? 8 : 12,
+    async run({ page, openTab, settle, shoot }) {
+      await openTab(/^Network/);
+      await page.locator('[data-shot="evidence-card"] [data-standout]').first().waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'timeline-usual-duration',
+    description:
+      'Timeline tab: a click and a request colored against their usual time (usually 600ms, usually 300ms), under a third of the test each',
+    route: '/projects',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.executionId = await reportUsualDuration(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page
+        .locator('[data-shot="evidence-card"] [data-testid="usual-duration"]')
+        .filter({ visible: true })
+        .first()
+        .waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'timeline-cited-row',
+    description:
+      'Execution #37: the timeline rows and the tabs Most likely cites, then its Console and its Network citation opened, the tab strip in view and the entry ringed',
+    // Execution 37's story chains the 28.4 s quote request and the console
+    // warning: both rows read "Cited by Most likely", and Screen, Network and Console carry the mark.
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 800 },
+    outputs: ['timeline-cited-row.png', 'timeline-cited-row-console.png', 'timeline-cited-row-network.png'],
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      const card = page.locator('[data-shot="evidence-card"]');
+      await card.locator('tr[data-cited]').first().scrollIntoViewIfNeeded();
+      await settle();
+      await shoot();
+
+      // A citation rings its entry for two seconds: capture once the scroll has ended.
+      const clues = page.locator('[data-shot="failure-clues"]');
+      for (const section of ['Console', 'Network']) {
+        if (!(await clues.isVisible())) {
+          await page.locator('[data-shot="most-likely"]').getByRole('button', { name: 'All clues' }).click();
+        }
+        await clues.getByRole('button', { name: section, exact: true }).first().click();
+        await card.locator('div[data-cited]').first().waitFor();
+        await page.waitForTimeout(700);
+        await shoot(section.toLowerCase());
+      }
+    },
+  },
   {
     name: 'timeline-type-filter-mobile',
     description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',
@@ -3654,10 +3859,12 @@ const SCENES = [
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
     name: 'failure-headline',
-    description: 'Failing execution: the situation block — headline, most likely, situation and next step',
+    description:
+      'Failing execution: the situation block, the headline and the line under it (since when, not the latest), most likely, next step and the cluster',
     tags: ['desktop'],
-    // Execution 37 is clustered with a sibling in its run, so the situation
-    // sentence carries the cluster link next to the regression badge.
+    // Execution 37 is a new regression clustered with a sibling in its run, and
+    // its test failed again in later runs: the line under the headline says so,
+    // and the Cluster line names the sibling.
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
@@ -3665,12 +3872,104 @@ const SCENES = [
   },
   {
     name: 'failure-headline-mobile',
-    description: 'The same situation block at phone width',
+    description: 'The same situation block at phone width, "Not the latest" on a line of its own',
     tags: ['desktop'],
     route: '/test-run-cases/37',
     viewport: { width: 375, height: 812 },
     of: '[data-shot="situation-block"]',
     pad: 8,
+  },
+
+  // ── The change a Next step copies (report artifacts) ─────────────────────
+  {
+    name: 'next-step-locator',
+    description: 'Cluster situation block whose Next line shows the locator edit it copies with Copy apply command',
+    tags: ['desktop'],
+    route: '/failure-clusters/2',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+  {
+    name: 'next-step-locator-mobile',
+    description: 'The same block at phone width, the diff scrolling inside its box',
+    tags: ['desktop'],
+    route: '/failure-clusters/2',
+    viewport: { width: 375, height: 1200 },
+    of: '[data-shot="situation-block"]',
+    pad: 8,
+  },
+  {
+    name: 'next-step-copy-locator',
+    description:
+      'Execution situation block whose locator step has no line edit: the failing and recommended locator, Copy locator',
+    tags: ['desktop'],
+    // Execution 587's healing reads the failure-time ARIA snapshot, and its
+    // waitForSelector line has no locator call to rewrite.
+    route: '/test-run-cases/587',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+
+  // ── Not the latest execution (report artifacts) ──────────────────────────
+  {
+    name: 'execution-latest-passed',
+    description:
+      'Failing execution whose test passed in a later run: "Not the latest: passed in run #N" under the headline',
+    tags: ['desktop'],
+    // Execution 711 failed in cluster #10; the same test passed in a later run.
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+  {
+    name: 'execution-latest-passed-mobile',
+    description: 'The same situation block at phone width',
+    tags: ['desktop'],
+    route: '/test-run-cases/711',
+    viewport: { width: 390, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 8,
+  },
+
+  // ── The ticket on the execution page (report artifacts) ──────────────────
+  {
+    name: 'execution-issue-line',
+    description: "Failing execution whose cluster is tracked: the Cluster line ends with the cluster's issue",
+    tags: ['desktop'],
+    prepare: prepareClusterOneTracked,
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+  {
+    name: 'execution-details-links',
+    description: "Failing execution's Details open, scrolled to its links: by owner, then the cluster's, read-only",
+    tags: ['desktop'],
+    prepare: prepareClusterOneTracked,
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Details' }).first().click();
+      const details = page.getByTestId('execution-details');
+      await details.waitFor();
+      await details.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'execution-issue-line-untracked',
+    description: 'Failing execution whose cluster has no issue: the Cluster line offers to create or link one',
+    tags: ['desktop'],
+    prepare: prepareJiraSceneConnection,
+    route: '/test-run-cases/87',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
   },
 
   // ── Failure page clarity (report artifacts) ───────────────────────────────
@@ -3700,6 +3999,65 @@ const SCENES = [
     description: 'The same cluster page first screen at phone width',
     route: '/failure-clusters/10',
     viewport: { width: 390, height: 800 },
+  },
+  ...[{ suffix: '' }, { suffix: '-dark', colorScheme: 'dark' }].map(({ suffix, colorScheme }) => ({
+    name: `cluster-affected-tests-selected${suffix}`,
+    description: `Affected tests of cluster #1 with its second test selected: a neutral selected row${suffix ? ' (dark)' : ''}`,
+    // Cluster #1 fails in two tests; the row clicked here picks the evidence below.
+    route: '/failure-clusters/1',
+    viewport: { width: 1280, height: 900 },
+    colorScheme,
+    of: '[data-shot="cluster-affected-tests"]',
+    pad: 12,
+    async run({ page, settle, shoot }) {
+      const card = page.locator('[data-shot="cluster-affected-tests"]');
+      const other = card.locator('[role="button"][aria-pressed="false"]').first();
+      const title = (await other.innerText()).split('\n')[0].trim();
+      await other.click();
+      await card.locator('[role="button"][aria-pressed="true"]', { hasText: title }).waitFor();
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'retry-pass-clarity',
+    description: 'Execution page first screen for a test that passed on retry (1280×800 clarity baseline)',
+    // Execution 768 failed its first attempt and passed its retry.
+    route: '/test-run-cases/768',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'retry-pass-clarity-mobile',
+    description: 'The same passed-on-retry execution first screen at phone width',
+    route: '/test-run-cases/768',
+    viewport: { width: 390, height: 800 },
+  },
+  {
+    name: 'execution-retry-pass-flake-lab',
+    description: 'Execution page first screen for a retry pass whose flake the Flake Lab reproduced (1280×800)',
+    // Execution 21 passed on retry; its next step verifies the flake fix under the condition the lab found.
+    route: '/test-run-cases/21',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'did-not-run-clarity',
+    description: 'Execution page first screen for a test that did not run (1280×800 clarity baseline)',
+    // Execution 748 never ran: its run stopped at the max-failures limit.
+    route: '/test-run-cases/748',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
+    name: 'did-not-run-clarity-mobile',
+    description: 'The same did-not-run execution first screen at phone width',
+    route: '/test-run-cases/748',
+    viewport: { width: 390, height: 800 },
+  },
+  {
+    name: 'execution-did-not-run-blocked',
+    description: 'Execution page first screen for a test an earlier failure of its serial group blocked (1280×800)',
+    // Execution 7 did not run: Most likely links the test that blocked it, and Next opens that failure.
+    route: '/test-run-cases/7',
+    viewport: { width: 1280, height: 800 },
   },
 
   // ── Desktop shell (report artifacts) ──────────────────────────────────────

@@ -195,6 +195,23 @@ export async function findActionByKey(db: DbClient, dedupeKey: string): Promise<
 }
 
 /**
+ * Free a done action's dedupe key, so the same write can be made again: the
+ * issue it filed was unlinked, and a new filing is wanted. The row stays, with
+ * its result, as the record of what was filed.
+ */
+export async function retireAction(db: DbClient, id: number): Promise<void> {
+  const [row] = await db
+    .select({ dedupeKey: integrationActions.dedupeKey })
+    .from(integrationActions)
+    .where(eq(integrationActions.id, id));
+  if (!row) return;
+  await db
+    .update(integrationActions)
+    .set({ dedupeKey: `${row.dedupeKey}:retired:${id}` })
+    .where(eq(integrationActions.id, id));
+}
+
+/**
  * Enqueue an action, or give an earlier one with the same dedupe key a new
  * payload when it has already failed or was skipped: a person who changes the
  * request after a refusal (another issue type, a filled-in field) sends the new
@@ -377,6 +394,7 @@ async function applyCreateIssue(
         title: issue.title,
         statusText: issue.status,
         statusColor: issue.statusColor,
+        statusCategory: issue.statusCategory ?? null,
       },
     });
     await tx
@@ -429,33 +447,38 @@ async function applyAttach(tracker: IssueTracker, action: IntegrationAction): Pr
   await tracker.attach(payload.issueKey, { name: payload.name, bytes: new Uint8Array(bytes), mime: payload.mime });
 }
 
+/** What a done `update-issue` action records: whether it changed the issue, or found it up to date. */
+export interface UpdateIssueResult {
+  updated: boolean;
+}
+
 /**
  * Replace the title and description of an issue Piwi filed, only while they
  * read as Piwi wrote them: an edit made in the tracker is never overwritten,
  * and an update that would send what is already there sends nothing. Returns
- * why nothing was written, or null when the issue is up to date.
+ * why nothing was written (`skipped`), or whether the issue changed.
  */
 async function applyUpdateIssue(
   db: DbClient,
   tracker: IssueTracker,
   action: IntegrationAction,
-): Promise<string | null> {
+): Promise<{ skipped: string } | UpdateIssueResult> {
   const payload = action.payload as UpdateIssueActionPayload;
-  if (!tracker.updateIssue || !tracker.readIssueText) return 'this tracker cannot update an issue';
+  if (!tracker.updateIssue || !tracker.readIssueText) return { skipped: 'this tracker cannot update an issue' };
   const [link] = await db
     .select({ metadata: entityLinks.metadata })
     .from(entityLinks)
     .where(eq(entityLinks.id, payload.linkId));
   const meta = (link?.metadata ?? null) as FiledIssueMeta | null;
   const written = meta?.written;
-  if (!link || !written) return 'Piwi did not write this description';
-  if (meta?.descriptionEdited) return 'the description was edited in the tracker';
+  if (!link || !written) return { skipped: 'Piwi did not write this description' };
+  if (meta?.descriptionEdited) return { skipped: 'the description was edited in the tracker' };
 
   const current = await tracker.readIssueText(payload.issueKey);
-  if (!current) return 'the issue no longer exists';
+  if (!current) return { skipped: 'the issue no longer exists' };
   if ((await descriptionDigest(current.description)) !== written.descriptionDigest) {
     await mergeEntityLinkMetadata(db, payload.linkId, { descriptionEdited: true });
-    return 'the description was edited in the tracker';
+    return { skipped: 'the description was edited in the tracker' };
   }
 
   const nextDocumentDigest = await documentDigest(payload.document);
@@ -465,7 +488,7 @@ async function applyUpdateIssue(
     payload.title != null && current.title === written.title && payload.title !== written.sourceTitle
       ? payload.title
       : undefined;
-  if (!body && title === undefined) return null;
+  if (!body && title === undefined) return { updated: false };
 
   await tracker.updateIssue(payload.issueKey, { title, body });
   const after = await tracker.readIssueText(payload.issueKey).catch(() => null);
@@ -479,7 +502,7 @@ async function applyUpdateIssue(
       }
     : null;
   await mergeEntityLinkMetadata(db, payload.linkId, { written: next });
-  return null;
+  return { updated: true };
 }
 
 /** Perform one comment against the tracker (queued by the comment policies). */
@@ -518,7 +541,14 @@ async function applyTransition(tracker: IssueTracker, action: IntegrationAction)
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
   | { status: 'skipped'; reason: string }
-  | { status: 'failed'; error: string; final?: boolean; fieldErrors?: Record<string, string> };
+  | {
+      status: 'failed';
+      error: string;
+      final?: boolean;
+      /** The attempt failed but the action stays queued: the outbox tries it again. */
+      retrying?: boolean;
+      fieldErrors?: Record<string, string>;
+    };
 
 /**
  * Run one action once, after the caller has claimed its row. Marks the row
@@ -553,12 +583,19 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       return { status: 'done' };
     }
     if (action.kind === 'update-issue') {
-      const skipped = await applyUpdateIssue(db, tracker, action);
+      const update = await applyUpdateIssue(db, tracker, action);
+      if ('skipped' in update) {
+        await db
+          .update(integrationActions)
+          .set({ status: 'skipped', error: update.skipped, attempts, finishedAt: now })
+          .where(eq(integrationActions.id, action.id));
+        return { status: 'skipped', reason: update.skipped };
+      }
       await db
         .update(integrationActions)
-        .set({ status: skipped ? 'skipped' : 'done', error: skipped, attempts, finishedAt: now })
+        .set({ status: 'done', error: null, result: update as never, attempts, finishedAt: now })
         .where(eq(integrationActions.id, action.id));
-      return skipped ? { status: 'skipped', reason: skipped } : { status: 'done' };
+      return { status: 'done', result: update };
     }
     if (action.kind === 'attach') {
       await applyAttach(tracker, action);
@@ -599,7 +636,13 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
       .where(eq(integrationActions.id, action.id));
     console.error(`[integrations] action ${action.id} failed (attempt ${attempts}/${OUTBOX_MAX_ATTEMPTS}): ${message}`);
     const fieldErrors = errorFields(err);
-    return { status: 'failed', error: message, final, ...(fieldErrors ? { fieldErrors } : {}) };
+    return {
+      status: 'failed',
+      error: message,
+      final,
+      retrying: next.status !== 'failed',
+      ...(fieldErrors ? { fieldErrors } : {}),
+    };
   }
 }
 

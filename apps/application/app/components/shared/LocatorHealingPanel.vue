@@ -1,25 +1,38 @@
 <script setup lang="ts">
 /**
- * Ranked alternative locators for a failing locator. Fetches healing data for a
- * test-run case and renders the ranked list, top recommendation, and source
- * note. Used on both the cluster detail page and the test-case detail page.
+ * Ranked alternative locators for a failing locator: the top recommendation,
+ * the ranked list and the source note. It renders the healing answer the host
+ * page fetched under the key `locator-healing-<testRunsCaseId>`, and refreshes
+ * that key after a pick. Used on both the cluster detail page and the test-case
+ * detail page.
  */
 
 import { defineComponent, h } from 'vue';
-import { recommendLocatorFix, locatorExpression } from '#shared/locator-healing';
+import { recommendLocatorFix, locatorExpression, hasHealingAlternatives } from '#shared/locator-healing';
 import type { RankedLocator, LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
+import { healingSourcePhrase } from '#shared/healing-source';
 import type { AiStepIntent, TraceInfo } from '~~/types/api';
 import SectionCard from './SectionCard.vue';
 import CollapsibleSectionCard from './CollapsibleSectionCard.vue';
 import SnapshotLocatorPicker from './SnapshotLocatorPicker.vue';
 
+interface HealActionChip {
+  id: number;
+  status: 'pending' | 'processing' | 'opened' | 'failed' | 'skipped';
+  prNumber: number | null;
+  prUrl: string | null;
+  branch: string;
+}
+
 const props = defineProps<{
   testRunsCaseId: number;
+  /** The execution's locator healing, as the host page fetched it (null until it lands). */
+  healing: (LocatorHealingResult & { healAction?: HealActionChip | null }) | null;
   /** When set, the panel folds to a header with a peek (persisted per user). */
   storageKey?: string;
   /**
    * Render the panel body without a card wrapper — for embedding inside another
-   * card's section (the Fix card). The provenance note leads, then the
+   * card's section (More ways to fix). The provenance note leads, then the
    * recommendation and the alternatives; the card title, icon and count are
    * dropped since the host section already labels it.
    */
@@ -43,7 +56,7 @@ const props = defineProps<{
 // Asks the host to reveal the page diff — the structural proof of a rename.
 const emit = defineEmits<{ 'show-page-diff': [] }>();
 
-// A card-less wrapper for the embedded (Fix card) variant: renders the
+// A card-less wrapper for the embedded (More ways to fix) variant: renders the
 // provenance note first, then the actions, then the body — and swallows the
 // card-only props so they never leak onto the DOM. `data-shot` still falls
 // through to the root so the docs scene keeps its target.
@@ -75,51 +88,22 @@ const BareCard = defineComponent({
   },
 });
 
-// Card-less inside the Fix card; fold on the cluster page (storageKey set);
-// a plain card on the standalone test-case page.
+// Card-less inside More ways to fix (`chrome` false); a folding card when the
+// host passes `storageKey`; else a plain card (the standalone test-case page).
 const cardComponent = computed(() =>
   props.chrome === false ? BareCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
 );
 const cardBind = computed(() => (props.chrome !== false && props.storageKey ? { storageKey: props.storageKey } : {}));
 
-interface HealActionChip {
-  id: number;
-  status: 'pending' | 'processing' | 'opened' | 'failed' | 'skipped';
-  prNumber: number | null;
-  prUrl: string | null;
-  branch: string;
-}
-
-const {
-  data: healing,
-  pending,
-  error,
-} = useFetch<LocatorHealingResult & { healAction?: HealActionChip | null }>(
-  () => `/api/test-run-cases/${props.testRunsCaseId}/locator-healing`,
-  // A stable key lets the host page share this one fetch when it hoists the
-  // same request to decide whether the Toolbox section has anything to show.
-  { lazy: true, key: `locator-healing-${props.testRunsCaseId}` },
-);
-
-const hasData = computed(
-  () =>
-    !!healing.value &&
-    healing.value.source !== 'none' &&
-    !!(
-      healing.value.fromDiffRename?.length ||
-      healing.value.fromElementMatch?.length ||
-      healing.value.fromPriorSuccess?.length ||
-      healing.value.fromAriaSnapshot?.length
-    ),
-);
+const hasData = computed(() => hasHealingAlternatives(props.healing));
 
 const alternatives = computed<RankedLocator[]>(() => {
-  if (!healing.value) return [];
+  if (!props.healing) return [];
   return (
-    healing.value.fromDiffRename ??
-    healing.value.fromElementMatch ??
-    healing.value.fromPriorSuccess ??
-    healing.value.fromAriaSnapshot ??
+    props.healing.fromDiffRename ??
+    props.healing.fromElementMatch ??
+    props.healing.fromPriorSuccess ??
+    props.healing.fromAriaSnapshot ??
     []
   );
 });
@@ -133,17 +117,17 @@ const userPick = computed<RankedLocator | null>(() => alternatives.value.find((a
 // EXCEPT when the server deliberately withheld it because every stored
 // alternative looks stale (recomputing here would resurrect a broken pick).
 const recommendation = computed<LocatorFixRecommendation | null>(() => {
-  if (healing.value?.recommendation) return healing.value.recommendation;
-  if (healing.value?.priorNameMayBeStale) return null;
+  if (props.healing?.recommendation) return props.healing.recommendation;
+  if (props.healing?.priorNameMayBeStale) return null;
   if (!alternatives.value.length) return null;
-  return recommendLocatorFix(healing.value?.failingLocator?.method, alternatives.value);
+  return recommendLocatorFix(props.healing?.failingLocator?.method, alternatives.value);
 });
 
 // Failing-page candidates shown alongside a stale stored list — the server
 // populates fromAriaSnapshot next to fromPriorSuccess only in that case.
 const supplement = computed<RankedLocator[]>(() =>
-  healing.value?.priorNameMayBeStale && healing.value.fromPriorSuccess?.length
-    ? (healing.value.fromAriaSnapshot ?? [])
+  props.healing?.priorNameMayBeStale && props.healing.fromPriorSuccess?.length
+    ? (props.healing.fromAriaSnapshot ?? [])
     : [],
 );
 
@@ -157,11 +141,11 @@ const recommendationNote = computed(() => {
 });
 
 const sourceNote = computed(() => {
-  const stale = healing.value?.priorNameMayBeStale;
+  const stale = props.healing?.priorNameMayBeStale;
   const note = (() => {
-    switch (healing.value?.source) {
+    switch (props.healing?.source) {
       case 'diff-rename': {
-        const d = healing.value.diffRename;
+        const d = props.healing.diffRename;
         const where = d ? `${d.file.split('/').pop()}:${d.line}` : 'this change';
         return d
           ? `“${d.before}” became “${d.after}” in ${where} — the same locator with the new text`
@@ -184,7 +168,7 @@ const sourceNote = computed(() => {
     }
   })();
   // Stored snapshots age — surface when the data was last captured.
-  const captured = healing.value?.capturedAt;
+  const captured = props.healing?.capturedAt;
   return captured ? `${note} · captured ${formatRelativeTime(captured)}` : note;
 });
 
@@ -192,8 +176,8 @@ const sourceNote = computed(() => {
 // fresh current-page match, amber for the limited ARIA-only fallback — and for
 // a stored list whose element looks changed since capture.
 const sourceClass = computed(() => {
-  if (healing.value?.priorNameMayBeStale) return 'text-warning-600 dark:text-warning-400';
-  switch (healing.value?.source) {
+  if (props.healing?.priorNameMayBeStale) return 'text-warning-600 dark:text-warning-400';
+  switch (props.healing?.source) {
     case 'diff-rename':
     case 'prior-run':
     case 'fingerprint':
@@ -208,7 +192,7 @@ const sourceClass = computed(() => {
 
 /** The failing locator as Playwright source, the same form every alternative renders in. */
 const failingLocatorText = computed(() => {
-  const f = healing.value?.failingLocator;
+  const f = props.healing?.failingLocator;
   return f ? locatorExpression(f.method, f.args) : '';
 });
 
@@ -257,8 +241,9 @@ function onPickFromTrace(event: MouseEvent) {
 // Interactive DOM snapshot picker
 const pickerOpen = ref(false);
 
+// The host page fetched the healing under this key; a confirmed pick refreshes it.
 async function refreshHealing() {
-  await refreshNuxtData(`/api/test-run-cases/${props.testRunsCaseId}/locator-healing`);
+  await refreshNuxtData(`locator-healing-${props.testRunsCaseId}`);
 }
 
 const { copy } = useCopy();
@@ -294,42 +279,27 @@ const appliesToNote = computed(() =>
 );
 
 // Plain-words provenance for the recommendation, echoed in the hero block so it
-// reads even when the source subtitle is folded away (cluster page).
-const recommendationSourceLabel = computed(() => {
-  if (recommended.value?.pickedByUser) return 'your confirmed pick';
-  switch (healing.value?.source) {
-    case 'diff-rename':
-      return 'from the rename in this change';
-    case 'prior-run':
-      return 'from the last passing run';
-    case 'fingerprint':
-      return 'from a prior run (line shifted)';
-    case 'cross-test':
-      return 'from another test in this project';
-    case 'element-match':
-      return 'from the current failing page';
-    case 'aria-snapshot':
-      return 'from the ARIA snapshot';
-    default:
-      return '';
-  }
-});
+// reads even when the source subtitle is folded away (cluster page). The Next
+// line names the same provenance in the same words.
+const recommendationSourceLabel = computed(
+  () => healingSourcePhrase(props.healing?.source, recommended.value?.pickedByUser) ?? '',
+);
 
 // The one-line diff (old source line → line with the failing call rewritten),
 // when the captured source line and a confident replacement are both available.
 const suggestedEdit = computed(() => {
-  const line = healing.value?.sourceLine;
+  const line = props.healing?.sourceLine;
   const rec = recommended.value;
   if (!line || !rec) return null;
-  const edit = buildLocatorEdit(line.text, healing.value?.failingLocator?.method, rec.locator);
-  return edit ? { edit, patch: locatorEditPatch(edit, healing.value?.location ?? null) } : null;
+  const edit = buildLocatorEdit(line.text, props.healing?.failingLocator?.method, rec.locator);
+  return edit ? { edit, patch: locatorEditPatch(edit, props.healing?.location ?? null) } : null;
 });
 
 // Fallback when there's no source line to rewrite but the recommendation keeps
 // the method family — show just the changed args (name 'Old' → 'New').
 const argChanges = computed(() => {
   if (suggestedEdit.value) return [];
-  const f = healing.value?.failingLocator;
+  const f = props.healing?.failingLocator;
   const rec = recommended.value;
   if (!f || !rec || rec.method !== f.method) return [];
   return diffLocatorArgs(f.args, rec.args);
@@ -337,11 +307,11 @@ const argChanges = computed(() => {
 
 function copyFixPrompt() {
   const rec = recommended.value;
-  if (!rec || !healing.value) return;
+  if (!rec || !props.healing) return;
   copyText(
     buildLocatorFixPrompt({
-      location: healing.value.location ?? null,
-      sourceLine: healing.value.sourceLine ?? null,
+      location: props.healing.location ?? null,
+      sourceLine: props.healing.sourceLine ?? null,
       failing: failingLocatorText.value,
       recommended: rec.locator,
     }),
@@ -353,7 +323,7 @@ function copyFixPrompt() {
 // The server rewrites the failing line and ships it as a git-applyable unified
 // diff; hand it over verbatim so `git apply` (or an agent) can patch the file.
 function copyGitApply() {
-  const diff = healing.value?.edit?.unifiedDiff;
+  const diff = props.healing?.edit?.unifiedDiff;
   if (diff) copyText(diff, 'git-apply', 'Patch copied');
 }
 
@@ -364,19 +334,14 @@ const visibleAlternatives = computed<RankedLocator[]>(() =>
   showAllAlternatives.value ? alternatives.value : alternatives.value.slice(0, ALT_PREVIEW),
 );
 
-const narrowing = computed(() => healing.value?.narrowingSuggestion ?? null);
+const narrowing = computed(() => props.healing?.narrowingSuggestion ?? null);
 
 // Forward the fold/scroll so a clue or AI citation to `locatorHealing` can reveal it.
 const cardRef = ref<{ reveal?: () => void } | null>(null);
-// The next-step line drives the panel's own copy/pick logic rather than
-// duplicating it: reveal the panel, then run the same action its buttons do.
+// The next-step line drives the panel's own pick and alternatives rather than
+// duplicating them: reveal the panel, then run the same action its buttons do.
 defineExpose({
   reveal: () => cardRef.value?.reveal?.(),
-  copyPatch: () => copyGitApply(),
-  copyRecommendedLocator: () => {
-    const loc = recommended.value?.locator;
-    if (loc) copyLocator(loc, 'top');
-  },
   openPicker: () => {
     cardRef.value?.reveal?.();
     pickerOpen.value = true;
@@ -391,7 +356,7 @@ defineExpose({
 <template>
   <component
     :is="cardComponent"
-    v-if="!pending && !error && hasData"
+    v-if="hasData"
     ref="cardRef"
     v-bind="cardBind"
     data-shot="alternative-locators"
@@ -571,7 +536,11 @@ defineExpose({
       </div>
 
       <!-- Ready-to-apply one-line edit, when the failing source line is known -->
-      <div v-if="suggestedEdit" class="rounded border border-default overflow-hidden bg-default">
+      <div
+        v-if="suggestedEdit"
+        data-copies="copy-git-apply copy-locator"
+        class="rounded border border-default overflow-hidden bg-default"
+      >
         <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />
       </div>
       <template v-else>
@@ -738,7 +707,7 @@ defineExpose({
        navigation error, or names no locator). One line, no ranked menu. -->
   <component
     :is="cardComponent"
-    v-else-if="chrome !== false && !pending && !error && healing?.applicable === false"
+    v-else-if="chrome !== false && healing?.applicable === false"
     v-bind="cardBind"
     data-shot="alternative-locators"
     icon="i-lucide-bandage"
@@ -755,7 +724,7 @@ defineExpose({
   <!-- No data -->
   <component
     :is="cardComponent"
-    v-else-if="!pending && !error && !hasData"
+    v-else-if="healing"
     v-bind="cardBind"
     icon="i-lucide-bandage"
     title="Locator fix"

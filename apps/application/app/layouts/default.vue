@@ -30,6 +30,16 @@ type SearchResult = {
     projectName: string;
     projectLabel: string | null;
   }[];
+  clusters: {
+    id: number;
+    /** The name the cluster pages give it. */
+    name: string;
+    status: string | null;
+    projectName: string;
+    projectLabel: string | null;
+    /** The linked issue's key, when that key is what matched. */
+    issueKey: string | null;
+  }[];
 };
 const searchResults = ref<SearchResult | null>(null);
 /** The palette's own items (pages, project tabs) match as `/api/search` does: ignoring case and accents. */
@@ -397,6 +407,22 @@ const groups = computed<CommandPaletteGroup[]>(() => {
         description: `${c.projectLabel || c.projectName} · ${c.filePath}`,
         icon: 'i-lucide-flask-conical',
         to: `/test-cases/${c.id}`,
+      })),
+    });
+  }
+
+  if (searchResults.value.clusters?.length) {
+    resultGroups.push({
+      id: 'search-clusters',
+      label: 'Failure clusters',
+      ignoreFilter: true,
+      items: searchResults.value.clusters.map((c) => ({
+        id: `cluster-${c.id}`,
+        label: c.issueKey ? `${c.issueKey} — ${c.name}` : c.name,
+        description: `Cluster #${c.id} · ${c.projectLabel || c.projectName}`,
+        suffix: c.status && c.status !== 'open' ? c.status : undefined,
+        icon: 'i-lucide-bug',
+        to: `/failure-clusters/${c.id}`,
       })),
     });
   }

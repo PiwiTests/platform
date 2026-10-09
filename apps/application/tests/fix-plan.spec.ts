@@ -128,3 +128,21 @@ test.describe.serial('Fix plan', () => {
     expect(res.status()).toBe(404);
   });
 });
+
+/**
+ * Against the demo seed (a bare test database skips it): the plan reports the
+ * patch validation stored with the diagnosis, so it agrees with the next step,
+ * which proposes applying the patch only when that validation says it applies.
+ */
+test('reports the stored patch validation the next step relies on', async ({ request }) => {
+  const res = await request.get('/api/failure-clusters/1');
+  test.skip(!res.ok(), 'demo seed not loaded on this server');
+  const cluster = (await res.json()) as { nextStep: { kind: string } };
+  test.skip(cluster.nextStep.kind !== 'apply-patch', 'cluster #1 does not propose its patch on this database');
+
+  const plan = (await (await request.get('/api/failure-clusters/1/fix-plan')).json()) as {
+    diagnosis: { patch: string | null; patchValidation: { status: string } | null } | null;
+  };
+  expect(plan.diagnosis?.patch).toBeTruthy();
+  expect(plan.diagnosis?.patchValidation?.status).toMatch(/^applies(-with-offset)?$/);
+});

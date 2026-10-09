@@ -1,44 +1,51 @@
 /**
  * The one place both failure pages turn a next-step action id into the real
  * behaviour. `NextStepLine` stays presentation-only and emits an id; the page
- * hands this composable the page-specific targets (its locator panel, its scroll
- * anchors, how it sets the cluster status, quarantines, re-runs) as callbacks,
- * and the composable owns the shared plumbing — the diagnosed patch's copy /
- * download / open-in-IDE, the recipe copy, the AI-prompt copy, the Flake Lab
- * command and its CI dispatch, the navigation —
- * so the execution page and the cluster page never duplicate the switch.
+ * hands this composable the page-specific targets (the change the row shows,
+ * its locator panel, its scroll anchors, how it sets the cluster status,
+ * quarantines, re-runs) as callbacks, and the composable owns the shared
+ * plumbing — the change's apply command, locator, download and open-in-IDE,
+ * the recipe copy, the AI-prompt copy, the Flake Lab command and its CI
+ * dispatch, the navigation (to an execution, a run and its tab) — so the
+ * execution page and the cluster page never duplicate the switch.
  */
 import { reproScript, type ReproRecipe } from '#shared/reproduce';
+import type { NextStepChange } from '~/utils/next-step-change';
 
 /** The locator healing panel's exposed actions (see `LocatorHealingPanel`). */
 export interface LocatorPanelActions {
-  copyPatch: () => void;
-  copyRecommendedLocator: () => void;
   openPicker: () => void;
   expandAlternatives: () => void;
 }
 
+/** The toolbox sections a next-step action opens. */
+type ToolboxSectionKey = 'diagnosis' | 'reproduce' | 'locator-fix';
+
 export interface NextStepActionHandlers {
   /** The cluster whose fix plan / status the code-change actions target. */
   clusterId: () => number | null | undefined;
-  /** The diagnosed patch backing copy git apply / download / open in IDE. */
-  fixPlanPatch: () => string | null;
-  /** Base filename for the downloaded patch; defaults to the cluster id. */
+  /**
+   * The change the Next row shows (`buildNextStepChange`): the copy, download
+   * and open-in-IDE actions read it, so they copy what the row shows.
+   */
+  change: () => NextStepChange | null;
+  /** Base filename for the downloaded patch; defaults to one naming the cluster. */
   patchBaseName?: () => string;
   /** The project the open-in-IDE link resolves against. */
   ideProject?: () => { id?: number | string | null; name?: string | null } | null | undefined;
-  /** The locator healing panel exposing the copy / pick / alternatives actions. */
+  /** The locator healing panel exposing the pick and alternatives actions. */
   locatorPanel: () => LocatorPanelActions | null | undefined;
   /** The local reproduction recipe backing copy-recipe. */
   reproRecipe: () => ReproRecipe | null | undefined;
   /** The endpoint the AI prompt is copied from (`?format=prompt` is appended). */
   diagnosisContextEndpoint: () => string;
   /**
-   * Reveal and scroll to a toolbox section. The diagnosis, reproduce and
-   * locator-fix actions all route through this one callback, so a page passes it
-   * once rather than three identical scroll callbacks.
+   * Open a toolbox section and scroll it into view, at the element whose
+   * `data-shot` is `anchor` when the section holds one; resolves once its body
+   * is mounted. The `pick-from-snapshot`, `all-alternatives`, `read-diagnosis`,
+   * `full-patch`, `diagnose` and `reproduce` actions use it.
    */
-  scrollToSection: (key: 'diagnosis' | 'reproduce' | 'locator-fix') => void;
+  scrollToSection: (key: ToolboxSectionKey, anchor?: string) => void | Promise<void>;
   /** Select the Attempts evidence tab. */
   selectAttemptsTab: () => void;
   /** Set the cluster's triage status. */
@@ -92,6 +99,36 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
   const { copyPrompt } = useCopyAiPrompt();
   const { copy: copyPlain } = useCopy();
   const { openInIde } = useOpenInIde();
+  const toast = useToast();
+
+  /**
+   * Run an action on the locator healing panel. A folded section renders no body,
+   * so the Locator fix section opens and scrolls into view first; with no panel
+   * on the page, an error toast says so.
+   */
+  async function onLocatorPanel(act: (panel: LocatorPanelActions) => void) {
+    await handlers.scrollToSection('locator-fix');
+    const panel = handlers.locatorPanel();
+    if (panel) act(panel);
+    else
+      toast.add({
+        title: 'Locator fix not available',
+        description: 'This page has no Locator fix section to act on.',
+        color: 'error',
+      });
+  }
+
+  /** The change the row shows, or an error toast when it has not loaded. */
+  function loadedChange(): NextStepChange | null {
+    const change = handlers.change();
+    if (!change)
+      toast.add({
+        title: 'The change is not loaded yet',
+        description: 'Reload the page, or take it from the section below.',
+        color: 'error',
+      });
+    return change;
+  }
 
   async function handle(action: string, payload?: Record<string, unknown>) {
     switch (action) {
@@ -102,38 +139,47 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
         else await navigateTo(`/test-run-cases/${id}`);
         break;
       }
+      case 'open-run': {
+        const runId = payload?.runId;
+        if (typeof runId !== 'number') break;
+        const tab = typeof payload?.tab === 'string' ? payload.tab : undefined;
+        await navigateTo({ path: `/test-runs/${runId}`, query: tab ? { tab } : {} });
+        break;
+      }
       case 'mark-resolved':
         await handlers.setClusterStatus('resolved');
         break;
       case 'reopen':
         await handlers.setClusterStatus('open');
         break;
-      case 'copy-patch':
-        handlers.locatorPanel()?.copyPatch();
+      case 'copy-locator': {
+        const locator = loadedChange()?.recommendedLocator;
+        if (locator) copyPlain(locator, { toast: 'Locator copied' });
         break;
-      case 'copy-locator':
-        handlers.locatorPanel()?.copyRecommendedLocator();
-        break;
+      }
       case 'pick-from-snapshot':
-        handlers.scrollToSection('locator-fix');
-        handlers.locatorPanel()?.openPicker();
+        await onLocatorPanel((panel) => panel.openPicker());
         break;
       case 'all-alternatives':
-        handlers.scrollToSection('locator-fix');
-        handlers.locatorPanel()?.expandAlternatives();
+        await onLocatorPanel((panel) => panel.expandAlternatives());
         break;
       case 'copy-git-apply': {
-        const patch = handlers.fixPlanPatch();
+        const patch = loadedChange()?.copyText;
         if (patch) copyGitApply(patch);
         break;
       }
       case 'download-patch': {
-        const patch = handlers.fixPlanPatch();
-        if (patch) downloadPatch(patch, handlers.patchBaseName?.() ?? `piwi-fix-cluster-${handlers.clusterId() ?? ''}`);
+        const patch = loadedChange()?.copyText;
+        const clusterId = handlers.clusterId();
+        const fallback = clusterId != null ? `piwi-fix-cluster-${clusterId}` : 'piwi-fix';
+        if (patch) downloadPatch(patch, handlers.patchBaseName?.() ?? fallback);
         break;
       }
+      case 'full-patch':
+        await handlers.scrollToSection('diagnosis', 'diagnosis-patch');
+        break;
       case 'open-in-ide': {
-        const patch = handlers.fixPlanPatch();
+        const patch = loadedChange()?.copyText;
         const target = patch ? patchTargetFile(patch) : null;
         const project = handlers.ideProject?.();
         if (target)
@@ -147,10 +193,10 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
       }
       case 'read-diagnosis':
       case 'diagnose':
-        handlers.scrollToSection('diagnosis');
+        await handlers.scrollToSection('diagnosis');
         break;
       case 'reproduce':
-        handlers.scrollToSection('reproduce');
+        await handlers.scrollToSection('reproduce');
         break;
       case 'attempts-tab':
         handlers.selectAttemptsTab();

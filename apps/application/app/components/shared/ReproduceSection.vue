@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The Reproduce section of the Fix card: a copy-paste recipe that reproduces the
+ * The Reproduce section of More ways to fix: a copy-paste recipe that reproduces the
  * failure locally (checkout, pinned install, browser, exact test command) and,
  * when the regression window is known, a generated `git bisect` that finds the
  * breaking commit. Both are shown in Linux/macOS and Windows forms; a missing
@@ -169,7 +169,7 @@ async function saveStartCommand() {
 </script>
 
 <template>
-  <div class="space-y-3" data-shot="fix-reproduce-body">
+  <div class="space-y-3" data-shot="fix-reproduce-body" data-copies="copy-recipe">
     <div class="space-y-1.5">
       <!-- The run line first — the exact test invocation. -->
       <PlatformCodeBlock

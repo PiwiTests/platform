@@ -1,15 +1,18 @@
 import type { InjectionKey } from 'vue';
 
 /**
- * Lets the diagnosis result (right column) reveal the matching evidence section
- * in the left column when a citation is clicked. The cluster page provides the
- * implementation over its section refs; other consumers get a no-op default.
+ * Lets a citation (a clue's, the Most likely line's, the diagnosis result's)
+ * reveal the evidence it names. Both failure pages provide the implementation
+ * over their evidence card and sections; other consumers get a no-op default.
  */
 export interface ClusterSectionLocator {
-  /** Whether a diagnosis section id maps to a foldable left-column section. */
+  /** Whether this page can reveal the evidence of a section id. */
   canLocate: (sectionId: string) => boolean;
-  /** Unfold and scroll the left-column section for this diagnosis section id. */
-  open: (sectionId: string) => void;
+  /**
+   * Reveal the evidence for this section id; with `index`, the one entry of its
+   * list a clue cites (a request, a console entry), which the evidence card marks.
+   */
+  open: (sectionId: string, index?: number) => void;
 }
 
 export const clusterSectionLocatorKey: InjectionKey<ClusterSectionLocator> = Symbol('clusterSectionLocator');

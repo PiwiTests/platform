@@ -237,9 +237,7 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
             class="rounded whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-primary transition-colors"
             :class="[
               full ? 'px-2.5 py-1 text-sm' : 'px-2 py-0.5 text-xs',
-              activeView === tab.value
-                ? 'bg-default shadow-sm text-primary font-medium'
-                : 'text-muted hover:text-default',
+              activeView === tab.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default',
               !tab.hasContent && activeView !== tab.value ? 'opacity-50' : '',
             ]"
             @click="view = tab.value"
@@ -277,7 +275,8 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
           <figcaption class="flex items-center gap-1 text-xs text-muted">
             <span
               v-if="shot.failed"
-              class="inline-block size-1.5 shrink-0 rounded-full bg-red-500"
+              class="inline-block size-1.5 shrink-0 rounded-full"
+              :class="STATUS_PALETTE.failed.bg"
               aria-hidden="true"
             />
             <span class="truncate" :title="shot.name">{{ shot.name }}</span>
@@ -305,7 +304,8 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
       <figcaption class="flex items-center gap-1 text-xs text-muted">
         <span
           v-if="domAt?.phase !== 'before'"
-          class="inline-block size-1.5 shrink-0 rounded-full bg-red-500"
+          class="inline-block size-1.5 shrink-0 rounded-full"
+          :class="STATUS_PALETTE.failed.bg"
           aria-hidden="true"
         />
         {{ domCaption }}

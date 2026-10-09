@@ -3,6 +3,7 @@ import {
   describeCluster,
   clusterFallbackTitle,
   clusterSignatureLine,
+  clusterErrorTypeLabel,
   headlineAddsValue,
 } from '#shared/describe-cluster';
 import { extractErrorSignature } from '#shared/error-fingerprint';
@@ -164,5 +165,27 @@ describe('headlineAddsValue', () => {
     expect(
       headlineAddsValue('Strict-mode violation on getByRole(button)', 'getByRole(button) matched 3 elements'),
     ).toBe(true);
+  });
+
+  test('a test timeout the name lacks adds value', () => {
+    expect(
+      headlineAddsValue(
+        "Error on getByRole('button') in payment.ts",
+        "Test timed out after 30 s while clicking getByRole('button', { name: 'Pay' })",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('clusterErrorTypeLabel', () => {
+  test('names a known error type', () => {
+    expect(clusterErrorTypeLabel('assertion')).toBe('assertion');
+    expect(clusterErrorTypeLabel('timeout')).toBe('timeout');
+  });
+
+  test('says nothing for an unknown or missing type', () => {
+    expect(clusterErrorTypeLabel('unknown')).toBeNull();
+    expect(clusterErrorTypeLabel(null)).toBeNull();
+    expect(clusterErrorTypeLabel('')).toBeNull();
   });
 });

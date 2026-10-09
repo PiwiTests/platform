@@ -15,9 +15,9 @@ import { isLabRun } from './probes';
 
 import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
-import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
+import type { ClusterLatestHeadline, OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
-import { isTrackerLink } from './known-issues';
+import { clusterIssueFilings, clusterKnownIssues, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
   getQuarantinedCaseIds,
@@ -30,52 +30,118 @@ import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type Snooz
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
-import { computeClusterState, type ClusterState } from '#shared/cluster-state';
+import { caseHeadline } from '#shared/failure-verdict';
+import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
-import { isPassiveCapabilityDeclined } from './capabilities';
+import { isCapabilityHidden, isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
+import type { LocatorHealingResult } from '#shared/locator-healing.types';
+import {
+  patchApplies,
+  patchStillAppliesAtFix,
+  storedPatchValidation,
+  storedPatchValidationAtFix,
+  type PatchValidationStatus,
+} from '#shared/patch';
 import type { BisectResult } from '@piwitests/core/bisect';
 import type { BisectedCommit } from '#shared/reproduce';
-import { storedPatchValidation } from '#shared/patch';
-
-/** Whether a stored patch validation reports the patch applying to the current tree. */
-function patchApplies(status: unknown): boolean {
-  return status === 'applies' || status === 'applies-with-offset';
-}
 
 /**
- * The cluster's completed diagnosis reduced to the facts the next-step policy
- * reads: whether a completed diagnosis exists, its one-line summary, the file
- * its patch touches, and whether that patch validates as applying cleanly.
+ * The cluster's completed diagnosis reduced to the facts the cluster state and
+ * the next-step policy read: whether a completed diagnosis exists, its one-line
+ * summary, the file its patch touches, whether it has a patch and how that
+ * patch validated against the code the model was shown, and whether it still
+ * applied at the commit of the cluster's verified fix.
  */
 export interface ClusterPatchFacts {
   diagnosisCompleted: boolean;
   summary: string | null;
   patchFile: string | null;
+  hasPatch: boolean;
+  patchValidationStatus: PatchValidationStatus | null;
   patchAppliesCleanly: boolean;
+  /** The patch still applied at the commit of the fix that landed in `fixLandedRunId`, its change not there. */
+  patchAppliesAtFix: boolean;
 }
 
-export async function getClusterPatchFacts(db: DrizzleDB, clusterId: number): Promise<ClusterPatchFacts> {
+export async function getClusterPatchFacts(
+  db: DrizzleDB,
+  clusterId: number,
+  cluster: { fixLandedRunId?: number | null } = {},
+): Promise<ClusterPatchFacts> {
   const [diag] = await db
     .select({ status: failureDiagnoses.status, summary: failureDiagnoses.summary, details: failureDiagnoses.details })
     .from(failureDiagnoses)
     .where(and(eq(failureDiagnoses.clusterId, clusterId), eq(failureDiagnoses.scope, 'cluster')));
   if (!diag || diag.status !== 'completed') {
-    return { diagnosisCompleted: false, summary: null, patchFile: null, patchAppliesCleanly: false };
+    return {
+      diagnosisCompleted: false,
+      summary: null,
+      patchFile: null,
+      hasPatch: false,
+      patchValidationStatus: null,
+      patchAppliesCleanly: false,
+      patchAppliesAtFix: false,
+    };
   }
   const details = (diag.details ?? null) as {
     suggestedFix?: { patch?: unknown; file?: unknown; description?: unknown };
   } | null;
   const sf = details?.suggestedFix ?? null;
-  const patch = typeof sf?.patch === 'string' ? sf.patch : null;
+  const hasPatch = typeof sf?.patch === 'string' && sf.patch.trim() !== '';
   const validationStatus = storedPatchValidation(details)?.status ?? null;
   return {
     diagnosisCompleted: true,
     summary: diag.summary ?? (typeof sf?.description === 'string' ? sf.description : null),
     patchFile: typeof sf?.file === 'string' ? sf.file : null,
-    patchAppliesCleanly: Boolean(patch) && patchApplies(validationStatus),
+    hasPatch,
+    patchValidationStatus: hasPatch ? validationStatus : null,
+    patchAppliesCleanly: hasPatch && patchApplies(validationStatus),
+    patchAppliesAtFix: hasPatch && patchStillAppliesAtFix(storedPatchValidationAtFix(details), cluster.fixLandedRunId),
+  };
+}
+
+/**
+ * The headline of a cluster's latest occurrence, read from its stored error and
+ * steps; the cluster's sample error, kept from its first occurrence, when that
+ * execution has none. Null when neither carries an error.
+ */
+export function clusterLatestHeadline(
+  cluster: { sampleError: string | null; lastSeenRunId: number; firstSeenRunId: number },
+  latestExec: { error: string | null; steps: unknown } | null,
+): ClusterLatestHeadline | null {
+  const latest = latestExec?.error ? caseHeadline({ error: latestExec.error, steps: latestExec.steps }) : null;
+  if (latest) return { parts: latest.parts, detail: latest.detail, source: 'latest', runId: cluster.lastSeenRunId };
+  const first = cluster.sampleError ? caseHeadline({ error: cluster.sampleError }) : null;
+  return first ? { parts: first.parts, detail: first.detail, source: 'first', runId: cluster.firstSeenRunId } : null;
+}
+
+/** The locator-healing facts the next-step policy reads. */
+export interface HealingStepFacts {
+  hasHealingRecommendation: boolean;
+  healingEditAvailable: boolean;
+}
+
+/**
+ * The next-step facts of one execution's locator healing: a usable
+ * recommendation, counted only in a project that shows locator healing (the
+ * capability neither declined nor inapplicable, the rule its Locator fix section
+ * follows), and whether it comes with a git-applyable edit of the failing line.
+ */
+export async function getHealingStepFacts(
+  db: DrizzleDB,
+  projectId: number | null | undefined,
+  healing: LocatorHealingResult | null,
+): Promise<HealingStepFacts> {
+  const recommends = Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended);
+  const shown =
+    recommends && projectId != null && !(await isCapabilityHidden(db, projectId, 'locator-healing').catch(() => false));
+  return {
+    hasHealingRecommendation: shown,
+    healingEditAvailable: shown && Boolean(healing?.edit?.unifiedDiff),
   };
 }
 
@@ -163,21 +229,25 @@ export async function getFailureCluster(
   // chip and the per-test / "Quarantine all affected" actions on the page.
   const quarantinedIds = await getQuarantinedCaseIds(db, cluster.projectId);
 
-  // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.).
-  const links = await db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId));
+  // Known-issue links pinned to this cluster (Jira / GitHub issue, etc.), and
+  // whether a filing for it waits on the tracker or failed for good.
+  // Newest first, so every reader that takes the first agrees with the known issue.
+  const [links, filings, knownIssues] = await Promise.all([
+    db.select().from(entityLinks).where(eq(entityLinks.failureClusterId, clusterId)).orderBy(desc(entityLinks.id)),
+    clusterIssueFilings(db, [clusterId]),
+    clusterKnownIssues(db, [clusterId]),
+  ]);
 
-  // The newest tracker link's status drives the "ticket is Done — reconcile?"
-  // state line: a link the sync can write back through (Jira, or one with a connection).
-  const reconcileLink = links
-    .filter((l: any) => l.key && (l.provider === 'jira' || l.connectionId != null))
-    .sort((a: any, b: any) => b.id - a.id)[0];
-  const reconcileKnownIssue = reconcileLink?.key
-    ? { key: reconcileLink.key as string, statusCategory: (reconcileLink.metadata as any)?.statusCategory ?? null }
-    : null;
+  // The cluster's known issue — the newest tracker link, one rule for every
+  // surface — and its status, which drives the ticket-done state (the reconcile
+  // once the failure stopped).
+  const knownIssue = knownIssues.get(clusterId) ?? null;
+  const reconcileKnownIssue = knownIssue ? { key: knownIssue.key, statusCategory: knownIssue.statusCategory } : null;
 
   // The cluster's owner from the representative test's `piwi:owner` annotation
-  // (the most-affected test wins). The server route layers CODEOWNERS on top when
-  // no annotation exists, the same as the execution page's verdict owner.
+  // (the most-affected test wins). The server route adds the CODEOWNERS owner when
+  // no annotation exists; the execution page resolves it the same way through
+  // `getTestRunCase`'s `resolveOwner`.
   const annotationOwner = (affectedTestCases[0] as { owner?: string | null } | undefined)?.owner ?? null;
   const owner = annotationOwner
     ? { name: annotationOwner, source: 'annotation' as const }
@@ -186,10 +256,10 @@ export async function getFailureCluster(
   // The project's recent runs, newest first — the frame for both the occurrence
   // sparkline (last 20) and the "still failing / quiet" decision.
   const projectRuns = await db
-    .select({ id: testRuns.id, startedAt: testRuns.startTime })
+    .select({ id: testRuns.id, startedAt: testRuns.startTime, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, cluster.projectId))
-    .orderBy(desc(testRuns.startTime))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(50);
   const seriesRuns = projectRuns.slice(0, 20);
   const seriesRunIds = seriesRuns.map((r) => r.id);
@@ -209,6 +279,29 @@ export async function getFailureCluster(
 
   const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
 
+  // Whether the failure goes on in the project's latest finished run, and the Done
+  // ticket to reconcile once it stopped: the rules the execution page follows too.
+  const latestFinishedRun =
+    projectRuns.find((r) => !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(r.status)) ?? null;
+  const goesOn = failureGoesOn(
+    lastRun ? { id: cluster.lastSeenRunId, startTime: lastRun.startTime } : null,
+    latestFinishedRun ? { id: latestFinishedRun.id, startTime: latestFinishedRun.startedAt } : null,
+  );
+  const ticketDoneKey = ticketReconcileKey(
+    {
+      status: cluster.status ?? 'open',
+      fixVerification: cluster.fixVerification ?? null,
+      snoozedUntil: cluster.snoozedUntil ?? null,
+      snoozeMode: cluster.snoozeMode ?? null,
+      knownIssue: reconcileKnownIssue,
+    },
+    { failureGoesOn: goesOn, now: opts.now },
+  );
+
+  // The cluster's diagnosed patch: whether it still applied at the verified fix's
+  // commit decides both whether that fix is confirmed and the next step.
+  const patchFacts = await getClusterPatchFacts(db, clusterId, { fixLandedRunId: cluster.fixLandedRunId });
+
   const clusterState: ClusterState = computeClusterState(
     {
       status: cluster.status ?? 'open',
@@ -226,18 +319,20 @@ export async function getFailureCluster(
       affectedTests: Number(countRow?.affectedTests ?? 0),
       quarantinedTests: quarantinedCount,
       knownIssue: reconcileKnownIssue,
+      diagnosedPatchApplies: patchFacts.patchAppliesAtFix,
     },
-    { runIdsNewestFirst: projectRuns.map((r) => r.id), now: opts.now },
+    { runIdsNewestFirst: projectRuns.map((r) => r.id), failureGoesOn: goesOn, now: opts.now },
   );
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
   // healing and error kind, plus the cluster's diagnosed patch and fix state.
-  const patchFacts = await getClusterPatchFacts(db, clusterId);
-  let hasHealingRecommendation = false;
+  let healingFacts: HealingStepFacts = { hasHealingRecommendation: false, healingEditAvailable: false };
   let latestErrorKind: ReturnType<typeof parsePlaywrightError>['kind'] | null = null;
   let flakeLab: FlakeLabStepFacts | null = null;
+  // The latest occurrence's stored error and steps also give the page its headline.
+  let latestExec: { error: string | null; steps: unknown } | null = null;
   if (latestOccurrence?.id) {
-    const [healing, [latestExec]] = await Promise.all([
+    const [healing, [execRow]] = await Promise.all([
       getLocatorHealing(db, latestOccurrence.id).catch(() => null),
       db
         .select({
@@ -249,19 +344,20 @@ export async function getFailureCluster(
         .from(testRunsCases)
         .where(eq(testRunsCases.id, latestOccurrence.id)),
     ]);
-    hasHealingRecommendation = Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended);
-    if (latestExec?.error) {
-      latestErrorKind = parsePlaywrightError(latestExec.error, {
+    latestExec = execRow ?? null;
+    healingFacts = await getHealingStepFacts(db, cluster.projectId, healing);
+    if (execRow?.error) {
+      latestErrorKind = parsePlaywrightError(execRow.error, {
         stepParams: failingStepParams(
-          Array.isArray(latestExec.steps) ? (latestExec.steps as Parameters<typeof failingStepParams>[0]) : null,
-          latestExec.error,
+          Array.isArray(execRow.steps) ? (execRow.steps as Parameters<typeof failingStepParams>[0]) : null,
+          execRow.error,
         ),
       }).kind;
     }
     // The latest occurrence passed on a retry, or its test's history both fails and
     // passes: the Flake Lab may hold the next step.
     const testCaseId = latestOccurrence.testCaseId;
-    const retryPassed = latestExec?.status === 'passed' && (latestExec.retries ?? 0) > 0;
+    const retryPassed = execRow?.status === 'passed' && (execRow.retries ?? 0) > 0;
     if (
       testCaseId != null &&
       (retryPassed || (await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) &&
@@ -280,11 +376,15 @@ export async function getFailureCluster(
     fixVerification: cluster.fixVerification ?? null,
     fixLandedRunId: cluster.fixLandedRunId ?? null,
     fixCommit: cluster.fixCommit ?? null,
-    hasHealingRecommendation,
+    ticketDoneKey,
+    ...healingFacts,
     diagnosisCompleted: patchFacts.diagnosisCompleted,
     diagnosisSummary: patchFacts.summary,
     patchFile: patchFacts.patchFile,
+    hasPatch: patchFacts.hasPatch,
+    patchValidationStatus: patchFacts.patchValidationStatus,
     patchAppliesCleanly: patchFacts.patchAppliesCleanly,
+    patchAppliesAtFix: patchFacts.patchAppliesAtFix,
     errorKind: latestErrorKind,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,
@@ -295,6 +395,7 @@ export async function getFailureCluster(
 
   return {
     ...cluster,
+    latestHeadline: clusterLatestHeadline(cluster, latestExec),
     affectedTests: Number(countRow?.affectedTests ?? 0),
     lastSeenRunStatus: lastRun?.status ?? null,
     lastSeenAt: lastRun?.startTime ?? null,
@@ -307,6 +408,7 @@ export async function getFailureCluster(
           category: diag.category,
           confidence: diag.confidence,
           summary: diag.summary,
+          provider: diag.provider,
         }
       : null,
     project: project ?? null,
@@ -320,7 +422,11 @@ export async function getFailureCluster(
       quarantined: quarantinedIds.has(t.testCaseId),
     })),
     links,
+    knownIssue,
+    issueFilingQueued: filings.queued.has(clusterId),
+    issueFilingFailure: filings.failures.get(clusterId) ?? null,
     owner,
+    failureGoesOn: goesOn,
     clusterState,
     occurrenceSeries,
     nextStep,
@@ -916,6 +1022,11 @@ export interface ClusterOccurrenceTrend {
   regressedAt: string | null;
 }
 
+/** The start of a `days`-day trend window ending at `now`: the UTC start of its first day. */
+export function clusterTrendStart(now: number, days: number): number {
+  return Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+}
+
 /**
  * A cluster's occurrences over time: its failing executions per UTC day, week
  * or month over the last `days` days (lab runs left out), with the moment
@@ -933,7 +1044,7 @@ export async function getClusterOccurrenceTrend(
   if (!cluster) throw new Error('Failure cluster not found');
   const days = Math.min(3650, Math.max(1, Math.round(options.days ?? CLUSTER_TREND_DEFAULT_DAYS)));
   const now = options.now ?? Date.now();
-  const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+  const from = clusterTrendStart(now, days);
 
   const rows: Array<{ testCaseId: number; startTime: Date; metadata: unknown }> = await db
     .select({ testCaseId: testRunsCases.testCaseId, startTime: testRuns.startTime, metadata: testRuns.metadata })

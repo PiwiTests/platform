@@ -14,6 +14,7 @@
  * frame would only add width-eating gutters.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
+import { CARD_ICON_CLASS } from '~/utils';
 
 withDefaults(
   defineProps<{
@@ -28,7 +29,7 @@ withDefaults(
     /** Drop the card frame and padding — render a plain heading row over the body. */
     embedded?: boolean;
   }>(),
-  { iconClass: 'text-primary' },
+  { iconClass: CARD_ICON_CLASS },
 );
 </script>
 
@@ -46,7 +47,7 @@ withDefaults(
         v-if="title || icon || count != null || subtitle || $slots.subtitle"
         class="flex items-center gap-2 min-w-0 sm:basis-56 sm:grow"
       >
-        <UIcon v-if="icon" :name="icon" class="w-5 h-5 shrink-0" :class="iconClass" />
+        <UIcon v-if="icon" :name="icon" class="w-5 h-5 shrink-0" :class="iconClass" data-card-icon />
         <div class="min-w-0">
           <h3 v-if="title || count != null" class="text-base font-medium inline-flex items-center gap-1">
             {{ title }}<template v-if="count != null"> ({{ count }})</template>
@@ -77,7 +78,7 @@ withDefaults(
            legend, two buttons) never crushes the heading or the subtitle. -->
       <div class="flex flex-col gap-y-1 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap sm:gap-x-2">
         <div class="flex items-center gap-2 min-w-0 sm:basis-56 sm:grow">
-          <UIcon v-if="icon" :name="icon" class="w-5 h-5 shrink-0" :class="iconClass" />
+          <UIcon v-if="icon" :name="icon" class="w-5 h-5 shrink-0" :class="iconClass" data-card-icon />
           <div class="min-w-0">
             <h3 class="text-lg font-medium inline-flex items-center gap-1">
               {{ title }}<template v-if="count != null"> ({{ count }})</template>

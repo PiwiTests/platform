@@ -44,7 +44,10 @@ async function resolveClusterId(db: DbClient, entityType: DraftEntityType, entit
   return row?.clusterId ?? null;
 }
 
-/** A tracker link already pinned to the cluster, as a candidate. */
+/**
+ * A tracker link already pinned to the cluster, as a candidate. A Done issue is
+ * not one: a failure that goes on under a closed issue calls for a new one.
+ */
 async function linkedCandidates(db: DbClient, clusterId: number): Promise<ExistingIssueCandidate[]> {
   const links = await db
     .select()
@@ -52,6 +55,7 @@ async function linkedCandidates(db: DbClient, clusterId: number): Promise<Existi
     .where(and(eq(entityLinks.failureClusterId, clusterId), isNotNull(entityLinks.key)));
   return links
     .filter((l) => l.provider === 'jira' || l.connectionId != null)
+    .filter((l) => (l.metadata as { statusCategory?: string | null } | null)?.statusCategory !== 'done')
     .map((l) => ({
       key: l.key ?? '',
       url: l.url,
@@ -227,6 +231,9 @@ export async function buildIssueDraft(
     entityType,
     entityId,
     clusterId,
+    projectId,
+    projectBound: Boolean(resolved.projectKey && resolved.issueType),
+    linksBack: Boolean(opts.siteUrl),
     title: built.title,
     connectionId: chosenId,
     connections,
@@ -271,6 +278,9 @@ async function buildBugReportDraft(
     entityType: 'bug_report',
     entityId: bugReportId,
     clusterId: null,
+    projectId: report.projectId,
+    projectBound: Boolean(resolved.projectKey && resolved.issueType),
+    linksBack: Boolean(opts.siteUrl),
     title: built.title,
     connectionId: chosenId,
     connections,

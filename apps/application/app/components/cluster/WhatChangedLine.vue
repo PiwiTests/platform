@@ -4,23 +4,32 @@
  * the commits between the last passing run and this failure. With a resolved
  * diff or a hand-picked commit range it sums the range up — commits, files, what
  * they are counted from — and links to the full card below the block, where the
- * baseline picker, the commits and the diff live. With nothing to diff it says
- * why and what fills the gap (a token, the reporter's Git metadata), keeps the
- * range usable where it is known — the host's compare page, the local `git log`
- * — and offers the commit browser where one can work, so a cluster without a
- * baseline is not a dead end: picking commits opens the card.
+ * baseline picker, the commits and the diff live. A gap the configuration fills
+ * (no commit or repository recorded, a host Piwi does not read or that did not
+ * answer) is the range in the meta style, the host's error when it returned one,
+ * the host's compare page when there is one, and a help hint that says what to
+ * set up; the page's More actions copy the `git log` command. Any other case
+ * with nothing to diff says why, keeps the range usable where it is known, and
+ * offers the commit browser where one can work, so a cluster without a baseline
+ * is not a dead end: picking commits opens the card. Until the coverage
+ * arrives, the line says it is looking.
  */
-import { docsUrl } from '#shared/docs';
-
-const { clusterId, coverage, scmChanges, selectedCommitShas, autoSelectedCommits, contextLoading, hasChangesToShow } =
-  useClusterDiagnosis();
+const {
+  clusterId,
+  coverage,
+  scmChanges,
+  selectedCommitShas,
+  autoSelectedCommits,
+  contextLoading,
+  contextLoaded,
+  hasChangesToShow,
+} = useClusterDiagnosis();
 
 const emit = defineEmits<{
   /** "See the changes" — the page scrolls to the card below the block. */
   see: [];
 }>();
 
-const { canSeeAdmin } = useAuth();
 const { copy, copied } = useCopy();
 const status = computed(() => describeScmStatus(coverage.value?.scm));
 const commitBrowserOpen = ref(false);
@@ -33,13 +42,6 @@ const canBrowse = computed(() => {
   if (!scm || status.value.kind === 'no-repository' || status.value.kind === 'unsupported-host') return false;
   return Boolean(scm.provider || !scm.hasLastGreen);
 });
-
-/** Where the reporter's Git metadata is documented, when the runs lack it. */
-const metadataDocs = computed(() =>
-  status.value.kind === 'no-commit' || status.value.kind === 'no-repository'
-    ? docsUrl('reference/test-metadata#scm-information-git')
-    : null,
-);
 
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
@@ -63,8 +65,8 @@ const summary = computed(() => {
 
 <template>
   <p data-shot="what-changed" class="flex flex-wrap items-center gap-x-2 gap-y-1">
-    <!-- Resolving: the context is being fetched and there is no diff yet -->
-    <template v-if="contextLoading && !scmChanges">
+    <!-- Resolving: the context has not arrived yet, or is being fetched with no diff yet -->
+    <template v-if="!contextLoaded || (contextLoading && !scmChanges)">
       <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin shrink-0" />
       <span>Looking for the change that broke this…</span>
     </template>
@@ -79,23 +81,43 @@ const summary = computed(() => {
     <template v-else-if="hasChangesToShow">
       <span>
         {{ status.text }}
-        <span v-if="status.detail" class="text-muted" :title="status.error ?? undefined">— {{ status.detail }}</span>
+        <span v-if="status.detail" class="text-muted">— {{ status.detail }}</span>
+      </span>
+      <span v-if="status.errorText" class="text-xs text-muted break-words" data-testid="what-changed-error">
+        {{ status.errorText }}
       </span>
       <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('see')">Change the range</button>
     </template>
 
-    <!-- Nothing to diff: why, what fills the gap, and the range where it is known -->
+    <!-- A setup gap: the range, the host's error, its compare page, and the help that says what to set up -->
+    <template v-else-if="status.setupGap">
+      <!-- The whole line is one meta style, the range included (the typography rule's one exception to mono code). -->
+      <span class="text-xs text-muted" data-testid="what-changed-range">
+        <template v-if="status.range">{{ status.range }} {{ status.origin }}</template>
+        <template v-else>No commit recorded</template>
+      </span>
+      <span v-if="status.errorText" class="text-xs text-muted break-words" data-testid="what-changed-error">
+        {{ status.errorText }}
+      </span>
+      <a
+        v-if="status.compare"
+        :href="status.compare.url"
+        target="_blank"
+        rel="noopener"
+        :class="[SENTENCE_LINK_CLASS, 'text-xs text-muted']"
+        data-testid="what-changed-compare"
+      >
+        {{ status.compare.label }}
+      </a>
+      <HelpHint v-if="status.help" :topic="status.help" />
+    </template>
+
+    <!-- Nothing to diff: why, what to do, and the range where it is known -->
     <template v-else>
       <span>
         {{ status.text }}
-        <span v-if="status.detail" class="text-muted" :title="status.error ?? undefined">— {{ status.detail }}</span>
+        <span v-if="status.detail" class="text-muted">— {{ status.detail }}</span>
       </span>
-      <NuxtLink v-if="status.needsToken && canSeeAdmin" to="/settings/ai" :class="SENTENCE_LINK_CLASS">
-        Add a token
-      </NuxtLink>
-      <a v-if="metadataDocs" :href="metadataDocs" target="_blank" rel="noopener" :class="SENTENCE_LINK_CLASS">
-        How runs record Git
-      </a>
       <a
         v-if="status.compare"
         :href="status.compare.url"

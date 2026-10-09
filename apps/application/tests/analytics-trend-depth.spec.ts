@@ -165,8 +165,19 @@ test.describe.serial('Analytics trend depth', () => {
     const trend = await (await request.get(`/api/failure-clusters/${clusterId}/occurrence-trend?days=7`)).json();
     expect(trend.buckets.reduce((n: number, b: { occurrences: number }) => n + b.occurrences, 0)).toBe(1);
     await page.goto(`/failure-clusters/${clusterId}`);
-    await expect(page.locator('[data-shot="cluster-occurrence-trend"]')).toContainText('1 occurrences', {
-      timeout: 30_000,
-    });
+    await waitForHydration(page);
+
+    // Folded to one line: the count, in the singular, and no chart.
+    const card = page.locator('[data-shot="cluster-occurrence-trend"]');
+    await expect(card).toContainText('1 occurrence', { timeout: 30_000 });
+    await expect(card).not.toContainText('1 occurrences');
+    const header = card.locator('[role="button"][aria-expanded]').first();
+    await expect(header).toHaveAttribute('aria-expanded', 'false');
+    await expect(card.locator('svg.block')).toBeHidden();
+
+    // Its header opens the chart.
+    await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+    await expect(card.locator('svg.block').first()).toBeVisible();
   });
 });

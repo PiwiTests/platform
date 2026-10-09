@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * The round mark in front of a step of the execution timeline: `–` when the
- * test did not run, a red `✗` for a failure (the step that failed, a step
- * around it, or another error the test ended with), a grey `✗` for an error
- * the test caught and went on from, and a green `✓` for a step that passed.
+ * test did not run, a `✗` in the failed outcome color for a failure (the step
+ * that failed, a step around it, or another error the test ended with), a grey
+ * `✗` for an error the test caught and went on from, and a muted `✓` for a step
+ * that passed, so the failure is the only colored mark in the column.
  */
 import type { StepFailureRole } from '#shared/step-tree';
 
@@ -32,17 +33,9 @@ const mark = computed(() => {
     };
   }
   if (props.role) {
-    return {
-      text: '✗',
-      title: FAILED_TITLE[props.role],
-      class: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
-    };
+    return { text: '✗', title: FAILED_TITLE[props.role], class: STATUS_PALETTE.failed.chip };
   }
-  return {
-    text: '✓',
-    title: 'Step passed',
-    class: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400',
-  };
+  return { text: '✓', title: 'Step passed', class: 'text-muted' };
 });
 </script>
 

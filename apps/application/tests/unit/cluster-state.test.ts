@@ -25,11 +25,11 @@ function cluster(overrides: Partial<ClusterStateCluster> = {}): ClusterStateClus
 }
 
 describe('computeClusterState — one row per kind', () => {
-  test('failing: last seen in the latest run, open, unassigned', () => {
+  test('failing: last seen in the latest run, with no word on a missing assignee', () => {
     const s = computeClusterState(cluster({ lastSeenRunId: 62 }), PROJECT);
     expect(s.kind).toBe('failing');
-    expect(s.sentence).toContain('Still failing');
-    expect(s.sentence).toContain('run #62');
+    expect(s.sentence).toBe('Still failing — last seen 9 hours ago in run #62.');
+    expect(s.sentence).not.toContain('unassigned');
     expect(s.action).toBeNull();
   });
 
@@ -56,6 +56,61 @@ describe('computeClusterState — one row per kind', () => {
     expect(s.sentence).toContain('demo010');
     expect(s.sentence).toContain('verified, still marked open');
     expect(s.action).toBe('mark-resolved');
+  });
+
+  test('fix-unconfirmed: verified, but the diagnosed patch still applies', () => {
+    const s = computeClusterState(
+      cluster({
+        fixVerification: 'diagnosis-verified',
+        fixLandedRunId: 62,
+        fixCommit: 'demo010',
+        diagnosedPatchApplies: true,
+      }),
+      PROJECT,
+    );
+    expect(s.kind).toBe('fix-unconfirmed');
+    expect(s.sentence).toBe(
+      'Fixed in run #62 (demo010), but the diagnosed patch still applies, so the change may not be in the code yet.',
+    );
+    expect(s.parts.find((p) => p.kind === 'run')).toMatchObject({ id: 62 });
+    // No reconcile on the state line: the Next line leads with the patch.
+    expect(s.action).toBeNull();
+  });
+
+  test('fix-verified-open stays when the diagnosed patch no longer applies', () => {
+    const s = computeClusterState(
+      cluster({ fixVerification: 'diagnosis-verified', fixLandedRunId: 62, diagnosedPatchApplies: false }),
+      PROJECT,
+    );
+    expect(s.kind).toBe('fix-verified-open');
+    expect(s.action).toBe('mark-resolved');
+  });
+
+  test('only a diagnosis-verified fix is unconfirmed by a patch that still applies', () => {
+    const stopped = computeClusterState(
+      cluster({ fixVerification: 'stopped-failing', fixLandedRunId: 62, diagnosedPatchApplies: true }),
+      PROJECT,
+    );
+    expect(stopped.kind).toBe('stopped-failing-open');
+    const regressed = computeClusterState(
+      cluster({ fixVerification: 'regressed', fixCommit: 'demo001', diagnosedPatchApplies: true }),
+      PROJECT,
+    );
+    expect(regressed.kind).toBe('regressed');
+  });
+
+  test('resolved, a snooze and a Done ticket that stopped failing come before fix-unconfirmed', () => {
+    const unconfirmed = { fixVerification: 'diagnosis-verified', diagnosedPatchApplies: true } as const;
+    expect(computeClusterState(cluster({ ...unconfirmed, status: 'resolved' }), PROJECT).kind).toBe('resolved');
+    expect(
+      computeClusterState(cluster({ ...unconfirmed, snoozedUntil: new Date('2026-09-10T00:00:00Z') }), PROJECT).kind,
+    ).toBe('snoozed');
+    expect(
+      computeClusterState(
+        cluster({ ...unconfirmed, lastSeenRunId: 63, knownIssue: { key: 'CHK-7', statusCategory: 'done' } }),
+        { ...PROJECT, failureGoesOn: false },
+      ).kind,
+    ).toBe('ticket-done');
   });
 
   test('stopped-failing-open: stopped, no fix identified', () => {

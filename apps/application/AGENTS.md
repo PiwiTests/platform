@@ -281,18 +281,33 @@ summaries, list rows). Dense tables and code views are exempt only where a rule 
 - **Four text styles per block, no more**: a heading (`text-lg sm:text-xl font-semibold text-highlighted`, at most
   one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-sm font-semibold
 text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
-  commit — is the body or meta style in `font-mono`. Nothing else in the block: no `text-toned`/`text-dimmed` mixed
-  with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
+  commit — is the body or meta style in `font-mono`. One exception: the commit range of a _What changed_ setup gap
+  (`a1b2c3d..e4f5a6b since the last passing run`) is a line of meta facts with no sentence, and keeps the meta font
+  so the cluster block stays within its text-style budget. Nothing else in the block: no `text-toned`/`text-dimmed`
+  mixed with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
 - **Structure with layout, not with styling.** A block with several kinds of lines gets one label column
-  (`SituationBlock` renders a `<dl>` with an 8 rem label column: _Most likely_, _Situation_, _State_, _Next_), so the
-  reader scans labels, not formatting. A badge, a color or a bold span is never what tells two lines apart.
+  (`SituationBlock` renders a `<dl>` with an 8 rem label column), so the reader scans labels, not formatting. A badge,
+  a color or a bold span is never what tells two lines apart.
+- **The situation block reads explanation, action, context**, in the one order of `SITUATION_ROWS`
+  (`app/utils/situation-rows.ts`): _Most likely_ first, then _State_ right above _Next_, then the context lines, the
+  cluster and its ticket first (the execution page's _Cluster_ line ends with the ticket, the cluster page's _Issue_
+  line holds it). A page fills the lines it has and never reorders them; a new line takes its place in that list.
+  Facts about the execution itself (since when, whether it is the latest) are the meta line under the headline.
 - **The situation block's left edge carries the page's status color** (`SituationBlock :edge`): the execution's
   outcome color, the cluster state's dot color. It is the status, not an accent, and nothing else in the block
   repeats it.
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated
   element the reader is meant to click. Every other button is `color="neutral"` — `variant="outline"` for a secondary
   action, `variant="ghost"` for a disclosure or a menu trigger. No `warning`, `success` or `soft` buttons for ordinary
-  actions.
+  actions. A selected tab, a pressed switch or a selected row is neutral too, never `primary`: `SELECTED_TAB_CLASS`
+  (`app/utils/index.ts`) for a tab strip, `SEGMENTED_SELECTED_CLASS` for a segmented control or view switch,
+  `SELECTED_ROW_CLASS` for the row that picks what the page shows, and `CURRENT_ITEM_RING_CLASS` for the current
+  item in a strip of status-colored marks (this execution in its history, this attempt among the retries). On the
+  failure pages two tests hold it: `tests/unit/evidence-accent.test.ts` refuses a raw red, orange or green shade and
+  a primary class outside `hover:` and `focus-visible:` in the evidence card's and the affected tests' components
+  (add a new one to its list), and `tests/failure-page-accent.spec.ts` checks that nothing rendered in them changes
+  with the primary color and that the page shows at most one solid primary button. A card's header icon
+  (`CARD_ICON_CLASS`, marked `data-card-icon`) is the one exception.
 - **Links inside a sentence keep the sentence's color**: `underline decoration-dotted underline-offset-2
 hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
 - **Badges are for exceptions, at most two per screen** — the status chip and one exceptional state (_Quarantined_, a
@@ -304,9 +319,12 @@ hover:decoration-solid`. `text-primary` links belong in navigation lists and tab
   it (`<LocatorCode chip>`, `<FailureHeadline chip>`), a commit keeps the sentence's color (`CODE_CHIP_CLASS`).
   Elsewhere in prose a locator stays plain mono (`<LocatorCode plain>`).
 - **Say a fact once, in one style.** When the same fact could be a chip and words, keep the words.
-- **Measure it.** `npm run app:measure -- --json` reports `distinctTextStyles` inside the situation block, a code chip
-  counting once whatever its token colors. Keep it at or under 15 on the execution page and 12 on the cluster page; a
-  change that raises it needs a reason in the PR.
+- **Measure it.** `npm run app:measure -- --check` fails when a failure page breaks a budget at 1280×800: at most 15
+  text styles in the execution page's situation block and 13 in the cluster page's (a code chip or a diff counts once,
+  whatever its token colors), at most 25 controls above the fold (navbar included), at most one solid primary button
+  above the fold, and a Next step that copies a code change shows that change in the same block. The measure finds the
+  Next action by `data-next-action` and what it copies by `data-copies`: keep both when you move either. Run it before
+  committing a change to either page; raising a budget needs a reason in the PR.
 
 ### Filters (MUST follow)
 
@@ -348,6 +366,14 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
 
 - Sentence case headings and labels ("Test runs"), relative dates via date-fns (full timestamp on hover), human-readable
   durations (exact ms on hover), `DurationValue` where a tight `210ms` reads better than "0.21 seconds".
+- **A duration in an execution's evidence** (a step or a request, on the Timeline, the Network tab or the trace's
+  request list) is a `DurationValue`, never `Math.round(ms) + ' ms'`, and is colored only when `durationStandout`
+  (`#shared/duration-standout`) says it stands out in its test or against its usual time (the `usual` the timeline
+  sends with it, from `getUsualDurations`), in the one tone of `app/utils/duration-tone.ts`. Never color it by a fixed
+  threshold at the call site; `tests/timeline-durations.spec.ts` checks which durations stand out, and
+  `tests/unit/evidence-accent.test.ts` refuses a raw red, orange or green shade in the evidence card's components. The
+  Timeline and the Network tab read the timeline through `useExecutionTimeline`, one key per execution. Web Vitals keep
+  their standard rating bands, in `text-error` and the warning tone.
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale
@@ -714,6 +740,10 @@ so the canned SCM never enters the server bundle; the one shared piece is the ve
 example's `expect` against the generated seed (the entity its route opens, and the state its sentence promises). A
 seed change that moves or changes one fails there, naming the example: update the entry (route, `expect`, `shows`)
 in the same change, never the check.
+
+**`tests/unit/failure-lines-coherence.test.ts` guards the failure pages' lines over the seed**: it fails when two
+lines of a cluster or execution page contradict each other (its header lists the rules), and a seed or policy change
+that trips one fixes the lines, never the rule.
 
 ## MCP tool conventions (MUST follow)
 

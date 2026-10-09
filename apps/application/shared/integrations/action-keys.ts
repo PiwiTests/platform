@@ -5,7 +5,11 @@
  * exact string.
  */
 
-/** One create-issue per (entity, connection) — a second click never files twice. */
+/**
+ * One create-issue per (entity, connection) — a second click never files twice.
+ * The entity is the cluster for a cluster and its executions, so the cluster
+ * page and an execution page share one filing.
+ */
 export function createIssueKey(entityType: string, entityId: number, connectionId: number): string {
   return `create-issue:${entityType}:${entityId}:conn${connectionId}`;
 }

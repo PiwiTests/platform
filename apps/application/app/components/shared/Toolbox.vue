@@ -5,76 +5,51 @@
  * sentence-case label plus a one-line summary the page supplies) except the one
  * the next step points at, which opens with the page. A folded section's body is
  * not rendered, so its code blocks never count against the first screen. The
- * canonical `FixSectionKey` union and the per-section slot contract are the same
- * the two pages fill; the card renders the sections it is given in one fixed
- * order.
+ * `FixSectionKey` union (`app/utils/fix-sections.ts`) and the per-section slot
+ * contract are the same the two pages fill; the card renders the sections it is
+ * given in one fixed order.
+ *
+ * With `lead`, the section the next step points at is not a fold of the card: it
+ * is a card of its own, titled with the section's label and always open, followed
+ * by the `between` slot (what the page shows between the fix and the rest), then
+ * "More ways to fix" with every other section folded. Without a section for the
+ * next step, `lead` renders the `between` slot, then the card.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 import type { NextStepKind } from '#shared/next-step';
+import { FIX_SECTION_LABELS, FIX_SECTION_ORDER, fixSectionForNextStep, type FixSectionKey } from '~/utils/fix-sections';
 
-export type FixSectionKey =
-  | 'locator-fix'
-  | 'fix-plan'
-  | 'diagnosis'
-  | 'fixed-before'
-  | 'verify'
-  | 'reproduce'
-  | 'blocked';
+export type { FixSectionKey } from '~/utils/fix-sections';
 
 const props = defineProps<{
   /** Which sections have content; the toolbox renders them in its canonical order. */
   sections: FixSectionKey[];
   /** The next step's kind — decides which section opens with the page. */
   nextStepKind?: NextStepKind | null;
+  /** The next step's section leads as a card of its own, above the `between` slot. */
+  lead?: boolean;
   help?: HelpTopicKey;
 }>();
 
-const LABELS: Record<FixSectionKey, string> = {
-  diagnosis: 'Diagnosis',
-  'locator-fix': 'Locator fix',
-  verify: 'Verify',
-  reproduce: 'Reproduce and bisect',
-  'fixed-before': 'Fixed before',
-  blocked: 'Blocked by this failure',
-  'fix-plan': 'Fix plan',
-};
+const defaultOpen = computed<FixSectionKey | null>(() => fixSectionForNextStep(props.nextStepKind, props.sections));
 
-// One fixed order, regardless of the order the page lists its sections in.
-const ORDER: FixSectionKey[] = [
-  'diagnosis',
-  'locator-fix',
-  'verify',
-  'reproduce',
-  'fixed-before',
-  'blocked',
-  'fix-plan',
-];
-
-// The next step decides which section opens; a cookie never does.
-const NEXT_STEP_SECTION: Partial<Record<NextStepKind, FixSectionKey>> = {
-  'apply-patch': 'diagnosis',
-  'follow-diagnosis': 'diagnosis',
-  diagnose: 'diagnosis',
-  'replace-locator': 'locator-fix',
-  'rerun-in-ci': 'verify',
-  reproduce: 'reproduce',
-  'open-blocker': 'blocked',
-};
+// The section that leads as its own card, in lead mode.
+const leadKey = computed<FixSectionKey | null>(() => (props.lead ? defaultOpen.value : null));
 
 const active = computed(() =>
-  ORDER.filter((key) => props.sections.includes(key)).map((key) => ({ key, label: LABELS[key] })),
+  FIX_SECTION_ORDER.filter((key) => props.sections.includes(key) && key !== leadKey.value).map((key) => ({
+    key,
+    label: FIX_SECTION_LABELS[key],
+  })),
 );
 
-const defaultOpen = computed<FixSectionKey | null>(() => {
-  const target = props.nextStepKind ? NEXT_STEP_SECTION[props.nextStepKind] : undefined;
-  return target && props.sections.includes(target) ? target : null;
-});
-
 // The open section is the next step's, until the user toggles one open — a
-// component-only state, never persisted.
-const openKey = ref<FixSectionKey | null>(defaultOpen.value);
-watch(defaultOpen, (key) => {
-  openKey.value = key;
+// component-only state, never persisted. In lead mode that section is the lead
+// card, so the card's sections all start folded.
+const initialOpen = () => (props.lead ? null : defaultOpen.value);
+const openKey = ref<FixSectionKey | null>(initialOpen());
+watch([defaultOpen, () => props.lead], () => {
+  openKey.value = initialOpen();
 });
 
 function toggle(key: FixSectionKey) {
@@ -94,27 +69,57 @@ const vTitleFromText = {
 };
 
 const rootEl = ref<HTMLElement | null>(null);
+const leadEl = ref<HTMLElement | null>(null);
 
-/** Open a section (a next-step action reveals then scrolls to it). */
-function openSection(key: FixSectionKey) {
-  openKey.value = key;
+/**
+ * Open a section. Resolves once its body is mounted, so a caller can then act on
+ * a panel the section renders. A key the toolbox does not show leaves the open
+ * section as it is; the lead section is always open.
+ */
+async function openSection(key: FixSectionKey): Promise<void> {
+  if (!props.sections.includes(key)) return;
+  if (key !== leadKey.value) openKey.value = key;
+  await nextTick();
 }
 
-/** Open a section and scroll it into view — the target of a next-step action. */
-function scrollToSection(key: FixSectionKey) {
-  openSection(key);
-  nextTick(() => {
-    rootEl.value
-      ?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+/**
+ * Open a section and scroll it into view, at the element whose `data-shot` is
+ * `anchor` when the section holds one; resolves once its body is mounted.
+ */
+async function scrollToSection(key: FixSectionKey, anchor?: string): Promise<void> {
+  await openSection(key);
+  const scope = key === leadKey.value ? leadEl.value : rootEl.value;
+  const section = scope?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`);
+  const target = (anchor ? section?.querySelector<HTMLElement>(`[data-shot="${anchor}"]`) : null) ?? section;
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-defineExpose({ scrollToSection });
+defineExpose({ openSection, scrollToSection });
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-wrench" icon-class="text-primary" title="More ways to fix" :help="help" data-shot="fix">
+  <!-- The next step's section, as a card of its own -->
+  <div v-if="leadKey" ref="leadEl" class="scroll-mt-4">
+    <SectionCard :title="FIX_SECTION_LABELS[leadKey]" data-shot="fix-lead">
+      <template v-if="$slots[`${leadKey}-actions`]" #actions>
+        <slot :name="`${leadKey}-actions`" />
+      </template>
+      <section :data-shot="`fix-${leadKey}`" class="space-y-2">
+        <slot :name="leadKey" />
+      </section>
+    </SectionCard>
+  </div>
+
+  <slot v-if="lead" name="between" />
+
+  <SectionCard
+    v-if="active.length || !lead"
+    icon="i-lucide-wrench"
+    icon-class="text-primary"
+    title="More ways to fix"
+    :help="help"
+    data-shot="fix"
+  >
     <div ref="rootEl" class="divide-y divide-default">
       <section v-for="s in active" :key="s.key" class="first:pt-0 last:pb-0" :data-shot="`fix-${s.key}`">
         <div class="flex items-center justify-between gap-2 py-3">

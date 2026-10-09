@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui';
 import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
@@ -8,17 +9,23 @@ import type { FailureVerdict } from '#shared/failure-verdict';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
-import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
+import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
-import type { Situation, SituationPart } from '#shared/situation';
-import type { KnownIssueRef } from '#shared/handlers/known-issues';
+import type { Situation } from '#shared/situation';
+import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
-import { commitUrl } from '#shared/scm-urls';
+import type { DidNotRunExplanation } from '#shared/did-not-run';
+import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
+import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
+import { safeHttpUrl } from '#shared/utils/safe-url';
+import { issueLineForm } from '~/utils/issue-line';
+import { buildNextStepChange } from '~/utils/next-step-change';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
+import { hasHealingAlternatives } from '#shared/locator-healing';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -43,11 +50,22 @@ const { data: historyData } = await useAsyncData(
   { default: (): TestCaseHistoryPoint[] => [], watch: [() => testCase.value?.testCaseId] },
 );
 
-// The deterministic clues and the story that chains them: the story line leads
-// with the story (or the top clue), folds every clue under its disclosure, and
-// the top clue's section chooses the default evidence tab.
+// The story, situation and next lines are only for a problem execution; a passing
+// one shows identity and facts alone, and one that passed on retry adds the
+// failed attempt's headline, the line under it and the next step.
+const isProblem = computed(() => {
+  const s = testCase.value?.status;
+  return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
+});
+const isPassedOnRetry = computed(() => statusPaletteKey(testCase.value?.status, testCase.value?.retries) === 'flaky');
+
+// The deterministic clues and the story that chains them: Most likely chooses
+// between them and the cluster's diagnosis, folds every clue under its
+// disclosure, and the top clue's section chooses the default evidence tab. A
+// passing execution has no failure to explain, so they are not fetched.
 const { data: cluesData } = await useFetch<FailureCluesResult>(`/api/test-run-cases/${testCaseId}/clues`, {
   default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }),
+  immediate: isProblem.value,
 });
 const clues = computed(() => cluesData.value?.clues ?? []);
 const story = computed(() => cluesData.value?.story ?? null);
@@ -55,8 +73,8 @@ const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
 
 // The evidence opens on the story: the first member clue's cited section and the
 // story's strength (or the top clue's, when no combination matched) tell the tab
-// strip which view leads.
-const defaultHint = useEvidenceHint(clues, story);
+// strip which view leads, and what Most likely cites is marked in the card.
+const defaultHint = useEvidenceHint(clues, story, () => mostLikely.value);
 
 const { data: traceData, refresh: refreshTraces } = await useFetch(`/api/test-run-cases/${testCaseId}/traces`, {
   transform: (r: { items: TraceInfo[] }) => r.items,
@@ -100,8 +118,14 @@ const failureCluster = computed(() => {
       category?: string | null;
       confidence?: string | null;
       summary?: string | null;
+      provider?: string | null;
     } | null;
     knownIssue?: KnownIssueRef | null;
+    /** Read when the issue is Done: the failure goes on in the latest finished run. */
+    failureGoesOn?: boolean | null;
+    issueFilingQueued?: boolean;
+    /** The cluster's newest issue filing failed for good. */
+    issueFilingFailure?: IssueFilingFailure | null;
   } | null;
 });
 
@@ -111,7 +135,7 @@ const aiIntents = computed<AiStepIntent[] | null>(() => {
   return usage?.intents ?? null;
 });
 
-// ── Fix card ────────────────────────────────────────────────────────────────
+// ── More ways to fix ────────────────────────────────────────────────────────
 /** Whether the desktop (Tauri) bridge is present — set on mount below. */
 const desktopBridge = ref(false);
 
@@ -130,32 +154,35 @@ const clusterDiagnosis = computed(() => {
 const confidenceColor = (c?: string | null): 'success' | 'warning' | 'neutral' =>
   c === 'high' ? 'success' : c === 'medium' ? 'warning' : 'neutral';
 
-// The story is the one explanation on the first screen. A completed diagnosis
-// leads the story line only when no deterministic story chained the clues — the
-// story stays primary when it exists.
-const storyDiagnosis = computed(() =>
-  !story.value && clusterDiagnosis.value
-    ? { summary: clusterDiagnosis.value.summary as string, confidence: clusterDiagnosis.value.confidence ?? null }
+// The one explanation on the first screen, by the rule the cluster page follows
+// too: a strong or medium story, else the cluster's diagnosis, else a weak story,
+// else the top clue.
+const mostLikelyDiagnosis = computed(() =>
+  clusterDiagnosis.value
+    ? {
+        summary: clusterDiagnosis.value.summary as string,
+        confidence: clusterDiagnosis.value.confidence ?? null,
+        provider: clusterDiagnosis.value.provider ?? null,
+      }
     : null,
 );
+const mostLikely = computed(() =>
+  pickMostLikely({ story: story.value, clues: clues.value, diagnosis: mostLikelyDiagnosis.value }),
+);
 
-// The situation sentence and the single next step, built server-side from the
-// verdict and the same healing / diagnosis facts the toolbox reads.
+// The situation lines (since when and whether a newer execution failed again,
+// under the headline; the cluster, in the Cluster line) and the single next
+// step, built server-side from the verdict and the same healing / diagnosis
+// facts the toolbox reads.
 const situation = computed(() => (testCase.value as { situation?: Situation | null } | null)?.situation ?? null);
 const nextStep = computed(() => (testCase.value as { nextStep?: NextStep | null } | null)?.nextStep ?? null);
+// Why a test that did not run never started: its Most likely line.
+const didNotRun = computed(
+  () => (testCase.value as { didNotRun?: DidNotRunExplanation | null } | null)?.didNotRun ?? null,
+);
 
-// A `commit` part of the situation links to the SCM host only when the run has a repository.
+// A commit in the situation links to the SCM host only when the run has a repository.
 const repositoryUrl = computed(() => reproduceData.value?.desktop?.repositoryUrl ?? null);
-function situationCommitHref(part: SituationPart): string | null {
-  return part.id != null ? commitUrl(repositoryUrl.value, String(part.id)) : null;
-}
-
-// The story, situation and next lines are only for a problem execution; a passing
-// one shows identity and facts alone.
-const isProblem = computed(() => {
-  const s = testCase.value?.status;
-  return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
-});
 
 const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
 
@@ -202,26 +229,26 @@ async function declineFixturesForProject() {
   }
 }
 
-/** A locator-resolution failure — the only case the Locator fix section applies to. */
+/** A locator-resolution failure of this execution — the only case the Locator fix section applies to. */
 const isLocatorFailure = computed(() =>
-  Boolean(verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
+  Boolean(isProblem.value && verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
 );
 
-// The Locator fix section rides on the healing data. Hoisting the same fetch the
-// panel makes (shared by key) lets the toolbox add the section only when there
-// is something to show — and never when healing is hidden for this project.
+// The Locator fix section rides on the healing data. The page fetches it once and
+// hands it to the panel, so the toolbox adds the section only when there is
+// something to show — and never when healing is hidden for this project. When
+// the next step replaces the locator, the page waits for the healing, so the
+// section and its panel are in the first render.
+const healingLeads = nextStep.value?.kind === 'replace-locator';
 const { data: locatorHealingData } = await useFetch<LocatorHealingResult>(
   () => `/api/test-run-cases/${testCaseId}/locator-healing`,
-  { lazy: true, immediate: isLocatorFailure.value, key: `locator-healing-${testCaseId}` },
+  {
+    lazy: !healingLeads,
+    immediate: isLocatorFailure.value || healingLeads,
+    key: `locator-healing-${testCaseId}`,
+  },
 );
-const locatorHealingHasData = computed(() => {
-  const h = locatorHealingData.value;
-  return (
-    !!h &&
-    h.source !== 'none' &&
-    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
-  );
-});
+const locatorHealingHasData = computed(() => hasHealingAlternatives(locatorHealingData.value));
 const showLocatorFix = computed(
   () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
@@ -248,9 +275,9 @@ const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncDat
 );
 const fixedBefore = computed(() => fixedBeforeData.value ?? []);
 
-// The cluster's fix plan — its diagnosis patch backs the next step's copy /
-// download / open-in-IDE actions, so it is fetched once here rather than by each
-// action.
+// The cluster's fix plan — its diagnosis patch is the change an apply step
+// shows and copies, and the Diagnosis section shows it whole, so it is fetched
+// once here rather than by each action.
 const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   `test-run-case-fix-plan-${testCaseId}`,
   () => {
@@ -260,6 +287,30 @@ const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   { default: (): FixPlan | null => null, watch: [() => failureCluster.value?.id] },
 );
 const fixPlanPatch = computed(() => fixPlanData.value?.diagnosis?.patch ?? null);
+
+// The change the next step copies, from the fix plan or the healing the page
+// already loaded: the Next row shows it and its actions copy it.
+const nextStepChange = computed(() =>
+  buildNextStepChange(nextStep.value, {
+    diagnosis: fixPlanData.value?.diagnosis ?? null,
+    healing: locatorHealingData.value ?? null,
+  }),
+);
+
+// Where the next step's change comes from: the cluster's diagnosis, named in full
+// unless Most likely already shows it, or locator healing.
+const nextStepSource = computed(() =>
+  nextStepSourceLine(nextStep.value, {
+    mostLikely: mostLikely.value,
+    diagnosis: mostLikelyDiagnosis.value && {
+      ...mostLikelyDiagnosis.value,
+      hasPatch: fixPlanData.value?.diagnosis ? Boolean(fixPlanPatch.value) : null,
+      patchStatus: fixPlanData.value?.diagnosis?.patchValidation?.status ?? null,
+    },
+    healing: locatorHealingData.value ?? null,
+    scope: 'execution',
+  }),
+);
 
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => failureCluster.value?.id ?? null,
@@ -276,7 +327,7 @@ const showVerify = computed(() => Boolean(rerunInfo.value?.available) || desktop
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
 
-/** The Fix card's sections, in the order the card renders them. */
+/** The sections of More ways to fix this execution offers; the toolbox orders them. */
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = [];
   if (showLocatorFix.value) s.push('locator-fix');
@@ -289,8 +340,10 @@ const fixSections = computed<FixSectionKey[]>(() => {
   return s;
 });
 
-// The Fix card covers a failing execution (something to fix) or one that blocked others.
-const showFix = computed(() => Boolean(verdict.value) || blockedTests.value.length > 0);
+// More ways to fix covers a failing execution (something to fix) or one that blocked
+// others. A pass that needed a retry has nothing to fix here: its failed
+// attempt's page holds the tools.
+const showFix = computed(() => (Boolean(verdict.value) && !isPassedOnRetry.value) || blockedTests.value.length > 0);
 
 // ── Folded one-line summaries for the toolbox sections ───────────────────────
 const { aiStatus } = useAiStatus();
@@ -323,10 +376,11 @@ const statusEdge = computed(() =>
 );
 
 /**
- * Exceptional badges only. The why-signals (regression, passed on retry, newly
- * flaky) live in the headline's fact row when there is a headline, so they show
- * in the header only for an execution with no headline (a passing or
- * passed-on-retry attempt) — a fact appears once. Playwright marks always show.
+ * Exceptional badges only. The status chip says a pass needed a retry, and the
+ * why-signals (regression, newly flaky) lead the line under the headline when
+ * there is a headline, so they show here only for an execution with none (a
+ * pass whose failed attempt is not stored) — a fact appears once. Playwright
+ * marks always show.
  */
 const headerBadges = computed(() => {
   const tc = testCase.value;
@@ -353,13 +407,6 @@ const headerBadges = computed(() => {
         color: 'error',
         icon: 'i-lucide-git-pull-request-arrow',
         title: 'Passed in the baseline run, failing here',
-      });
-    if (tc.status === 'passed' && (tc.retries ?? 0) > 0)
-      out.push({
-        label: 'Passed on retry',
-        color: 'flaky',
-        icon: 'i-lucide-refresh-cw',
-        title: 'This test failed then passed on a retry',
       });
     if (tc.isNewFlaky)
       out.push({
@@ -431,9 +478,11 @@ function copyFailure() {
   const testCaseUrl = `${origin}/test-run-cases/${testCaseId}`;
   const stableUrl = testCase.value?.testCaseId ? `${origin}/test-cases/${testCase.value.testCaseId}` : null;
 
+  const issue = knownIssue.value;
   const plain = [
     `❌ Test failed: ${title}`,
     loc ? `Location: ${loc}` : null,
+    issue ? `Tracked in ${issue.key}${issue.status ? ` (${issue.status})` : ''}: ${issue.url}` : null,
     '',
     'Error:',
     rawError,
@@ -447,6 +496,9 @@ function copyFailure() {
 
   const html = [
     `<p><strong>❌ Test failed: ${esc(title)}</strong>${loc ? `<br><code>${esc(loc)}</code>` : ''}</p>`,
+    issue
+      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
+      : '',
     `<p><strong>Error:</strong></p><pre>${renderAnsi(tc.error)}</pre>`,
     `<p>🔗 ${clusterUrl ? `<a href="${clusterUrl}">View failure cluster</a> · ` : ''}<a href="${testCaseUrl}">Execution details</a>${stableUrl ? ` · <a href="${stableUrl}">Test history</a>` : ''}</p>`,
   ].join('');
@@ -454,41 +506,62 @@ function copyFailure() {
   copyRich(plain, html, { toast: 'Failure copied' });
 }
 
-// ── Link an issue ─────────────────────────────────────────────────────────
-const linksModalOpen = ref(false);
-
-// ── Create issue / link to the cluster's known issue ─────────────────────────
+// ── The cluster's issue: the Cluster line's ticket, the menu, and their dialogs
 const { hasTracker } = useTrackerStatus();
 // The execution carries its cluster's issue, so it is current right after a create.
-const knownIssue = computed(() => failureCluster.value?.knownIssue ?? fixPlanData.value?.issue ?? null);
+const knownIssue = computed(() => failureCluster.value?.knownIssue ?? null);
+const canFileIssue = computed(() => hasTracker.value && canCreateIssue.value);
+const issueForm = computed(() =>
+  failureCluster.value
+    ? issueLineForm({
+        hasKnownIssue: Boolean(knownIssue.value),
+        filingQueued: Boolean(failureCluster.value.issueFilingQueued),
+        clusterStatus: failureCluster.value.status,
+        snoozed: false,
+        canFile: canFileIssue.value,
+        canLink: canEditLinks.value,
+      })
+    : null,
+);
 const issueModalOpen = ref(false);
+const linkIssueOpen = ref(false);
 
 function onIssueCreated() {
   issueModalOpen.value = false;
+  linkIssueOpen.value = false;
   void refresh();
 }
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
-const moreMenuItems = computed(() => {
-  const items: {
-    label: string;
-    icon: string;
-    color?: 'warning';
-    to?: string;
-    target?: '_blank';
-    onSelect?: () => void;
-  }[] = [];
-  // The retry command also appears on the next-step line (for code-change
-  // steps) and in the Verify section.
-  if (retryCommand.value && !desktopBridge.value) {
-    items.push({
-      label: 'Copy retry command',
-      icon: 'i-lucide-clipboard',
-      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
+// Grouped as on the cluster page: the ticket, the test actions, the copies, then
+// Refresh.
+const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
+  // The cluster's ticket: open it, or file or link one. The links of the
+  // execution, its test and its run are edited in the facts line's Details.
+  const issue: DropdownMenuItem[] = [];
+  if (knownIssue.value) {
+    issue.push({
+      label: `Open ${knownIssue.value.key}`,
+      icon: getProviderIcon(knownIssue.value.provider as LinkProvider),
+      to: safeHttpUrl(knownIssue.value.url) ?? undefined,
+      target: '_blank',
     });
+  } else if (canFileIssue.value && failureCluster.value?.issueFilingQueued) {
+    issue.push({
+      label: 'Filing queued · Retry',
+      icon: 'i-lucide-clock',
+      onSelect: () => (issueModalOpen.value = true),
+    });
+  } else if (canFileIssue.value && failureCluster.value) {
+    issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
   }
+  if (canEditLinks.value && failureCluster.value) {
+    issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
+  }
+
+  const testActions: DropdownMenuItem[] = [];
   if (canQuarantine.value && testCase.value?.testCaseId) {
-    items.push(
+    testActions.push(
       quarantined.value
         ? {
             label: 'Release from quarantine',
@@ -504,22 +577,21 @@ const moreMenuItems = computed(() => {
           },
     );
   }
-  if (knownIssue.value) {
-    items.push({
-      label: `Open ${knownIssue.value.key}`,
-      icon: 'i-simple-icons-jira',
-      to: knownIssue.value.url,
-      target: '_blank',
+
+  const copies: DropdownMenuItem[] = [];
+  if (testCase.value?.error) copies.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
+  // The retry command also appears on the next-step line (for code-change
+  // steps) and in the Verify section.
+  if (retryCommand.value && !desktopBridge.value) {
+    copies.push({
+      label: 'Copy retry command',
+      icon: 'i-lucide-clipboard',
+      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
-  } else if (canCreateIssue.value && hasTracker.value && failureCluster.value) {
-    items.push({ label: 'Create issue', icon: 'i-simple-icons-jira', onSelect: () => (issueModalOpen.value = true) });
   }
-  if (canEditLinks.value) {
-    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linksModalOpen.value = true) });
-  }
-  if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
-  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
-  return items;
+
+  const refreshItem: DropdownMenuItem = { label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() };
+  return [issue, testActions, copies, [refreshItem]].filter((group) => group.length > 0);
 });
 
 // ── Live streaming ──────────────────────────────────────────────────────────
@@ -572,17 +644,18 @@ onUnmounted(disconnectRunStream);
 const evidenceEl = ref<HTMLElement | null>(null);
 const factsLine = ref<{ revealRawError: () => void } | null>(null);
 const locatorPanel = ref<{
-  copyPatch: () => void;
-  copyRecommendedLocator: () => void;
   openPicker: () => void;
   expandAlternatives: () => void;
 } | null>(null);
 const evidenceTabs = ref<{
   canLocate: (id: string) => boolean;
-  revealSection: (id: string) => boolean;
+  revealSection: (id: string, index?: number) => boolean;
   selectTab: (t: string) => void;
 } | null>(null);
-const toolbox = ref<{ scrollToSection: (k: FixSectionKey) => void } | null>(null);
+const toolbox = ref<{
+  openSection: (k: FixSectionKey) => Promise<void>;
+  scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
+} | null>(null);
 
 function scrollToEl(el: HTMLElement | null) {
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -598,9 +671,9 @@ provide(clusterSectionLocatorKey, {
   // Answered from static maps so a citation renders as a button at SSR time too,
   // not only once the evidence card has mounted and registered its ref.
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
-  open: (id: string) => {
+  open: (id: string, index?: number) => {
     if (id in pageSections) pageSections[id]!();
-    else evidenceTabs.value?.revealSection(id);
+    else evidenceTabs.value?.revealSection(id, index);
   },
 });
 
@@ -612,12 +685,12 @@ const { setClusterStatus } = useClusterTriage(() => failureCluster.value?.id ?? 
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => failureCluster.value?.id ?? null,
-  fixPlanPatch: () => fixPlanPatch.value,
+  change: () => nextStepChange.value,
   ideProject: () => testCase.value?.testRun?.project ?? null,
   locatorPanel: () => locatorPanel.value,
   reproRecipe: () => reproduceData.value?.reproduce ?? null,
   diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
-  scrollToSection: (k) => toolbox.value?.scrollToSection(k),
+  scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
   selectAttemptsTab: () => {
     evidenceTabs.value?.selectTab('attempts');
     nextTick(() => scrollToEl(evidenceEl.value));
@@ -707,7 +780,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <!-- Line 1: identity kicker — status, title, marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <StatusChip :status="testCase?.status ?? ''" class="shrink-0" />
+              <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
               <span class="text-highlighted min-w-0 break-words">
                 {{ testCase?.title || `Execution #${testCaseId}` }}
               </span>
@@ -723,7 +796,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </div>
           </template>
 
-          <!-- Line 2: the headline — the page's h1 -->
+          <!-- Line 2: the headline — the page's h1; for a retry pass, its failed attempt's -->
           <template v-if="verdict" #headline>
             <h1
               data-shot="failure-headline"
@@ -738,6 +811,13 @@ const { handle: handleNextStepAction } = useNextStepActions({
             >
               {{ verdict.detail }}
             </p>
+            <!-- Since when it fails (for a retry pass, which attempt failed), on which commit, and whether a newer execution failed again or passed. -->
+            <ExecutionMetaLine
+              v-if="situation"
+              :since="situation.since"
+              :latest="situation.latest"
+              :repository-url="repositoryUrl"
+            />
             <!-- The capture-fixtures nudge, at the point where their absence is felt. -->
             <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted">
               Capture fixtures would have recorded the network activity behind this failure.
@@ -752,48 +832,48 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Line 3: most likely — the story line, with every clue folded under it -->
-          <template v-if="verdict && (story || clues.length)" #story>
-            <StoryLine :story="story" :clues="clues" :failure-at="cluesFailureAt" :diagnosis="storyDiagnosis" />
+          <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow; for a test that did not run, why -->
+          <template v-if="isProblem && verdict && mostLikely" #story>
+            <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
+          </template>
+          <template v-else-if="didNotRun" #story>
+            <DidNotRunLine :explanation="didNotRun" />
           </template>
 
-          <!-- Line 4: the situation sentence — one clause per fact, with links -->
-          <template v-if="situation" #situation>
-            <p data-shot="situation">
-              <template v-for="(part, i) in situation.parts" :key="i">
-                <a
-                  v-if="part.kind === 'issue' && part.url"
-                  :href="part.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
-                  data-testid="situation-issue"
-                  >{{ part.text }}</a
-                >
-                <NuxtLink
-                  v-else-if="part.href"
-                  :to="part.href"
-                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? CODE_CHIP_CLASS : '']"
-                  >{{ part.text }}</NuxtLink
-                >
-                <a
-                  v-else-if="part.kind === 'commit' && situationCommitHref(part)"
-                  :href="situationCommitHref(part)!"
-                  target="_blank"
-                  rel="noopener"
-                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
-                  >{{ part.text }}</a
-                >
-                <span v-else-if="part.kind === 'commit'" :class="CODE_CHIP_CLASS">{{ part.text }}</span>
-                <span v-else-if="part.kind === 'owner'" class="text-highlighted">{{ part.text }}</span>
-                <template v-else>{{ part.text }}</template>
-              </template>
-            </p>
+          <!-- Line 4: the next step -->
+          <template v-if="(isProblem || isPassedOnRetry) && nextStep" #next>
+            <NextStepLine
+              :next-step="nextStep"
+              :retry-command="retryCommand"
+              :source="nextStepSource"
+              :change="nextStepChange"
+              :ide-project="testCase?.testRun?.project ?? null"
+              @action="handleNextStepAction"
+            />
           </template>
 
-          <!-- Line 5: the next step -->
-          <template v-if="isProblem && nextStep" #next>
-            <NextStepLine :next-step="nextStep" :retry-command="retryCommand" @action="handleNextStepAction" />
+          <!-- Line 5: the cluster, then its ticket or the way to file or link one -->
+          <template v-if="isProblem && (situation?.cluster || issueForm)" #cluster>
+            <div data-shot="cluster-line">
+              <IssueLine
+                v-if="issueForm"
+                :form="issueForm"
+                :project-id="executionProjectId"
+                :cluster-status="failureCluster?.status"
+                :failure-goes-on="failureCluster?.failureGoesOn === true"
+                :known-issue="knownIssue"
+                :filing-failure="failureCluster?.issueFilingFailure ?? null"
+                @create="issueModalOpen = true"
+                @link="linkIssueOpen = true"
+              >
+                <template v-if="situation?.cluster" #lead
+                  ><SituationParts :parts="situation.cluster.parts" :repository-url="repositoryUrl"
+                /></template>
+              </IssueLine>
+              <p v-else-if="situation?.cluster">
+                <SituationParts :parts="situation.cluster.parts" :repository-url="repositoryUrl" />
+              </p>
+            </div>
           </template>
 
           <!-- Line 6: the facts line, one size smaller, with Details and Raw error -->
@@ -803,19 +883,14 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :test-case="testCase"
               :history="historyData"
               @copy-failure="copyFailure"
+              @links-changed="refresh()"
             />
           </template>
         </SituationBlock>
 
-        <!-- Why this execution never ran — pinned under the block for a did-not-run case. -->
-        <DidNotRunCard
-          :status="testCase?.status"
-          :reason="(testCase as any)?.didNotRunReason ?? null"
-          :blocked-by-case="(testCase as any)?.blockedByCase ?? null"
-        />
-
         <!-- ── Evidence ───────────────────────────────────────────────── -->
-        <div ref="evidenceEl" class="scroll-mt-4">
+        <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
+        <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
           <EvidenceTabs
             ref="evidenceTabs"
             :test-case="testCase"
@@ -831,14 +906,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
         </div>
 
         <!-- ── More ways to fix ───────────────────────────────────────── -->
-        <div class="scroll-mt-4">
-          <Toolbox
-            v-if="showFix"
-            ref="toolbox"
-            :sections="fixSections"
-            :next-step-kind="nextStep?.kind ?? null"
-            help="fix.toolbox"
-          >
+        <div v-if="showFix" class="scroll-mt-4">
+          <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
             <template #diagnosis-summary>{{ diagnosisSummary }}</template>
             <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
             <template #verify-summary>{{ verifySummary }}</template>
@@ -857,6 +926,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 v-if="testCase"
                 ref="locatorPanel"
                 :test-runs-case-id="Number(testCaseId)"
+                :healing="locatorHealingData ?? null"
                 :ai-intents="aiIntents"
                 :chrome="false"
                 :has-page-diff="true"
@@ -893,7 +963,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               </div>
             </template>
 
-            <!-- The cluster's diagnosis summary, else the execution-scope diagnosis -->
+            <!-- The cluster's diagnosis summary and its whole patch, else the execution-scope diagnosis -->
             <template #diagnosis>
               <div v-if="clusterDiagnosis" class="space-y-1.5">
                 <p class="text-sm text-toned">{{ clusterDiagnosis.summary }}</p>
@@ -907,6 +977,15 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 >
                   Open
                 </UButton>
+                <PatchBlock
+                  v-if="fixPlanPatch"
+                  data-shot="diagnosis-patch"
+                  data-copies="copy-git-apply"
+                  class="scroll-mt-4"
+                  :patch="fixPlanPatch"
+                  :validation="fixPlanData?.diagnosis?.patchValidation ?? null"
+                  :download-name="`piwi-fix-cluster-${failureCluster!.id}`"
+                />
               </div>
               <DiagnosisPanel
                 v-else
@@ -1001,25 +1080,24 @@ const { handle: handleNextStepAction } = useNextStepActions({
     </template>
   </UDashboardPanel>
 
-  <!-- Link an issue: view and add external links for this execution. -->
-  <UModal v-model:open="linksModalOpen" title="Links">
-    <template #body>
-      <EntityLinks
-        v-if="testCase?.testCaseId"
-        entity-type="test_case"
-        :entity-id="testCase.testCaseId"
-        :links="testCase.stableLinks ?? null"
-        @updated="refresh()"
-      />
-    </template>
-  </UModal>
+  <!-- Link an issue to the execution's cluster: its known issue, on every execution of it. -->
+  <LinkIssueModal
+    v-if="failureCluster && canEditLinks"
+    v-model:open="linkIssueOpen"
+    :cluster-id="failureCluster.id"
+    :known-issue-key="knownIssue?.key ?? null"
+    @linked="onIssueCreated"
+  />
 
   <CreateIssueModal
     v-if="testCase?.id"
     v-model:open="issueModalOpen"
     entity-type="test_runs_case"
     :entity-id="testCase.id"
+    :known-issue-key="knownIssue?.key ?? null"
     @created="onIssueCreated"
     @linked="onIssueCreated"
+    @queued="onIssueCreated"
+    @failed="refresh()"
   />
 </template>

@@ -65,7 +65,7 @@ problem.
 ## Where it is
 
 The **Locator fix** section of **More ways to fix**, on the [execution](./evidence#one-execution-diagnosis-first) and
-failure cluster pages. The same result goes into the [AI diagnosis](./ai-diagnosis#locator-healing) context and the
+failure cluster pages; a cluster whose next step replaces the locator shows it under the situation block. The same result goes into the [AI diagnosis](./ai-diagnosis#locator-healing) context and the
 [fix plan](./fix-plans), and reaches agents through the `get_locator_healing` [MCP tool](/features/mcp).
 
 <figure>

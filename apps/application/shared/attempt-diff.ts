@@ -14,6 +14,7 @@ import { stepLabel } from '@piwitests/core/step-analysis';
 import type { ParsedPlaywrightError } from '#shared/error-parse';
 import type { PageStateLike } from '#shared/page-state';
 import { requestRouteKey } from '#shared/utils/route';
+import { SLOWER_FACTOR, isMuchSlower, stepMatchKey } from '#shared/duration-standout';
 
 /** One attempt's evidence, as loaded from its execution row. All fields optional. */
 export interface AttemptEvidence {
@@ -155,9 +156,11 @@ function ariaStructure(snapshot: string): Set<string> {
 
 /** A duration difference below this (ms) is noise, not a signal. */
 const DURATION_DELTA_MS = 1000;
-/** A step is "much slower" on one side when it is at least this many ms and twice the other. */
-const STEP_SLOW_DELTA_MS = 1000;
-/** A request is "much slower" on the failing attempt when it took at least this many ms and twice as long. */
+/**
+ * A request is much slower on the failing attempt when it took at least this
+ * many ms and `SLOWER_FACTOR` times as long as on the passing one. A step is
+ * much slower by `isMuchSlower`, which reads the difference instead.
+ */
 const REQUEST_SLOW_MS = 1000;
 /** Cap per-category diff rows so a noisy attempt does not flood the list. */
 const MAX_PER_CATEGORY = 5;
@@ -293,7 +296,7 @@ function slowestByRequest(requests: AttemptNetworkRequest[]): Map<string, number
 
 /**
  * Requests made on both attempts whose slowest call on the failing attempt took
- * at least `REQUEST_SLOW_MS` and twice as long as on the passing one, slowest
+ * at least `REQUEST_SLOW_MS` and `SLOWER_FACTOR` times as long as on the passing one, slowest
  * gap first. The request exists on both sides, so the row names no side.
  */
 function slowerRequestDiffs(failNet: AttemptNetworkRequest[], passNet: AttemptNetworkRequest[]): AttemptDiffEntry[] {
@@ -302,7 +305,7 @@ function slowerRequestDiffs(failNet: AttemptNetworkRequest[], passNet: AttemptNe
   for (const [key, failMs] of slowestByRequest(failNet)) {
     const passMs = passSlowest.get(key);
     if (passMs == null) continue;
-    if (failMs >= REQUEST_SLOW_MS && failMs >= 2 * passMs) slower.push({ key, failMs, passMs });
+    if (failMs >= REQUEST_SLOW_MS && failMs >= SLOWER_FACTOR * passMs) slower.push({ key, failMs, passMs });
   }
   return slower
     .sort((a, b) => b.failMs - b.passMs - (a.failMs - a.passMs))
@@ -353,11 +356,6 @@ function consoleLevel(e: AttemptConsoleEntry): string {
   return t === 'error' ? 'error' : 'warning';
 }
 
-/** Params signature used as a tiebreaker when two steps share a label. */
-function paramsSig(s: AttemptStep): string {
-  return s.params ? JSON.stringify(s.params) : '';
-}
-
 /**
  * The params that changed between two same-label steps, as `key: failing → passing`
  * lines (a key present on only one side reads as `∅` on the other). Null when the
@@ -380,14 +378,14 @@ function stepDiffs(failSteps: AttemptStep[], passSteps: AttemptStep[]): AttemptD
   const passByLabel = new Map<string, AttemptStep>();
   for (const s of passSteps) {
     const label = stepLabel(s);
-    const key = `${label}\x00${paramsSig(s)}`;
+    const key = stepMatchKey(s);
     if (!passByKey.has(key)) passByKey.set(key, s);
     if (!passByLabel.has(label)) passByLabel.set(label, s);
   }
   const out: AttemptDiffEntry[] = [];
   for (const s of failSteps) {
     const label = stepLabel(s);
-    const twin = passByKey.get(`${label}\x00${paramsSig(s)}`) ?? passByLabel.get(label);
+    const twin = passByKey.get(stepMatchKey(s)) ?? passByLabel.get(label);
     const failed = Boolean(s.failed || s.error?.message);
     if (failed && !(twin && (twin.failed || twin.error?.message))) {
       out.push({
@@ -399,7 +397,7 @@ function stepDiffs(failSteps: AttemptStep[], passSteps: AttemptStep[]): AttemptD
       });
     } else if (twin && s.duration != null && twin.duration != null) {
       const delta = s.duration - twin.duration;
-      if (delta >= STEP_SLOW_DELTA_MS && s.duration >= 2 * twin.duration) {
+      if (isMuchSlower(s.duration, twin.duration)) {
         out.push({
           kind: 'step',
           summary: `Step "${label}" was ${formatMs(delta)} slower on the failing attempt`,

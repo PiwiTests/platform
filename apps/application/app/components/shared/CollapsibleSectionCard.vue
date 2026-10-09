@@ -25,8 +25,10 @@ const props = withDefaults(
     storageKey: string;
     /** Whether the section starts folded on first visit (no stored cookie). */
     defaultFolded?: boolean;
+    /** Render the `actions` slot only while the section is open, so a folded card is its header line alone. */
+    hideActionsWhenFolded?: boolean;
   }>(),
-  { iconClass: 'text-primary', defaultFolded: true },
+  { iconClass: 'text-primary', defaultFolded: true, hideActionsWhenFolded: false },
 );
 
 const { folded, toggle, setFolded } = useFoldedState(`piwi-section-fold-${props.storageKey}`, props.defaultFolded);
@@ -44,7 +46,12 @@ defineExpose({ setFolded, reveal });
 
 <template>
   <div ref="rootEl" class="scroll-mt-4">
-    <UCard :ui="{ header: 'p-2.5 sm:px-4 sm:py-3', body: folded ? 'p-0 sm:p-0' : '' }" :class="folded && 'divide-y-0'">
+    <!-- Folded, the card is its header alone: the body drops its padding at every
+         width, including the `max-sm:p-3` app.config gives every card body. -->
+    <UCard
+      :ui="{ header: 'p-2.5 sm:px-4 sm:py-3', body: folded ? 'p-0 sm:p-0 max-sm:p-0' : '' }"
+      :class="folded && 'divide-y-0'"
+    >
       <template #header>
         <!-- Below `sm` the actions drop to their own full-width row under the
              title so a wide actions group never squeezes the heading on a phone. -->
@@ -76,7 +83,7 @@ defineExpose({ setFolded, reveal });
               <slot name="folded" />
             </span>
           </div>
-          <div v-if="$slots.actions" class="flex items-center gap-1 sm:shrink-0">
+          <div v-if="$slots.actions && !(hideActionsWhenFolded && folded)" class="flex items-center gap-1 sm:shrink-0">
             <slot name="actions" />
           </div>
         </div>

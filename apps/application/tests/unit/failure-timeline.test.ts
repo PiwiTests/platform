@@ -264,6 +264,22 @@ describe('buildFailureTimeline', () => {
     for (const item of tl.lanes.console) expect(item.at).toBeGreaterThanOrEqual(0);
   });
 
+  test("testStart is the test's own start on the timeline's clock", () => {
+    expect(buildFailureTimeline(realTimestampInput()).testStart).toBe(0);
+
+    // A backend log 3 s before startedAt moves the origin, and testStart with it.
+    const input = realTimestampInput();
+    input.networkRequests = [{ method: 'GET', url: '/api/session', status: 200, duration: 100, startTime: T0 - 3_000 }];
+    const tl = buildFailureTimeline(input);
+    expect(tl.origin).toBe(T0 - 3_000);
+    expect(tl.testStart).toBe(3_000);
+    expect(tl.lanes.steps[0]!.at).toBe(3_000);
+
+    // Without startedAt, the test starts at the origin.
+    expect(buildFailureTimeline({ ...input, startedAt: null }).testStart).toBe(0);
+    expect(buildFailureTimeline({}).testStart).toBe(0);
+  });
+
   describe('call-site origin and group', () => {
     test('derives the enclosing method and caller chain from trace frames', () => {
       const tl = buildFailureTimeline({

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * The facts line under the cluster's situation block: a Details popover (owner
- * and known-issue editing) and the shared "Raw error ▸" disclosure (the sample
- * error and its fingerprint signature). `revealRawError()` lets a citation open
- * the raw error from elsewhere on the page.
+ * and the links pinned to the cluster, its known issue among them) and the
+ * shared "Raw error ▸" disclosure (the sample error and its fingerprint
+ * signature). `revealRawError()` lets a citation open
+ * the raw error from elsewhere on the page. At `#links`, where an execution's
+ * Details send a viewer to edit the cluster's links, the Details open on load.
  */
 import type { FailureClusterDetail } from '~~/types/api';
 
@@ -18,6 +20,15 @@ const emit = defineEmits<{ refresh: [] }>();
 const { can } = useAuth();
 const canEditLinks = computed(() => can('link:write', props.cluster.project?.id ?? null));
 
+const route = useRoute();
+const detailsOpen = ref(false);
+const detailsButton = ref<{ $el?: Element } | null>(null);
+onMounted(() => {
+  if (route.hash !== '#links') return;
+  detailsButton.value?.$el?.scrollIntoView({ block: 'nearest' });
+  detailsOpen.value = true;
+});
+
 const disclosure = ref<{ reveal: () => void } | null>(null);
 function revealRawError() {
   disclosure.value?.reveal();
@@ -27,8 +38,10 @@ defineExpose({ revealRawError });
 
 <template>
   <div class="flex items-center gap-x-3 gap-y-1 flex-wrap text-xs text-muted">
-    <UPopover>
+    <UPopover v-model:open="detailsOpen" :content="{ align: 'start' }">
       <UButton
+        id="links"
+        ref="detailsButton"
         size="xs"
         variant="ghost"
         color="neutral"
@@ -44,8 +57,7 @@ defineExpose({ revealRawError });
           </div>
           <div class="space-y-1">
             <div class="flex items-center gap-1.5 text-xs">
-              <UIcon name="i-lucide-link" class="size-3.5 shrink-0 text-gray-400" />
-              <span class="text-muted uppercase tracking-wide font-medium">Known issue</span>
+              <span class="text-muted uppercase tracking-wide font-medium">Links</span>
               <HelpHint topic="cluster.known-issue" />
             </div>
             <EntityLinks

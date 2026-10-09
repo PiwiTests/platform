@@ -257,6 +257,15 @@ describe('console-mentions-target', () => {
     expect(clue).toBeTruthy();
     expect(clue!.strength).toBe('strong');
     expect(clue!.citations[0]).toEqual({ section: 'console', index: 0 });
+    // The detail names the target as the locator wrote it.
+    expect(clue!.detail).toContain('mentions "Pay"');
+  });
+
+  test('a console line that writes the name in another case still names the target', () => {
+    const input = baseInput({
+      consoleLogs: [{ type: 'error', text: 'PAY button: quote missing', timestamp: T0 + 3_000 }],
+    });
+    expect(rules(input)).toContain('console-mentions-target');
   });
 
   test('a warning that names the target is medium strength', () => {
@@ -420,6 +429,14 @@ describe('element-present-but-blocked', () => {
     expect(clue).toBeTruthy();
     expect(clue!.strength).toBe('strong');
     expect(clue!.citations.map((c) => c.section)).toContain('ariaSnapshot');
+    expect(clue!.detail).toMatch(/^The button "Pay" is in the accessibility tree/);
+  });
+
+  test('the ARIA snapshot matches whatever case it writes the name in', () => {
+    const input = baseInput({ ariaSnapshot: '- button "pay" [disabled]' });
+    const clue = runClues(input).find((c) => c.rule === 'element-present-but-blocked');
+    expect(clue).toBeTruthy();
+    expect(clue!.detail).toContain('The button "Pay"');
   });
 
   test('negative: the element is absent from the ARIA snapshot', () => {
@@ -814,6 +831,8 @@ describe('the story pass', () => {
     expect(story!.clueIds).toContain('console-mentions-target');
     expect(story!.strength).toBe('strong');
     expect(story!.sentence.toLowerCase()).toContain('/api/checkout/quote');
+    // The element keeps the name the locator gave it.
+    expect(story!.sentence).toMatch(/^The button "Pay" stayed disabled because /);
   });
 
   test('renamed chains element-renamed and page-structure-changed', () => {

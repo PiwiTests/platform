@@ -3,9 +3,10 @@
  * How often a cluster failed over the project's recent runs, as one inline bar
  * sparkline — magnitude over time, oldest → newest. One bar per run, the failure
  * colour for a run that failed and a muted baseline tick for a run it did not,
- * the latest run emphasized. No chart library and no axes: a single accessible
- * SVG whose `aria-label` carries the summary sentence, with a `title` per bar
- * (run number and count) and a link on each non-zero bar to that run.
+ * the latest run emphasized. No chart library and no axes. The sparkline is one
+ * button, named by the summary sentence, that emits `open` (the page unfolds
+ * Occurrences over time, its chart per day, week or month); each bar keeps a
+ * `title` with its run number and count, and links to no run.
  *
  * SSR-safe: the server and the first client render agree (20 bars), and the
  * narrow-viewport slice to 12 bars only kicks in after mount.
@@ -14,9 +15,11 @@ import type { OccurrenceSeriesPoint } from '~~/types/api';
 
 const props = defineProps<{
   series: OccurrenceSeriesPoint[];
-  /** The summary sentence, used as the chart's accessible name. */
+  /** The summary sentence, used as the control's accessible name. */
   label: string;
 }>();
+
+const emit = defineEmits<{ open: [] }>();
 
 // At phone width the last 12 runs, otherwise the last 20 — matched after mount so
 // the initial client render equals the SSR one.
@@ -76,43 +79,35 @@ const bars = computed<Bar[]>(() => {
 </script>
 
 <template>
-  <svg
+  <button
     v-if="bars.length"
-    data-shot="occurrence-sparkline"
-    role="img"
-    :aria-label="label"
-    :width="width"
-    :height="H"
-    :viewBox="`0 0 ${width} ${H}`"
-    class="shrink-0 overflow-visible"
+    type="button"
+    class="shrink-0 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-primary"
+    :aria-label="`${label}. Show occurrences over time`"
+    @click="emit('open')"
   >
-    <template v-for="bar in bars" :key="bar.runId">
-      <!-- A run that failed: a coloured bar linking to that run. -->
-      <NuxtLink v-if="!bar.zero" :to="`/test-runs/${bar.runId}`">
-        <rect
-          :x="bar.x"
-          :y="bar.y"
-          :width="BAR_W"
-          :height="bar.h"
-          rx="1.5"
-          fill="currentColor"
-          :class="bar.latest ? 'text-error' : 'text-error/60'"
-        />
-        <title>{{ bar.title }}</title>
-      </NuxtLink>
-      <!-- A run it did not occur in: a muted baseline tick. -->
+    <svg
+      data-shot="occurrence-sparkline"
+      aria-hidden="true"
+      :width="width"
+      :height="H"
+      :viewBox="`0 0 ${width} ${H}`"
+      class="block overflow-visible"
+    >
+      <!-- A run that failed: a coloured bar; a run it did not occur in: a muted baseline tick. -->
       <rect
-        v-else
+        v-for="bar in bars"
+        :key="bar.runId"
         :x="bar.x"
         :y="bar.y"
         :width="BAR_W"
         :height="bar.h"
-        rx="1"
+        :rx="bar.zero ? 1 : 1.5"
         fill="currentColor"
-        class="text-muted/50"
+        :class="bar.zero ? 'text-muted/50' : bar.latest ? 'text-error' : 'text-error/60'"
       >
         <title>{{ bar.title }}</title>
       </rect>
-    </template>
-  </svg>
+    </svg>
+  </button>
 </template>

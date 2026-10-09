@@ -2,15 +2,19 @@
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
  * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
- * an execution. A tab shows a count or a dot when it holds data and is dimmed
- * when empty; a dimmed tab still opens and states why it is empty. The default
- * tab is the one the strongest clue cites, else Timeline when it can place two
- * or more items, else Screen. The Screen tab is one strip of views of the page
- * at the failure (`FailingStepSnapshot`), over the execution's files. A clue or
- * diagnosis citation switches to the tab (and the Screen view) that holds the
- * evidence and scrolls to it. The Playwright trace opens from the card's header,
- * whichever tab is showing. A test that never ran and left nothing behind shows
- * no card at all.
+ * an execution. A tab that lists items shows their count as plain text, an
+ * empty tab is dimmed and still opens to state why it is empty, and the open
+ * tab is marked in neutral tones: the primary color belongs to the page's
+ * primary action. A pass that needed a retry opens on Attempts; otherwise the
+ * default tab is the one the strongest clue cites, else Timeline when it can
+ * place two or more items, else Screen. The Screen tab is one strip of views of
+ * the page at the failure (`FailingStepSnapshot`), over the execution's files.
+ * The tabs holding what the Most likely line cites carry a mark, and so do its
+ * rows on the Timeline. A clue or diagnosis citation switches to the tab (and
+ * the Screen view) that holds the evidence and scrolls the card so its tab strip
+ * stays in view; a citation of one request or console entry rings that row for a
+ * moment. The Playwright trace opens from the card's header, whichever tab is
+ * showing. A test that never ran and left nothing behind shows no card at all.
  */
 import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVitals } from '~~/types/api';
 import type { WireExecutionResources } from '#shared/types';
@@ -20,6 +24,7 @@ import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state
 import type { CapabilityState } from '#shared/capabilities';
 import type { HelpTopicKey } from '~/utils/help-content';
 import { EVIDENCE_SECTION_TAB, type EvidenceTabValue } from '~/utils/evidence-sections';
+import type { TimelineCitation } from '~/utils/timeline-rows';
 import { extractStepLocatorUses } from '#shared/locator-chain';
 import type { LightboxSubject } from '~/utils/lightbox';
 
@@ -33,9 +38,14 @@ const props = defineProps<{
    * The story's leading clue and its strength — picks the default tab. The
    * section is the citation of the story's first member clue (or the top clue
    * when no story matched); the strength is the story's (or the top clue's). A
-   * strong or medium hint opens its tab; a weak one never picks.
+   * strong or medium hint opens its tab; a weak one never picks. `cited` is what
+   * the Most likely line cites: its tabs and Timeline rows are marked.
    */
-  defaultHint?: { section: string | null; strength: 'strong' | 'medium' | 'weak' | null };
+  defaultHint?: {
+    section: string | null;
+    strength: 'strong' | 'medium' | 'weak' | null;
+    cited?: TimelineCitation[];
+  };
   /** Inline-help topic for the card header. */
   help?: HelpTopicKey;
   /**
@@ -235,11 +245,17 @@ const tabs = computed<TabDef[]>(() =>
   ),
 );
 
+// The tabs that hold what the Most likely line cites.
+const cited = computed<TimelineCitation[]>(() => props.defaultHint?.cited ?? []);
+const citedTabs = computed(
+  () => new Set(cited.value.map((cite) => EVIDENCE_SECTION_TAB[cite.section]).filter((tab) => tab != null)),
+);
+
 // The trace the header opens: this execution's own (one per attempt row).
 const primaryTrace = computed(() => props.traces[0] ?? null);
 const { viewUrl: traceViewUrl, onView: onViewTrace } = useTraceLinks(primaryTrace);
 
-// Nothing was captured for a test that never started — the did-not-run card above
+// Nothing was captured for a test that never started — the Most likely line above
 // says why, so the evidence card stays away rather than showing empty tabs.
 const hasNoEvidence = computed(
   () => status.value === 'didnotrun' && !primaryTrace.value && tabs.value.every((tab) => !tab.hasData),
@@ -252,6 +268,9 @@ const hasNoEvidence = computed(
 const showFixturesFooter = computed(() => !props.suppressFixturesFooter && fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
+  // A pass that needed a retry leads with what differed between its attempts.
+  const retries = Number(props.testCase?.retries ?? 0);
+  if (status.value === 'passed' && retries > 0 && hasMultipleAttempts.value) return 'attempts';
   // A passing execution has no failure to lead with — open on the Timeline.
   if (!hasError.value) return 'timeline';
 
@@ -291,6 +310,24 @@ watch(tabs, (list) => {
     activeTab.value = list[0]?.value ?? 'timeline';
   }
 });
+
+// The failure timeline, held here for the Timeline and Network tabs so a tab
+// switch never fetches it again: the Network tab colors each request against
+// the usual duration it carries, by the request's index.
+const { data: timeline } = useExecutionTimeline(
+  testRunsCaseId,
+  () => hasError.value && (activeTab.value === 'timeline' || activeTab.value === 'network'),
+);
+const usualByRequest = computed(
+  () =>
+    new Map(
+      hasError.value
+        ? (timeline.value?.lanes.network ?? []).flatMap((item) =>
+            item.usual != null ? [[item.ref.index, item.usual] as const] : [],
+          )
+        : [],
+    ),
+);
 
 // The Screen tab is one strip of views of the page at the failure: the page's
 // own (Screenshot, DOM, Accessibility tree), then the visual diff and the page
@@ -368,21 +405,94 @@ const SECTION_SCREEN_VIEW: Record<string, string> = {
 };
 
 const networkComp = ref<{ showTraceMode?: () => void } | null>(null);
+const tabStrip = ref<HTMLElement | null>(null);
+
+// A citation of one entry of a list rings that entry's row in its tab for a
+// moment: a request (its backend logs cite the request too) or a console entry.
+const ROW_SECTION_TAB: Record<string, 'network' | 'console'> = {
+  networkRequests: 'network',
+  serverLogs: 'network',
+  backendLogs: 'network',
+  console: 'console',
+};
+const citedRow = ref<{ tab: 'network' | 'console'; index: number } | null>(null);
+let citedRowTimer: ReturnType<typeof setTimeout> | null = null;
+function ringRow(row: { tab: 'network' | 'console'; index: number } | null) {
+  if (citedRowTimer) clearTimeout(citedRowTimer);
+  citedRowTimer = null;
+  citedRow.value = row;
+  if (row) citedRowTimer = setTimeout(() => (citedRow.value = null), CITED_ROW_MS);
+}
+onBeforeUnmount(() => {
+  if (citedRowTimer) clearTimeout(citedRowTimer);
+});
+const networkRowIndex = computed(() => (citedRow.value?.tab === 'network' ? citedRow.value.index : null));
+const consoleRowIndex = computed(() => (citedRow.value?.tab === 'console' ? citedRow.value.index : null));
+
+const REVEAL_MARGIN = 16;
+
+/** The nearest ancestor that scrolls vertically, else the document's scroller. */
+function scrollParent(el: HTMLElement): HTMLElement {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+}
+
+/**
+ * Scroll the page so the tab strip sits at the top of the view with the cited
+ * row under it; a row too far down for both wins, and the strip scrolls out. A
+ * list that scrolls on its own (the network and console lists) first brings
+ * the row into its middle.
+ */
+function bringIntoView(row: HTMLElement | null) {
+  const strip = tabStrip.value;
+  if (!strip) return;
+  const page = scrollParent(strip);
+  if (row) {
+    const list = scrollParent(row);
+    if (list !== page && !list.contains(strip)) {
+      const rowRect = row.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+      list.scrollTop += rowRect.top - listRect.top - (listRect.height - rowRect.height) / 2;
+    }
+  }
+  const isDocument = page === document.scrollingElement || page === document.documentElement;
+  const viewTop = isDocument ? 0 : page.getBoundingClientRect().top;
+  const viewHeight = isDocument ? window.innerHeight : page.clientHeight;
+  let delta = strip.getBoundingClientRect().top - viewTop - REVEAL_MARGIN;
+  if (row) delta = Math.max(delta, row.getBoundingClientRect().bottom - viewTop - viewHeight + REVEAL_MARGIN);
+  page.scrollBy({ top: delta, behavior: 'smooth' });
+}
 
 function canLocate(sectionId: string): boolean {
   return sectionId in EVIDENCE_SECTION_TAB;
 }
 
-function revealSection(sectionId: string): boolean {
+/**
+ * Open the tab that holds a cited section (and its Screen view), keep the tab
+ * strip in view and bring the cited row under it: with `index`, the request or
+ * console entry it names, which is ringed for a moment; on the Timeline, the
+ * first row the Most likely line cites.
+ */
+function revealSection(sectionId: string, index?: number): boolean {
   const tab = EVIDENCE_SECTION_TAB[sectionId];
   if (!tab) return false;
   activeTab.value = tab;
   const citedView = SECTION_SCREEN_VIEW[sectionId];
   if (citedView) screenView.value = citedView;
+  const rowTab = ROW_SECTION_TAB[sectionId];
+  ringRow(rowTab && index != null ? { tab: rowTab, index } : null);
   nextTick(() => {
     if (sectionId === 'traceNetwork') networkComp.value?.showTraceMode?.();
     const wrapKey = SECTION_WRAP[sectionId];
-    if (wrapKey) WRAP_REF[wrapKey]?.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const wrap = wrapKey ? WRAP_REF[wrapKey]?.value : null;
+    // The Timeline lays its rows out twice (phone cards, table): the shown one counts.
+    const row =
+      [...(wrap?.querySelectorAll<HTMLElement>('[data-cited]') ?? [])].find((el) => el.getClientRects().length > 0) ??
+      null;
+    bringIntoView(row);
   });
   return true;
 }
@@ -399,7 +509,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
     <!-- Header: the section title, its help, the trace, and the content-level tab strip -->
     <div class="p-3 sm:px-4 sm:py-3 border-b border-default">
       <div class="flex items-center gap-2 mb-2.5">
-        <UIcon name="i-lucide-microscope" class="size-5 shrink-0 text-primary" />
+        <UIcon name="i-lucide-microscope" class="size-5 shrink-0" :class="CARD_ICON_CLASS" data-card-icon />
         <h2 class="text-lg font-medium">Evidence</h2>
         <HelpHint v-if="help" :topic="help" />
         <!-- The viewer URL carries the page origin, known only in the browser. -->
@@ -420,28 +530,32 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           </template>
         </ClientOnly>
       </div>
+      <!-- What the evidence is of, when the page shows one execution among several -->
+      <p v-if="$slots.subject" data-shot="evidence-subject" class="-mt-1 mb-2.5 text-xs text-muted break-words">
+        <slot name="subject" />
+      </p>
       <!-- The strip wraps onto as many rows as it needs, so no tab is ever
            hidden off the edge of the card. -->
-      <div class="flex flex-wrap items-center gap-1" role="tablist" aria-label="Evidence sections">
+      <div ref="tabStrip" class="flex flex-wrap items-center gap-1" role="tablist" aria-label="Evidence sections">
         <button
           v-for="tab in tabs"
           :key="tab.value"
           type="button"
           role="tab"
           :aria-selected="activeTab === tab.value ? 'true' : 'false'"
+          :title="citedTabs.has(tab.value) ? 'The Most likely line cites this tab' : undefined"
+          :data-cited="citedTabs.has(tab.value) ? '' : undefined"
           class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-primary transition-colors"
           :class="[
-            activeTab === tab.value ? 'bg-primary/10 text-primary font-medium' : 'text-muted hover:bg-elevated/60',
+            activeTab === tab.value ? SELECTED_TAB_CLASS : 'text-muted hover:bg-elevated/60',
             !tab.hasData && activeTab !== tab.value ? 'opacity-50' : '',
           ]"
           @click="activeTab = tab.value"
         >
           <UIcon :name="tab.icon" class="size-4 shrink-0" />
           {{ tab.label }}
-          <UBadge v-if="tab.count" color="neutral" variant="soft" size="xs" class="tabular-nums">{{
-            tab.count
-          }}</UBadge>
-          <span v-else-if="tab.hasData" class="size-1.5 rounded-full bg-primary/70" aria-hidden="true" />
+          <span v-if="tab.count" class="text-xs font-normal text-muted tabular-nums">{{ tab.count }}</span>
+          <span v-if="citedTabs.has(tab.value)" class="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -466,6 +580,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :attachments="attachments"
           :aria-snapshot="ariaSnapshot"
           :subject="imageSubject"
+          :cited="cited"
         />
       </div>
 
@@ -556,6 +671,9 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           :test-runs-case-id="testRunsCaseId"
           :has-trace="hasTrace"
           :derived-from-trace="networkDerived"
+          :test-duration-ms="testCase?.duration ?? null"
+          :usual-by-index="usualByRequest"
+          :highlight-index="networkRowIndex"
         />
         <SectionCard v-else embedded title="">
           <EvidenceEmptyState :state="networkState" compact />
@@ -569,6 +687,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           embedded
           :entries="consoleLogs"
           :derived-from-trace="consoleDerived"
+          :highlight-index="consoleRowIndex"
         />
         <SectionCard v-else embedded title="">
           <EvidenceEmptyState :state="consoleState" compact />
