@@ -15,7 +15,9 @@
  * the sentences, one label style, one meta style; code in a heading or a sentence
  * sits in a chip. Its left edge carries the status color the page passes — the
  * execution's outcome, the cluster's state — so the page's situation reads before
- * a word of it. It carries the page's single help hint; nothing else on it does.
+ * a word of it. It carries the page's help hint; a line adds one of its own only to
+ * explain a setup gap, as What changed does when the runs lack what Piwi needs
+ * to read the commits.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 import { SITUATION_ROWS } from '~/utils/situation-rows';

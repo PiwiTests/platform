@@ -84,6 +84,28 @@ export const HELP_TOPICS = {
     text: 'One sentence with one verb for where this cluster stands — still failing, fixed and verified, fixed while the diagnosed patch still applies at the commit of the fix (the change may not be in the code yet), stopped failing, regressed, resolved, ignored, snoozed or quarantined — with the single action that reconciles it, unless the Next line offers it. Triage sets the status, a note and the assignee; Snooze hides it from the inbox without changing the status.',
     doc: 'features/failure-clusters#the-state-line',
   },
+  // What changed, when the configuration is what is missing.
+  'cluster.scm-no-commit': {
+    title: 'Commit not recorded',
+    text: 'The runs record no commit, so Piwi has no range to read. The reporter reads the commit from the Git checkout the tests run in (`collectScmInfo`, on by default): run them from a clone of the repository.',
+    doc: 'guide/source-control#troubleshooting',
+  },
+  'cluster.scm-no-repository': {
+    title: 'Repository unknown',
+    text: 'The runs record their commits but no repository URL, so Piwi cannot list the commits in this range. The reporter takes the URL from the `origin` remote of the checkout the tests run in; until it has one, **More actions › Copy git log** lists the range in your own clone.',
+    doc: 'guide/source-control#troubleshooting',
+  },
+  'cluster.scm-unsupported-host': {
+    title: 'Host not supported',
+    text: 'Piwi reads commits from GitHub, Bitbucket, GitLab and the self-hosted GitLab hosts you list. For another host, **More actions › Copy git log** lists the range in your own clone.',
+    doc: 'guide/source-control#troubleshooting',
+    envVars: ['PIWI_SCM_GITLAB_HOSTS'],
+  },
+  'cluster.scm-fetch-failed': {
+    title: 'Changes not read',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → Repository access**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    doc: 'guide/source-control#troubleshooting',
+  },
 
   // ── Analytics ─────────────────────────────────────────────────────────
   'analytics.insights': {

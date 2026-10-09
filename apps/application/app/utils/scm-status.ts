@@ -3,8 +3,13 @@
  * knows about the commits (the range, the host's compare page, the local `git
  * log`), what it is missing, and what would fill the gap — from the SCM coverage
  * the diagnosis context reports.
+ *
+ * A gap the configuration fills (no commit or repository recorded, a host Piwi
+ * does not read, a host that did not answer) is a setup gap: the same on every
+ * cluster of the project, so the line keeps only the range and a help hint.
  */
 import type { DiagnosisContextCoverage } from '~~/types/api';
+import type { HelpTopicKey } from '~/utils/help-content';
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
 
@@ -32,6 +37,14 @@ export interface ScmStatus {
   kind: ScmStatusKind;
   /** The clause the line leads with. */
   text: string;
+  /** The commit range, `a1b2c3d..e4f5a6b`, when known. */
+  range: string | null;
+  /** What the range is counted from, `since the last passing run`, when the range is known. */
+  origin: string | null;
+  /** The configuration fills the gap: the line shows the range and a help hint, no sentence. */
+  setupGap: boolean;
+  /** The help topic that explains a setup gap. */
+  help: HelpTopicKey | null;
   /** What is missing or what to do next, one clause; null when the text says it all. */
   detail: string | null;
   /** The host's own compare page for the range. */
@@ -69,6 +82,10 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
   const base: ScmStatus = {
     kind: 'unavailable',
     text: 'No commit information for this cluster',
+    range: null,
+    origin: null,
+    setupGap: false,
+    help: null,
     detail: null,
     compare: null,
     gitCommand: null,
@@ -85,6 +102,10 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
     error: scm.error ?? null,
   };
   const range = scm.range ? `${scm.range.from}..${scm.range.to}` : null;
+  if (range) {
+    known.range = range;
+    known.origin = rangeOrigin(scm);
+  }
 
   if (scm.filesCount > 0 || scm.commitsCount > 0) {
     return { ...known, kind: 'resolved', text: range ? `${range} ${rangeOrigin(scm)}` : 'Changes found' };
@@ -113,6 +134,8 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       ...known,
       kind: 'no-commit',
       text: 'The runs do not record their commit',
+      setupGap: true,
+      help: 'cluster.scm-no-commit',
       detail: 'the reporter reads it from the Git checkout the tests run in',
     };
   }
@@ -123,6 +146,8 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       ...known,
       kind: 'no-repository',
       text,
+      setupGap: true,
+      help: 'cluster.scm-no-repository',
       detail: 'the checkout the tests run in has no origin remote, so Piwi cannot list the commits',
     };
   }
@@ -132,6 +157,8 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       ...known,
       kind: 'unsupported-host',
       text,
+      setupGap: true,
+      help: 'cluster.scm-unsupported-host',
       detail: `${where} is not a host Piwi reads (GitHub, GitLab and Bitbucket are)`,
     };
   }
@@ -140,6 +167,8 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       ...known,
       kind: 'fetch-failed',
       text,
+      setupGap: true,
+      help: 'cluster.scm-fetch-failed',
       detail: 'the folder linked to this project does not have these commits: fetch them there, or add an access token',
       needsToken: !scm.hasToken,
     };
@@ -150,6 +179,8 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       ...known,
       kind: 'fetch-failed',
       text,
+      setupGap: true,
+      help: 'cluster.scm-fetch-failed',
       detail: scm.hasToken ? what : `${what}: a private repository needs an access token`,
       needsToken: !scm.hasToken,
     };

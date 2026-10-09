@@ -74,11 +74,12 @@ section is absent, it says why.
 
 ## Troubleshooting
 
-- **No commits or diff.** The cluster's **What changed** line and the coverage name the cause: no commit or repository
-  URL on the run (the reporter reads both from the Git checkout the tests run in, the URL from its `origin` remote), a
-  host Piwi does not read, no SCM token, or the host's error. A 404 from GitHub on a private repository means the token
-  cannot see it. On the desktop app, it says when the linked folder does not have the commits yet. While the diff is
-  missing, the line still links the range on the host's compare page and copies the `git log` command for it.
+- **No commits or diff.** The help hint on the cluster's **What changed** line and the coverage name the cause: no
+  commit or repository URL on the run (the reporter reads both from the Git checkout the tests run in, the URL from its
+  `origin` remote), a host Piwi does not read, no SCM token, or the host's error. A 404 from GitHub on a private
+  repository means the token cannot see it. On the desktop app, the hint says to fetch the commits in the linked
+  folder. While the diff is missing, the line keeps the range and links the host's compare page when there is one;
+  the cluster's **More actions › Copy git log** copies the command that lists the range in your checkout.
 - **No baseline.** The diff starts at the last green run before the failure first appeared; a project with no green
   run falls back to the last run where the test passed, and a manual baseline commit overrides both.
 - **No pull-request comment.** Pull-request feedback also needs `PIWI_SITE_URL` and a write-scoped token, and posts on

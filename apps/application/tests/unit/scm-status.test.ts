@@ -120,3 +120,53 @@ describe('describeScmStatus', () => {
     expect(status.text).toBe('a1b2c3d..e4f5a6b from the baseline you picked');
   });
 });
+
+describe('describeScmStatus: setup gaps', () => {
+  test.each([
+    [
+      'no-commit',
+      scm({ hasCommitRange: false, range: null, compareUrl: null, gitCommand: null }),
+      'cluster.scm-no-commit',
+    ],
+    ['no-repository', scm({ provider: null, repositoryUrl: null, compareUrl: null }), 'cluster.scm-no-repository'],
+    [
+      'unsupported-host',
+      scm({ provider: null, repositoryUrl: 'https://git.acme.internal/shop', compareUrl: null }),
+      'cluster.scm-unsupported-host',
+    ],
+    ['fetch-failed', scm({ hasToken: false, error: 'GitHub API 404: Not Found' }), 'cluster.scm-fetch-failed'],
+    ['fetch-failed', scm({ hasToken: false, localGit: true }), 'cluster.scm-fetch-failed'],
+  ] as const)('%s is a setup gap with its own help', (kind, coverage, help) => {
+    expect(describeScmStatus(coverage)).toMatchObject({ kind, setupGap: true, help });
+  });
+
+  test('the range and what it is counted from are apart from the text', () => {
+    const status = describeScmStatus(scm({ provider: null, repositoryUrl: null, compareUrl: null }));
+    expect(status).toMatchObject({ range: 'a1b2c3d..e4f5a6b', origin: 'since the last passing run' });
+    const picked = describeScmStatus(scm({ baseCommitUsed: 'a1b2c3d', baselineKind: 'manual', provider: null }));
+    expect(picked.origin).toBe('from the baseline you picked');
+  });
+
+  test('a gap with no commit recorded has no range', () => {
+    const status = describeScmStatus(scm({ hasCommitRange: false, range: null, compareUrl: null, gitCommand: null }));
+    expect(status).toMatchObject({ range: null, origin: null });
+  });
+
+  test('a failed fetch keeps the compare page for the range', () => {
+    const status = describeScmStatus(scm({ hasToken: false, error: 'GitHub API 404: Not Found' }));
+    expect(status.compare?.label).toBe('Compare on GitHub');
+  });
+
+  test.each([
+    ['same-commit', scm({ range: { from: 'a1b2c3d', to: 'a1b2c3d' }, compareUrl: null, gitCommand: null })],
+    ['no-baseline', scm({ hasLastGreen: false, baselineKind: undefined, range: null, compareUrl: null })],
+    ['no-changes', scm()],
+    ['resolved', scm({ commitsCount: 2, filesCount: 3 })],
+  ] as const)('%s is a finding, not a setup gap', (kind, coverage) => {
+    expect(describeScmStatus(coverage)).toMatchObject({ kind, setupGap: false, help: null });
+  });
+
+  test('no coverage is not a setup gap', () => {
+    expect(describeScmStatus(null)).toMatchObject({ setupGap: false, help: null, range: null });
+  });
+});

@@ -3231,8 +3231,8 @@ const SCENES = [
   ...['', '-mobile'].map((suffix) => ({
     name: `what-changed-no-repository${suffix}`,
     description: suffix
-      ? 'The cluster situation block at phone width, for runs without a repository URL'
-      : 'Cluster situation block for runs that record commits but no repository URL: the range, why, the docs, the git log',
+      ? 'The cluster situation block at phone width, for runs without a repository URL: the range and its help hint'
+      : 'Cluster situation block for runs that record commits but no repository URL: What changed keeps the range and a help hint',
     route: '/projects',
     viewport: suffix ? { width: 375, height: 1200 } : { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
@@ -3242,9 +3242,7 @@ const SCENES = [
     },
     async run({ page, goto, settle, shoot }) {
       await goto(`/failure-clusters/${this.clusterId}`);
-      await page
-        .locator('[data-shot="what-changed"]', { hasText: 'since the last passing run' })
-        .waitFor({ timeout: 60_000 });
+      await page.locator('[data-testid="what-changed-range"]').waitFor({ timeout: 60_000 });
       await settle();
       await shoot();
     },

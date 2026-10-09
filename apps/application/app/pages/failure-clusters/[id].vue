@@ -34,9 +34,10 @@ const { can } = useAuth();
 // Provide shared diagnosis/investigation state (consumed by WhatChangedLine,
 // ClusterInvestigation and DiagnosisPanel). Must run before the top-level await
 // below so provide() and lifecycle hooks register against the active setup
-// instance. The page keeps the one flag it renders on: whether the What
-// changed card has anything to show.
-const { hasChangesToShow } = provideClusterDiagnosis(clusterId);
+// instance. The page keeps what it renders on: whether the What changed card
+// has anything to show, and the commit coverage behind the More menu's Copy git
+// log.
+const { hasChangesToShow, coverage: contextCoverage, scmChanges } = provideClusterDiagnosis(clusterId);
 
 const { data: cluster, refresh: refreshCluster } = await useFetch<FailureClusterDetail>(
   `/api/failure-clusters/${clusterId}`,
@@ -423,6 +424,14 @@ function copyFixPlanMarkdown() {
   copyMarkdown(fixPlanToMarkdown(fixPlan.value, { url }), { toast: 'Fix plan copied as Markdown' });
 }
 
+// A setup gap leaves What changed with the range alone: the command that lists
+// it in a local clone is a More menu copy.
+const scmStatus = computed(() => describeScmStatus(contextCoverage.value?.scm));
+const gitLogCommand = computed(() =>
+  scmStatus.value.setupGap && !scmChanges.value ? scmStatus.value.gitCommand : null,
+);
+const { copy: copyGitLog } = useCopy();
+
 // ── Bulk actions (More menu) ─────────────────────────────────────────────────
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
@@ -476,6 +485,14 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       icon: 'i-lucide-clipboard',
       onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
+  if (gitLogCommand.value) {
+    const command = gitLogCommand.value;
+    copies.push({
+      label: 'Copy git log',
+      icon: 'i-lucide-git-commit-horizontal',
+      onSelect: () => copyGitLog(command, { toast: 'Copied the git log command' }),
+    });
+  }
   if (aiStatus.value?.configured)
     copies.push({
       label: 'Show context',

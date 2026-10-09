@@ -40,6 +40,8 @@ export interface ClusterDiagnosisStore {
   /** The "What changed" card has something to show: a resolved diff or a hand-picked commit range. */
   hasChangesToShow: ComputedRef<boolean>;
   contextLoading: Ref<boolean>;
+  /** The first context fetch has answered (it runs once the page is mounted, so never during the server render). */
+  contextLoaded: Ref<boolean>;
   refreshContext: () => Promise<void>;
 
   // Diagnosis state
@@ -67,6 +69,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
   const coverage = ref<DiagnosisContextCoverage | null>(null);
   const scmChanges = ref<ScmChanges | null>(null);
   const contextLoading = ref(false);
+  const contextLoaded = ref(false);
   // The "What changed" card — baseline picker, commit browser and diff — opens
   // only with a resolved diff or a hand-picked commit range. With nothing to
   // diff, the situation block's line says why, and the first screen spends
@@ -120,6 +123,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
       scmChanges.value = null;
     } finally {
       contextLoading.value = false;
+      contextLoaded.value = true;
     }
   }
 
@@ -261,6 +265,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     scmChanges,
     hasChangesToShow,
     contextLoading,
+    contextLoaded,
     refreshContext,
     diagnosis,
     posting,

@@ -208,6 +208,91 @@ test.describe('Failure cluster page layout', () => {
 });
 
 /**
+ * What changed when the runs record their commits but no repository URL: a
+ * setup gap. The line keeps the range and a help hint; the command that lists
+ * the range in a local clone is in More actions.
+ */
+test.describe('What changed with a setup gap', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.setTimeout(90000);
+
+  let setupClusterId = 0;
+
+  test.beforeAll(async ({ request }) => {
+    const submit = async (status: 'passed' | 'failed', commit: string, at: number) => {
+      const failed = status === 'failed';
+      const res = await retryPost(request, '/api/test-runs/submit', {
+        data: {
+          projectName: PROJECT.CLUSTER_WHAT_CHANGED_SETUP,
+          status,
+          startTime: new Date(at).toISOString(),
+          duration: 3000,
+          totalTests: 1,
+          passedTests: failed ? 0 : 1,
+          failedTests: failed ? 1 : 0,
+          skippedTests: 0,
+          metadata: { scm: { commit, branch: 'main', author: 'Ada Lovelace' } },
+          testCases: [
+            {
+              title: 'edits the profile',
+              location: 'tests/profile.spec.ts:5:3',
+              status,
+              duration: 1500,
+              retries: 0,
+              ...(failed
+                ? {
+                    error:
+                      "TimeoutError: locator.click: Timeout 1500ms exceeded.\n  - waiting for getByRole('button', { name: 'Edit profile' })",
+                  }
+                : {}),
+            },
+          ],
+        },
+        timeout: 20000,
+      });
+      return ((await res.json()) as { runId: number }).runId;
+    };
+    await submit('passed', '3f9c2e1a7b4d5c6e8f0a1b2c3d4e5f6a7b8c9d0e', Date.now() - 60 * 60_000);
+    const runId = await submit('failed', 'b7e41d09c2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7', Date.now() - 5_000);
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    const failed = (run.testCases as Array<{ failureClusterId?: number }>).find((c) => c.failureClusterId);
+    expect(failed?.failureClusterId).toBeTruthy();
+    setupClusterId = failed!.failureClusterId!;
+  });
+
+  test('the line shows the range and a help hint, and More actions copies the git log', async ({ page }) => {
+    await page.goto(`/failure-clusters/${setupClusterId}`);
+    await waitForHydration(page);
+
+    const whatChanged = page.locator('[data-shot="what-changed"]');
+    await expect(whatChanged).toContainText('3f9c2e1..b7e41d0 since the last passing run', { timeout: 30_000 });
+    await expect(whatChanged.getByRole('button', { name: /^Help: / })).toBeVisible();
+
+    // No sentence on what is missing, no buttons: the help says what to set up.
+    const block = page.locator('[data-shot="situation-block"]');
+    await expect(block.getByRole('button', { name: 'Copy git log' })).toHaveCount(0);
+    await expect(block.getByRole('link', { name: 'How runs record Git' })).toHaveCount(0);
+    await expect(whatChanged).not.toContainText('origin remote');
+
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Copy git log' })).toBeVisible();
+  });
+
+  test('at phone width the line wraps with no horizontal scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/failure-clusters/${setupClusterId}`);
+    await waitForHydration(page);
+    const whatChanged = page.locator('[data-shot="what-changed"]');
+    await expect(whatChanged).toContainText('3f9c2e1..b7e41d0', { timeout: 30_000 });
+    await expect(whatChanged.getByRole('button', { name: /^Help: / })).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+/**
  * The situation block against the demo-seeded clusters (#10, #1, #5 exist on a
  * demo-seeded server; a bare test DB skips them). These clusters are shared,
  * mutable state — another spec on the same database can triage or diagnose one,
