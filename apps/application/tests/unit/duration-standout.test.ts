@@ -1,10 +1,14 @@
 import { describe, test, expect } from 'vitest';
 import {
+  SLOWER_FACTOR,
+  SLOWER_MIN_DELTA_MS,
   STANDOUT_MIN_MS,
   STANDOUT_SHARE,
   durationStandout,
+  isMuchSlower,
   shareOfTestLabel,
   standoutReasonText,
+  stepMatchKey,
 } from '#shared/duration-standout';
 
 describe('durationStandout', () => {
@@ -39,6 +43,56 @@ describe('durationStandout', () => {
     expect(durationStandout({ ms: null, testMs: 1000 })).toBeNull();
     expect(durationStandout({ ms: Number.NaN, testMs: 1000 })).toBeNull();
     expect(durationStandout({ ms: -2000, testMs: 1000 })).toBeNull();
+  });
+});
+
+describe('isMuchSlower', () => {
+  test('twice as long and 1 s longer is much slower', () => {
+    expect(isMuchSlower(2000, 1000)).toBe(true);
+    expect(isMuchSlower(5000, 600)).toBe(true);
+    expect(isMuchSlower(SLOWER_FACTOR * 1000, 1000)).toBe(true);
+  });
+
+  test('twice as long but less than 1 s longer is not', () => {
+    expect(isMuchSlower(1800, 900)).toBe(false);
+    expect(isMuchSlower(1200, 300)).toBe(false);
+    expect(isMuchSlower(300 + SLOWER_MIN_DELTA_MS - 1, 300)).toBe(false);
+  });
+
+  test('1 s longer but less than twice as long is not', () => {
+    expect(isMuchSlower(5000, 3000)).toBe(false);
+    expect(isMuchSlower(1999, 1000)).toBe(false);
+  });
+
+  test('faster or equal is never much slower', () => {
+    expect(isMuchSlower(1000, 1000)).toBe(false);
+    expect(isMuchSlower(500, 3000)).toBe(false);
+  });
+});
+
+describe('stepMatchKey', () => {
+  test('two steps with the same label and params share a key', () => {
+    const a = { title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })", params: { force: true } };
+    const b = { title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })", params: { force: true } };
+    expect(stepMatchKey(a)).toBe(stepMatchKey(b));
+  });
+
+  test('params tell apart two steps that share a label', () => {
+    const first = { title: 'Click', params: { locator: "getByRole('button', { name: 'Pay' })" } };
+    const second = { title: 'Click', params: { locator: "getByRole('link', { name: 'Back' })" } };
+    expect(stepMatchKey(first)).not.toBe(stepMatchKey(second));
+  });
+
+  test('the subtitle is part of the label, so two targets stay apart', () => {
+    expect(stepMatchKey({ title: 'Fill', subtitle: "getByLabel('Email')" })).not.toBe(
+      stepMatchKey({ title: 'Fill', subtitle: "getByLabel('Name')" }),
+    );
+  });
+
+  test('the title-only and the title-plus-subtitle shapes of one step match', () => {
+    expect(stepMatchKey({ title: "Click getByRole('button')" })).toBe(
+      stepMatchKey({ title: "Click getByRole('button')", subtitle: "getByRole('button')" }),
+    );
   });
 });
 
