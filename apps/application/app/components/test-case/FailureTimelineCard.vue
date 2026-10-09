@@ -1110,7 +1110,8 @@ function revealItem(item: TimelineItem) {
                 class="[&>th]:bg-elevated/50 [&>th]:border-y [&>th]:border-default [&>th]:px-3 [&>th]:py-2 [&>th]:text-left [&>th]:font-medium [&>th]:text-xs [&>th]:text-gray-500 dark:[&>th]:text-gray-400"
               >
                 <th v-if="showAxis" class="w-16 first:rounded-l-lg first:border-l">Time</th>
-                <th class="w-8" :class="showAxis ? '' : 'first:rounded-l-lg first:border-l'">
+                <!-- `relative` keeps the hidden label inside the table's scroller -->
+                <th class="relative w-8" :class="showAxis ? '' : 'first:rounded-l-lg first:border-l'">
                   <span class="sr-only">Kind</span>
                 </th>
                 <th>Step</th>

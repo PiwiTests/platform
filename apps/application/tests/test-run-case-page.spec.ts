@@ -514,6 +514,10 @@ test.describe('Situation block on seeded cases', () => {
     await expect(section).toHaveAttribute('aria-expanded', 'true');
     await picker.getByRole('button', { name: 'Cancel' }).click();
     await expect(picker).toHaveCount(0);
+    // Scrolling the section into view moves the panel's content, never the
+    // dashboard: the navbar stays on screen.
+    const navbarTop = (await page.getByRole('button', { name: 'More actions' }).boundingBox())?.y ?? -1;
+    expect(navbarTop).toBeGreaterThanOrEqual(0);
 
     // Copy patch copies the healing edit's diff.
     await fold();
