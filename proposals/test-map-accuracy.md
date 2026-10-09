@@ -6,10 +6,13 @@ inputs it never writes, adds the signals a team already owns elsewhere, gives th
 accuracy, and joins it with the browser extension, which already sees the one thing the map cannot: the whole
 rendered surface of a page.
 
-**Status.** Proposed 2026-10-09. Part 1 items 1, 3, 4 and 8 have shipped: page reach along the journey (read
-from the locator pages the reporter already sends, so no new capture), *API-only route* retired, nodes only
-untrusted tests reach raised as fragile, and surface drift limited to new surface. The rest is proposed. The
-evidence comes from the web-dashboard demo project
+**Status.** Proposed 2026-10-09. Part 1 items 1 to 4 and 8 to 10 have shipped, and item 6 in part: page reach
+along the journey (read from the locator pages the reporter already sends, so no new capture), control reach from
+the locator index, *API-only route* retired, nodes only untrusted tests reach raised as fragile, surface drift
+limited to new surface, unhandled server-probe findings, muting in the digest and the tab, and churn and escape
+history for route, handler and dependency gaps. The rest is proposed. The findings table and the summary describe
+the demo as it was proposed; with the shipped items its detectors find 89 gaps, 24 of them controls no locator
+targets. The evidence comes from the web-dashboard demo project
 (`shared/demo/demo-test-map.mjs`), whose gaps are exactly what the live detectors compute from its graph
 (`tests/unit/demo-test-map.test.ts` recomputes them on the seed). New wire fields, attachments and endpoints freeze
 at 1.0 and get an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -62,12 +65,14 @@ capture.
    from the `piwi-locator-pages` attachment the capture fixtures send on every execution, as well as the page it
    ended on; the graph rebuild reads the stored payloads too. Fixes finding 1 and gives *single covering test* the
    right count. A page a test only navigates through, without a locator call, stays unreached.
-2. **Control reach from the locator index.** The locator index (`locator_usages`, what the extension's overlay
-   evaluates) knows, per test, the chains it ran, their actions and the pages they ran on. Parse each chain with
-   `@piwitests/core/locator-chain`: a `getByRole(role, { name })` maps to a `role:name` control key directly; a test
-   id, label or CSS chain maps through the element its locator snapshot resolved to (`element_tag`,
-   `element_attrs`). Write `test → control` reaches with `evidence.action` = `operated` or `checked`. Wakes *control
-   nobody exercises* (finding 2) and gives every control the overlay's own distinction.
+2. **Control reach from the locator index** (shipped). Each recompute reads the default branch's locator index
+   (`locator_usages`, what the extension's overlay evaluates) and parses each chain with
+   `@piwitests/core/locator-chain`: a `getByRole(role, { name })` maps to a `role:name` control or link key
+   (confidence 1), an alternative its locator snapshot captured at the same call site maps the same way (0.9), and
+   a label, placeholder or title maps to the one control carrying that name (0.8). It writes `test → control` and
+   `test → link` reaches with `evidence.action` = `operated` or `checked`, which wakes *control nobody exercises*
+   (finding 2). A test id or CSS chain whose snapshot has no role alternative still maps to nothing; the element the
+   snapshot resolved to (`element_tag`, `element_attrs`) would map it.
 3. **Retire *API-only route*** (shipped). Its claim, *reached only by request fixtures*, cannot hold for any
    observed route, since only the page's own requests are captured; trigger edges would have hidden the noise, not
    fixed the claim. The recompute closes its open rows and keeps the dismissed ones. Trigger edges are still worth
@@ -81,20 +86,23 @@ capture.
    sharing an OpenAPI tag or a path prefix with its routes. A node reached by more than half the tests, or grouped
    by more than half the features, is a hub: drawn, but neither linking features nor counted in a feature's tests
    (findings 5 and 6).
-6. **Exposure for node gaps.** The nightly sweep computes file exposure for the handler files (`handled-by`) and,
-   by convention, page files, and passes it to `computeScenarioGaps`. Age is the file's first commit, read once
-   from the provider and cached, not the oldest of the last twelve commits scanned (finding 7).
+6. **Exposure for node gaps** (churn and escape history shipped). A gap on a route, a handler or a dependency
+   takes churn and escape history from the handler files behind it (`handled-by`), counted from the `changes`
+   edges the default-branch runs recorded and the failure clusters' fixing commits, so no provider call is made
+   (finding 7). Still proposed: page files by convention, and age from the file's first commit, read once from the
+   provider and cached.
 7. **Route keys without the query.** The node key drops the query; the parameter names move to `attrs.query`.
    A migration merges the split nodes and their edges (finding 8).
 8. **Drift on surface only, and not at the first build** (shipped). Drift is a new node no test reaches, as the
    first record defined it: a new node a test already reaches is covered. Feature nodes never drift, the run that
    built the project's graph first (pruned nodes included) raises none, and a link's title names it once
    (finding 9). Requiring no reach also keeps the pages that item 1 adds to existing graphs from reading as new.
-9. **Unhandled findings.** The fixtures already capture page errors and the ARIA snapshot: report an uncaught
-   exception, or a backend error with a blank page, so the server's `classifyHandled` can return *unhandled*
-   (finding 10).
-10. **Muting everywhere.** A muted detector's rows leave the digest, the Home queue and the default tab filter,
-    which shows them under *Muted (n)* (finding 11).
+9. **Unhandled findings** (shipped). Under a server probe the capture fixtures count uncaught page errors and
+   read whether the page is blank before it closes; an uncaught error, or a backend error with a blank page, is
+   *unhandled* (finding 10).
+10. **Muting everywhere** (shipped). A muted detector's rows leave the digest as well as the pull-request
+    comment, and the Gaps tab lists them last, under *Muted detectors* (finding 11). The Home queue keeps them:
+    each is a gap a person accepted.
 11. **Wire the cheap pure detectors.** *Passed with errors* (console errors, backend `Error` logs and background 5xx
     on passing executions, all stored), *assertion-light* (from `step-analysis.ts`) and *catalog method no test
     calls* (from `test_functions`) need no new data (finding 12).
@@ -237,14 +245,14 @@ Map, and its page keys were made equal to the map's precisely so the two could b
 
 ## Delivery
 
-1. Substrate, without new captures: items 1, 3, 4 and 8 of Part 1 (shipped), then 9, 10 and 11, with the demo
+1. Substrate, without new captures: items 1 to 4 and 8 to 10 of Part 1 (shipped), then 11, with the demo
    fixture regenerated.
-2. Control reach from the locator index (item 2).
-3. Feature grouping and hubs, exposure for node gaps, query-free route keys and their migration (items 5 to 7).
-4. The indicators of Part 3, the map health panel, and the labeled benchmark.
-5. The extension's read slice and gap layer, then *Record a test* (Part 4, items 1 and 2).
-6. The page as a source and the probe by hand (Part 4, items 3 and 4), behind a per-project opt-in.
-7. Inputs of Part 2, cheapest first: OpenAPI tags, router manifests, GraphQL operations, then the integrations.
+2. Feature grouping and hubs, page files and age for node exposure, query-free route keys and their migration
+   (items 5 to 7).
+3. The indicators of Part 3, the map health panel, and the labeled benchmark.
+4. The extension's read slice and gap layer, then *Record a test* (Part 4, items 1 and 2).
+5. The page as a source and the probe by hand (Part 4, items 3 and 4), behind a per-project opt-in.
+6. Inputs of Part 2, cheapest first: OpenAPI tags, router manifests, GraphQL operations, then the integrations.
 
 ## Risks
 
