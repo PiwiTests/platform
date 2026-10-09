@@ -260,6 +260,10 @@ interface CaptureSink {
   // The probe plan item for this test (probe mode only), and the interception
   // handle once installed, so the outcome can be recorded at teardown.
   probeItem: ProbePlanItem | null;
+  // While a server probe runs: the page errors nothing caught, and whether the
+  // page showed no text as it closed, for the probe's resilience finding.
+  probePageErrors: number;
+  probeBlankPage: boolean;
   probeInterception: ProbeInterception | null;
   // Flake mode only: the arm's plan, this test's role in it, when the capture
   // started, and (for the target) the conditions installed on its first page.
@@ -303,6 +307,8 @@ function createSink(): CaptureSink {
     stashedAriaJson: null,
     pageInventories: [],
     probeItem: null,
+    probePageErrors: 0,
+    probeBlankPage: false,
     probeInterception: null,
     flake: null,
     pickOffered: false,
@@ -753,10 +759,33 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
   await internalCall(page, () => readPageBeforeClose(sink, page));
 }
 
+/** Whether the page shows no text at all, read within a second; false when it cannot be read. */
+async function readBlankPage(page: Page): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      page.evaluate(() => {
+        // Runs in the page; the reporter compiles without the DOM library.
+        const doc = (globalThis as { document?: { body?: { innerText?: string } | null } }).document;
+        return !(doc?.body?.innerText ?? '').trim();
+      }),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), 1000);
+        timer.unref?.();
+      }),
+    ]);
+  } catch {
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** The reads {@link stashPageState} takes from the page about to close. */
 async function readPageBeforeClose(sink: CaptureSink, page: Page): Promise<void> {
   const vitals = await readWebVitals(page);
   if (vitals) sink.stashedWebVitals = vitals;
+  if (sink.probeItem?.level === 'server') sink.probeBlankPage = await readBlankPage(page);
 
   if (process.env.PIWI_CAPTURE_PAGE_STATE !== 'false') {
     const pageState = await readPageState(page);
@@ -1460,6 +1489,13 @@ function instrumentPage(page: Page): void {
     });
   }
 
+  // An exception the page threw and nothing caught: a server probe's sign the
+  // application did not handle the fault.
+  page.on('pageerror', () => {
+    const sink = currentSink;
+    if (sink?.probeItem?.level === 'server') sink.probePageErrors++;
+  });
+
   page.on('console', (msg: ConsoleMessage) => {
     const sink = currentSink;
     if (!sink) return;
@@ -2041,15 +2077,17 @@ export const piwiFixtures: Fixtures<
           const applied = sink.probeInterception?.applied() ?? false;
           const level = sink.probeItem.level ?? 'client';
           // `handled` classifies a server fault for the resilience findings, from
-          // the console/dialog signals this test collected plus the backend error
-          // the probe response's trace carried. Client faults never reach the
-          // server, so they record `n/a`.
+          // the page errors, console errors, dialogs and blank page this test
+          // collected plus the backend error the probe response's trace carried.
+          // Client faults never reach the server, so they record `n/a`.
           const handled =
             level === 'server'
               ? classifyProbeHandled({
                   consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
                   dialogs: sink.dialogs.length,
                   backendError: sink.probeInterception?.serverError() ?? false,
+                  pageErrors: sink.probePageErrors,
+                  blankPage: sink.probeBlankPage,
                 })
               : 'n/a';
           recordProbeOutcome({

@@ -74,16 +74,23 @@ export interface ProbeResilienceSignals {
   dialogs: number;
   /** A backend error (5xx / error root span) rode back in the probe response's trace. */
   backendError: boolean;
+  /** Exceptions the page threw that nothing caught. */
+  pageErrors?: number;
+  /** The page showed no text as it closed. */
+  blankPage?: boolean;
 }
 
 /**
  * Classify how the application handled a server fault from the signals the probe
- * collected: a visible degradation (a console error, a dialog, or a backend
- * error) is `degraded`, anything else `graceful`. Client faults never reach here
- * — their line records `n/a`.
+ * collected: an uncaught page error, or a backend error that left the page blank,
+ * is `unhandled`; a visible degradation (a console error, a dialog, a blank page
+ * or a backend error alone) is `degraded`; anything else `graceful`. Client
+ * faults never reach here — their line records `n/a`.
  */
-export function classifyProbeHandled(signals: ProbeResilienceSignals): 'graceful' | 'degraded' {
-  return signals.consoleErrors > 0 || signals.dialogs > 0 || signals.backendError ? 'degraded' : 'graceful';
+export function classifyProbeHandled(signals: ProbeResilienceSignals): 'graceful' | 'degraded' | 'unhandled' {
+  const blank = signals.blankPage === true;
+  if ((signals.pageErrors ?? 0) > 0 || (signals.backendError && blank)) return 'unhandled';
+  return signals.consoleErrors > 0 || signals.dialogs > 0 || signals.backendError || blank ? 'degraded' : 'graceful';
 }
 
 /**
