@@ -1,5 +1,365 @@
 [
   {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Cancel",
+    "title": "No test exercises control button:Cancel",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Create token",
+    "title": "No test exercises control button:Create token",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Deactivate",
+    "title": "No test exercises control button:Deactivate",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Delete organization",
+    "title": "No test exercises control button:Delete organization",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Export users",
+    "title": "No test exercises control button:Export users",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Invite teammates",
+    "title": "No test exercises control button:Invite teammates",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Next page",
+    "title": "No test exercises control button:Next page",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Refresh",
+    "title": "No test exercises control button:Refresh",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Revoke",
+    "title": "No test exercises control button:Revoke",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Schedule report",
+    "title": "No test exercises control button:Schedule report",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Sign in with a password",
+    "title": "No test exercises control button:Sign in with a password",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:button:Transfer ownership",
+    "title": "No test exercises control button:Transfer ownership",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:checkbox:Keep me signed in",
+    "title": "No test exercises control checkbox:Keep me signed in",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:combobox:Date range",
+    "title": "No test exercises control combobox:Date range",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:combobox:Range",
+    "title": "No test exercises control combobox:Range",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:combobox:Scope",
+    "title": "No test exercises control combobox:Scope",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:radio:Comfortable",
+    "title": "No test exercises control radio:Comfortable",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:radio:Compact",
+    "title": "No test exercises control radio:Compact",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:searchbox:Search",
+    "title": "No test exercises control searchbox:Search",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:searchbox:Search users",
+    "title": "No test exercises control searchbox:Search users",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:tab:Churn",
+    "title": "No test exercises control tab:Churn",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:tab:Cohorts",
+    "title": "No test exercises control tab:Cohorts",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:tab:Revenue",
+    "title": "No test exercises control tab:Revenue",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "control-nobody-exercises",
+    "class": "blind-spot",
+    "key": "control:textbox:Work email",
+    "title": "No test exercises control textbox:Work email",
+    "evidence": ["On 1 page · no locator targets it — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
     "detector": "declared-never-hit",
     "class": "blind-spot",
     "key": "route:DELETE /api/invitations/:id",
@@ -192,12 +552,12 @@
       "A probe (status-500) on POST /api/invitations did not make invites a user by email fail — assert the effect the request should have."
     ],
     "factors": {
-      "churn": 0.1,
+      "churn": 0.25,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.08000000000000002,
+    "score": 0.10059467437463483,
     "test": null
   },
   {
@@ -338,8 +698,195 @@
   {
     "detector": "single-covering-test",
     "class": "fragile",
-    "key": "page:/settings/api-tokens",
-    "title": "Only one test reaches page /settings/api-tokens",
+    "key": "control:button:Continue with SSO",
+    "title": "Only one test reaches control button:Continue with SSO",
+    "evidence": [
+      "Only signs in with SSO redirect reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.07071067811865475,
+    "test": "signs in with SSO redirect"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:button:Export CSV",
+    "title": "Only one test reaches control button:Export CSV",
+    "evidence": [
+      "Only exports the monthly report as CSV reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "exports the monthly report as CSV"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:button:Invite user",
+    "title": "Only one test reaches control button:Invite user",
+    "evidence": [
+      "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "invites a user by email"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:button:Rotate token",
+    "title": "Only one test reaches control button:Rotate token",
+    "evidence": [
+      "Only rotates the API token reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "rotates the API token"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:button:Save",
+    "title": "Only one test reaches control button:Save",
+    "evidence": [
+      "Only updates the organization name reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "updates the organization name"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:button:Send invite",
+    "title": "Only one test reaches control button:Send invite",
+    "evidence": [
+      "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "invites a user by email"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:combobox:Role",
+    "title": "Only one test reaches control combobox:Role",
+    "evidence": [
+      "Only filters users by role reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "filters users by role"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:switch:Dark mode",
+    "title": "No trusted test reaches control switch:Dark mode",
+    "evidence": [
+      "Only toggles dark mode (flaky) reaches this — observed reach. A trusted scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": "toggles dark mode"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:textbox:Email address",
+    "title": "Only one test reaches control textbox:Email address",
+    "evidence": [
+      "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "invites a user by email"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "control:textbox:Organization name",
+    "title": "Only one test reaches control textbox:Organization name",
+    "evidence": [
+      "Only updates the organization name reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "updates the organization name"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "page:/dashboard",
+    "title": "Only one test reaches page /dashboard",
+    "evidence": [
+      "Only signs in with SSO redirect reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.07071067811865475,
+    "test": "signs in with SSO redirect"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "page:/settings/api",
+    "title": "Only one test reaches page /settings/api",
     "evidence": [
       "Only rotates the API token reaches this — observed reach. A second scenario would make it resilient."
     ],
@@ -372,10 +919,10 @@
   {
     "detector": "single-covering-test",
     "class": "fragile",
-    "key": "page:/users/invite",
-    "title": "Only one test reaches page /users/invite",
+    "key": "page:/settings/organization",
+    "title": "Only one test reaches page /settings/organization",
     "evidence": [
-      "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
+      "Only updates the organization name reaches this — observed reach. A second scenario would make it resilient."
     ],
     "factors": {
       "churn": 0.1,
@@ -384,7 +931,24 @@
       "priority": 0.1
     },
     "score": 0.05,
-    "test": "invites a user by email"
+    "test": "updates the organization name"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:GET /api/dashboard/summary",
+    "title": "Only one test reaches route GET /api/dashboard/summary",
+    "evidence": [
+      "Only signs in with SSO redirect reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.07071067811865475,
+    "test": "signs in with SSO redirect"
   },
   {
     "detector": "single-covering-test",
@@ -463,12 +1027,12 @@
       "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
     ],
     "factors": {
-      "churn": 0.1,
+      "churn": 0.25,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.05,
+    "score": 0.06287167148414677,
     "test": "invites a user by email"
   },
   {
@@ -480,12 +1044,12 @@
       "Only exports the monthly report as CSV reaches this — observed reach. A second scenario would make it resilient."
     ],
     "factors": {
-      "churn": 0.1,
+      "churn": 0.16666666666666666,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.05,
+    "score": 0.05681096832337497,
     "test": "exports the monthly report as CSV"
   },
   {
@@ -527,14 +1091,14 @@
     "class": "blind-spot",
     "key": "GET /api/dashboard/summary",
     "title": "GET /api/dashboard/summary: no error path under test",
-    "evidence": ["Observed 24 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "evidence": ["Observed 12 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
     "factors": {
       "churn": 0.1,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.4
     },
-    "score": 0.1414213562373095,
+    "score": 0.0848528137423857,
     "test": null
   },
   {
@@ -654,10 +1218,10 @@
     "factors": {
       "churn": 0.1,
       "age": 0.1,
-      "escapeHistory": 0.1,
+      "escapeHistory": 1,
       "priority": 0.1
     },
-    "score": 0.1,
+    "score": 0.1778279410038923,
     "test": null
   },
   {
@@ -703,12 +1267,12 @@
       "Documents 409, 422 — never returned under test."
     ],
     "factors": {
-      "churn": 0.1,
+      "churn": 0.25,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.09,
+    "score": 0.11316900867146418,
     "test": null
   },
   {
@@ -721,12 +1285,12 @@
       "Documents 429 — never returned under test."
     ],
     "factors": {
-      "churn": 0.1,
+      "churn": 0.16666666666666666,
       "age": 0.1,
       "escapeHistory": 0.1,
       "priority": 0.1
     },
-    "score": 0.09,
+    "score": 0.10225974298207494,
     "test": null
   },
   {
@@ -790,21 +1354,6 @@
       "priority": 0.1
     },
     "score": 0.04000000000000001,
-    "test": null
-  },
-  {
-    "detector": "unprobed-dependency",
-    "class": "false-comfort",
-    "key": "dependency:clickhouse",
-    "title": "clickhouse is never probed",
-    "evidence": ["Called by 3 routes · no probe has checked what happens when it fails — schedule a dependency probe."],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.06,
     "test": null
   },
   {

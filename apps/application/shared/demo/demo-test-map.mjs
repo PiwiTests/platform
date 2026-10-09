@@ -12,6 +12,7 @@
  */
 
 import DETECTED_GAPS from './demo-test-map-gaps.json' with { type: 'json' };
+import { SOURCE_FILES, lineOf } from './failure-stories.mjs';
 
 export const WEB_DASHBOARD_PROJECT_ID = 5;
 const WEB_DASHBOARD_ORIGIN = 'https://admin.example.com';
@@ -55,6 +56,30 @@ const ROUTES = {
   'PUT /api/me/preferences': { handler: 'server/api/me/preferences.put.ts', calls: ['postgres'] },
 };
 
+/**
+ * The commits the default branch recorded on the handler files, which rank the
+ * route and dependency gaps behind them by churn. `demo010` is the commit that
+ * fixed failure cluster 10, so the users handler has let a defect escape.
+ */
+const RECORDED_CHANGES = [
+  { commit: '3f9a1c4e7b2d8f60a5c1e9b3d7f2a4c8e6b0d1f3', files: ['server/api/invitations/index.post.ts'] },
+  {
+    commit: '8c2e5a7f1d4b9e30c6a2f8d1b5e7c3a9f0d4b6e2',
+    files: ['server/api/invitations/index.post.ts', 'server/api/roles/index.get.ts'],
+  },
+  { commit: 'b71d4e9a3c6f2b85e0d7a1c4f9b3e6d2a8c5f1e7', files: ['server/api/invitations/index.post.ts'] },
+  {
+    commit: 'e4a8c2f6b0d3e7a1c5f9b2d6e0a4c8f3b7d1e5a9',
+    files: ['server/api/reports/exports/index.post.ts', 'server/api/reports/exports/[id].get.ts'],
+  },
+  { commit: '5d0b7f3a9e2c6d14b8f0a3e7c1d5b9f2e6a0c4d8', files: ['server/api/reports/exports/index.post.ts'] },
+  {
+    commit: 'a2f6d0b4e8c1f5a93d7b0e4c8f2a6d1b5e9c3f7a',
+    files: ['server/api/auth/sso/start.post.ts', 'server/api/auth/sso/callback.get.ts'],
+  },
+  { commit: 'demo010', files: ['server/api/users/index.get.ts'] },
+];
+
 /** Routes the project's OpenAPI document declares that no test requests, with their documented codes. */
 const DECLARED_ROUTES = {
   'PATCH /api/users/:id': [200, 403, 404, 422],
@@ -72,7 +97,7 @@ const DECLARED_ROUTES = {
 const SETTINGS_NAV = [
   ['Organization', '/settings/organization'],
   ['Security', '/settings/security'],
-  ['API tokens', '/settings/api-tokens'],
+  ['API tokens', '/settings/api'],
   ['Appearance', '/settings/appearance'],
   ['Billing', '/billing'],
 ];
@@ -104,7 +129,7 @@ const PAGES = {
     ],
     links: [
       ['Users', '/users'],
-      ['Reports', '/reports'],
+      ['Reports', '/reports/monthly'],
       ['Billing', '/billing'],
       ['Audit log', '/audit-log'],
       ['Integrations', '/integrations'],
@@ -120,24 +145,15 @@ const PAGES = {
       ['button', 'Next page'],
       ['button', 'Export users'],
       ['button', 'Deactivate'],
-    ],
-    links: [
-      ['Roles and permissions', '/roles'],
-      ['Invite user', '/users/invite'],
-    ],
-    loads: ['GET /api/session', 'GET /api/users', 'GET /api/roles'],
-  },
-  '/users/invite': {
-    controls: [
+      // The invite dialog, open while the invite test runs.
       ['textbox', 'Email address'],
-      ['combobox', 'Role'],
-      ['button', 'Send invitation'],
+      ['button', 'Send invite'],
       ['button', 'Cancel'],
     ],
-    links: [],
-    loads: ['GET /api/roles'],
+    links: [['Roles and permissions', '/roles']],
+    loads: ['GET /api/session', 'GET /api/users', 'GET /api/roles'],
   },
-  '/reports': {
+  '/reports/monthly': {
     controls: [
       ['combobox', 'Range'],
       ['tab', 'Revenue'],
@@ -152,18 +168,18 @@ const PAGES = {
   '/settings/organization': {
     controls: [
       ['textbox', 'Organization name'],
-      ['button', 'Save changes'],
+      ['button', 'Save'],
       ['button', 'Transfer ownership'],
       ['button', 'Delete organization'],
     ],
     links: [...SETTINGS_NAV, ['Single sign-on', '/settings/sso']],
     loads: ['GET /api/session', 'GET /api/orgs/current'],
   },
-  '/settings/api-tokens': {
+  '/settings/api': {
     controls: [
       ['button', 'Create token'],
       ['combobox', 'Scope'],
-      ['button', 'Rotate'],
+      ['button', 'Rotate token'],
       ['button', 'Revoke'],
     ],
     links: [...SETTINGS_NAV, ['Single sign-on', '/settings/sso']],
@@ -213,7 +229,7 @@ const WEB_DASHBOARD_JOURNEYS = {
     ],
   },
   'invites a user by email': {
-    pages: ['/users', '/users/invite', '/users'],
+    pages: ['/users'],
     requests: [
       ['GET', '/api/session', 200],
       ['GET', '/api/users', 200],
@@ -230,15 +246,14 @@ const WEB_DASHBOARD_JOURNEYS = {
     ],
   },
   'renders the revenue chart': {
-    pages: ['/dashboard', '/reports'],
+    pages: ['/reports/monthly'],
     requests: [
       ['GET', '/api/session', 200],
-      ['GET', '/api/dashboard/summary', 200],
       ['GET', '/api/reports/revenue', 200],
     ],
   },
   'exports the monthly report as CSV': {
-    pages: ['/reports'],
+    pages: ['/reports/monthly'],
     requests: [
       ['GET', '/api/session', 200],
       ['GET', '/api/reports/revenue', 200],
@@ -255,7 +270,7 @@ const WEB_DASHBOARD_JOURNEYS = {
     ],
   },
   'rotates the API token': {
-    pages: ['/settings/organization', '/settings/api-tokens'],
+    pages: ['/settings/api'],
     requests: [
       ['GET', '/api/session', 200],
       ['GET', '/api/tokens', 200],
@@ -273,9 +288,143 @@ const WEB_DASHBOARD_JOURNEYS = {
 };
 
 /**
+ * Each test's steps, as its spec file runs them: a navigation, then each locator
+ * call with the page it runs on, as `[kind, locator or path, extra]`. The call
+ * site is the spec line that holds the locator, so the steps, the locator index
+ * and the Test Map read the same calls.
+ */
+const STEPS = {
+  'signs in with SSO redirect': [
+    ['goto', '/login'],
+    ['click', "getByRole('button', { name: 'Continue with SSO' })"],
+  ],
+  'shows an error for a revoked account': [
+    ['goto', '/login'],
+    ['expect', "getByText('Your account has been deactivated')", 'toBeVisible'],
+  ],
+  'Users table paginates 25 rows per page': [
+    ['goto', '/users'],
+    ['expect', "getByRole('row')", 'toHaveCount'],
+  ],
+  'invites a user by email': [
+    ['goto', '/users'],
+    ['click', "getByRole('button', { name: 'Invite user' })"],
+    ['fill', "getByLabel('Email address')", 'new.admin@example.com'],
+    ['click', "getByRole('button', { name: 'Send invite' })"],
+    ['expect', "getByText('Invite sent')", 'toBeVisible'],
+  ],
+  'filters users by role': [
+    ['goto', '/users'],
+    ['select', "getByRole('combobox', { name: 'Role' })", 'admin'],
+    ['expect', "getByRole('row', { name: /admin/i }).first()", 'toBeVisible'],
+  ],
+  'renders the revenue chart': [
+    ['goto', '/reports/monthly'],
+    ['expect', "getByRole('img', { name: 'Revenue chart' })", 'toBeVisible'],
+  ],
+  'exports the monthly report as CSV': [
+    ['goto', '/reports/monthly'],
+    ['expect', "getByRole('button', { name: 'Export CSV' })", 'toBeVisible'],
+    ['click', "getByRole('button', { name: 'Export CSV' })"],
+  ],
+  'updates the organization name': [
+    ['goto', '/settings/organization'],
+    ['fill', "getByLabel('Organization name')", 'Acme Corp'],
+    ['click', "getByRole('button', { name: 'Save' })"],
+    ['expect', "getByText('Settings saved')", 'toBeVisible'],
+  ],
+  'rotates the API token': [
+    ['goto', '/settings/api'],
+    ['click', "getByRole('button', { name: 'Rotate token' })"],
+    ['expect', "getByText('New token generated')", 'toBeVisible'],
+  ],
+  'toggles dark mode': [
+    ['goto', '/settings/appearance'],
+    ['click', "getByRole('switch', { name: 'Dark mode' })"],
+    ['expect', "locator('html')", 'toHaveAttribute'],
+  ],
+};
+
+/** The spec file each test lives in. */
+const SPEC_FILE = {
+  'signs in with SSO redirect': 'tests/admin/login.spec.ts',
+  'shows an error for a revoked account': 'tests/admin/login.spec.ts',
+  'Users table paginates 25 rows per page': 'tests/admin/users.spec.ts',
+  'invites a user by email': 'tests/admin/users.spec.ts',
+  'filters users by role': 'tests/admin/users.spec.ts',
+  'renders the revenue chart': 'tests/admin/reports.spec.ts',
+  'exports the monthly report as CSV': 'tests/admin/reports.spec.ts',
+  'updates the organization name': 'tests/admin/settings.spec.ts',
+  'rotates the API token': 'tests/admin/settings.spec.ts',
+  'toggles dark mode': 'tests/admin/settings.spec.ts',
+};
+
+/** `file:line:col` of the `nth` occurrence of `needle` at or after the test's own declaration. */
+function callSite(file, title, needle, nth) {
+  const lines = SOURCE_FILES[file];
+  const decl = lineOf(lines, `test('${title}'`);
+  let seen = 0;
+  for (let i = decl - 1; i < lines.length; i++) {
+    const col = lines[i].indexOf(needle);
+    if (col < 0) continue;
+    if (seen === nth) return `${file}:${i + 1}:${col + 1}`;
+    seen++;
+  }
+  throw new Error(`web-dashboard Test Map: ${needle} is not in ${title}`);
+}
+
+/**
+ * A test's steps in the seed's step-template form: the navigation, then each
+ * locator call with its call site, the page it runs on and whether it ran on
+ * arrival there. Null for a test outside the model.
+ */
+export function webDashboardStepTitles(title) {
+  const steps = STEPS[title];
+  if (!steps) return null;
+  const file = SPEC_FILE[title];
+  let page = null;
+  let arrival = true;
+  const seen = new Map();
+  return steps.map(([kind, target, extra]) => {
+    if (kind === 'goto') {
+      page = target;
+      arrival = true;
+      return {
+        title: 'Navigate',
+        subtitle: target,
+        category: 'navigation',
+        weight: 900,
+        params: { url: `${WEB_DASHBOARD_ORIGIN}${target}` },
+      };
+    }
+    const nth = seen.get(target) ?? 0;
+    seen.set(target, nth + 1);
+    const step = {
+      title:
+        kind === 'click'
+          ? 'Click'
+          : kind === 'fill'
+            ? `Fill "${extra}"`
+            : kind === 'select'
+              ? `Select option "${extra}"`
+              : `Expect "${extra}"`,
+      subtitle: target,
+      category: kind === 'expect' ? 'assertion' : kind === 'fill' ? 'input' : 'action',
+      weight: kind === 'expect' ? 500 : 700,
+      params: kind === 'fill' ? { locator: target, value: extra } : { locator: target },
+      location: callSite(file, title, target, nth),
+      page,
+      arrival,
+    };
+    if (kind !== 'expect') arrival = false;
+    return step;
+  });
+}
+
+/**
  * Probe outcomes. Client probes rewrite a route's response in the browser; server
  * probes fail one dependency call inside the server. A server probe the
- * application only degraded under also leaves a resilience finding.
+ * application degraded under, or did not handle, also leaves a resilience finding.
  */
 const CLIENT_PROBES = [
   { test: 'signs in with SSO redirect', route: 'GET /api/session', fault: 'status-500', outcome: 'noticed' },
@@ -313,6 +462,13 @@ const SERVER_PROBES = [
     handled: 'degraded',
   },
   {
+    test: 'renders the revenue chart',
+    route: 'GET /api/reports/revenue',
+    dependency: 'clickhouse',
+    outcome: 'noticed',
+    handled: 'unhandled',
+  },
+  {
     test: 'updates the organization name',
     route: 'PATCH /api/orgs/current',
     dependency: 'postgres',
@@ -337,24 +493,10 @@ const TRIAGE = {
 const FLOOR_FACTORS = { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 };
 
 /**
- * Gaps the ledger has closed, which the detectors do not raise: the dashboard
- * page, once a second test's journey through it was recorded, and the callback
+ * Gaps the ledger has closed, which the detectors do not raise: the callback
  * route a revoked-account test made answer 403.
  */
 const CLOSED = [
-  {
-    detector: 'single-covering-test',
-    class: 'fragile',
-    key: 'page:/dashboard',
-    title: 'Only one test reaches page /dashboard',
-    evidence: [
-      'Only signs in with SSO redirect reaches this — observed reach. A second scenario would make it resilient.',
-    ],
-    factors: { ...FLOOR_FACTORS, priority: 0.4 },
-    score: 0.0707,
-    test: 'signs in with SSO redirect',
-    closedDaysAgo: 6,
-  },
   {
     detector: 'success-only',
     class: 'blind-spot',
@@ -368,7 +510,11 @@ const CLOSED = [
   },
 ];
 
-/** The resilience finding the sendgrid server probe left: the invite form degraded, and no test noticed. */
+/**
+ * The resilience findings the server probes left: the invite form degraded
+ * without sendgrid and no test noticed; the revenue page threw without
+ * clickhouse.
+ */
 const FINDINGS = [
   {
     detector: 'not-handled',
@@ -381,6 +527,18 @@ const FINDINGS = [
     factors: FLOOR_FACTORS,
     score: 0.05,
     test: 'invites a user by email',
+  },
+  {
+    detector: 'not-handled',
+    class: 'unhandled',
+    key: 'dependency:clickhouse @ GET /api/reports/revenue',
+    title: 'clickhouse (via GET /api/reports/revenue): unhandled failure',
+    evidence: [
+      'A server probe made clickhouse (via GET /api/reports/revenue) fail; the application did not handle it (renders the revenue chart) — an error-state scenario is missing.',
+    ],
+    factors: { ...FLOOR_FACTORS, priority: 0.2 },
+    score: 0.2,
+    test: 'renders the revenue chart',
   },
 ];
 
@@ -396,6 +554,39 @@ function routeKeyOf([method, path]) {
 /** A control node's key, `role:name`. The model's names hold no digits, dates or ids, so templating leaves them as they are. */
 function controlKey(role, name) {
   return `${role}:${name}`;
+}
+
+/** Roles a label, a placeholder or a title names. */
+const LABELLED_ROLES = new Set([
+  'textbox',
+  'searchbox',
+  'combobox',
+  'listbox',
+  'checkbox',
+  'radio',
+  'switch',
+  'spinbutton',
+  'slider',
+]);
+
+/**
+ * The control or link a step's locator names, as the recompute resolves it from
+ * the locator index: a role and name directly, a label through the one labelled
+ * control carrying that name. Null for a text, a regex name or a CSS selector.
+ */
+function locatorNode(target, controls, links) {
+  const role = /^getByRole\('(\w+)', \{ name: '([^']+)' \}\)$/.exec(target);
+  if (role) {
+    const [kind, key] = role[1] === 'link' ? ['link', `link:${role[2]}`] : ['control', controlKey(role[1], role[2])];
+    return (kind === 'link' ? links : controls).has(key) ? { kind, key, confidence: 1 } : null;
+  }
+  const label = /^getByLabel\('([^']+)'\)$/.exec(target);
+  if (!label) return null;
+  const named = [...controls].filter((key) => {
+    const sep = key.indexOf(':');
+    return LABELLED_ROLES.has(key.slice(0, sep)) && key.slice(sep + 1) === label[1];
+  });
+  return named.length === 1 ? { kind: 'control', key: named[0], confidence: 0.8 } : null;
 }
 
 /**
@@ -464,6 +655,9 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
       addEdge('handler', spec.handler, 'calls', 'dependency', dep);
     }
   }
+  for (const { commit, files } of RECORDED_CHANGES) {
+    for (const file of files) addEdge('commit', commit, 'changes', 'file', file);
+  }
   for (const [route, responses] of Object.entries(DECLARED_ROUTES)) {
     addNode('route', route, 'openapi', { declared: true, responses });
   }
@@ -488,10 +682,11 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
     for (const route of spec.loads) addEdge('page', page, 'loads', 'route', route);
   }
 
-  // Reach: every route a test requested, and every page of its journey.
+  // Reach: every route a test requested, every page of its journey, and every
+  // control or link its locators name, operated or only asserted on.
   const reachedBy = new Map(); // "kind\0key" → test titles
-  const reach = (title, kind, key, evidence = null) => {
-    addEdge('test', caseId(title), 'reaches', kind, key, { confidence: 1, evidence });
+  const reach = (title, kind, key, evidence = null, confidence = 1) => {
+    addEdge('test', caseId(title), 'reaches', kind, key, { confidence, evidence });
     const id = `${kind}\x00${key}`;
     reachedBy.set(id, new Set([...(reachedBy.get(id) ?? []), title]));
   };
@@ -501,11 +696,27 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
     }
     for (const page of journey.pages) reach(title, 'page', page);
   }
+  const controls = new Set([...nodes.values()].filter((n) => n.kind === 'control').map((n) => n.key));
+  const links = new Set([...nodes.values()].filter((n) => n.kind === 'link').map((n) => n.key));
+  for (const [title, steps] of Object.entries(STEPS)) {
+    const actions = new Map(); // "kind\0key" → { node, action }
+    for (const [kind, target] of steps) {
+      const node = kind === 'goto' ? null : locatorNode(target, controls, links);
+      if (!node) continue;
+      const id = `${node.kind}\x00${node.key}`;
+      const action = kind === 'expect' ? 'checked' : 'operated';
+      actions.set(id, { node, action: actions.get(id)?.action === 'operated' ? 'operated' : action });
+    }
+    for (const { node, action } of actions.values()) {
+      reach(title, node.kind, node.key, { via: 'locator', action }, node.confidence);
+    }
+  }
 
-  // Features from the `piwi:feature` tag: each groups the routes and pages its tests reach.
+  // Features from the `piwi:feature` tag: each groups the routes, pages and
+  // controls its tests reach.
   for (const [id, titles] of reachedBy) {
     const [kind, key] = id.split('\x00');
-    if (kind !== 'route' && kind !== 'page') continue;
+    if (kind !== 'route' && kind !== 'page' && kind !== 'control') continue;
     for (const title of titles) {
       const feature = features.get(title);
       if (!feature) continue;

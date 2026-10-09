@@ -56,6 +56,7 @@ import {
   buildWebDashboardTestMap,
   webDashboardFinalPage,
   webDashboardRequests,
+  webDashboardStepTitles,
 } from '../shared/demo/demo-test-map.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -752,6 +753,16 @@ function shapeStep(src, duration, startTime) {
 }
 
 /**
+ * The project as one of its tests runs it: a web-dashboard test runs the steps
+ * of its own spec, from the Test Map model; every other test runs its project's
+ * themed steps.
+ */
+function stepsProjectFor(proj, title) {
+  const own = proj.id === WEB_DASHBOARD_PROJECT_ID ? webDashboardStepTitles(title) : null;
+  return own ? { ...proj, stepTitles: own } : proj;
+}
+
+/**
  * Scale a project's themed step titles to a case duration, laying each step's
  * absolute `startTime` end-to-end from `caseStartMs` so the failure timeline
  * places them on a real clock rather than estimating from durations. A themed
@@ -1223,7 +1234,13 @@ for (const proj of DEMO_PROJECTS) {
       // A failing case runs its story: its steps end on the call its error
       // names, and its duration follows that error.
       const failure = isFailedCase
-        ? storyFailureLayout(proj, storyEntry.failingCase, drawnDuration, avgTestDuration, caseStartMs)
+        ? storyFailureLayout(
+            stepsProjectFor(proj, caseDef.title),
+            storyEntry.failingCase,
+            drawnDuration,
+            avgTestDuration,
+            caseStartMs,
+          )
         : null;
       const caseDuration = failure ? failure.durationMs : drawnDuration;
 
@@ -1244,7 +1261,9 @@ for (const proj of DEMO_PROJECTS) {
       }
 
       // A test that did not run reports no steps, start time or worker.
-      const steps = failure?.steps ?? (isDidNotRunCase ? [] : buildSteps(proj, caseDuration, caseStartMs));
+      const steps =
+        failure?.steps ??
+        (isDidNotRunCase ? [] : buildSteps(stepsProjectFor(proj, caseDef.title), caseDuration, caseStartMs));
       // Where the story puts its own requests, console entries and dialog.
       const evidenceTimes = failure ? storyEvidenceTimes(story, failure.step) : null;
       const slowestStep = steps.length > 0 ? steps.reduce((a, b) => (a.duration > b.duration ? a : b)) : null;
@@ -1344,7 +1363,7 @@ for (const proj of DEMO_PROJECTS) {
         locks: JSON.stringify(demoLocks(caseDef.file, j)),
         test_meta: demoTestMeta(caseDef.file, j),
         steps,
-        locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(proj) : null,
+        locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(stepsProjectFor(proj, caseDef.title)) : null,
         step_events: stepEvents,
         wasted_time_ms: wastedMs,
         slowest_step: slowestStep?.title ?? null,

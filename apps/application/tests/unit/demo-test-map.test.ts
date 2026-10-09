@@ -11,11 +11,15 @@ import * as schema from '../../server/database/schema.sqlite';
 import { WEB_DASHBOARD_PROJECT_ID } from '#shared/demo/demo-test-map.mjs';
 
 const { computeScenarioGaps } = await import('../../shared/handlers/scenario-gaps');
+const { backfillUnindexedProjects } = await import('../../server/utils/locator-usages');
 
 /**
  * The web-dashboard Test Map in the demo seed is what the live detectors find in
  * its graph: recomputing the project's gaps on the seeded database, as the demo's
- * Recompute button does, adds no gap, closes none and rewrites none.
+ * Recompute button does, adds no gap, closes none and rewrites none. The
+ * locator index is built from the seeded runs first, as the server and the demo
+ * build it when their database opens, so control reach is part of the recompute,
+ * and the control reach and feature groups it writes are the seeded ones.
  *
  * After a change to the model or to a detector, `PIWI_UPDATE_DEMO_TEST_MAP=1`
  * rewrites `shared/demo/demo-test-map-gaps.json` from the recompute; regenerate
@@ -28,6 +32,7 @@ let client: Client;
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
 type GapRow = typeof schema.scenarioGaps.$inferSelect;
+let seededEdges: Awaited<ReturnType<typeof derivedEdges>>;
 
 function shape(rows: GapRow[]) {
   return rows
@@ -41,6 +46,26 @@ function shape(rows: GapRow[]) {
       status: r.status,
     }))
     .sort((a, b) => `${a.detector} ${a.key}`.localeCompare(`${b.detector} ${b.key}`));
+}
+
+/** The edges the recompute writes besides gaps: locator reach to controls and links, and feature groups. */
+async function derivedEdges() {
+  const rows = await db
+    .select()
+    .from(schema.graphEdges)
+    .where(eq(schema.graphEdges.projectId, WEB_DASHBOARD_PROJECT_ID));
+  return rows
+    .filter(
+      (r) =>
+        (r.kind === 'reaches' && (r.toKind === 'control' || r.toKind === 'link')) ||
+        (r.kind === 'groups' && r.fromKind === 'feature'),
+    )
+    .map((r) => ({
+      edge: `${r.fromKind}:${r.fromKey} ${r.kind} ${r.toKind}:${r.toKey}`,
+      confidence: r.confidence,
+      evidence: r.evidence,
+    }))
+    .sort((a, b) => a.edge.localeCompare(b.edge));
 }
 
 async function projectGaps(): Promise<GapRow[]> {
@@ -86,6 +111,8 @@ beforeAll(async () => {
   client = createClient({ url: ':memory:' });
   await client.executeMultiple(readFileSync(join(outDir, 'seed.sql'), 'utf-8'));
   db = drizzle(client, { schema });
+  await backfillUnindexedProjects(db as never);
+  seededEdges = await derivedEdges();
 }, 120_000);
 
 afterAll(() => {
@@ -100,5 +127,11 @@ describe('the web-dashboard Test Map', () => {
     const after = await projectGaps();
     if (process.env.PIWI_UPDATE_DEMO_TEST_MAP) await writeLedger(after);
     expect(shape(after)).toEqual(seeded);
+  });
+
+  test('recomputing writes the control reach and the feature groups the seed already holds', async () => {
+    expect(seededEdges.some((e) => e.edge.includes(' reaches control:'))).toBe(true);
+    await computeScenarioGaps(db as never, WEB_DASHBOARD_PROJECT_ID);
+    expect(await derivedEdges()).toEqual(seededEdges);
   });
 });

@@ -14,3 +14,4 @@ export declare function buildWebDashboardTestMap(input: {
 }): { nodes: Row[]; edges: Row[]; probes: Row[]; gaps: Row[] };
 export declare function webDashboardRequests(title: string): Row[];
 export declare function webDashboardFinalPage(title: string): string | null;
+export declare function webDashboardStepTitles(title: string): Row[] | null;
