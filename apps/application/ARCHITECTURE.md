@@ -277,8 +277,9 @@ shared mode for every copy button on the page), IDE preferences (`useOpenInIde`)
 timeline bar and filter chip uses, backed by the `--color-status-*` tokens in `assets/css/main.css`), `pass-rate.ts`
 (the one threshold set and color scale for every colored pass rate, heatmap cells included), `duration-tone.ts` (the
 one tone of a timeline duration that stands out in its test, by the rule of
-`shared/duration-standout.ts`: at least 1 s and a third of the test; that module also holds the much-slower rule and
-the step match key the Attempts tab's `shared/attempt-diff.ts` compares attempts with), `chart.ts` (the
+`shared/duration-standout.ts`: at least 1 s, and a third of the test or much slower than its usual time over the
+last passing runs; that module also holds the much-slower rule, the usual durations the timeline sends, and the step
+match key the Attempts tab's `shared/attempt-diff.ts` compares attempts with), `chart.ts` (the
 per-chart series definitions the plots and their legends share, and the tick/stack/bar geometry behind the SVG
 charts). `retry-command.ts` (`buildRetryCommand` — `file-line` / `grep` / `file` modes,
 shell-escaped, capped at 4096 chars; `buildTitleGrepFlag` — the regex-escaped, shell-quoted `-g` flag the fix plan and

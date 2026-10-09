@@ -10,7 +10,7 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, or, desc, gt, gte, sql, isNull, isNotNull, notInArray } from 'drizzle-orm';
+import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull, notInArray } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
@@ -29,6 +29,13 @@ import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
 import { isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
+import {
+  attachUsualDurations,
+  buildUsualDurations,
+  USUAL_MIN_SAMPLES,
+  type UsualDurations,
+  type UsualRequestRow,
+} from '../duration-standout';
 import {
   buildFailureClues,
   type FailureClue,
@@ -751,6 +758,9 @@ export async function getLastPassPageState(
  * epoch timestamps cannot be mixed with, so no trace anchor is fed here —
  * `failureAt` comes from the failed step (or `startedAt + duration`), and the
  * card links out to the trace viewer instead.
+ *
+ * Each step and request carries its usual duration (`getUsualDurations`), the
+ * baseline a duration that stands out is compared with.
  */
 export async function getFailureTimeline(
   db: DrizzleDB,
@@ -765,7 +775,16 @@ export async function getFailureTimeline(
     db.select({ filePath: testCases.filePath }).from(testCases).where(eq(testCases.id, trc.testCaseId)),
   ]);
 
-  return buildFailureTimeline({
+  const requests = networkRequestRows.map((nr) => ({
+    method: nr.method,
+    url: nr.url,
+    status: nr.status,
+    duration: nr.duration,
+    startTime: nr.startTime ?? undefined,
+    serverLogs: nr.serverLogs,
+    serverTraces: nr.serverTraces,
+  }));
+  const timeline = buildFailureTimeline({
     startedAt: trc.startedAt,
     duration: trc.duration,
     timeout: trc.timeout,
@@ -777,16 +796,72 @@ export async function getFailureTimeline(
     dialogs: trc.dialogs,
     specFile: testCase?.filePath ?? null,
     traceCallsites: opts.traceCallsites ?? null,
-    networkRequests: networkRequestRows.map((nr) => ({
-      method: nr.method,
-      url: nr.url,
-      status: nr.status,
-      duration: nr.duration,
-      startTime: nr.startTime ?? undefined,
-      serverLogs: nr.serverLogs,
-      serverTraces: nr.serverTraces,
-    })),
+    networkRequests: requests,
   });
+  if (timeline.lanes.steps.length === 0 && timeline.lanes.network.length === 0) return timeline;
+
+  const usual = await getUsualDurations(db, {
+    testCaseId: trc.testCaseId,
+    browserName: trc.browserName ?? null,
+    excludeId: id,
+  });
+  return attachUsualDurations(timeline, { steps: trc.steps, networkRequests: requests }, usual);
+}
+
+/** How many of a test's last passing executions its usual durations read. */
+const USUAL_DURATION_EXECUTIONS = 5;
+
+/**
+ * The usual duration of each step and request route of one test: the median
+ * over its last `USUAL_DURATION_EXECUTIONS` passing executions on the same
+ * browser, in runs eligible as a baseline (no lab or investigation run, no
+ * environment incident), the execution being read left out. Two bounded
+ * queries: the executions' steps, then their requests.
+ */
+export async function getUsualDurations(
+  db: DrizzleDB,
+  opts: { testCaseId: number; browserName: string | null; excludeId: number },
+): Promise<UsualDurations> {
+  const conds = [
+    eq(testRunsCases.testCaseId, opts.testCaseId),
+    sql`${testRunsCases.status} = 'passed'`,
+    ne(testRunsCases.id, opts.excludeId),
+    eligibleRunSql('baseline'),
+  ];
+  if (opts.browserName) conds.push(eq(testRunsCases.browserName, opts.browserName));
+  const past: Array<{ id: number; steps: unknown }> = await db
+    .select({ id: testRunsCases.id, steps: testRunsCases.steps })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(...conds))
+    .orderBy(desc(testRunsCases.createdAt), desc(testRunsCases.id))
+    .limit(USUAL_DURATION_EXECUTIONS);
+  if (past.length < USUAL_MIN_SAMPLES) return buildUsualDurations([]);
+
+  const requestRows: Array<UsualRequestRow & { testRunsCaseId: number }> = await db
+    .select({
+      testRunsCaseId: networkRequests.testRunsCaseId,
+      method: networkRequests.method,
+      url: networkRequests.url,
+      status: networkRequests.status,
+      duration: networkRequests.duration,
+    })
+    .from(networkRequests)
+    .where(
+      inArray(
+        networkRequests.testRunsCaseId,
+        past.map((row) => row.id),
+      ),
+    );
+  const requestsByExecution = new Map<number, UsualRequestRow[]>();
+  for (const row of requestRows) {
+    const list = requestsByExecution.get(row.testRunsCaseId) ?? [];
+    list.push(row);
+    requestsByExecution.set(row.testRunsCaseId, list);
+  }
+  return buildUsualDurations(
+    past.map((row) => ({ steps: row.steps, networkRequests: requestsByExecution.get(row.id) ?? [] })),
+  );
 }
 
 /** One execution's flattened steps plus the timing the timeline positions them against. */

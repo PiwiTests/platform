@@ -35,10 +35,10 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 
 - **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
   browser dialogs, with the failure marked, over a table giving each step's and request's offset (`t-1.1s`) and
-  duration, colored only when it lasts at least 1 s and a third of the test. **Around the failure** / **Whole test**
-  and one chip per item type filter both. Hooks and fixtures fold into **Setup** and **Teardown** rows, open when the
-  failure is there; a `test.step` holds its steps; the failing step shows its error and its page's Screenshot, DOM and
-  Accessibility tree; a caught error is greyed out.
+  duration, colored only when it lasts at least 1 s and a third of the test, or twice its time in recent passing
+  runs. **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
+  **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
+  shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **Open in picker** finds a locator on that
@@ -84,7 +84,7 @@ it. The comparison feeds the [root-cause classifier](./flaky-tests#root-cause-cl
 Where the visual diff compares pixels, the Screen tab's **Page diff** view compares *structure*: it parses the failing
 page's [ARIA snapshot](/guide/capture-fixtures#what-gets-captured) and the same test's last passing snapshot into trees
 and reports nodes **added**, **removed**, **renamed**, **changed** (an attribute such as `[disabled]` flipped) or
-**moved**, with a `+3 −1 ~2` summary. The element the failing locator names
+**moved**. The element the failing locator names
 is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the button renamed `"Pay now"`.
 
 The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then

@@ -370,6 +370,74 @@ function reportCaughtError(request, base) {
 }
 
 /**
+ * A report test whose two last passing runs click *Load report* in 600 ms and
+ * fetch the report in 300 ms, then a failure where both take several times as
+ * long, though neither takes a third of the 9 s test: the timeline colors them
+ * against their usual time. Start times are offsets from the test's start.
+ */
+const USUAL_DURATION_CASE = { title: 'opens the monthly report', location: 'tests/reports.spec.ts:8:3', retries: 0 };
+const USUAL_DURATION_ERROR =
+  'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: "12 rows"\nReceived: "0 rows"\n\n    at tests/reports.spec.ts:14:52';
+
+function usualDurationCase(startTime, { failed, duration, clickMs, reportId, reportMs }) {
+  const steps = [
+    { title: "page.goto('/reports')", category: 'navigation', at: 0, duration: 1200 },
+    { title: "page.waitForLoadState('networkidle')", category: 'wait', at: 1300, duration: 2600 },
+    { title: "getByRole('button', { name: 'Load report' }).click()", category: 'action', at: 4000, duration: clickMs },
+    {
+      title: 'Expect "toBe"',
+      category: 'assertion',
+      at: 4100 + clickMs,
+      duration: 3,
+      ...(failed ? { failed: true } : {}),
+    },
+  ];
+  const requests = [
+    { method: 'GET', url: 'https://reports.example.com/reports', duration: 180, at: 100, resourceType: 'document' },
+    {
+      method: 'GET',
+      url: `https://reports.example.com/api/report/${reportId}`,
+      duration: reportMs,
+      at: 4100,
+      resourceType: 'fetch',
+    },
+  ];
+  return {
+    ...USUAL_DURATION_CASE,
+    status: failed ? 'failed' : 'passed',
+    duration,
+    startedAt: startTime,
+    ...(failed ? { error: USUAL_DURATION_ERROR } : {}),
+    steps: steps.map(({ at, ...step }) => ({ ...step, startTime: startTime + at })),
+    networkRequests: requests.map(({ at, ...req }) => ({ ...req, status: 200, startTime: startTime + at })),
+  };
+}
+
+/** The usual-duration execution its scene opens, reported once per session. */
+let usualDurationExecution;
+
+function reportUsualDuration(request, base) {
+  usualDurationExecution ??= (async () => {
+    const projectName = 'reports-e2e';
+    for (const hoursAgo of [2, 1]) {
+      const startTime = Date.now() - hoursAgo * 60 * 60_000;
+      const passing = { failed: false, duration: 5000, clickMs: 600, reportId: hoursAgo, reportMs: 300 };
+      await ingestRun(request, base, { projectName, testCase: usualDurationCase(startTime, passing), startTime });
+    }
+    const startTime = Date.now() - 15_000;
+    const failing = { failed: true, duration: 9000, clickMs: 2500, reportId: 3, reportMs: 1600 };
+    const { executionId } = await ingestRun(request, base, {
+      projectName,
+      testCase: usualDurationCase(startTime, failing),
+      startTime,
+    });
+    if (!executionId) throw new Error('the usual-duration run has no execution');
+    return executionId;
+  })();
+  return usualDurationExecution;
+}
+
+/**
  * A cluster whose runs record their commits but no repository URL: a passing
  * run at one commit, then the hook failure at the next. Reported once per
  * session, so both widths of its scene show the same cluster in the same state.
@@ -3409,6 +3477,32 @@ const SCENES = [
       await shoot();
     },
   })),
+  {
+    name: 'timeline-usual-duration',
+    description:
+      'Timeline tab: a click and a request colored against their usual time (usually 600ms, usually 300ms), under a third of the test each',
+    route: '/projects',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    async prepare({ request, base }) {
+      this.executionId = await reportUsualDuration(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      await page
+        .locator('[data-shot="evidence-card"] [data-testid="usual-duration"]')
+        .filter({ visible: true })
+        .first()
+        .waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot();
+    },
+  },
   {
     name: 'timeline-type-filter-mobile',
     description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',

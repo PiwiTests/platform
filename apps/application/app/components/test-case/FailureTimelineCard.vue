@@ -8,8 +8,9 @@
  * with its error) and its duration; network, console and backend items in the
  * same window are interleaved as their own rows in time order, a request with
  * its duration too. A duration is a number, a share of the test and a bar on the
- * test's clock, colored only when it stands out in the test
- * (`#shared/duration-standout`). A step's parameters show when its title is
+ * test's clock, colored only when it stands out in the test or against its
+ * usual time over the last passing runs (`#shared/duration-standout`, the
+ * `usual` the timeline sends with each step and request). A step's parameters show when its title is
  * opened. The *Around the failure* / *Whole test* switch drives both the axis
  * and the table, and so does the type filter beside it: one chip per item type
  * in the window, keying its lane, the choice kept per browser. The axis draws
@@ -1042,6 +1043,7 @@ function revealItem(item: TimelineItem) {
               <TimelineDuration
                 :ms="entry.step.duration"
                 :test-ms="durationMs"
+                :usual-ms="entry.item?.usual ?? null"
                 :bar="stepBar(entry)"
                 :group="tree.groups.has(entry.index)"
                 :failed="entry.failing"
@@ -1091,6 +1093,7 @@ function revealItem(item: TimelineItem) {
                 v-if="entry.item.duration != null"
                 :ms="entry.item.duration"
                 :test-ms="durationMs"
+                :usual-ms="entry.item.usual ?? null"
                 :bar="itemBar(entry.item)"
                 :failed="entry.item.failed"
                 class="mt-1.5"
@@ -1238,6 +1241,7 @@ function revealItem(item: TimelineItem) {
                       <TimelineDuration
                         :ms="entry.step.duration"
                         :test-ms="durationMs"
+                        :usual-ms="entry.item?.usual ?? null"
                         :bar="stepBar(entry)"
                         :group="tree.groups.has(entry.index)"
                         :failed="entry.failing"
@@ -1283,6 +1287,7 @@ function revealItem(item: TimelineItem) {
                       v-if="entry.item.duration != null"
                       :ms="entry.item.duration"
                       :test-ms="durationMs"
+                      :usual-ms="entry.item.usual ?? null"
                       :bar="itemBar(entry.item)"
                       :failed="entry.item.failed"
                       class="min-w-[6rem]"

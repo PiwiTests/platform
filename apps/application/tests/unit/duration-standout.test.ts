@@ -18,8 +18,12 @@ describe('durationStandout', () => {
   });
 
   test('1 s or more stands out from a third of the test', () => {
-    expect(durationStandout({ ms: 1000, testMs: 3000 })).toEqual({ reason: 'share', share: STANDOUT_SHARE });
-    expect(durationStandout({ ms: 5000, testMs: 8000 })).toEqual({ reason: 'share', share: 0.625 });
+    expect(durationStandout({ ms: 1000, testMs: 3000 })).toEqual({
+      reason: 'share',
+      share: STANDOUT_SHARE,
+      usual: null,
+    });
+    expect(durationStandout({ ms: 5000, testMs: 8000 })).toEqual({ reason: 'share', share: 0.625, usual: null });
   });
 
   test('just under a third of the test does not stand out', () => {
@@ -43,6 +47,53 @@ describe('durationStandout', () => {
     expect(durationStandout({ ms: null, testMs: 1000 })).toBeNull();
     expect(durationStandout({ ms: Number.NaN, testMs: 1000 })).toBeNull();
     expect(durationStandout({ ms: -2000, testMs: 1000 })).toBeNull();
+    expect(durationStandout({ ms: -2000, testMs: 1000, usualMs: 100 })).toBeNull();
+  });
+});
+
+describe('durationStandout against the usual time', () => {
+  test('twice the usual time and 1 s more stands out by usual', () => {
+    expect(durationStandout({ ms: 2500, testMs: 20_000, usualMs: 600 })).toEqual({
+      reason: 'usual',
+      share: 0.125,
+      usual: 600,
+    });
+    expect(durationStandout({ ms: 2000, testMs: 20_000, usualMs: 1000 })?.reason).toBe('usual');
+  });
+
+  test('twice the usual time but less than 1 s more does not', () => {
+    expect(durationStandout({ ms: 1800, testMs: 20_000, usualMs: 900 })).toBeNull();
+    expect(durationStandout({ ms: 1200, testMs: 20_000, usualMs: 300 })).toBeNull();
+  });
+
+  test('1 s more but less than twice the usual time does not', () => {
+    expect(durationStandout({ ms: 5000, testMs: 20_000, usualMs: 3000 })).toBeNull();
+  });
+
+  test('under 1 s nothing stands out, however much slower than usual', () => {
+    expect(durationStandout({ ms: 900, testMs: 20_000, usualMs: 50 })).toBeNull();
+  });
+
+  test('a duration that also takes a third of the test stands out by share', () => {
+    expect(durationStandout({ ms: 8000, testMs: 20_000, usualMs: 600 })).toEqual({
+      reason: 'share',
+      share: 0.4,
+      usual: 600,
+    });
+  });
+
+  test('without a test duration the usual time still decides', () => {
+    expect(durationStandout({ ms: 2500, testMs: null, usualMs: 600 })).toEqual({
+      reason: 'usual',
+      share: null,
+      usual: 600,
+    });
+  });
+
+  test('without a usual time only the share decides', () => {
+    expect(durationStandout({ ms: 2500, testMs: 20_000 })).toBeNull();
+    expect(durationStandout({ ms: 2500, testMs: 20_000, usualMs: null })).toBeNull();
+    expect(durationStandout({ ms: 2500, testMs: 20_000, usualMs: 0 })).toBeNull();
   });
 });
 
@@ -97,10 +148,16 @@ describe('stepMatchKey', () => {
 });
 
 describe('standoutReasonText', () => {
+  const ms = (value: number) => `${value} ms`;
+
   test('names the share of the test, or that it outlasts the test', () => {
-    expect(standoutReasonText({ reason: 'share', share: 0.41 })).toBe('41% of the test');
-    expect(standoutReasonText({ reason: 'share', share: 1 })).toBe('100% of the test');
-    expect(standoutReasonText({ reason: 'share', share: 7.8 })).toBe('longer than the whole test');
+    expect(standoutReasonText({ reason: 'share', share: 0.41, usual: null }, ms)).toBe('41% of the test');
+    expect(standoutReasonText({ reason: 'share', share: 1, usual: 600 }, ms)).toBe('100% of the test');
+    expect(standoutReasonText({ reason: 'share', share: 7.8, usual: null }, ms)).toBe('longer than the whole test');
+  });
+
+  test('names the usual time, formatted by the caller', () => {
+    expect(standoutReasonText({ reason: 'usual', share: 0.125, usual: 600 }, ms)).toBe('usually 600 ms');
   });
 });
 

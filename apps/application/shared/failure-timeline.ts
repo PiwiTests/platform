@@ -86,6 +86,12 @@ export interface TimelineItem {
   group?: string | null;
   /** Steps only: the reporter step category (`action`, `test.step`, `hook`, …). */
   category?: string;
+  /**
+   * Steps and requests: the usual duration in ms, the median over the test's
+   * last passing executions on the same browser (`getUsualDurations`). Absent
+   * when fewer than two of them ran the same step or called the same route.
+   */
+  usual?: number;
 }
 
 /** Something that exists but carries no usable timestamp, so it cannot be placed. */
