@@ -5,6 +5,7 @@ import {
   MIN_BAR_PERCENT,
   barPlace,
   buildStepTreeView,
+  citedItemIds,
   groupRowsBySection,
   sectionSummaryText,
   testTrack,
@@ -283,5 +284,66 @@ describe('window cuts', () => {
     expect(windowCutText({ start: true, end: false })).toBe('Started before this window');
     expect(windowCutText({ start: false, end: true })).toBe('Runs on past this window');
     expect(windowCutText({ start: true, end: true })).toBe('Started before and runs on past this window');
+  });
+});
+
+describe('the rows the Most likely line cites', () => {
+  const T0 = 1_700_000_000_000;
+  const tl = buildFailureTimeline({
+    startedAt: T0,
+    duration: 6_000,
+    status: 'failed',
+    steps: [
+      { title: 'goto /checkout', category: 'pw:api', duration: 800, startTime: T0 },
+      { title: 'fill Email', category: 'pw:api', duration: 400, startTime: T0 + 900 },
+      { title: 'click Pay', category: 'pw:api', duration: 3_000, startTime: T0 + 1_400, error: 'timed out' },
+    ],
+    consoleLogs: [
+      { type: 'log', text: 'ready', timestamp: T0 + 500, location: 'x' },
+      { type: 'warning', text: 'quote still pending', timestamp: T0 + 2_500, location: 'x' },
+    ],
+    networkRequests: [
+      { method: 'GET', url: '/checkout', status: 200, duration: 180, startTime: T0 + 100 },
+      {
+        method: 'POST',
+        url: '/api/quote',
+        status: 200,
+        duration: 9_000,
+        startTime: T0 + 1_000,
+        serverLogs: [{ level: 'error', message: 'quote service timed out', timestamp: T0 + 4_000 }],
+      },
+    ],
+  });
+  const items = Object.values(tl.lanes).flat();
+  const cited = (citations: Parameters<typeof citedItemIds>[1]) => [...citedItemIds(items, citations)].sort();
+
+  test('a request or a console entry cited by index is its own row', () => {
+    expect(cited([{ section: 'networkRequests', index: 1 }])).toEqual(['network-1']);
+    expect(cited([{ section: 'console', index: 1 }])).toEqual(['console-1']);
+    expect(
+      cited([
+        { section: 'networkRequests', index: 1 },
+        { section: 'console', index: 1 },
+      ]),
+    ).toEqual(['console-1', 'network-1']);
+  });
+
+  test("a request's backend logs cite the request's row", () => {
+    expect(cited([{ section: 'serverLogs', index: 1 }])).toEqual(['network-1']);
+    expect(cited([{ section: 'backendLogs', index: 1 }])).toEqual(['network-1']);
+  });
+
+  test('a step cited by index is its row; the failing steps, or the steps with no index, are the failed step', () => {
+    expect(cited([{ section: 'steps', index: 1 }])).toEqual(['step-1']);
+    expect(cited([{ section: 'steps' }])).toEqual(['step-2']);
+    expect(cited([{ section: 'failingSteps' }])).toEqual(['step-2']);
+    expect(cited([{ section: 'failingSteps', index: 0 }])).toEqual(['step-2']);
+  });
+
+  test('a section with no row, or a list cited with no index, marks nothing', () => {
+    expect(cited([{ section: 'ariaSnapshot' }, { section: 'executionError' }, { section: 'appState' }])).toEqual([]);
+    expect(cited([{ section: 'networkRequests' }, { section: 'console' }])).toEqual([]);
+    expect(cited([{ section: 'networkRequests', index: 7 }])).toEqual([]);
+    expect(cited([])).toEqual([]);
   });
 });

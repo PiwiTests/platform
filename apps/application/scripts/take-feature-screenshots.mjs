@@ -3522,6 +3522,35 @@ const SCENES = [
     },
   },
   {
+    name: 'timeline-cited-row',
+    description:
+      'Execution #37: the timeline rows and the tabs Most likely cites, then its Console and its Network citation opened, the tab strip in view and the entry ringed',
+    // Execution 37's story chains the 28.4 s quote request and the console
+    // warning: both rows read "Most likely", and Screen, Network and Console carry the mark.
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 800 },
+    outputs: ['timeline-cited-row.png', 'timeline-cited-row-console.png', 'timeline-cited-row-network.png'],
+    async run({ page, openTab, settle, shoot }) {
+      await openTab('Timeline');
+      const card = page.locator('[data-shot="evidence-card"]');
+      await card.locator('tr[data-cited]').first().scrollIntoViewIfNeeded();
+      await settle();
+      await shoot();
+
+      // A citation rings its entry for two seconds: capture once the scroll has ended.
+      const clues = page.locator('[data-shot="failure-clues"]');
+      for (const section of ['Console', 'Network']) {
+        if (!(await clues.isVisible())) {
+          await page.locator('[data-shot="most-likely"]').getByRole('button', { name: 'All clues' }).click();
+        }
+        await clues.getByRole('button', { name: section, exact: true }).first().click();
+        await card.locator('div[data-cited]').first().waitFor();
+        await page.waitForTimeout(700);
+        await shoot(section.toLowerCase());
+      }
+    },
+  },
+  {
     name: 'timeline-type-filter-mobile',
     description: 'Timeline tab at phone width: the type chips wrap, Network hidden, the hidden line under them',
     route: '/test-run-cases/241',

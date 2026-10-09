@@ -73,8 +73,8 @@ const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
 
 // The evidence opens on the story: the first member clue's cited section and the
 // story's strength (or the top clue's, when no combination matched) tell the tab
-// strip which view leads.
-const defaultHint = useEvidenceHint(clues, story);
+// strip which view leads, and what Most likely cites is marked in the card.
+const defaultHint = useEvidenceHint(clues, story, () => mostLikely.value);
 
 const { data: traceData, refresh: refreshTraces } = await useFetch(`/api/test-run-cases/${testCaseId}/traces`, {
   transform: (r: { items: TraceInfo[] }) => r.items,
@@ -649,7 +649,7 @@ const locatorPanel = ref<{
 } | null>(null);
 const evidenceTabs = ref<{
   canLocate: (id: string) => boolean;
-  revealSection: (id: string) => boolean;
+  revealSection: (id: string, index?: number) => boolean;
   selectTab: (t: string) => void;
 } | null>(null);
 const toolbox = ref<{
@@ -671,9 +671,9 @@ provide(clusterSectionLocatorKey, {
   // Answered from static maps so a citation renders as a button at SSR time too,
   // not only once the evidence card has mounted and registered its ref.
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
-  open: (id: string) => {
+  open: (id: string, index?: number) => {
     if (id in pageSections) pageSections[id]!();
-    else evidenceTabs.value?.revealSection(id);
+    else evidenceTabs.value?.revealSection(id, index);
   },
 });
 

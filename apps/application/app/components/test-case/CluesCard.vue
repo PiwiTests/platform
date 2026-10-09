@@ -73,10 +73,9 @@ function citationLabel(section: string): string {
                 size="xs"
                 variant="soft"
                 color="neutral"
-                icon="i-lucide-arrow-down-to-line"
                 :label="citationLabel(cite.section)"
                 :title="`Show the ${citationLabel(cite.section)} evidence`"
-                @click="locator.open(cite.section)"
+                @click="locator.open(cite.section, cite.index)"
               />
               <UBadge v-else size="sm" variant="soft" color="neutral">{{ citationLabel(cite.section) }}</UBadge>
             </template>

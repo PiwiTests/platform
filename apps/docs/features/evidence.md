@@ -57,10 +57,10 @@ Web Vitals, ARIA and alternative-locator data come from the [capture fixtures](/
 ### Clues
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence already captured, with no model
-involved. Each carries a **strength** (strong, medium or weak) and a **citation** to the evidence section it came from;
-the **Most likely** line leads with their strong or medium story, else a completed diagnosis, else a weak story or
-the strongest one, and the AI diagnosis receives them as evidence. Every rule, and when it fires, is listed on
-[Clue rules](/reference/clues).
+involved. Each carries a **strength** (strong, medium or weak) and a **citation** that opens and marks the evidence it
+came from; the **Most likely** line leads with their strong or medium story, else a completed diagnosis, else a weak
+story or the strongest one, and marks the rows and tabs it cites. The AI diagnosis receives the clues as evidence.
+Every rule, and when it fires, is listed on [Clue rules](/reference/clues).
 
 ### Attempts
 
@@ -132,8 +132,7 @@ block uses the same words.
 
 ## Trace viewer
 
-**Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer
-(`npx playwright show-trace`); the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
+**Open trace**, at the top of the evidence card on every tab, opens the full Playwright trace viewer; the Screen tab lists each trace with **Open trace** and **Download**. The dashboard serves the viewer at `/trace-viewer/`, so traces never go to a
 third party, with or without [authentication](/operate/authentication). The hosted
 `trace.playwright.dev` cannot send your session cookie, so it only works against a dashboard with authentication off.
 

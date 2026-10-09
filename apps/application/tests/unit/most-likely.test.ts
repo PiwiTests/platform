@@ -74,6 +74,26 @@ describe('pickMostLikely — one rule on both failure pages', () => {
     expect(pickMostLikely({ story: null, clues, diagnosis: null })!.agreeLabel).toBe('3 clues agree');
   });
 
+  test('cites what its story’s clues cite, what a lone clue cites, and no row for a diagnosis', () => {
+    const chained = [
+      clue({ id: 'blocked', citations: [{ section: 'ariaSnapshot' }, { section: 'executionError' }] }),
+      clue({ id: 'slow', strength: 'medium', citations: [{ section: 'networkRequests', index: 3 }] }),
+      clue({ id: 'console', strength: 'medium', citations: [{ section: 'console', index: 0 }] }),
+      clue({ id: 'other', strength: 'weak', citations: [{ section: 'steps' }] }),
+    ];
+    const s = story('strong', ['blocked', 'slow', 'console']);
+    expect(pickMostLikely({ story: s, clues: chained, diagnosis })!.citations).toEqual([
+      { section: 'ariaSnapshot' },
+      { section: 'executionError' },
+      { section: 'networkRequests', index: 3 },
+      { section: 'console', index: 0 },
+    ]);
+    expect(pickMostLikely({ story: null, clues: [chained[1]!], diagnosis: null })!.citations).toEqual([
+      { section: 'networkRequests', index: 3 },
+    ]);
+    expect(pickMostLikely({ story: story('weak', ['slow']), clues: chained, diagnosis })!.citations).toEqual([]);
+  });
+
   test('a lone clue whose detail opens with its title is its detail alone', () => {
     const c = clue({ title: 'POST /auth/login returned 500', detail: 'POST /auth/login returned 500 at t-0.4 s.' });
     expect(pickMostLikely({ story: null, clues: [c], diagnosis: null })!.sentence).toBe(

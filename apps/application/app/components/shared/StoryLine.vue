@@ -61,7 +61,7 @@ function citationLabel(section: string): string {
           color="neutral"
           :label="citationLabel(cite.section)"
           :title="`Show the ${citationLabel(cite.section)} evidence`"
-          @click="locator.open(cite.section)"
+          @click="locator.open(cite.section, cite.index)"
         />
         <span v-else>{{ citationLabel(cite.section) }}</span>
       </template>

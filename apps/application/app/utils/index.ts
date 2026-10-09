@@ -61,6 +61,15 @@ export const SELECTED_ROW_CLASS = 'bg-elevated ring-1 ring-inset ring-accented';
  */
 export const CURRENT_ITEM_RING_CLASS = 'ring-2 ring-offset-1 ring-offset-bg ring-inverted';
 
+/**
+ * A row of the evidence card a citation just opened (a request, a console
+ * entry): a neutral ring the card takes off again after `CITED_ROW_MS`.
+ */
+export const CITED_ROW_CLASS = 'ring-2 ring-inset ring-inverted';
+
+/** How long a row a citation opened stays ringed, in ms. */
+export const CITED_ROW_MS = 2000;
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;

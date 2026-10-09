@@ -24,6 +24,8 @@ const props = defineProps<{
   derivedFromTrace?: boolean;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
+  /** The entry a citation just opened (its index in `entries`): ringed. */
+  highlightIndex?: number | null;
 }>();
 
 const cardComponent = computed(() =>
@@ -96,7 +98,9 @@ function consoleTypeIcon(type: string): string {
       <div
         v-for="(entry, index) in entries"
         :key="index"
-        class="flex items-start gap-2 py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"
+        class="flex items-start gap-2 py-1.5 px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 text-sm transition-shadow"
+        :class="index === highlightIndex ? CITED_ROW_CLASS : ''"
+        :data-cited="index === highlightIndex ? '' : undefined"
       >
         <UIcon
           :name="consoleTypeIcon(entry.type)"

@@ -36,6 +36,11 @@ export interface MostLikely {
   agreeLabel: string | null;
   /** The top clue's citations, shown on the line itself only when the line is that clue alone. */
   inlineCitations: FailureClueCitation[];
+  /**
+   * The evidence the line cites: every citation of the story's clues, or the top
+   * clue's; none for a diagnosis, whose citations name sections, never rows.
+   */
+  citations: FailureClueCitation[];
 }
 
 const STRENGTH: Record<FailureClueStrength, string> = {
@@ -56,7 +61,7 @@ export function pickMostLikely(input: {
   const diagnosis = input.diagnosis?.summary?.trim() ? input.diagnosis : null;
   const topClue = clues[0] ?? null;
 
-  if (story && story.strength !== 'weak') return fromStory(story);
+  if (story && story.strength !== 'weak') return fromStory(story, clues);
   if (diagnosis) {
     // The diagnosis reads every clue as evidence: the story's members when one
     // chained them, else all of them.
@@ -67,9 +72,10 @@ export function pickMostLikely(input: {
       grade: diagnosis.confidence ? `Diagnosed, ${diagnosis.confidence} confidence` : 'Diagnosed',
       agreeLabel: n > 0 ? `supported by ${plural(n, 'clue')}` : null,
       inlineCitations: [],
+      citations: [],
     };
   }
-  if (story) return fromStory(story);
+  if (story) return fromStory(story, clues);
   if (topClue) {
     // A lone clue that is the sentence itself agrees with nothing, so it states
     // no count; its detail stands alone when it already opens with the title.
@@ -82,12 +88,13 @@ export function pickMostLikely(input: {
       grade: STRENGTH[topClue.strength],
       agreeLabel: n > 1 ? `${n} clues agree` : null,
       inlineCitations: topClue.citations,
+      citations: topClue.citations,
     };
   }
   return null;
 }
 
-function fromStory(story: FailureStory): MostLikely {
+function fromStory(story: FailureStory, clues: FailureClue[]): MostLikely {
   const n = story.clueIds.length;
   return {
     source: 'story',
@@ -95,6 +102,7 @@ function fromStory(story: FailureStory): MostLikely {
     grade: STRENGTH[story.strength],
     agreeLabel: n > 0 ? `${plural(n, 'clue')} agree${n === 1 ? 's' : ''}` : null,
     inlineCitations: [],
+    citations: story.clueIds.flatMap((id) => clues.find((clue) => clue.id === id)?.citations ?? []),
   };
 }
 

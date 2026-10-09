@@ -30,6 +30,8 @@ const props = defineProps<{
   derivedFromTrace?: boolean;
   /** Drop the card frame and padding — render a plain heading row over the body. */
   embedded?: boolean;
+  /** The request a citation just opened (its index in `requests`): ringed, and shown whatever the filter. */
+  highlightIndex?: number | null;
 }>();
 
 const cardComponent = computed(() =>
@@ -75,6 +77,17 @@ watch(
   () => view.value === 'trace',
   (isTrace) => {
     if (isTrace) loadTraceNet();
+  },
+  { immediate: true },
+);
+
+// A cited request shows in the captured list, whatever filter or view was open.
+watch(
+  () => props.highlightIndex,
+  (index) => {
+    if (index == null || index >= props.requests.length) return;
+    filter.value = 'all';
+    manualView.value = 'captured';
   },
   { immediate: true },
 );
@@ -366,8 +379,9 @@ function rowAccent(r: DecoratedRequest): string {
       <div
         v-for="req in visibleRequests"
         :key="req._index"
-        :class="rowAccent(req)"
-        class="rounded bg-gray-50/60 dark:bg-gray-800/40"
+        :class="[rowAccent(req), req._index === highlightIndex ? CITED_ROW_CLASS : '']"
+        class="rounded bg-gray-50/60 dark:bg-gray-800/40 transition-shadow"
+        :data-cited="req._index === highlightIndex ? '' : undefined"
       >
         <!-- Request line -->
         <button

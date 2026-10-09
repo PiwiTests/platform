@@ -9,7 +9,9 @@ import { PROJECT } from '#shared/test-project-names';
  * and only one that stands out (at least 1 s, and a third of the test or twice
  * its usual time over the last passing runs) is colored. The window around the
  * failure cuts a request that runs on past it, and the axis marks the cut with
- * an arrow at the edge.
+ * an arrow at the edge. The request the Most likely line cites is marked on the
+ * timeline and its tab, and its citation opens that tab with the tab strip in
+ * view and the request ringed.
  */
 async function openNetwork(page: Page) {
   await page
@@ -161,6 +163,31 @@ test.describe('Timeline durations', () => {
 
     await page.getByRole('group', { name: 'Timeline window' }).getByRole('button', { name: 'Whole test' }).click();
     await expect(arrows).toHaveCount(0);
+  });
+
+  test('the request the Most likely line cites is marked, and its citation opens it in view', async ({ page }) => {
+    await openTimeline(page);
+    const card = page.locator('[data-shot="evidence-card"]');
+    const table = card.getByRole('table');
+    const tabs = card.getByRole('tablist', { name: 'Evidence sections' });
+    const networkTab = tabs.getByRole('tab', { name: /^Network/ });
+
+    // The quote request in flight during the failed step is the line's one
+    // citation: its row says so, and so does the tab that lists it.
+    const quoteRow = table.locator('tr', { hasText: QUOTE_REQUEST });
+    await expect(quoteRow).toHaveAttribute('data-cited', '');
+    await expect(quoteRow).toContainText('Most likely');
+    await expect(table.locator('tr', { hasText: PAGE_REQUEST })).not.toHaveAttribute('data-cited');
+    await expect(networkTab).toHaveAttribute('data-cited', '');
+    await expect(tabs.getByRole('tab', { name: 'Timeline', exact: true })).not.toHaveAttribute('data-cited');
+
+    // The citation opens the Network tab, keeps the tab strip in view and rings the request.
+    await page.locator('[data-shot="most-likely"]').getByRole('button', { name: 'Network', exact: true }).click();
+    await expect(networkTab).toHaveAttribute('aria-selected', 'true');
+    await expect(card.locator('[data-cited]', { hasText: '/api/quote' })).toBeVisible();
+    await expect(tabs).toBeInViewport();
+    await expect.poll(async () => (await tabs.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
+    await expect(card.getByText('/api/quote', { exact: true })).toBeInViewport();
   });
 });
 

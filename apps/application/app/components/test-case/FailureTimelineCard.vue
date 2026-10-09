@@ -15,7 +15,8 @@
  * and the table, and so does the type filter beside it: one chip per item type
  * in the window, keying its lane, the choice kept per browser. The axis draws
  * only the items in the window, a bar the window cuts ending in an arrow at the
- * cut edge, and the failing step always shows.
+ * cut edge, and the failing step always shows. A row the Most likely line cites
+ * says so in meta text.
  *
  * The table reads the steps as Playwright's tree: a `test.step`'s steps sit
  * indented under it, and the hooks and fixtures that ran before and after the
@@ -61,6 +62,7 @@ import type { StepFailureRole, StepPhase } from '#shared/step-tree';
 import {
   barPlace,
   buildStepTreeView,
+  citedItemIds,
   groupRowsBySection,
   sectionSummaryText,
   testTrack,
@@ -68,6 +70,7 @@ import {
   windowCuts,
   type BarPlace,
   type BarTrack,
+  type TimelineCitation,
   type WindowCuts,
 } from '~/utils/timeline-rows';
 import type { LightboxSubject } from '~/utils/lightbox';
@@ -98,6 +101,8 @@ const props = defineProps<{
   embedded?: boolean;
   /** The test, named in the details of an enlarged screenshot. */
   subject?: LightboxSubject | null;
+  /** What the Most likely line cites: the rows it names are marked. */
+  cited?: TimelineCitation[] | null;
 }>();
 
 // The axis only exists for a failure; a passing execution reads its steps off the
@@ -132,6 +137,12 @@ const allItems = computed<TimelineItem[]>(() => {
 });
 
 const placedCount = computed(() => allItems.value.length);
+
+// The rows the Most likely line cites carry its label.
+const citedIds = computed(() => citedItemIds(allItems.value, props.cited ?? []));
+function isCited(item: TimelineItem | null): boolean {
+  return item != null && citedIds.value.has(item.id);
+}
 
 // The axis (and the offset column) exist only when there is a failure moment to
 // anchor them and at least two items to place; a passing execution shows the
@@ -670,9 +681,12 @@ function eventTitle(item: TimelineItem): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+// A request (or one of its backend logs) and a console entry are marked in their
+// own tab; a step or a dialog only opens it.
 function revealItem(item: TimelineItem) {
   const sectionId = SECTION_ACTION[item.ref.section];
-  if (locator.canLocate(sectionId)) locator.open(sectionId);
+  const marksRow = item.ref.section !== 'steps' && item.ref.section !== 'dialogs';
+  if (locator.canLocate(sectionId)) locator.open(sectionId, marksRow ? item.ref.index : undefined);
 }
 </script>
 
@@ -987,9 +1001,11 @@ function revealItem(item: TimelineItem) {
               class="rounded-lg border border-default p-2.5"
               :class="entry.failing ? STATUS_PALETTE.failed.tint : ''"
               :style="{ marginInlineStart: `${Math.min(entry.level + (entry.nested ? 1 : 0), 4) * 0.75}rem` }"
+              :data-cited="isCited(entry.item) ? '' : undefined"
             >
               <div class="flex items-center gap-2">
                 <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
+                <span v-if="isCited(entry.item)" class="text-xs text-muted">Most likely</span>
                 <span
                   v-if="showAxis && entry.item"
                   class="ml-auto tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
@@ -1069,6 +1085,7 @@ function revealItem(item: TimelineItem) {
               class="rounded-lg border border-default p-2.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60"
               :class="entry.item.failed ? STATUS_PALETTE.failed.tint : ''"
               :style="entry.nested ? { marginInlineStart: '0.75rem' } : undefined"
+              :data-cited="isCited(entry.item) ? '' : undefined"
               @click="revealItem(entry.item)"
             >
               <div class="flex items-start gap-2">
@@ -1083,9 +1100,13 @@ function revealItem(item: TimelineItem) {
                   >{{ entry.item.label
                   }}<span v-if="entry.item.kind === 'network'" class="text-gray-500"> → {{ entry.item.status }}</span>
                 </span>
+                <span v-if="isCited(entry.item)" class="ml-auto shrink-0 text-xs text-muted whitespace-nowrap"
+                  >Most likely</span
+                >
                 <span
                   v-if="showAxis"
-                  class="ml-auto shrink-0 tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  class="shrink-0 tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
+                  :class="isCited(entry.item) ? '' : 'ml-auto'"
                 >
                   {{ formatRel(entry.item.at) }}
                 </span>
@@ -1170,6 +1191,7 @@ function revealItem(item: TimelineItem) {
                   <tr
                     class="[&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
                     :class="entry.failing ? STATUS_PALETTE.failed.tint : ''"
+                    :data-cited="isCited(entry.item) ? '' : undefined"
                   >
                     <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
                       {{ entry.item ? formatRel(entry.item.at) : '' }}
@@ -1200,6 +1222,9 @@ function revealItem(item: TimelineItem) {
                           <span v-else class="break-words" :class="stepTitleClass(entry)">
                             <StepLabel :step="entry.step" />
                           </span>
+                          <span v-if="isCited(entry.item)" class="ml-1.5 text-xs text-muted whitespace-nowrap"
+                            >Most likely</span
+                          >
                         </div>
                         <StepParams
                           v-if="openSteps.has(entry.index)"
@@ -1257,6 +1282,7 @@ function revealItem(item: TimelineItem) {
                   v-else
                   class="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/60 [&>td]:border-b [&>td]:border-default [&>td]:px-3 [&>td]:py-2 [&>td]:align-top"
                   :class="entry.item.failed ? STATUS_PALETTE.failed.tint : ''"
+                  :data-cited="isCited(entry.item) ? '' : undefined"
                   @click="revealItem(entry.item)"
                 >
                   <td v-if="showAxis" class="tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
@@ -1280,6 +1306,9 @@ function revealItem(item: TimelineItem) {
                       }}</span>
                       <span v-if="entry.item.kind === 'network'" class="font-mono text-xs text-gray-500">
                         → {{ entry.item.status }}</span
+                      >
+                      <span v-if="isCited(entry.item)" class="ml-1.5 text-xs text-muted whitespace-nowrap"
+                        >Most likely</span
                       >
                     </div>
                   </td>

@@ -3,9 +3,10 @@
  * steps it lists, how deep each one sits, which step failed (and which errors
  * the test caught), and the setup and teardown sections (hooks and fixtures)
  * that fold around the test body. Also the geometry of its duration bars on the
- * test's clock, and which edges of the axis window cut a bar.
+ * test's clock, which edges of the axis window cut a bar, and which rows the
+ * Most likely line cites.
  */
-import type { FailureTimeline, TimelineWindow } from '#shared/failure-timeline';
+import type { FailureTimeline, TimelineItem, TimelineRef, TimelineWindow } from '#shared/failure-timeline';
 import type { PerformanceStep } from '~~/types/api';
 import {
   failingStepIndex,
@@ -206,4 +207,47 @@ export function windowCutText(cuts: WindowCuts): string | null {
   if (cuts.start) return 'Started before this window';
   if (cuts.end) return 'Runs on past this window';
   return null;
+}
+
+// ── The rows the Most likely line cites ──────────────────────────────────────
+
+/** A clue's citation: a section and, when it names one entry, its index in that section's list. */
+export interface TimelineCitation {
+  section: string;
+  index?: number;
+}
+
+/**
+ * The ids of the timeline items a list of citations names. A request, a console
+ * entry, a dialog or a step cited by index is its own item, and a request's
+ * backend logs are that request; a citation of the failing steps, or of the steps
+ * with no index, is the step that failed. Any other section names no item.
+ */
+export function citedItemIds(items: readonly TimelineItem[], citations: readonly TimelineCitation[]): Set<string> {
+  const byRef = (section: TimelineRef['section'], index: number | undefined) =>
+    index == null ? [] : items.filter((item) => item.ref.section === section && item.ref.index === index);
+  const ids = new Set<string>();
+  for (const cite of citations) {
+    let found: readonly TimelineItem[] = [];
+    switch (cite.section) {
+      case 'networkRequests':
+      case 'serverLogs':
+      case 'backendLogs':
+        found = byRef('networkRequests', cite.index);
+        break;
+      case 'console':
+      case 'dialogs':
+        found = byRef(cite.section, cite.index);
+        break;
+      case 'steps':
+        found =
+          cite.index == null ? items.filter((item) => item.kind === 'step' && item.failed) : byRef('steps', cite.index);
+        break;
+      case 'failingSteps':
+        found = items.filter((item) => item.kind === 'step' && item.failed);
+        break;
+    }
+    for (const item of found) ids.add(item.id);
+  }
+  return ids;
 }

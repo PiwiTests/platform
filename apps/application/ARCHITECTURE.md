@@ -191,7 +191,9 @@ at as a card of its own (`Toolbox` with `lead`; the sections, their order and th
 selection picks the execution the evidence shows, with several tests), `EvidenceTabs`, More ways to fix with the other
 sections folded, then the history, folded to one line each: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`,
 opened by the occurrence sparkline) and `ClusterActivity`. Both
-pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites.
+pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites,
+and `useEvidenceHint` hands the evidence card what Most likely cites, whose tabs and timeline rows it marks
+(`citedItemIds`, `app/utils/timeline-rows.ts`).
 `/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
 two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
 

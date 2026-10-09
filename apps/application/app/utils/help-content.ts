@@ -612,6 +612,7 @@ export const HELP_TOPICS = {
       '',
       '- **Timeline** colors a step’s or a request’s duration only when it stands out, and **Network** a request’s by the same rule: at least 1 s, and either a third of the test or more, or twice its usual time and 1 s more, the usual time being the median over the last five passing runs on the same browser (shown under it). A step with parameters opens them from its title, and an arrow at the edge of the axis marks a bar that runs on outside the window.',
       '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
+      '- **Most likely** marks what it cites: a dot on the tab that holds it, and its own label on the timeline rows. A citation opens the tab and rings the request or console entry it names for a moment.',
       '- **An empty tab** says whether the evidence was never captured, captured with nothing to show, or does not apply.',
     ].join('\n'),
     doc: 'features/evidence#one-execution-diagnosis-first',

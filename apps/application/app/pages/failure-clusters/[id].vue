@@ -129,8 +129,9 @@ const clues = computed(() => cluesData.value?.clues ?? []);
 const story = computed(() => cluesData.value?.story ?? null);
 const cluesFailureAt = computed(() => cluesData.value?.failureAt ?? null);
 // The evidence opens on the story: the first member clue's cited section and the
-// story's strength (or the top clue's, when no combination matched).
-const defaultHint = useEvidenceHint(clues, story);
+// story's strength (or the top clue's, when no combination matched), and what
+// Most likely cites is marked in the card.
+const defaultHint = useEvidenceHint(clues, story, () => mostLikely.value);
 const hasTrace = computed(() => (execTraces.value?.length ?? 0) > 0);
 const selectedRunId = computed(() => (execution.value as { testRun?: { id?: number } } | null)?.testRun?.id ?? null);
 
@@ -515,7 +516,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
 const scmEl = ref<HTMLElement | null>(null);
 const whatChangedLine = ref<ComponentPublicInstance | null>(null);
 const evidenceTabs = ref<{
-  revealSection: (id: string) => boolean;
+  revealSection: (id: string, index?: number) => boolean;
   selectTab: (t: string) => void;
 } | null>(null);
 const clusterLocatorPanel = ref<{
@@ -560,9 +561,9 @@ const pageSections: Record<string, () => void> = {
 };
 provide(clusterSectionLocatorKey, {
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
-  open: (id: string) => {
+  open: (id: string, index?: number) => {
     if (id in pageSections) pageSections[id]!();
-    else evidenceTabs.value?.revealSection(id);
+    else evidenceTabs.value?.revealSection(id, index);
   },
 });
 
