@@ -119,6 +119,15 @@ export async function isPassiveCapabilityDeclined(
   return projectDecisions[id] !== 'enabled' && instanceDecisions[id] === 'declined';
 }
 
+/**
+ * True when a capability is hidden in a project: its resolved state is declined
+ * or not applicable, the rule the pages hide its sections by.
+ */
+export async function isCapabilityHidden(db: DrizzleDB, projectId: number, id: CapabilityId): Promise<boolean> {
+  const state = (await resolveProjectStates(db, projectId))[id];
+  return state === 'declined' || state === 'not-applicable';
+}
+
 /** The resolved project state for every capability. */
 export async function getProjectCapabilities(db: DrizzleDB, projectId: number): Promise<CapabilityStates> {
   return { items: toItems(await resolveProjectStates(db, projectId)) };

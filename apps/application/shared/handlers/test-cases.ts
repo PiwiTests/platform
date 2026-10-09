@@ -20,7 +20,7 @@ import { buildSituation } from '../situation';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
 import { computeNextStep } from '../next-step';
 import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
-import { getClusterPatchFacts } from './failure-clusters';
+import { getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
 import { eligibleRunSql, UNFINISHED_RUN_STATUSES } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
@@ -571,6 +571,7 @@ export async function getTestRunCase(
   // the same healing / diagnosis facts the toolbox reads, so the top of the page
   // says what to do without re-deriving it in the UI.
   const healing = await getLocatorHealing(db, id).catch(() => null);
+  const healingFacts = await getHealingStepFacts(db, testCase?.projectId, healing);
   const patchFacts = failureCluster
     ? await getClusterPatchFacts(db, failureCluster.id, { fixLandedRunId: failureCluster.fixLandedRunId })
     : null;
@@ -627,7 +628,7 @@ export async function getTestRunCase(
     fixLandedRunId: failureCluster?.fixLandedRunId ?? null,
     fixCommit: failureCluster?.fixCommit ?? null,
     ticketDoneKey,
-    hasHealingRecommendation: Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended),
+    ...healingFacts,
     diagnosisCompleted: patchFacts?.diagnosisCompleted ?? false,
     diagnosisSummary: patchFacts?.summary ?? null,
     patchFile: patchFacts?.patchFile ?? null,
