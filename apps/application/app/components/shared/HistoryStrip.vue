@@ -81,7 +81,7 @@ const stripLabelId = useId();
             class="size-3.5 rounded-sm inline-block transition-opacity hover:opacity-80 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :class="[
               statusPalette(point.status, point.retries).bg,
-              point.id === currentId ? 'ring-2 ring-offset-1 ring-primary' : '',
+              point.id === currentId ? CURRENT_ITEM_RING_CLASS : '',
             ]"
           />
         </UTooltip>
@@ -94,7 +94,7 @@ const stripLabelId = useId();
       consecutive run{{ streak.count === 1 ? '' : 's' }}.
       <template v-if="streak.lastPass">
         Last passed in
-        <NuxtLink :to="`/test-run-cases/${streak.lastPass.id}`" class="text-primary hover:underline">
+        <NuxtLink :to="`/test-run-cases/${streak.lastPass.id}`" :class="SENTENCE_LINK_CLASS">
           run #{{ streak.lastPass.runId }}
         </NuxtLink>
         ({{ formatRelativeTime(streak.lastPass.startTime) }}).

@@ -229,7 +229,7 @@ defineExpose({ revealRawError });
             variant="soft"
             size="sm"
             class="font-mono"
-            :class="isCurrentAttempt(a) ? 'ring-2 ring-offset-1 ring-primary' : ''"
+            :class="isCurrentAttempt(a) ? CURRENT_ITEM_RING_CLASS : ''"
             :title="isCurrentAttempt(a) ? `${attemptTitle(a)} — this execution` : attemptTitle(a)"
             :aria-current="isCurrentAttempt(a) ? 'true' : undefined"
           >

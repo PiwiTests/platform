@@ -156,7 +156,7 @@ async function quarantineSelected() {
     <!-- Bulk bar -->
     <div
       v-if="canSelect && selectedCount"
-      class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2.5"
+      class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-default bg-elevated p-2.5"
     >
       <span class="text-sm font-medium">{{ selectedCount }} selected</span>
       <span class="flex-1" />
@@ -174,7 +174,7 @@ async function quarantineSelected() {
       <UButton
         v-if="canQuarantine"
         size="xs"
-        color="warning"
+        color="neutral"
         variant="outline"
         icon="i-lucide-shield-alert"
         :loading="quarantining"

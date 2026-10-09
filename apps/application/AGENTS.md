@@ -299,8 +299,10 @@ text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts,
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated
   element the reader is meant to click. Every other button is `color="neutral"` — `variant="outline"` for a secondary
   action, `variant="ghost"` for a disclosure or a menu trigger. No `warning`, `success` or `soft` buttons for ordinary
-  actions. A selected tab or a pressed switch is neutral too, never `primary`: `SELECTED_TAB_CLASS`
-  (`app/utils/index.ts`) for a tab strip, `SEGMENTED_SELECTED_CLASS` for a segmented control or view switch.
+  actions. A selected tab, a pressed switch or a selected row is neutral too, never `primary`: `SELECTED_TAB_CLASS`
+  (`app/utils/index.ts`) for a tab strip, `SEGMENTED_SELECTED_CLASS` for a segmented control or view switch,
+  `SELECTED_ROW_CLASS` for the row that picks what the page shows, and `CURRENT_ITEM_RING_CLASS` for the current
+  item in a strip of status-colored marks (this execution in its history, this attempt among the retries).
 - **Links inside a sentence keep the sentence's color**: `underline decoration-dotted underline-offset-2
 hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
 - **Badges are for exceptions, at most two per screen** — the status chip and one exceptional state (_Quarantined_, a

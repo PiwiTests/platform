@@ -3971,6 +3971,25 @@ const SCENES = [
     route: '/failure-clusters/10',
     viewport: { width: 390, height: 800 },
   },
+  ...[{ suffix: '' }, { suffix: '-dark', colorScheme: 'dark' }].map(({ suffix, colorScheme }) => ({
+    name: `cluster-affected-tests-selected${suffix}`,
+    description: `Affected tests of cluster #1 with its second test selected: a neutral selected row${suffix ? ' (dark)' : ''}`,
+    // Cluster #1 fails in two tests; the row clicked here picks the evidence below.
+    route: '/failure-clusters/1',
+    viewport: { width: 1280, height: 900 },
+    colorScheme,
+    of: '[data-shot="cluster-affected-tests"]',
+    pad: 12,
+    async run({ page, settle, shoot }) {
+      const card = page.locator('[data-shot="cluster-affected-tests"]');
+      const other = card.locator('[role="button"][aria-pressed="false"]').first();
+      const title = (await other.innerText()).split('\n')[0].trim();
+      await other.click();
+      await card.locator('[role="button"][aria-pressed="true"]', { hasText: title }).waitFor();
+      await settle();
+      await shoot();
+    },
+  })),
   {
     name: 'retry-pass-clarity',
     description: 'Execution page first screen for a test that passed on retry (1280×800 clarity baseline)',

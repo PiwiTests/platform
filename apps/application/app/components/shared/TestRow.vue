@@ -153,7 +153,7 @@ const clusterLabel = computed(() =>
     class="border-b border-default px-3 py-2.5 text-sm transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/40"
     :class="[
       highlighted ? 'animate-pulse bg-yellow-100 dark:bg-yellow-900/30' : '',
-      active ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : '',
+      active ? SELECTED_ROW_CLASS : '',
       selectOnClick ? 'cursor-pointer' : '',
     ]"
     :style="indent ? { paddingLeft: `${12 + indent}px` } : undefined"

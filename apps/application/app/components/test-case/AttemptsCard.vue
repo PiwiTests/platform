@@ -65,10 +65,10 @@ const SECTION_LABEL: Record<string, string> = {
 
 function onlyLabel(entry: AttemptDiffEntry): { text: string; class: string } {
   if (entry.only === 'failing') {
-    return { text: 'only on the failing attempt', class: 'text-red-600 dark:text-red-400 bg-red-500/10' };
+    return { text: 'only on the failing attempt', class: STATUS_PALETTE.failed.chip };
   }
   if (entry.only === 'passing') {
-    return { text: 'only on the passing attempt', class: 'text-green-600 dark:text-green-400 bg-green-500/10' };
+    return { text: 'only on the passing attempt', class: STATUS_PALETTE.passed.chip };
   }
   return { text: 'changed', class: 'text-amber-600 dark:text-amber-400 bg-amber-500/10' };
 }
@@ -127,19 +127,21 @@ function attemptLabel(retry: number): string {
           v-for="attempt in orderedAttempts"
           :key="attempt.retry"
           class="flex items-center gap-2 rounded-md border border-default px-2.5 py-1.5 text-sm"
-          :class="attempt.executionId === testRunsCaseId ? 'bg-primary/5 border-primary/40' : ''"
+          :class="attempt.executionId === testRunsCaseId ? SELECTED_ROW_CLASS : ''"
+          :aria-current="attempt.executionId === testRunsCaseId ? 'true' : undefined"
         >
           <span class="font-medium whitespace-nowrap">{{ attemptLabel(attempt.retry) }}</span>
           <StatusChip :status="attempt.status" size="xs" />
           <DurationValue :ms="attempt.duration" class="text-muted tabular-nums" />
-          <span v-if="attempt.executionId === testRunsCaseId" class="text-xs text-primary font-medium whitespace-nowrap"
+          <span v-if="attempt.executionId === testRunsCaseId" class="text-xs text-muted whitespace-nowrap"
             >this one</span
           >
-          <ULink
+          <NuxtLink
             v-else-if="attempt.executionId"
             :to="`/test-run-cases/${attempt.executionId}`"
-            class="text-xs text-primary hover:underline whitespace-nowrap"
-            >open</ULink
+            class="text-xs whitespace-nowrap"
+            :class="SENTENCE_LINK_CLASS"
+            >open</NuxtLink
           >
         </li>
       </ul>
@@ -185,20 +187,20 @@ function attemptLabel(retry: number): string {
               <button
                 v-if="citationLabel(entry)"
                 type="button"
-                class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                class="text-xs text-muted hover:text-highlighted"
+                :class="SENTENCE_LINK_CLASS"
                 @click="reveal(entry)"
               >
-                <UIcon name="i-lucide-arrow-up-right" class="size-3" />
                 View in {{ citationLabel(entry) }}
               </button>
               <NuxtLink
                 v-if="suspectFor(entry)"
                 :to="suspectLink(suspectFor(entry)!)"
-                class="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                class="text-xs text-muted hover:text-highlighted"
+                :class="SENTENCE_LINK_CLASS"
                 data-testid="attempt-suspect-link"
                 :title="suspectFor(entry)!.sentence"
               >
-                <UIcon name="i-lucide-arrow-up-right" class="size-3" />
                 Flake suspect: {{ suspectFor(entry)!.counts.failuresWith }} of
                 {{ suspectFor(entry)!.counts.failures }} failures
               </NuxtLink>

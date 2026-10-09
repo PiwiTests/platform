@@ -39,6 +39,21 @@ export const SELECTED_TAB_CLASS = 'bg-elevated text-highlighted font-medium';
  */
 export const SEGMENTED_SELECTED_CLASS = 'bg-default shadow-sm text-highlighted font-medium';
 
+/**
+ * The selected row of a list that picks what the page shows (an affected test,
+ * the opened attempt): a raised surface inside a neutral ring, never the primary
+ * color.
+ */
+export const SELECTED_ROW_CLASS = 'bg-elevated ring-1 ring-inset ring-accented';
+
+/**
+ * The current item in a strip of small status-colored marks (this execution in
+ * its test's history, this attempt among the retries): a ring in the strongest
+ * neutral, set off the mark by the page's own background so it reads on any
+ * status color in both themes.
+ */
+export const CURRENT_ITEM_RING_CLASS = 'ring-2 ring-offset-1 ring-offset-bg ring-inverted';
+
 /** The `diagnosis` shape the toolbox's folded summary reads. */
 export interface ToolboxDiagnosisLike {
   status?: string | null;

@@ -147,6 +147,9 @@ test.describe('Failure cluster page layout', () => {
     await other.click();
     await expect.poll(async () => link.getAttribute('href')).not.toBe(before);
     await expect(subject).toContainText(otherTitle);
+    // The clicked row is the pressed one, and the only one.
+    await expect(card.locator('[role="button"]', { hasText: otherTitle })).toHaveAttribute('aria-pressed', 'true');
+    await expect(card.locator('[role="button"][aria-pressed="true"]')).toHaveCount(1);
   });
 
   test('a cluster with one affected test names it in the occurrence line, with no selector', async ({
