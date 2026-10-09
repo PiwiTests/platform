@@ -5,7 +5,7 @@
  * sits in the same place on both. A tracked cluster names its issue, the key a
  * link to the tracker whose tooltip gives the issue's summary, and its status;
  * an issue Done while the failure goes on says so and offers a new one (once the
- * failure stopped, the cluster page offers to resolve the cluster instead). An
+ * failure stopped, both failure pages offer to resolve the cluster instead). An
  * untracked open cluster says it has none and offers to file or link one; a
  * filing the tracker has not answered yet shows as queued. Where filing is
  * offered, a last filing that failed for good is named with its age and reason,
