@@ -137,6 +137,25 @@ describe('computeNextStep — precedence between rows', () => {
   });
 });
 
+describe('computeNextStep — where the change a step copies comes from', () => {
+  test.each([
+    ['replace-locator', { hasHealingRecommendation: true }, 'healing'],
+    ['apply-patch', { diagnosisCompleted: true, patchAppliesCleanly: true }, 'diagnosis'],
+    ['follow-diagnosis', { diagnosisCompleted: true }, 'diagnosis'],
+    ['open-blocker', { status: 'didnotrun', blockedByCase: { id: 1 } }, null],
+    ['mark-resolved', { fixVerification: 'stopped-failing', clusterStatus: 'open' }, null],
+    ['see-what-changed', { fixVerification: 'regressed' }, null],
+    ['compare-attempts', { why: 'passed-on-retry' as const }, null],
+    ['rerun-in-ci', { errorKind: 'crash' as const, ciRerunAvailable: true }, null],
+    ['diagnose', { aiConfigured: true }, null],
+    ['reproduce', {}, null],
+  ] as Array<[string, Partial<NextStepInput>, string | null]>)('%s', (kind, input, source) => {
+    const s = step(input);
+    expect(s.kind).toBe(kind);
+    expect(s.source).toBe(source);
+  });
+});
+
 describe('computeNextStep — the Flake Lab rows', () => {
   const lab = (overrides: Partial<FlakeLabStepFacts> = {}): FlakeLabStepFacts => ({
     testCaseId: 42,

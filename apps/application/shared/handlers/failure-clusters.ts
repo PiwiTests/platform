@@ -331,6 +331,7 @@ export async function getFailureCluster(
           category: diag.category,
           confidence: diag.confidence,
           summary: diag.summary,
+          provider: diag.provider,
         }
       : null,
     project: project ?? null,

@@ -325,6 +325,7 @@ export async function getTestRunCase(
           category: failureDiagnoses.category,
           confidence: failureDiagnoses.confidence,
           summary: failureDiagnoses.summary,
+          provider: failureDiagnoses.provider,
         })
         .from(failureDiagnoses)
         .where(and(eq(failureDiagnoses.clusterId, cluster.id), eq(failureDiagnoses.scope, 'cluster')));

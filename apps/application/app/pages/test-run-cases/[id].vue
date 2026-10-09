@@ -17,6 +17,7 @@ import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
 import type { Situation, SituationPart } from '#shared/situation';
 import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
+import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { commitUrl } from '#shared/scm-urls';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
@@ -48,9 +49,9 @@ const { data: historyData } = await useAsyncData(
   { default: (): TestCaseHistoryPoint[] => [], watch: [() => testCase.value?.testCaseId] },
 );
 
-// The deterministic clues and the story that chains them: the story line leads
-// with the story (or the top clue), folds every clue under its disclosure, and
-// the top clue's section chooses the default evidence tab.
+// The deterministic clues and the story that chains them: Most likely chooses
+// between them and the cluster's diagnosis, folds every clue under its
+// disclosure, and the top clue's section chooses the default evidence tab.
 const { data: cluesData } = await useFetch<FailureCluesResult>(`/api/test-run-cases/${testCaseId}/clues`, {
   default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }),
 });
@@ -105,6 +106,7 @@ const failureCluster = computed(() => {
       category?: string | null;
       confidence?: string | null;
       summary?: string | null;
+      provider?: string | null;
     } | null;
     knownIssue?: KnownIssueRef | null;
     /** Read when the issue is Done: the failure goes on in the latest finished run. */
@@ -140,13 +142,20 @@ const clusterDiagnosis = computed(() => {
 const confidenceColor = (c?: string | null): 'success' | 'warning' | 'neutral' =>
   c === 'high' ? 'success' : c === 'medium' ? 'warning' : 'neutral';
 
-// The story is the one explanation on the first screen. A completed diagnosis
-// leads the story line only when no deterministic story chained the clues — the
-// story stays primary when it exists.
-const storyDiagnosis = computed(() =>
-  !story.value && clusterDiagnosis.value
-    ? { summary: clusterDiagnosis.value.summary as string, confidence: clusterDiagnosis.value.confidence ?? null }
+// The one explanation on the first screen, by the rule the cluster page follows
+// too: a strong or medium story, else the cluster's diagnosis, else a weak story,
+// else the top clue.
+const mostLikelyDiagnosis = computed(() =>
+  clusterDiagnosis.value
+    ? {
+        summary: clusterDiagnosis.value.summary as string,
+        confidence: clusterDiagnosis.value.confidence ?? null,
+        provider: clusterDiagnosis.value.provider ?? null,
+      }
     : null,
+);
+const mostLikely = computed(() =>
+  pickMostLikely({ story: story.value, clues: clues.value, diagnosis: mostLikelyDiagnosis.value }),
 );
 
 // The situation sentence and the single next step, built server-side from the
@@ -270,6 +279,20 @@ const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   { default: (): FixPlan | null => null, watch: [() => failureCluster.value?.id] },
 );
 const fixPlanPatch = computed(() => fixPlanData.value?.diagnosis?.patch ?? null);
+
+// Where the next step's change comes from: the cluster's diagnosis, named in full
+// unless Most likely already shows it, or locator healing.
+const nextStepSource = computed(() =>
+  nextStepSourceLine(nextStep.value, {
+    mostLikely: mostLikely.value,
+    diagnosis: mostLikelyDiagnosis.value && {
+      ...mostLikelyDiagnosis.value,
+      hasPatch: fixPlanData.value?.diagnosis ? Boolean(fixPlanPatch.value) : null,
+    },
+    healing: locatorHealingData.value ?? null,
+    scope: 'execution',
+  }),
+);
 
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => failureCluster.value?.id ?? null,
@@ -791,9 +814,9 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Line 3: most likely — the story line, with every clue folded under it -->
-          <template v-if="verdict && (story || clues.length)" #story>
-            <StoryLine :story="story" :clues="clues" :failure-at="cluesFailureAt" :diagnosis="storyDiagnosis" />
+          <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow -->
+          <template v-if="verdict && mostLikely" #story>
+            <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
           </template>
 
           <!-- Line 4: the situation sentence — one clause per fact, with links -->
@@ -837,7 +860,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
 
           <!-- Line 5: the next step -->
           <template v-if="isProblem && nextStep" #next>
-            <NextStepLine :next-step="nextStep" :retry-command="retryCommand" @action="handleNextStepAction" />
+            <NextStepLine
+              :next-step="nextStep"
+              :retry-command="retryCommand"
+              :source="nextStepSource"
+              @action="handleNextStepAction"
+            />
           </template>
 
           <!-- Line 6: the facts line, one size smaller, with Details and Raw error -->

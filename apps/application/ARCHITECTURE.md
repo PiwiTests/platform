@@ -172,14 +172,16 @@ order of its `ROWS` (Most likely `StoryLine`, Situation, Occurrences, What chang
 (`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. The rows are built in the handlers the demo
 shares (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from `shared/situation.ts`,
 `shared/cluster-state.ts` and `computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's
-action id into behavior on both pages. Under the block, the execution page shows `DidNotRunCard` for a test that did
-not run, `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to
-fix: one folded section per way to fix, the one the next step points at open) and History (`HistoryStrip`). The
-cluster page shows `ClusterInvestigation` when there is a diff to browse, `ClusterAffectedTests` (its selection picks
-the execution the evidence shows), `EvidenceTabs`, `ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both
-pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites.
-`/bug-reports/[id]` opens on the same block with Situation, State, The suite and Next. `npm run app:measure` holds the
-two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
+action id into behavior on both pages. Both pages choose Most likely and word where the Next step's change comes from
+with `shared/most-likely.ts` (`pickMostLikely`, `nextStepSourceLine`), one rule for the two. Under the block, the
+execution page shows `DidNotRunCard` for a test that did not run, `EvidenceTabs` (opening on the tab `useEvidenceHint`
+picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step
+points at open) and History (`HistoryStrip`). The cluster page shows `ClusterInvestigation` when there is a diff to
+browse, `ClusterAffectedTests` (its selection picks the execution the evidence shows), `EvidenceTabs`,
+`ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both pages provide a section locator
+(`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites. `/bug-reports/[id]` opens on
+the same block with Situation, State, The suite and Next. `npm run app:measure` holds the two failure pages to their
+budgets (text styles, controls above the fold, the Next step beside what it copies).
 
 ### Components (`app/components/`)
 

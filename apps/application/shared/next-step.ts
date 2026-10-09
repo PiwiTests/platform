@@ -5,7 +5,8 @@
  * patch validation, the fix verification, the attempt facts, whether AI and a
  * CI re-run are configured, and the case that blocked this one — and hand them
  * here. The first matching row wins; the caller renders the one primary action
- * and folds the rest into the toolbox.
+ * and folds the rest into the toolbox. A step that copies a change names where
+ * the change comes from (`source`), which the pages turn into a sentence.
  *
  * Pure: no DB, no model call. The facts are gathered in the handlers.
  */
@@ -34,6 +35,13 @@ export interface NextStepAction {
   payload?: Record<string, unknown>;
 }
 
+/**
+ * Where the change a step copies comes from: the cluster's AI diagnosis (its
+ * patch) or locator healing (its recommended locator). Null for a step whose
+ * action is its own.
+ */
+export type NextStepSource = 'diagnosis' | 'healing';
+
 export interface NextStep {
   kind: NextStepKind;
   title: string;
@@ -41,6 +49,7 @@ export interface NextStep {
   why: string;
   primary: NextStepAction;
   secondary: NextStepAction[];
+  source: NextStepSource | null;
 }
 
 export interface NextStepInput {
@@ -100,7 +109,18 @@ export interface FlakeLabStepFacts {
   ciAvailable: boolean;
 }
 
+const SOURCE_BY_KIND: Partial<Record<NextStepKind, NextStepSource>> = {
+  'replace-locator': 'healing',
+  'apply-patch': 'diagnosis',
+  'follow-diagnosis': 'diagnosis',
+};
+
 export function computeNextStep(input: NextStepInput): NextStep {
+  const step = chooseStep(input);
+  return { ...step, source: SOURCE_BY_KIND[step.kind] ?? null };
+}
+
+function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   const clusterId = input.clusterId ?? null;
   const withCluster = clusterId != null ? { clusterId } : undefined;
   const withExecution = input.executionId != null ? { executionId: input.executionId } : undefined;

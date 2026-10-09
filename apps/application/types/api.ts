@@ -1445,6 +1445,8 @@ export interface DiagnosisCompact {
   category: string | null;
   confidence: string | null;
   summary: string | null;
+  /** `agent` when an agent wrote it; otherwise the AI provider. */
+  provider?: string | null;
 }
 
 /**

@@ -404,6 +404,10 @@ test.describe('Situation block on seeded cases', () => {
     // The next step applies the diagnosed fix; its overflow menu copies the retry command.
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Apply the diagnosed fix');
+    // Most likely is the story, so the step names the diagnosis its patch comes from.
+    await expect(next.locator('[data-shot="next-step-source"]')).toContainText(
+      "From the cluster's AI diagnosis, high confidence",
+    );
     await expect(next.getByRole('button', { name: 'Copy git apply' })).toBeVisible();
     // `app:measure` finds the step and its action by these ids, never by the label.
     await expect(next).toHaveAttribute('data-next-kind', 'apply-patch');

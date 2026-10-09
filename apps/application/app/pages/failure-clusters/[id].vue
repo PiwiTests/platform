@@ -9,6 +9,7 @@ import type { FailureClusterDetail, TraceInfo } from '~~/types/api';
 import type { FixPlan } from '#shared/fix-plan.types';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { hasHealingAlternatives } from '#shared/locator-healing';
+import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
 import type { RerunInfo } from '~/composables/useCiRerun';
@@ -181,11 +182,19 @@ const stateEdge = computed(() => clusterStateColor(clusterState.value?.kind).edg
 const occurrenceSeries = computed(() => cluster.value?.occurrenceSeries ?? []);
 const nextStep = computed(() => cluster.value?.nextStep ?? null);
 
-// The completed diagnosis leads the story line on the cluster page.
+// The cluster's completed diagnosis.
 const clusterDiagnosis = computed(() => {
   const d = cluster.value?.diagnosis;
-  return d && d.status === 'completed' && d.summary ? { summary: d.summary, confidence: d.confidence ?? null } : null;
+  return d && d.status === 'completed' && d.summary
+    ? { summary: d.summary, confidence: d.confidence ?? null, provider: d.provider ?? null }
+    : null;
 });
+// The one explanation on the first screen, by the rule the execution page follows
+// too: a strong or medium story of the selected execution, else the diagnosis,
+// else a weak story, else the top clue.
+const mostLikely = computed(() =>
+  pickMostLikely({ story: story.value, clues: clues.value, diagnosis: clusterDiagnosis.value }),
+);
 
 // The occurrence sentence: the span (first → last) is stable, the "last X ago" is
 // client-only so the server and browser time zones never disagree.
@@ -333,6 +342,20 @@ const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
   },
 );
 const clusterLocatorHasData = computed(() => hasHealingAlternatives(clusterLocatorHealing.value));
+
+// Where the next step's change comes from: the diagnosis, named in full unless
+// Most likely already shows it, or locator healing.
+const nextStepSource = computed(() =>
+  nextStepSourceLine(nextStep.value, {
+    mostLikely: mostLikely.value,
+    diagnosis: clusterDiagnosis.value && {
+      ...clusterDiagnosis.value,
+      hasPatch: fixPlan.value?.diagnosis ? Boolean(fixPlan.value.diagnosis.patch) : null,
+    },
+    healing: clusterLocatorHealing.value ?? null,
+    scope: 'cluster',
+  }),
+);
 const {
   state: clusterCapState,
   isHidden: clusterCapHidden,
@@ -653,9 +676,9 @@ const breadcrumbItems = computed(() => [
             </p>
           </template>
 
-          <!-- Line 3: most likely — the diagnosis leads when it completed, else the story -->
-          <template v-if="clusterDiagnosis || story || clues.length" #story>
-            <StoryLine :story="story" :clues="clues" :failure-at="cluesFailureAt" :diagnosis="clusterDiagnosis" />
+          <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow -->
+          <template v-if="mostLikely" #story>
+            <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
           </template>
 
           <!-- Occurrences: the sparkline and its sentence -->
@@ -706,7 +729,12 @@ const breadcrumbItems = computed(() => [
 
           <!-- Line 5: the next step -->
           <template v-if="nextStep" #next>
-            <NextStepLine :next-step="nextStep" :retry-command="retryCommand" @action="handleNextStepAction" />
+            <NextStepLine
+              :next-step="nextStep"
+              :retry-command="retryCommand"
+              :source="nextStepSource"
+              @action="handleNextStepAction"
+            />
           </template>
 
           <!-- Line 6: the facts line — Details, Raw error, Copy summary -->

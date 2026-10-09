@@ -1,83 +1,34 @@
 <script setup lang="ts">
 /**
- * "Most likely" — the one explanation of a failure on the first screen. It leads
- * with the story sentence (the chained clues), or the top clue alone when no
- * combination matched, or the cluster's diagnosis summary when one completed.
+ * "Most likely" — the one explanation of a failure on the first screen, as
+ * `pickMostLikely` chose it: a strong or medium story (the chained clues), else
+ * the cluster's completed diagnosis, else a weak story, else the top clue alone.
  * Under the sentence, one meta line grades it (strength or confidence), says how
  * many clues agree, and opens the disclosure that lists every clue with its
  * citations. The word "clue" appears only on that meta line and inside the
  * disclosure. The block that renders this line provides its label.
  */
-import type { FailureClue, FailureClueStrength, FailureStory } from '#shared/failure-clues';
+import type { FailureClue } from '#shared/failure-clues';
+import type { MostLikely } from '#shared/most-likely';
 import { DIAGNOSIS_SECTION_SHORT } from '#shared/diagnosis-sections';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 
 const props = defineProps<{
-  story: FailureStory | null;
+  mostLikely: MostLikely;
+  /** Every clue of the execution, for the disclosure. */
   clues: FailureClue[];
   /** The moment of failure in ms relative to the timeline origin — anchors `t-N s`. */
   failureAt?: number | null;
-  /** When the cluster has a completed diagnosis, it leads the line. */
-  diagnosis?: { summary: string; confidence?: string | null } | null;
 }>();
 
 const locator = useClusterSectionLocator();
 
-const STRENGTH: Record<FailureClueStrength, string> = {
-  strong: 'Strong',
-  medium: 'Medium',
-  weak: 'Weak',
-};
-
-const topClue = computed(() => props.clues[0] ?? null);
-
-// The sentence: the diagnosis leads when it completed, else the story, else the
-// top clue in its own words — its detail alone when the detail already opens
-// with the title.
-const sentence = computed(() => {
-  if (props.diagnosis) return props.diagnosis.summary;
-  if (props.story) return props.story.sentence;
-  const c = topClue.value;
-  if (!c) return '';
-  return c.detail.toLowerCase().startsWith(c.title.toLowerCase()) ? c.detail : `${c.title} — ${c.detail}`;
-});
-
 // A clue detail may quote a locator in backticks; those spans render as code.
 const sentenceParts = computed(() =>
-  sentence.value
+  props.mostLikely.sentence
     .split(/(`[^`]+`)/)
     .filter(Boolean)
     .map((text) => (text.startsWith('`') ? { code: true, text: text.slice(1, -1) } : { code: false, text })),
-);
-
-// The grade of the explanation, as plain words.
-const grade = computed<string | null>(() => {
-  if (props.diagnosis) {
-    const c = props.diagnosis.confidence;
-    return c ? `Diagnosed, ${c} confidence` : 'Diagnosed';
-  }
-  const strength = props.story?.strength ?? topClue.value?.strength ?? null;
-  return strength ? STRENGTH[strength] : null;
-});
-
-// How many clues agree with the explanation. A lone clue that is the sentence
-// itself agrees with nothing, so it states no count.
-const agreeCount = computed(() => {
-  if (props.story) return props.story.clueIds.length;
-  return props.clues.length;
-});
-const agreeLabel = computed(() => {
-  const n = agreeCount.value;
-  if (n <= 0) return null;
-  if (props.diagnosis) return `supported by ${n} clue${n === 1 ? '' : 's'}`;
-  if (n === 1 && !props.story) return null;
-  return `${n} clue${n === 1 ? '' : 's'} agree${n === 1 ? 's' : ''}`;
-});
-
-// The top clue's citations show inline only when the line is a bare top clue (no
-// story, no diagnosis) — otherwise every clue's citations live in the disclosure.
-const inlineCitations = computed(() =>
-  !props.diagnosis && !props.story && topClue.value ? topClue.value.citations : [],
 );
 
 const open = ref(false);
@@ -89,7 +40,7 @@ function citationLabel(section: string): string {
 </script>
 
 <template>
-  <div v-if="sentence" data-shot="most-likely" class="space-y-1">
+  <div data-shot="most-likely" :data-most-likely="mostLikely.source" class="space-y-1">
     <p>
       <template v-for="(part, i) in sentenceParts" :key="i">
         <code v-if="part.code" class="font-mono text-[0.92em]">{{ part.text }}</code>
@@ -97,12 +48,12 @@ function citationLabel(section: string): string {
       </template>
     </p>
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-      <span v-if="grade">{{ grade }}</span>
-      <span v-if="grade && agreeLabel" aria-hidden="true">·</span>
-      <span v-if="agreeLabel">{{ agreeLabel }}</span>
+      <span v-if="mostLikely.grade">{{ mostLikely.grade }}</span>
+      <span v-if="mostLikely.grade && mostLikely.agreeLabel" aria-hidden="true">·</span>
+      <span v-if="mostLikely.agreeLabel">{{ mostLikely.agreeLabel }}</span>
 
       <!-- inline citations, only for a bare top clue -->
-      <template v-for="(cite, i) in inlineCitations" :key="`inline-${i}`">
+      <template v-for="(cite, i) in mostLikely.inlineCitations" :key="`inline-${i}`">
         <UButton
           v-if="locator.canLocate(cite.section)"
           size="xs"

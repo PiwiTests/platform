@@ -560,7 +560,7 @@ export const HELP_TOPICS = {
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
-    text: 'One block that answers three questions: what broke (the headline, built from the Playwright error itself), what is most likely behind it (the story that chains the deterministic clues, or the diagnosis when one completed), what is going on (since when, on which commit, in how many other tests, who owns it — one sentence), and what to do next (one action chosen by a policy). Every clue, the raw error and the rest of the facts are one click away.',
+    text: "One block that answers three questions: what broke (the headline, built from the Playwright error itself), what is most likely behind it (a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue; the cluster page follows the same rule), what is going on (since when, on which commit, in how many other tests, who owns it — one sentence), and what to do next (one action chosen by a policy, with where its change comes from). Every clue, the raw error and the rest of the facts are one click away.",
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {

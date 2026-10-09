@@ -176,7 +176,8 @@ The **one explanation** a failure page leads with. When several [clues](/feature
 (deterministic, rule-based findings) form a known combination, Piwi chains them into a single sentence —
 *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"* — at the strongest
 member's strength, with every clue folded under it. When no combination matches, the story is the strongest
-clue alone; when a cluster has a completed [AI diagnosis](/features/ai-diagnosis), that leads instead.
+clue alone. A cluster's completed [AI diagnosis](/features/ai-diagnosis) leads instead of a weak story or a lone
+clue, never instead of a strong or medium story, by one rule on the execution and the cluster page.
 
 ### Situation
 

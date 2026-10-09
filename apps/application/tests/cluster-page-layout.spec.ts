@@ -1,6 +1,8 @@
 import { test, expect, type APIRequestContext } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
+import { pickMostLikely, type MostLikely } from '#shared/most-likely';
+import type { FailureClue, FailureStory } from '#shared/failure-clues';
 
 /**
  * Failure-cluster detail page layout: one situation block, read top to bottom.
@@ -269,6 +271,95 @@ test.describe('Cluster situation block on seeded clusters', () => {
 
       // The next-step line renders the server's chosen step title verbatim.
       await expect(page.locator('[data-shot="next-step"]')).toContainText(detail.nextStep.title);
+    });
+  }
+
+  // One Most likely rule on both failure pages: the expected line is computed
+  // from the API with the shared helper, then read on each page.
+  type DiagnosisFacts = { status: string; summary: string | null; confidence: string | null; provider?: string | null };
+  async function clusterMostLikely(request: APIRequestContext, id: number) {
+    const res = await request.get(`/api/failure-clusters/${id}`);
+    if (!res.ok()) return null;
+    const detail = (await res.json()) as {
+      latestTestRunsCaseId: number | null;
+      diagnosis: DiagnosisFacts | null;
+      nextStep: { kind: string; source: string | null };
+    };
+    if (!detail.latestTestRunsCaseId) return null;
+    const clues = (await (await request.get(`/api/test-run-cases/${detail.latestTestRunsCaseId}/clues`)).json()) as {
+      clues: FailureClue[];
+      story: FailureStory | null;
+    };
+    const d = detail.diagnosis;
+    const diagnosis =
+      d?.status === 'completed' && d.summary
+        ? { summary: d.summary, confidence: d.confidence, provider: d.provider ?? null }
+        : null;
+    const mostLikely: MostLikely | null = pickMostLikely({ story: clues.story, clues: clues.clues, diagnosis });
+    return { detail, diagnosis, mostLikely };
+  }
+
+  for (const id of [1, 3]) {
+    test(`#${id} and its latest occurrence lead with the same Most likely`, async ({ page, request }) => {
+      const facts = await clusterMostLikely(request, id);
+      test.skip(!facts?.mostLikely, `no cluster #${id} with an explanation on this database`);
+      const { detail, diagnosis, mostLikely } = facts!;
+      // A clue detail's backticks render as code, without the backticks.
+      const sentence = mostLikely!.sentence.replace(/`/g, '');
+
+      for (const path of [`/failure-clusters/${id}`, `/test-run-cases/${detail.latestTestRunsCaseId}`]) {
+        await page.goto(path);
+        await waitForHydration(page);
+        const line = page.locator('[data-shot="most-likely"]');
+        await expect(line).toHaveAttribute('data-most-likely', mostLikely!.source);
+        await expect(line).toContainText(sentence);
+      }
+
+      // When Most likely is not the diagnosis, the step built on it names it in full.
+      if (detail.nextStep.source === 'diagnosis' && mostLikely!.source !== 'diagnosis' && diagnosis) {
+        await page.goto(`/failure-clusters/${id}`);
+        await waitForHydration(page);
+        const source = page.locator('[data-shot="next-step"] [data-shot="next-step-source"]');
+        await expect(source).toContainText('diagnosis');
+        await expect(source).toContainText(diagnosis.summary.slice(0, 40));
+      }
+    });
+  }
+
+  test('a step from the diagnosis Most likely shows names it in the short form', async ({ page, request }) => {
+    let target: number | null = null;
+    for (const id of [10, 7, 3, 1]) {
+      const facts = await clusterMostLikely(request, id);
+      if (facts?.detail.nextStep.source === 'diagnosis' && facts.mostLikely?.source === 'diagnosis') {
+        target = id;
+        break;
+      }
+    }
+    test.skip(target == null, 'no seeded cluster whose step and Most likely both come from its diagnosis');
+
+    await page.goto(`/failure-clusters/${target}`);
+    await waitForHydration(page);
+    await expect(page.locator('[data-shot="next-step"] [data-shot="next-step-source"]')).toHaveText(
+      /^From the (AI|agent's) diagnosis above\b/,
+    );
+  });
+
+  for (const id of [6, 2]) {
+    test(`#${id}'s locator step names locator healing as its source`, async ({ page, request }) => {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      test.skip(!res.ok(), `no cluster #${id} on this database`);
+      const detail = (await res.json()) as { nextStep: { kind: string; source: string | null } };
+      test.skip(
+        detail.nextStep.kind !== 'replace-locator',
+        `#${id} is not on the replace-locator step on this database`,
+      );
+      expect(detail.nextStep.source).toBe('healing');
+
+      await page.goto(`/failure-clusters/${id}`);
+      await waitForHydration(page);
+      await expect(page.locator('[data-shot="next-step"] [data-shot="next-step-source"]')).toHaveText(
+        /^From locator healing\b/,
+      );
     });
   }
 

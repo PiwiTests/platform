@@ -10,6 +10,7 @@
 import { defineComponent, h } from 'vue';
 import { recommendLocatorFix, locatorExpression, hasHealingAlternatives } from '#shared/locator-healing';
 import type { RankedLocator, LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
+import { healingSourcePhrase } from '#shared/healing-source';
 import type { AiStepIntent, TraceInfo } from '~~/types/api';
 import SectionCard from './SectionCard.vue';
 import CollapsibleSectionCard from './CollapsibleSectionCard.vue';
@@ -278,26 +279,11 @@ const appliesToNote = computed(() =>
 );
 
 // Plain-words provenance for the recommendation, echoed in the hero block so it
-// reads even when the source subtitle is folded away (cluster page).
-const recommendationSourceLabel = computed(() => {
-  if (recommended.value?.pickedByUser) return 'your confirmed pick';
-  switch (props.healing?.source) {
-    case 'diff-rename':
-      return 'from the rename in this change';
-    case 'prior-run':
-      return 'from the last passing run';
-    case 'fingerprint':
-      return 'from a prior run (line shifted)';
-    case 'cross-test':
-      return 'from another test in this project';
-    case 'element-match':
-      return 'from the current failing page';
-    case 'aria-snapshot':
-      return 'from the ARIA snapshot';
-    default:
-      return '';
-  }
-});
+// reads even when the source subtitle is folded away (cluster page). The Next
+// line names the same provenance in the same words.
+const recommendationSourceLabel = computed(
+  () => healingSourcePhrase(props.healing?.source, recommended.value?.pickedByUser) ?? '',
+);
 
 // The one-line diff (old source line → line with the failing call rewritten),
 // when the captured source line and a confident replacement are both available.

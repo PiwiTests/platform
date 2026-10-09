@@ -8,8 +8,8 @@ lang: en-US
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence Piwi already stores for a failing
 execution; no model is involved. The **Most likely** line of the [situation block](/guide/first-failure#_2-most-likely-why)
-leads with the strongest clue or the story it belongs to, and the same clues are handed to the
-[AI diagnosis](/features/ai-diagnosis) as evidence to confirm or refute. What a clue is on the page is described on
+leads with a strong or medium story, else the cluster's completed AI diagnosis, else a weak story or the strongest
+clue, and the same clues are handed to the [AI diagnosis](/features/ai-diagnosis) as evidence to confirm or refute. What a clue is on the page is described on
 [Failure evidence](/features/evidence#clues).
 
 ## Rules

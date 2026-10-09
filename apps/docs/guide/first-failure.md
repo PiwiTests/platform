@@ -31,7 +31,7 @@ Under the headline, the **Most likely** line gives you the one explanation, not 
 
 > *"the Pay button stayed disabled because POST /api/checkout/quote was still in flight (28 s); the console said so 7.8 s before the click gave up"*
 
-Otherwise it is the cluster's completed [AI diagnosis](/features/ai-diagnosis), else the strongest clue. It carries a strength (*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
+A strong or medium story leads; otherwise the cluster's completed [AI diagnosis](/features/ai-diagnosis) does, else a weak story, else the strongest clue. The [cluster page](/features/failure-clusters) follows the same rule, so both pages give the same explanation for the same failure. The line carries a strength (*Strong*, *Medium* or *Weak*, or the diagnosis's confidence) and how many clues **agree**; an **All clues** disclosure lists every clue, each with a **citation** to the evidence it came from. Click a citation and the page jumps to the proof. When no rule fires and no diagnosis completed, the line is absent. The [Clue rules](/reference/clues) page lists every rule.
 
 ## 3. The situation: what's going on
 
@@ -39,7 +39,7 @@ Below the explanation, the **situation** sentence puts the failure in context in
 
 ## 4. Next: what to do
 
-The **Next** line names the one thing to do, chosen for you rather than offered as a menu: apply the diagnosed patch, replace the [broken locator](/features/locator-healing), reproduce it locally, re-run in CI, or mark the cluster resolved. Where the work is a code change, the step's **···** menu copies the exact command to re-run this test (**Copy retry command**). The full policy is on the [fix-plans page](/features/fix-plans#the-next-step).
+The **Next** line names the one thing to do, chosen for you rather than offered as a menu: apply the diagnosed patch, replace the [broken locator](/features/locator-healing), reproduce it locally, re-run in CI, or mark the cluster resolved. When the step's change comes from somewhere, the line under it says where: the cluster's AI diagnosis with its confidence (and its summary, when Most likely shows another explanation), or locator healing and what it captured the locator from. Where the work is a code change, the step's **···** menu copies the exact command to re-run this test (**Copy retry command**). The full policy is on the [fix-plans page](/features/fix-plans#the-next-step).
 
 The block closes on a **facts** line, one size smaller: the failing file and line (open it in your IDE), browser and viewport, duration against its average, the attempts, the branch, and the CI build. A **Details** popover holds the rest, and **Raw error** shows the verbatim error with a **Copy failure** action.
 

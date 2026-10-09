@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
  * "Next" — the one step the page recommends, from `computeNextStep`: the step as
- * a sentence, its reason as a meta line, then one row of actions — the primary
+ * a sentence, then one meta line, which says where the step's change comes from
+ * (the diagnosis or locator healing) when the page passes that sentence and gives
+ * the step's reason otherwise, then one row of actions — the primary
  * action as the block's only solid button, one secondary action inline, and the
  * rest in a small overflow menu, so the first screen keeps its control budget;
  * for the steps where a code change is the work, that menu also copies the retry
@@ -17,6 +19,8 @@ const props = defineProps<{
   nextStep: NextStep;
   /** The retry command, offered after the code-change steps. */
   retryCommand?: string | null;
+  /** Where the step's change comes from (`nextStepSourceLine`); shown in place of the reason. */
+  source?: string | null;
 }>();
 
 const emit = defineEmits<{ action: [action: string, payload?: Record<string, unknown>] }>();
@@ -49,7 +53,8 @@ const overflowSecondary = computed<DropdownMenuItem[]>(() => [
 <template>
   <div data-shot="next-step" :data-next-kind="nextStep.kind" class="space-y-1">
     <p>{{ nextStep.title }}</p>
-    <p v-if="nextStep.why" class="text-xs text-muted">{{ nextStep.why }}</p>
+    <p v-if="source" data-shot="next-step-source" class="text-xs text-muted">{{ source }}</p>
+    <p v-else-if="nextStep.why" class="text-xs text-muted">{{ nextStep.why }}</p>
     <div class="flex flex-wrap items-center gap-2 pt-1">
       <UButton
         size="xs"
