@@ -28,7 +28,7 @@ import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
-import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
+import { FAILED_STATUS_KEYS, finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import {
   attachUsualDurations,
@@ -673,23 +673,40 @@ export async function getTestRunCase(
           runFailedTests: testRun?.failedTests ?? null,
         })
       : null;
-  // The run's one failed execution, when a max-failures cutoff has a single one to open.
-  const runFailedRows =
-    trc.status === 'didnotrun' && !blockedByCase && trc.didNotRunReason === 'max-failures'
-      ? await db
-          .select({ id: testRunsCases.id })
-          .from(testRunsCases)
-          .where(
-            and(eq(testRunsCases.testRunId, trc.testRunId), inArray(testRunsCases.status, [...FAILED_STATUS_KEYS])),
-          )
-          .limit(2)
+  // The run's one failed test, when a max-failures cutoff has a single one to
+  // open, counted like the sentence's failed count: one final attempt per test
+  // and browser. A test that failed on every retry opens its last attempt; a
+  // test that passed on retry is not a failure. The failed rows and the retries
+  // are the only rows that can be or replace a final failed attempt.
+  const runFailedFinals =
+    trc.status === 'didnotrun' &&
+    !blockedByCase &&
+    trc.didNotRunReason === 'max-failures' &&
+    (testRun?.failedTests ?? 0) <= 1
+      ? finalAttempts(
+          await db
+            .select({
+              id: testRunsCases.id,
+              testCaseId: testRunsCases.testCaseId,
+              browserName: testRunsCases.browserName,
+              retries: testRunsCases.retries,
+              status: testRunsCases.status,
+            })
+            .from(testRunsCases)
+            .where(
+              and(
+                eq(testRunsCases.testRunId, trc.testRunId),
+                or(inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]), gt(testRunsCases.retries, 0)),
+              ),
+            ),
+        ).filter((r) => isFailedStatus(r.status))
       : [];
   const nextStep = computeNextStep({
     status: trc.status,
     blockedByCase: blockedByCase ? { id: blockedByCase.id, title: blockedByCase.title } : null,
     didNotRunReason: trc.didNotRunReason ?? null,
     runId: trc.testRunId,
-    runFailedExecutionId: runFailedRows.length === 1 ? runFailedRows[0]!.id : null,
+    runFailedExecutionId: runFailedFinals.length === 1 ? runFailedFinals[0]!.id : null,
     clusterStatus: failureCluster?.status ?? null,
     fixVerification: failureCluster?.fixVerification ?? null,
     fixLandedRunId: failureCluster?.fixLandedRunId ?? null,

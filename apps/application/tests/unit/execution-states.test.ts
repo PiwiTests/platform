@@ -16,7 +16,7 @@ import type { DidNotRunExplanation } from '#shared/did-not-run';
  * retry pass whose failed attempt is not stored still gets the retry pass's next
  * step. A test that did not run: its reason as one sentence, with the run's
  * failed count or a link to the test that blocked it, and a next step that opens
- * what stopped it.
+ * what stopped it, counting a test that failed on several attempts once.
  */
 
 // The schema barrel picks PostgreSQL at import time when PIWI_DATABASE_URL is set.
@@ -124,6 +124,31 @@ beforeAll(async () => {
     { id: 41, testRunId: 3, testCaseId: 5, status: 'timedOut', error: 'Test timeout of 30000ms exceeded.' },
     { id: 42, testRunId: 3, testCaseId: 4, status: 'didnotrun', didNotRunReason: 'max-failures' },
   ]);
+
+  // Run 4 stopped after one test failed on both its attempts, while another
+  // test failed once and passed on retry: one failed test, three failed rows.
+  await db.insert(schema.testRuns).values({
+    id: 4,
+    projectId: 1,
+    status: 'interrupted',
+    failedTests: 1,
+    flakyTests: 1,
+    startTime: new Date('2026-09-04T10:00:00Z'),
+  });
+  await db.insert(schema.testRunsCases).values([
+    { id: 50, testRunId: 4, testCaseId: 3, browserName: 'Chromium', status: 'failed', retries: 0, error: cartError },
+    { id: 51, testRunId: 4, testCaseId: 3, browserName: 'Chromium', status: 'failed', retries: 1, error: cartError },
+    { id: 52, testRunId: 4, testCaseId: 5, browserName: 'Chromium', status: 'failed', retries: 0, error: cartError },
+    { id: 53, testRunId: 4, testCaseId: 5, browserName: 'Chromium', status: 'passed', retries: 1 },
+    {
+      id: 54,
+      testRunId: 4,
+      testCaseId: 4,
+      browserName: 'Chromium',
+      status: 'didnotrun',
+      didNotRunReason: 'max-failures',
+    },
+  ]);
 });
 
 describe('a test that passed on retry', () => {
@@ -178,6 +203,16 @@ describe('a test that did not run', () => {
         primary: { action: 'open-execution', payload: { executionId: 30 } },
       });
     }
+  });
+
+  test('a test that failed on every retry counts once, and its last attempt opens', async () => {
+    const d = await detail(54);
+    expect(d.didNotRun?.text).toContain('(1 failed)');
+    expect(d.nextStep).toMatchObject({
+      kind: 'open-run',
+      title: 'Open the failure that stopped the run',
+      primary: { action: 'open-execution', payload: { executionId: 51 } },
+    });
   });
 
   test("with several failures in the run, it opens the run's failures", async () => {
