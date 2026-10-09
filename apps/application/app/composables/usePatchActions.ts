@@ -1,7 +1,10 @@
+import { gitApplyCommand } from '#shared/patch';
+
 /**
  * The clipboard and download actions for a suggested unified-diff patch, in one
  * place so the patch block and the next-step line share the exact same behaviour
- * instead of re-implementing `git apply` framing or the download dance.
+ * instead of re-implementing `git apply` framing or the download dance. The
+ * apply command itself is `gitApplyCommand` (`#shared/patch`).
  */
 export function usePatchActions() {
   const { copy, copied } = useCopy();
@@ -11,7 +14,7 @@ export function usePatchActions() {
   }
 
   function copyGitApply(patch: string) {
-    copy(`git apply <<'EOF'\n${patch}\nEOF`, { toast: 'git apply command copied' });
+    copy(gitApplyCommand(patch), { toast: 'git apply command copied' });
   }
 
   function downloadPatch(patch: string, downloadName = 'piwi-fix') {

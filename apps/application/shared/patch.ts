@@ -65,6 +65,34 @@ export function patchApplies(status: unknown): boolean {
   return status === 'applies' || status === 'applies-with-offset';
 }
 
+const VALIDATION_LABELS: Record<PatchValidationStatus, string> = {
+  applies: 'Applies cleanly',
+  'applies-with-offset': 'Applies with offset',
+  'stale-file': 'Does not apply',
+  invalid: 'Invalid diff',
+  unchecked: 'Unverified',
+};
+
+/** The words that state a patch validation status, as the patch's badge shows them. */
+export function patchValidationLabel(status: PatchValidationStatus): string {
+  return VALIDATION_LABELS[status] ?? VALIDATION_LABELS.unchecked;
+}
+
+/**
+ * The command that applies a unified diff from the repository root: `git apply`
+ * reading the patch from a quoted heredoc, so the shell expands nothing in it
+ * (bash, zsh, Git Bash). A hunk without a context line is placed only under
+ * `--unidiff-zero`, which the command then passes. Only the trailing line
+ * breaks are dropped: a line holding a single space is an empty context line.
+ */
+export function gitApplyCommand(patch: string): string {
+  const body = patch.replace(/(\r?\n)+$/, '');
+  const contextFree = parseUnifiedDiff(body).files.some((file) =>
+    file.hunks.some((hunk) => !hunk.lines.some((line) => line[0] === ' ')),
+  );
+  return `git apply${contextFree ? ' --unidiff-zero' : ''} <<'EOF'\n${body}\nEOF`;
+}
+
 /**
  * A diagnosis's patch checked again when a fix the diagnosis predicted landed,
  * against the code at the fix's commit: the validation there, whether the

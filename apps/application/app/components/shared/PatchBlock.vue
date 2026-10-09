@@ -5,7 +5,7 @@
  * patch could not be applied — the validator's first error line. Used wherever
  * a diagnosis or a fix plan surfaces its `.patch`.
  */
-import type { PatchValidation } from '#shared/patch';
+import { patchValidationLabel, type PatchValidation } from '#shared/patch';
 
 const props = defineProps<{
   patch: string;
@@ -24,44 +24,47 @@ const badge = computed<{
 } | null>(() => {
   const v = props.validation;
   if (!v) return null;
+  return { ...badgeLook(v), label: patchValidationLabel(v.status) };
+});
+
+function badgeLook(v: PatchValidation): {
+  color: 'success' | 'warning' | 'error' | 'neutral';
+  icon: string;
+  title: string;
+} {
   switch (v.status) {
     case 'applies':
       return {
         color: 'success',
         icon: 'i-lucide-badge-check',
-        label: 'Applies cleanly',
         title: 'Verified against the real file at the failing commit',
       };
     case 'applies-with-offset':
       return {
         color: 'warning',
         icon: 'i-lucide-badge-check',
-        label: 'Applies with offset',
         title: 'Context matched at a shifted line — apply should still succeed',
       };
     case 'stale-file':
       return {
         color: 'error',
         icon: 'i-lucide-badge-alert',
-        label: 'Does not apply',
         title: v.errors.join('\n') || 'The file changed since — patch context did not match',
       };
     case 'invalid':
       return {
         color: 'error',
         icon: 'i-lucide-badge-alert',
-        label: 'Invalid diff',
         title: v.errors.join('\n') || 'Could not parse the patch as a unified diff',
       };
     default:
       return {
         color: 'neutral',
         icon: 'i-lucide-badge-help',
-        label: 'Unverified',
         title: 'The source file was not in context, so the patch could not be validated',
       };
   }
-});
+}
 
 const errorLine = computed(() =>
   props.validation && (props.validation.status === 'stale-file' || props.validation.status === 'invalid')

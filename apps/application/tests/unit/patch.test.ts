@@ -1,8 +1,10 @@
 import { describe, test, expect } from 'vitest';
 import {
+  gitApplyCommand,
   parseUnifiedDiff,
   patchInCode,
   patchStillAppliesAtFix,
+  patchValidationLabel,
   storedPatchValidation,
   storedPatchValidationAtFix,
   stripAbPrefix,
@@ -207,5 +209,36 @@ describe('the patch checked at a verified fix', () => {
       expect(patchStillAppliesAtFix(check({ status }), 62)).toBe(false);
     }
     expect(patchStillAppliesAtFix(null, 62)).toBe(false);
+  });
+});
+
+describe('gitApplyCommand', () => {
+  test('reads the patch from a quoted heredoc, trailing line breaks dropped', () => {
+    expect(gitApplyCommand(SAMPLE)).toBe(`git apply <<'EOF'\n${SAMPLE.trimEnd()}\nEOF`);
+    expect(gitApplyCommand(SAMPLE + '\n\n')).toBe(gitApplyCommand(SAMPLE));
+    expect(gitApplyCommand(SAMPLE.replace(/\n/g, '\r\n'))).not.toMatch(/\r\nEOF$/);
+  });
+
+  test('passes --unidiff-zero when a hunk has no context line', () => {
+    const contextFree = '--- a/tests/a.spec.ts\n+++ b/tests/a.spec.ts\n@@ -4,1 +4,1 @@\n-old();\n+next();\n';
+    expect(gitApplyCommand(contextFree)).toMatch(/^git apply --unidiff-zero <<'EOF'\n--- a\/tests\/a\.spec\.ts\n/);
+    const twoHunks = `${SAMPLE}@@ -9,1 +9,1 @@\n-x();\n+y();\n`;
+    expect(gitApplyCommand(twoHunks)).toMatch(/^git apply --unidiff-zero /);
+    expect(gitApplyCommand(SAMPLE)).toMatch(/^git apply <<'EOF'/);
+  });
+
+  test('keeps a final empty context line, which is a single space', () => {
+    const endsOnBlank = '--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n x();\n-y();\n+z();\n \n';
+    expect(gitApplyCommand(endsOnBlank).endsWith('+z();\n \nEOF')).toBe(true);
+  });
+});
+
+describe('patchValidationLabel', () => {
+  test("says each status in the patch badge's words", () => {
+    expect(patchValidationLabel('applies')).toBe('Applies cleanly');
+    expect(patchValidationLabel('applies-with-offset')).toBe('Applies with offset');
+    expect(patchValidationLabel('stale-file')).toBe('Does not apply');
+    expect(patchValidationLabel('invalid')).toBe('Invalid diff');
+    expect(patchValidationLabel('unchecked')).toBe('Unverified');
   });
 });
