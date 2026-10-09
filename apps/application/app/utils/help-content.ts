@@ -475,7 +475,7 @@ export const HELP_TOPICS = {
   },
   'cluster.occurrence-trend': {
     title: 'Occurrences over time',
-    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. It opens on the days since the cluster was first seen, a week at least; the menu also offers the last 30, 90 and 365 days. Probe runs are left out.',
+    text: 'How often this failure cause failed, and how many tests it failed, per day, week or month (UTC), with the moment its fix landed and, if it failed again afterwards, the first failure after the fix. It opens on the days since the cluster was first seen, a week at least and a year at most, or on the last 90 days when the run that first saw it is no longer kept; the menu also offers the last 30, 90 and 365 days. Probe runs are left out.',
     doc: 'features/failure-clusters#occurrences-over-time',
   },
   'project.targets': {

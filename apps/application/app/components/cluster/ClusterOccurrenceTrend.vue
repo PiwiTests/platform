@@ -4,22 +4,27 @@
  * bucket over a chosen span, with the moment its fix landed and, when the fix
  * did not hold, its first occurrence after it — "did my fix hold", at a glance.
  * Folded to one line by default, the count as its peek; open, it spans the days
- * since the cluster was first seen unless another span is picked.
+ * since the cluster was first seen (a year at most) unless another span is
+ * picked, and the last 90 days when the run that first saw it is no longer kept.
  */
 import type { ClusterOccurrenceTrend } from '#shared/handlers/failure-clusters';
 import type { TrendLine } from '~/utils/chart';
-import { sinceFirstSeenDays } from '~/utils/occurrence-window';
+import { toEpochMs } from '#shared/relative-time';
+import { sinceFirstSeenDays, OCCURRENCE_WINDOW_UNKNOWN_DAYS } from '~/utils/occurrence-window';
 
 const props = defineProps<{ clusterId: number; firstSeenAt?: string | Date | null }>();
 
 type Span = 'first-seen' | 30 | 90 | 365;
-const SPANS: { label: string; value: Span }[] = [
-  { label: 'Since first seen', value: 'first-seen' },
+const FIXED_SPANS: { label: string; value: Span }[] = [
   { label: 'Last 30 days', value: 30 },
   { label: 'Last 90 days', value: 90 },
   { label: 'Last 365 days', value: 365 },
 ];
-const span = ref<Span>('first-seen');
+const knowsFirstSeen = computed(() => toEpochMs(props.firstSeenAt ?? null) != null);
+const spans = computed(() =>
+  knowsFirstSeen.value ? [{ label: 'Since first seen', value: 'first-seen' as Span }, ...FIXED_SPANS] : FIXED_SPANS,
+);
+const span = ref<Span>(knowsFirstSeen.value ? 'first-seen' : OCCURRENCE_WINDOW_UNKNOWN_DAYS);
 const days = computed(() => (span.value === 'first-seen' ? sinceFirstSeenDays(props.firstSeenAt) : span.value));
 const trend = ref<ClusterOccurrenceTrend | null>(null);
 const pending = ref(false);
@@ -103,7 +108,7 @@ defineExpose({ reveal: () => card.value?.reveal() });
     <template #actions>
       <USelect
         v-model="span"
-        :items="SPANS"
+        :items="spans"
         value-key="value"
         size="xs"
         aria-label="Occurrence trend span"

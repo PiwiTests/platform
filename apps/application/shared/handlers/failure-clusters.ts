@@ -995,6 +995,11 @@ export interface ClusterOccurrenceTrend {
   regressedAt: string | null;
 }
 
+/** The start of a `days`-day trend window ending at `now`: the UTC start of its first day. */
+export function clusterTrendStart(now: number, days: number): number {
+  return Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+}
+
 /**
  * A cluster's occurrences over time: its failing executions per UTC day, week
  * or month over the last `days` days (lab runs left out), with the moment
@@ -1012,7 +1017,7 @@ export async function getClusterOccurrenceTrend(
   if (!cluster) throw new Error('Failure cluster not found');
   const days = Math.min(3650, Math.max(1, Math.round(options.days ?? CLUSTER_TREND_DEFAULT_DAYS)));
   const now = options.now ?? Date.now();
-  const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
+  const from = clusterTrendStart(now, days);
 
   const rows: Array<{ testCaseId: number; startTime: Date; metadata: unknown }> = await db
     .select({ testCaseId: testRunsCases.testCaseId, startTime: testRuns.startTime, metadata: testRuns.metadata })
