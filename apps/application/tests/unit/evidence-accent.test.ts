@@ -29,6 +29,9 @@ const FILES = [
   'app/components/test-case/StepParams.vue',
   'app/components/test-case/FailingStepSnapshot.vue',
   'app/components/test-case/AttemptsCard.vue',
+  'app/components/test-case/TestCaseNetworkRequests.vue',
+  'app/components/test-case/TraceNetworkList.vue',
+  'app/components/test-case/TestCasePerformancePanel.vue',
   'app/components/cluster/ClusterAffectedTests.vue',
   'app/components/shared/TestRow.vue',
 ];
