@@ -7,6 +7,7 @@
 
 import { test, expect } from './fixtures';
 import type { APIRequestContext } from '@playwright/test';
+import { waitForHydration } from './utils';
 import * as http from 'http';
 import * as net from 'net';
 import { PROJECT } from '#shared/test-project-names';
@@ -392,6 +393,49 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(body.diagnosis).not.toBeNull();
     expect(body.diagnosis!.status).toBe('completed');
     expect(body.diagnosis!.category).toBe('app-bug');
+  });
+
+  test('Show context and Re-diagnose open a folded Diagnosis section on the cluster page', async ({
+    page,
+    request,
+  }) => {
+    expect(clusterId).toBeTruthy();
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    // A folded section renders no body, so its diagnosis panel is not mounted.
+    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    const fold = async () => {
+      if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
+      await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+    };
+
+    // More actions › Show context opens the section, then the context modal.
+    await fold();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Show context' }).click();
+    const context = page.getByRole('dialog').filter({ hasText: 'Context sent to AI' });
+    await expect(context).toBeVisible();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(context).toHaveCount(0);
+
+    // The next step's Re-diagnose opens the section, then asks for a new diagnosis
+    // (answered here without reaching the server, so the stored one stays).
+    const detail = (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()) as {
+      nextStep: { secondary?: Array<{ action: string }> } | null;
+    };
+    // Re-diagnose is the step's one secondary action, so it sits inline.
+    expect(detail.nextStep?.secondary?.map((a) => a.action)).toEqual(['re-diagnose']);
+    const diagnoseRequests: string[] = [];
+    await page.route(/\/api\/failure-clusters\/\d+\/diagnose/, async (route) => {
+      diagnoseRequests.push(route.request().url());
+      await route.abort();
+    });
+    await fold();
+    await page.locator('[data-shot="next-step"]').getByRole('button', { name: 'Re-diagnose' }).click();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(() => diagnoseRequests.length).toBeGreaterThan(0);
   });
 
   test('a completed diagnosis stores a context hash matching the current context, so it is not stale', async ({
