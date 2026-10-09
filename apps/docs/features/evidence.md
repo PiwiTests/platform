@@ -6,8 +6,8 @@ lang: en-US
 
 # Failure evidence
 
-When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds, where it
-came from, and what a trace adds.
+When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds and what a
+trace adds.
 
 Two pages are involved, told apart in [Core concepts](/guide/concepts#execution):
 
@@ -18,9 +18,8 @@ Two pages are involved, told apart in [Core concepts](/guide/concepts#execution)
 
 ## One execution, diagnosis-first
 
-A failing execution reads top to bottom in one column. It opens on the **situation block** (the headline, the most
-likely cause, the next step and the cluster), described once on [Your first failure,
-explained](/guide/first-failure).
+A failing execution reads top to bottom in one column. It opens on the **situation block** (headline, most likely
+cause, next step, cluster), described on [Your first failure, explained](/guide/first-failure).
 
 <figure>
   <img src="/screenshots/gather-evidence.png" alt="A failing execution: one situation block, then one evidence card whose tabs (Timeline, Screen, Source, Network, Console, State, Performance) hold the captured evidence">
