@@ -18,6 +18,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  max,
   min,
   ne,
   not,
@@ -529,6 +530,8 @@ export interface ControlReach {
   reachCount: number;
   /** Of those, the tests recorded only by hand (a covered-by), not observed. */
   manualReachCount?: number;
+  /** Tests that operated an element the locator index could not name on a page holding it. */
+  unresolvedTests?: number;
 }
 
 /**
@@ -537,6 +540,8 @@ export interface ControlReach {
  * control reach: with no observed test→control edge anywhere, every inventoried
  * control would flag, so the detector stays silent until reach exists to
  * compare against. A covering test recorded by hand does not count as observed.
+ * A control on a page where a test operated an element the locator index could
+ * not name is not raised: that locator may have targeted it.
  */
 export function detectControlNobodyExercises(controls: ControlReach[]): DetectedGap[] {
   if (!controls.some((c) => c.reachCount - (c.manualReachCount ?? 0) > 0)) return [];
@@ -544,6 +549,7 @@ export function detectControlNobodyExercises(controls: ControlReach[]): Detected
   for (const c of controls) {
     if (c.reachCount > 0) continue;
     if (c.pageCount === 0) continue;
+    if ((c.unresolvedTests ?? 0) > 0) continue;
     gaps.push({
       detector: 'control-nobody-exercises',
       kind: 'gap',
@@ -1391,8 +1397,9 @@ export async function computeScenarioGaps(
   const nodeBranchScope = isNull(graphNodes.branch);
   const edgeBranchScope = isNull(graphEdges.branch);
 
-  // The controls and links the tests' locators target, from the locator index.
-  await syncControlReach(db, projectId, latestRunId);
+  // The controls and links the tests' locators target, from the locator index,
+  // and the pages where a test operated an element the index could not name.
+  const unresolvedByPage = await syncControlReach(db, projectId);
 
   // Reach edges → which test cases reach which nodes. Code reach's `coverage`
   // edges and `file` nodes (every file a test executed) stay out of the node
@@ -1612,6 +1619,15 @@ export async function computeScenarioGaps(
     nodeSeenRecently.set(`${node.kind}\x00${node.key}`, recentSet.has(node.lastSeenRunId ?? -1));
   }
 
+  // Tests that operated an unnamed element on a page holding the control: any
+  // of them may have exercised it.
+  const unresolvedTestsByControl = new Map<string, Set<number>>();
+  for (const [control, pages] of pagesByControl) {
+    const tests = new Set<number>();
+    for (const page of pages) for (const id of unresolvedByPage.get(page) ?? []) tests.add(id);
+    if (tests.size > 0) unresolvedTestsByControl.set(control, tests);
+  }
+
   const controlReach: ControlReach[] = [];
   const pageLinkReach: PageLinkReach[] = [];
   for (const node of nodeRows) {
@@ -1623,6 +1639,7 @@ export async function computeScenarioGaps(
         pageCount: pagesByControl.get(node.key)?.size ?? 0,
         reachCount,
         manualReachCount: manualReachByNode.get(nodeKey)?.size ?? 0,
+        unresolvedTests: unresolvedTestsByControl.get(node.key)?.size ?? 0,
       });
     } else if (node.kind === 'page') {
       pageLinkReach.push({
@@ -1697,7 +1714,14 @@ export async function computeScenarioGaps(
   const detected = [
     ...detectReportedBugEscapes(openReports),
     ...detectSuccessOnly([...routeStats.values()]),
-    ...detectSingleCoveringTest(nodeReach),
+    ...detectSingleCoveringTest(
+      // A control another test may have operated through an unnamed locator is not known to be single-covered.
+      nodeReach.filter(
+        (n) =>
+          n.nodeKind !== 'control' ||
+          [...(unresolvedTestsByControl.get(n.nodeKey) ?? [])].every((id) => n.tests.some((t) => t.testCaseId === id)),
+      ),
+    ),
     ...detectSurfaceDrift(nodeDrift, latestRunId, await loadFirstGraphRunId(db, projectId)),
     ...detectControlNobodyExercises(controlReach),
     ...detectReachableUnvisited(pageLinkReach),
@@ -1784,7 +1808,7 @@ async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promi
 
 // ── Exposure from recorded changes ───────────────────────────────────────────
 
-/** Two repo paths name one file when equal, or when one is a path suffix of the other (a monorepo prefix). */
+/** True when two repo paths name one file: equal, or one a path suffix of the other (a monorepo prefix). */
 function samePathOrSuffix(a: string, b: string): boolean {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
@@ -1797,10 +1821,16 @@ function sameCommit(a: string, b: string): boolean {
 }
 
 /**
- * Churn and escape history of `files` from what the graph recorded: the commits
- * of the default branch's `changes` edges (kept for ninety days) that touched
- * each file, and whether one of them is a failure cluster's fixing commit. Age
- * needs the file's history from the source control provider, so it is left out.
+ * Churn and escape history of `files` from what the graph recorded: the
+ * default branch's `changes` edges (kept for ninety days), each a run's diff
+ * from its baseline to its head commit. Churn counts the distinct diffs that
+ * touched a file, a diff being its base, so the runs of a red streak, each
+ * diffed again from the same green run, count once. A file is escaped when a
+ * diff that touched it ends on a failure cluster's fixing commit: the diff that
+ * landed the fix, which holds every change since the last green run. A file
+ * matches its recorded path exactly or, failing that, the one recorded path it
+ * is a suffix of; a key two recorded paths end with names neither. Age needs
+ * the file's history from the source control provider, so it is left out.
  */
 async function loadRecordedFileExposure(
   db: DrizzleDB,
@@ -1810,7 +1840,7 @@ async function loadRecordedFileExposure(
   const out = new Map<string, FileExposure>();
   if (files.length === 0) return out;
   const changes = await db
-    .select({ commit: graphEdges.fromKey, file: graphEdges.toKey })
+    .select({ commit: graphEdges.fromKey, file: graphEdges.toKey, evidence: graphEdges.evidence })
     .from(graphEdges)
     .where(
       and(
@@ -1822,6 +1852,14 @@ async function loadRecordedFileExposure(
       ),
     );
   if (changes.length === 0) return out;
+  const byPath = new Map<string, { diffs: Set<string>; heads: Set<string> }>();
+  for (const c of changes) {
+    const base = (c.evidence as { base?: unknown } | null)?.base;
+    const entry = byPath.get(c.file) ?? { diffs: new Set<string>(), heads: new Set<string>() };
+    entry.diffs.add(typeof base === 'string' && base ? `base:${base}` : `head:${c.commit}`);
+    entry.heads.add(c.commit);
+    byPath.set(c.file, entry);
+  }
   const fixCommits = (
     await db
       .select({ fixCommit: failureClusters.fixCommit })
@@ -1831,12 +1869,14 @@ async function loadRecordedFileExposure(
     .map((c) => c.fixCommit!)
     .filter(Boolean);
 
+  const paths = [...byPath.keys()];
   for (const file of files) {
-    const commits = new Set(changes.filter((c) => samePathOrSuffix(c.file, file)).map((c) => c.commit));
-    if (commits.size === 0) continue;
+    const matches = byPath.has(file) ? [file] : paths.filter((path) => samePathOrSuffix(path, file));
+    if (matches.length !== 1) continue;
+    const entry = byPath.get(matches[0]!)!;
     out.set(file, {
-      churn: commits.size,
-      escaped: [...commits].some((commit) => fixCommits.some((fix) => sameCommit(commit, fix))),
+      churn: entry.diffs.size,
+      escaped: [...entry.heads].some((commit) => fixCommits.some((fix) => sameCommit(commit, fix))),
     });
   }
   return out;
@@ -1845,7 +1885,7 @@ async function loadRecordedFileExposure(
 // ── Control reach from the locator index ─────────────────────────────────────
 
 /** Roles a label, a placeholder or a title names. */
-const LABELLED_ROLES = new Set([
+const LABELED_ROLES = new Set([
   'textbox',
   'searchbox',
   'combobox',
@@ -1858,17 +1898,25 @@ const LABELLED_ROLES = new Set([
 ]);
 
 /** The graph node a locator names: a control or link by role and name, or only a name. */
-export type LocatorNodeTarget = { by: 'role'; kind: 'control' | 'link'; key: string } | { by: 'name'; name: string };
+export type LocatorNodeTarget =
+  | { by: 'role'; kind: 'control' | 'link'; key: string; role: string; name: string; exact: boolean }
+  | { by: 'name'; name: string; exact: boolean };
 
 function stringArg(arg: LocatorArg | undefined): string | null {
   return arg?.type === 'string' && arg.value.trim() ? arg.value : null;
 }
 
+function exactOption(arg: LocatorArg | undefined): boolean {
+  if (arg?.type !== 'object') return false;
+  const exact = arg.entries.find(([k]) => k === 'exact')?.[1];
+  return exact?.type === 'boolean' && exact.value;
+}
+
 /**
  * The node the last locating call of a chain names. `getByRole` with a string
  * name keys a control (`role:name`) or, for a link, a link node; a label,
- * placeholder or title names a control without its role. A regex name, a test
- * id or a CSS selector names nothing here.
+ * placeholder or title names a control without its role. `exact` is the call's
+ * own option. A regex name, a test id or a CSS selector names nothing here.
  */
 export function locatorNodeTarget(locator: string): LocatorNodeTarget | null {
   const calls = tryParseLocatorChain(locator)?.calls.filter((c) => LOCATING_METHODS.has(c.method)) ?? [];
@@ -1879,13 +1927,14 @@ export function locatorNodeTarget(locator: string): LocatorNodeTarget | null {
     const options = call.args[1]?.type === 'object' ? call.args[1].entries : [];
     const name = stringArg(options.find(([k]) => k === 'name')?.[1]);
     if (!role || !name) return null;
+    const exact = exactOption(call.args[1]);
     return role === 'link'
-      ? { by: 'role', kind: 'link', key: linkNodeKey(name) }
-      : { by: 'role', kind: 'control', key: controlNodeKey(role, name) };
+      ? { by: 'role', kind: 'link', key: linkNodeKey(name), role, name, exact }
+      : { by: 'role', kind: 'control', key: controlNodeKey(role, name), role: role.toLowerCase(), name, exact };
   }
   if (call.method === 'getByLabel' || call.method === 'getByPlaceholder' || call.method === 'getByTitle') {
     const name = stringArg(call.args[0]);
-    return name ? { by: 'name', name } : null;
+    return name ? { by: 'name', name, exact: exactOption(call.args[1]) } : null;
   }
   return null;
 }
@@ -1897,8 +1946,13 @@ export interface LocatorReachUse {
   target: string;
   /** `click`, `fill`, `expect.toBeVisible`, … */
   action: string;
+  /** The page key the call ran on, '' when unknown. */
+  page?: string;
   /** Alternative locators for the same element, best first. */
   alternatives?: string[];
+  /** When the index last saw the use, and in which run. */
+  lastSeenAt?: Date;
+  lastSeenRunId?: number | null;
 }
 
 /** A test's reach to a control or link, and whether it acted on the element or only read or asserted on it. */
@@ -1909,29 +1963,60 @@ export interface LocatorControlReach {
   action: 'operated' | 'checked';
   /** 1 for a role and name in the test's own chain, lower when inferred. */
   confidence: number;
+  /** The newest use behind it, when the uses say. */
+  lastSeenAt?: Date;
+  lastSeenRunId?: number | null;
+}
+
+/** The reach a set of locator uses resolves to, and the interactions that name no known node. */
+export interface ResolvedControlReach {
+  reach: LocatorControlReach[];
+  /** Uses that operated an element the graph has no node for, or that several nodes could be. */
+  unresolved: LocatorReachUse[];
+}
+
+/** The one key whose templated name holds `name`, case-insensitively, as Playwright matches a name by default. */
+function uniqueNameMatch(keys: string[], name: string): string | null {
+  const needle = templateAccessibleName(name).toLowerCase();
+  const hits = keys.filter((key) =>
+    key
+      .slice(key.indexOf(':') + 1)
+      .toLowerCase()
+      .includes(needle),
+  );
+  return hits.length === 1 ? hits[0]! : null;
 }
 
 /**
  * Resolve locator uses to the control and link nodes of the graph. A use maps
- * through, in order: its own `getByRole` and name; the first role-and-name
- * alternative its snapshot recorded; a label, placeholder or title that exactly
- * one labelled control carries. A use that maps to no known node reaches
- * nothing, so no edge points at a node the inventory never saw.
+ * through, in order: its own `getByRole` and name (confidence 1); the first
+ * role-and-name alternative its snapshot recorded (0.9); the one node of its
+ * role whose name holds the locator's name, as Playwright matches a name without
+ * `exact` (0.8); a label, placeholder or title that exactly one labeled control
+ * carries (0.8), or holds (0.7). A use that maps to no known node reaches
+ * nothing, so no edge points at a node the inventory never saw; an interaction
+ * among those is listed as unresolved.
  */
 export function resolveControlReach(
   uses: LocatorReachUse[],
   nodes: { controls: ReadonlySet<string>; links: ReadonlySet<string> },
-): LocatorControlReach[] {
+): ResolvedControlReach {
   const known = (kind: 'control' | 'link', key: string) => (kind === 'control' ? nodes.controls : nodes.links).has(key);
-  const byName = new Map<string, string[]>();
+  const byRole = new Map<string, string[]>(); // role (or `link`) → node keys
   for (const key of nodes.controls) {
-    const sep = key.indexOf(':');
-    if (!LABELLED_ROLES.has(key.slice(0, sep))) continue;
-    const name = key.slice(sep + 1);
+    const role = key.slice(0, key.indexOf(':'));
+    byRole.set(role, [...(byRole.get(role) ?? []), key]);
+  }
+  byRole.set('link', [...nodes.links]);
+  const labeled = [...nodes.controls].filter((key) => LABELED_ROLES.has(key.slice(0, key.indexOf(':'))));
+  const byName = new Map<string, string[]>();
+  for (const key of labeled) {
+    const name = key.slice(key.indexOf(':') + 1);
     byName.set(name, [...(byName.get(name) ?? []), key]);
   }
 
   const out = new Map<string, LocatorControlReach>();
+  const unresolved: LocatorReachUse[] = [];
   for (const use of uses) {
     let hit: { kind: 'control' | 'link'; key: string; confidence: number } | null = null;
     const own = locatorNodeTarget(use.target);
@@ -1943,40 +2028,101 @@ export function resolveControlReach(
         break;
       }
     }
-    if (!hit && own?.by === 'name') {
-      const candidates = byName.get(templateAccessibleName(own.name)) ?? [];
-      if (candidates.length === 1) hit = { kind: 'control', key: candidates[0]!, confidence: 0.8 };
+    if (!hit && own?.by === 'role' && !own.exact) {
+      const key = uniqueNameMatch(byRole.get(own.kind === 'link' ? 'link' : own.role) ?? [], own.name);
+      if (key) hit = { kind: own.kind, key, confidence: 0.8 };
     }
-    if (!hit) continue;
-
+    if (!hit && own?.by === 'name') {
+      const exact = byName.get(templateAccessibleName(own.name)) ?? [];
+      if (exact.length === 1) hit = { kind: 'control', key: exact[0]!, confidence: 0.8 };
+      else if (exact.length === 0 && !own.exact) {
+        const key = uniqueNameMatch(labeled, own.name);
+        if (key) hit = { kind: 'control', key, confidence: 0.7 };
+      }
+    }
     const action = isInteractionAction(use.action) ? 'operated' : 'checked';
+    if (!hit) {
+      if (action === 'operated') unresolved.push(use);
+      continue;
+    }
+
     const id = `${use.testCaseId}\x00${hit.kind}\x00${hit.key}`;
     const prev = out.get(id);
+    const newer = use.lastSeenAt && (!prev?.lastSeenAt || use.lastSeenAt > prev.lastSeenAt);
     out.set(id, {
       testCaseId: use.testCaseId,
       kind: hit.kind,
       key: hit.key,
       action: prev?.action === 'operated' || action === 'operated' ? 'operated' : 'checked',
       confidence: Math.max(prev?.confidence ?? 0, hit.confidence),
+      ...(newer
+        ? { lastSeenAt: use.lastSeenAt, lastSeenRunId: use.lastSeenRunId ?? null }
+        : prev?.lastSeenAt
+          ? { lastSeenAt: prev.lastSeenAt, lastSeenRunId: prev.lastSeenRunId ?? null }
+          : {}),
     });
   }
-  return [...out.values()];
+  return { reach: [...out.values()], unresolved };
 }
 
-/** True when a snapshot's captured location is the use's project-relative call site. */
-function sameCallSite(location: string, callSite: string): boolean {
+/** `[file, line]` of a `file:line:col` or `file:line` location, slashes normalized. */
+function fileAndLine(location: string): [string, string] {
   const loc = location.replace(/\\/g, '/');
-  return loc === callSite || loc.endsWith(`/${callSite}`);
+  const m = /^(.*):(\d+):\d+$/.exec(loc) ?? /^(.*):(\d+)$/.exec(loc);
+  return m ? [m[1]!, m[2]!] : [loc, ''];
 }
+
+/**
+ * True when a snapshot's captured location is on the line of the use's
+ * project-relative call site. The stack a snapshot reads and a step's location
+ * can differ by column, and the snapshot's path can be absolute.
+ */
+function sameCallLine(location: string, callSite: string): boolean {
+  const [fileA, lineA] = fileAndLine(location);
+  const [fileB, lineB] = fileAndLine(callSite);
+  if (!lineA || lineA !== lineB) return false;
+  return fileA === fileB || fileA.endsWith(`/${fileB}`) || fileB.endsWith(`/${fileA}`);
+}
+
+/**
+ * True when a snapshot recorded the use's own locating call: the same method
+ * and, when both have one, the same first string argument. A helper's line is
+ * shared by every locator passed through it, so the line alone names no call.
+ */
+function sameUsedCall(snapshot: { usedMethod: string; usedArgs: unknown }, target: string): boolean {
+  const call = tryParseLocatorChain(target)
+    ?.calls.filter((c) => LOCATING_METHODS.has(c.method))
+    .at(-1);
+  if (!call || call.method !== snapshot.usedMethod) return false;
+  const own = stringArg(call.args[0]);
+  let args: unknown = snapshot.usedArgs;
+  try {
+    if (typeof args === 'string') args = JSON.parse(args);
+  } catch {
+    return false;
+  }
+  const first = Array.isArray(args) && typeof args[0] === 'string' ? args[0] : null;
+  return own == null || first == null || own === first;
+}
+
+/** How long a locator use keeps a test's reach to a control: as long as the graph keeps a reaches edge unseen. */
+const LOCATOR_REACH_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 
 /**
  * Write a `reaches` edge from each test to the controls and links its locators
  * target on the default branch, from the locator index and its snapshots. Only
- * nodes the page inventory recorded can be reached, and each edge says whether
- * the test acted on the element or only asserted on it. A locator edge the
- * index no longer backs is removed; a covered-by edge from triage is left as it is.
+ * nodes the page inventory recorded can be reached, each edge says whether the
+ * test acted on the element or only asserted on it, and it carries when the
+ * index last saw the use, so a use that stops being seen ages out like any
+ * reach. A locator edge the index does not back is removed; a covered-by edge
+ * from triage is left as it is. Returns, per page, the tests that operated an
+ * element there that the index could not name.
  */
-async function syncControlReach(db: DrizzleDB, projectId: number, runId: number | null): Promise<void> {
+async function syncControlReach(
+  db: DrizzleDB,
+  projectId: number,
+  now: Date = new Date(),
+): Promise<Map<string, Set<number>>> {
   const nodeRows = await db
     .select({ kind: graphNodes.kind, key: graphNodes.key })
     .from(graphNodes)
@@ -2002,62 +2148,96 @@ async function syncControlReach(db: DrizzleDB, projectId: number, runId: number 
             target: locatorUsages.target,
             action: locatorUsages.action,
             callSite: locatorUsages.callSite,
+            page: locatorUsages.page,
+            lastSeenAt: max(locatorUsages.lastSeenAt),
+            lastSeenRunId: max(locatorUsages.lastSeenRunId),
           })
           .from(locatorUsages)
-          .where(and(eq(locatorUsages.projectId, projectId), eq(locatorUsages.branch, '')))
-          .groupBy(locatorUsages.testCaseId, locatorUsages.target, locatorUsages.action, locatorUsages.callSite);
+          .where(
+            and(
+              eq(locatorUsages.projectId, projectId),
+              eq(locatorUsages.branch, ''),
+              gte(locatorUsages.lastSeenAt, new Date(now.getTime() - LOCATOR_REACH_MAX_AGE_MS)),
+            ),
+          )
+          .groupBy(
+            locatorUsages.testCaseId,
+            locatorUsages.target,
+            locatorUsages.action,
+            locatorUsages.callSite,
+            locatorUsages.page,
+          );
 
-  const snapshotRows =
-    useRows.length === 0
-      ? []
-      : await db
-          .select({
-            testCaseId: locatorSnapshots.testCaseId,
-            location: locatorSnapshots.location,
-            alternatives: locatorSnapshots.alternatives,
-          })
-          .from(locatorSnapshots)
-          .innerJoin(testCases, eq(testCases.id, locatorSnapshots.testCaseId))
-          .where(eq(testCases.projectId, projectId));
-  const snapshotsByTest = new Map<number, Array<{ location: string; alternatives: string[] }>>();
-  for (const r of snapshotRows) {
-    if (!r.location) continue;
-    let alternatives: string[] = [];
-    try {
-      const parsed = typeof r.alternatives === 'string' ? JSON.parse(r.alternatives) : r.alternatives;
-      if (Array.isArray(parsed)) {
-        alternatives = parsed
-          .map((a) => (a && typeof a === 'object' ? (a as { locator?: unknown }).locator : null))
-          .filter((l): l is string => typeof l === 'string');
+  // Snapshot alternatives only for the tests with a use their own chain does not name.
+  const needsAlternatives = [
+    ...new Set(
+      useRows
+        .filter((u) => {
+          const own = locatorNodeTarget(u.target);
+          return !(own?.by === 'role' && (own.kind === 'control' ? nodes.controls : nodes.links).has(own.key));
+        })
+        .map((u) => u.testCaseId),
+    ),
+  ];
+  const snapshotsByTest = new Map<
+    number,
+    Array<{ location: string; usedMethod: string; usedArgs: unknown; alternatives: string[] }>
+  >();
+  for (let i = 0; i < needsAlternatives.length; i += 500) {
+    const rows = await db
+      .select({
+        testCaseId: locatorSnapshots.testCaseId,
+        location: locatorSnapshots.location,
+        usedMethod: locatorSnapshots.usedMethod,
+        usedArgs: locatorSnapshots.usedArgs,
+        alternatives: locatorSnapshots.alternatives,
+      })
+      .from(locatorSnapshots)
+      .where(inArray(locatorSnapshots.testCaseId, needsAlternatives.slice(i, i + 500)));
+    for (const r of rows) {
+      if (!r.location) continue;
+      let alternatives: string[] = [];
+      try {
+        const parsed = typeof r.alternatives === 'string' ? JSON.parse(r.alternatives) : r.alternatives;
+        if (Array.isArray(parsed)) {
+          alternatives = parsed
+            .map((a) => (a && typeof a === 'object' ? (a as { locator?: unknown }).locator : null))
+            .filter((l): l is string => typeof l === 'string');
+        }
+      } catch {
+        // A malformed snapshot offers no alternative.
       }
-    } catch {
-      // A malformed snapshot offers no alternative.
+      const list = snapshotsByTest.get(r.testCaseId) ?? [];
+      list.push({ location: r.location, usedMethod: r.usedMethod, usedArgs: r.usedArgs, alternatives });
+      snapshotsByTest.set(r.testCaseId, list);
     }
-    const list = snapshotsByTest.get(r.testCaseId) ?? [];
-    list.push({ location: r.location, alternatives });
-    snapshotsByTest.set(r.testCaseId, list);
   }
 
-  const reach = resolveControlReach(
-    useRows.map((u) => ({
-      testCaseId: u.testCaseId,
-      target: u.target,
-      action: u.action,
-      alternatives: u.callSite
-        ? snapshotsByTest.get(u.testCaseId)?.find((snap) => sameCallSite(snap.location, u.callSite))?.alternatives
-        : undefined,
-    })),
-    nodes,
-  );
+  const uses = useRows.map((u) => ({
+    testCaseId: u.testCaseId,
+    target: u.target,
+    action: u.action,
+    page: u.page,
+    lastSeenAt: u.lastSeenAt ? new Date(u.lastSeenAt) : now,
+    lastSeenRunId: u.lastSeenRunId ?? null,
+    alternatives: u.callSite
+      ? snapshotsByTest
+          .get(u.testCaseId)
+          ?.find((snap) => sameCallLine(snap.location, u.callSite) && sameUsedCall(snap, u.target))?.alternatives
+      : undefined,
+  }));
+  const { reach, unresolved } = resolveControlReach(uses, nodes);
 
-  const current = new Set(reach.map((r) => `${r.testCaseId}\x00${r.kind}\x00${r.key}`));
   const existing = await db
     .select({
       id: graphEdges.id,
       fromKey: graphEdges.fromKey,
       toKind: graphEdges.toKind,
       toKey: graphEdges.toKey,
+      origin: graphEdges.origin,
+      confidence: graphEdges.confidence,
       evidence: graphEdges.evidence,
+      lastSeenAt: graphEdges.lastSeenAt,
     })
     .from(graphEdges)
     .where(
@@ -2066,38 +2246,46 @@ async function syncControlReach(db: DrizzleDB, projectId: number, runId: number 
         eq(graphEdges.kind, 'reaches'),
         eq(graphEdges.fromKind, 'test'),
         inArray(graphEdges.toKind, ['control', 'link']),
-        eq(graphEdges.origin, 'observed'),
         isNull(graphEdges.branch),
       ),
     );
+  const isLocatorEdge = (e: (typeof existing)[number]) =>
+    e.origin === 'observed' && (e.evidence as { via?: unknown } | null)?.via === 'locator';
+  const existingById = new Map(existing.map((e) => [`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`, e]));
+  const current = new Set(reach.map((r) => `${r.testCaseId}\x00${r.kind}\x00${r.key}`));
   const stale = existing
-    .filter(
-      (e) =>
-        (e.evidence as { via?: unknown } | null)?.via === 'locator' &&
-        !current.has(`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`),
-    )
+    .filter((e) => isLocatorEdge(e) && !current.has(`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`))
     .map((e) => e.id);
   for (let i = 0; i < stale.length; i += 100) {
     await db.delete(graphEdges).where(inArray(graphEdges.id, stale.slice(i, i + 100)));
   }
-  if (reach.length === 0) return;
 
-  const now = new Date();
-  const values = reach.map((r) => ({
-    projectId,
-    fromKind: 'test',
-    fromKey: String(r.testCaseId),
-    toKind: r.kind,
-    toKey: r.key,
-    kind: 'reaches',
-    branch: null,
-    confidence: r.confidence,
-    origin: 'observed',
-    evidence: { via: 'locator', action: r.action } as any,
-    firstSeenRunId: runId,
-    lastSeenRunId: runId,
-    lastSeenAt: now,
-  }));
+  const values = reach
+    .filter((r) => {
+      const prev = existingById.get(`${r.testCaseId}\x00${r.kind}\x00${r.key}`);
+      if (!prev) return true;
+      if (!isLocatorEdge(prev)) return false;
+      return (
+        prev.confidence !== r.confidence ||
+        (prev.evidence as { action?: unknown } | null)?.action !== r.action ||
+        new Date(prev.lastSeenAt).getTime() !== (r.lastSeenAt ?? now).getTime()
+      );
+    })
+    .map((r) => ({
+      projectId,
+      fromKind: 'test',
+      fromKey: String(r.testCaseId),
+      toKind: r.kind,
+      toKey: r.key,
+      kind: 'reaches',
+      branch: null,
+      confidence: r.confidence,
+      origin: 'observed',
+      evidence: { via: 'locator', action: r.action } as any,
+      firstSeenRunId: r.lastSeenRunId ?? null,
+      lastSeenRunId: r.lastSeenRunId ?? null,
+      lastSeenAt: r.lastSeenAt ?? now,
+    }));
   for (let i = 0; i < values.length; i += 100) {
     await db
       .insert(graphEdges)
@@ -2121,6 +2309,15 @@ async function syncControlReach(db: DrizzleDB, projectId: number, runId: number 
         setWhere: ne(graphEdges.origin, 'manual'),
       });
   }
+
+  const unresolvedByPage = new Map<string, Set<number>>();
+  for (const u of unresolved) {
+    if (!u.page) continue;
+    const tests = unresolvedByPage.get(u.page) ?? new Set<number>();
+    tests.add(u.testCaseId);
+    unresolvedByPage.set(u.page, tests);
+  }
+  return unresolvedByPage;
 }
 
 /**

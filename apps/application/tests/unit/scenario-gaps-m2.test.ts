@@ -327,19 +327,28 @@ describe('control reach from the locator index', () => {
       by: 'role',
       kind: 'control',
       key: 'button:Save',
+      role: 'button',
+      name: 'Save',
+      exact: false,
     });
     expect(gaps.locatorNodeTarget("getByRole('navigation').getByRole('link', { name: 'Users' })")).toEqual({
       by: 'role',
       kind: 'link',
       key: 'link:Users',
+      role: 'link',
+      name: 'Users',
+      exact: false,
     });
-    expect(gaps.locatorNodeTarget("getByLabel('Email')")).toEqual({ by: 'name', name: 'Email' });
+    expect(gaps.locatorNodeTarget("getByRole('button', { name: 'Save', exact: true })")).toMatchObject({
+      exact: true,
+    });
+    expect(gaps.locatorNodeTarget("getByLabel('Email')")).toEqual({ by: 'name', name: 'Email', exact: false });
     expect(gaps.locatorNodeTarget("getByRole('button', { name: /Cart, \\d+ items?/ })")).toBeNull();
     expect(gaps.locatorNodeTarget("getByTestId('submit')")).toBeNull();
   });
 
   test('a use reaches a known node through its own chain, its snapshot, or a unique label', () => {
-    const reach = gaps.resolveControlReach(
+    const { reach, unresolved } = gaps.resolveControlReach(
       [
         { testCaseId: 1, target: "getByRole('button', { name: 'Save' })", action: 'click' },
         { testCaseId: 1, target: "getByRole('button', { name: 'Save' })", action: 'expect.toBeEnabled' },
@@ -351,10 +360,12 @@ describe('control reach from the locator index', () => {
           alternatives: ["getByTestId('save')", "getByRole('button', { name: 'Save' })"],
         },
         { testCaseId: 4, target: "getByLabel('Email')", action: 'fill' },
-        // Two labelled controls share the name, so the label names neither.
+        // Two labeled controls share the name, so the label names neither.
         { testCaseId: 5, target: "getByLabel('Name')", action: 'fill' },
         // A control the inventory never recorded reaches nothing.
         { testCaseId: 6, target: "getByRole('button', { name: 'Delete' })", action: 'click' },
+        // An assertion on an unnamed element is not an interaction.
+        { testCaseId: 7, target: "getByText('Saved')", action: 'expect.toBeVisible' },
       ],
       nodes,
     );
@@ -364,5 +375,39 @@ describe('control reach from the locator index', () => {
       { testCaseId: 3, kind: 'control', key: 'button:Save', action: 'operated', confidence: 0.9 },
       { testCaseId: 4, kind: 'control', key: 'textbox:Email', action: 'operated', confidence: 0.8 },
     ]);
+    expect(unresolved.map((u) => u.testCaseId)).toEqual([5, 6]);
+  });
+
+  test('a name without exact matches as Playwright does: the one node of the role whose name holds it', () => {
+    const named = {
+      controls: new Set(['button:Save changes', 'button:Cancel', 'textbox:Work email', 'textbox:Email address']),
+      links: new Set(['link:All users']),
+    };
+    const { reach, unresolved } = gaps.resolveControlReach(
+      [
+        { testCaseId: 1, target: "getByRole('button', { name: 'save' })", action: 'click' },
+        { testCaseId: 2, target: "getByRole('button', { name: 'Save', exact: true })", action: 'click' },
+        { testCaseId: 3, target: "getByRole('link', { name: 'users' })", action: 'click' },
+        { testCaseId: 4, target: "getByLabel('Work')", action: 'fill' },
+        // Both textboxes hold "email", so the label names neither.
+        { testCaseId: 5, target: "getByLabel('email')", action: 'fill' },
+      ],
+      named,
+    );
+    expect(reach.sort((a, b) => a.testCaseId - b.testCaseId)).toEqual([
+      { testCaseId: 1, kind: 'control', key: 'button:Save changes', action: 'operated', confidence: 0.8 },
+      { testCaseId: 3, kind: 'link', key: 'link:All users', action: 'operated', confidence: 0.8 },
+      { testCaseId: 4, kind: 'control', key: 'textbox:Work email', action: 'operated', confidence: 0.7 },
+    ]);
+    expect(unresolved.map((u) => u.testCaseId)).toEqual([2, 5]);
+  });
+
+  test('a control on a page where a test operated an unnamed element is not raised', () => {
+    const raised = gaps.detectControlNobodyExercises([
+      { key: 'button:Save', pageCount: 1, reachCount: 1 },
+      { key: 'button:Delete', pageCount: 1, reachCount: 0, unresolvedTests: 1 },
+      { key: 'button:Archive', pageCount: 1, reachCount: 0 },
+    ]);
+    expect(raised.map((g) => g.key)).toEqual(['control:button:Archive']);
   });
 });

@@ -11,6 +11,7 @@ delete process.env.PIWI_DATABASE_URL;
 const {
   collectRunGraphReaches,
   collectPageInventories,
+  ingestChangesEdges,
   ingestRunGraph,
   pruneChangesEdges,
   pruneStaleBranchGraphRows,
@@ -709,5 +710,23 @@ describe('collectPageInventories', () => {
       origins,
     );
     expect(pages.find((p) => p.pageKey === '/orders')?.loadsRouteKeys).toEqual([]);
+  });
+});
+
+describe('ingestChangesEdges', () => {
+  test('a commit edge names the base of its diff, a ticket edge carries none', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await ingestChangesEdges(db as never, 1, 1, 'abc1234', ['PIWI-7'], ['server/api/orders.post.ts'], {
+      baseSha: 'fed4321',
+    });
+    const rows = await db.select().from(schema.graphEdges).where(eq(schema.graphEdges.kind, 'changes'));
+    expect(
+      rows
+        .map((r) => ({ from: `${r.fromKind}:${r.fromKey}`, evidence: r.evidence }))
+        .sort((a, b) => a.from.localeCompare(b.from)),
+    ).toEqual([
+      { from: 'commit:abc1234', evidence: { base: 'fed4321' } },
+      { from: 'ticket:PIWI-7', evidence: null },
+    ]);
   });
 });

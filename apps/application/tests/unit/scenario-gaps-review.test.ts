@@ -459,6 +459,129 @@ describe('computeScenarioGaps — control reach from the locator index', () => {
       { test: '2', key: 'button:Delete organization', origin: 'manual', evidence: { manual: true } },
     ]);
   });
+
+  test('a snapshot on the use’s line names its element, and a use older than reach keeps reaches nothing', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const tenDaysAgo = new Date(Date.now() - 10 * DAY);
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'org.spec.ts', title: 'saves the org' },
+      { id: 2, projectId: 1, filePath: 'org.spec.ts', title: 'deletes the org' },
+    ]);
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'control', key: 'button:Save changes', firstSeenRunId: 1, lastSeenRunId: 1 },
+      { projectId: 1, kind: 'control', key: 'button:Delete organization', firstSeenRunId: 1, lastSeenRunId: 1 },
+    ]);
+    for (const key of ['button:Save changes', 'button:Delete organization']) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'page',
+        fromKey: '/settings',
+        toKind: 'control',
+        toKey: key,
+        kind: 'contains',
+        lastSeenAt: new Date(),
+      });
+    }
+    await db.insert(schema.locatorUsages).values([
+      {
+        projectId: 1,
+        testCaseId: 1,
+        locator: "getByTestId('save')",
+        target: "getByTestId('save')",
+        action: 'click',
+        browserName: 'chromium',
+        callSite: 'tests/org.spec.ts:7:5',
+        page: '/settings',
+        lastSeenAt: tenDaysAgo,
+      },
+      {
+        projectId: 1,
+        testCaseId: 2,
+        locator: "getByRole('button', { name: 'Delete organization' })",
+        target: "getByRole('button', { name: 'Delete organization' })",
+        action: 'click',
+        browserName: 'chromium',
+        callSite: 'tests/org.spec.ts:12:5',
+        page: '/settings',
+        lastSeenAt: new Date(Date.now() - 200 * DAY),
+      },
+    ]);
+    // The snapshot's stack names an absolute path and another column of the same line.
+    await db.insert(schema.locatorSnapshots).values({
+      testCaseId: 1,
+      location: '/repo/tests/org.spec.ts:7:18',
+      usedMethod: 'getByTestId',
+      usedArgs: JSON.stringify(['save']),
+      usedArgsFp: 'fp',
+      elementAttrs: '{}',
+      alternatives: JSON.stringify([
+        { locator: "getByTestId('save')" },
+        { locator: "getByRole('button', { name: 'Save changes' })" },
+      ]),
+      lastSeenAt: tenDaysAgo,
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const edges = (await db.select().from(schema.graphEdges)).filter((r) => r.kind === 'reaches');
+    expect(edges.map((e) => ({ test: e.fromKey, key: e.toKey, confidence: e.confidence }))).toEqual([
+      { test: '1', key: 'button:Save changes', confidence: 0.9 },
+    ]);
+    expect(new Date(edges[0]!.lastSeenAt).getTime()).toBe(tenDaysAgo.getTime());
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'control-nobody-exercises' });
+    expect(raised.map((g) => g.subject.key)).toEqual(['button:Delete organization']);
+  });
+
+  test('a test operating an unnamed element keeps its page’s controls from reading as untested or single-covered', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'org.spec.ts', title: 'saves the org' },
+      { id: 2, projectId: 1, filePath: 'org.spec.ts', title: 'deletes the org' },
+    ]);
+    const controls: Array<[string, string]> = [
+      ['/settings', 'button:Save changes'],
+      ['/settings', 'button:Delete organization'],
+      ['/projects', 'button:Archive'],
+    ];
+    for (const [page, key] of controls) {
+      await db.insert(schema.graphNodes).values({
+        projectId: 1,
+        kind: 'control',
+        key,
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+      });
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'page',
+        fromKey: page,
+        toKind: 'control',
+        toKey: key,
+        kind: 'contains',
+        lastSeenAt: new Date(),
+      });
+    }
+    const use = (testCaseId: number, target: string) => ({
+      projectId: 1,
+      testCaseId,
+      locator: target,
+      target,
+      action: 'click',
+      browserName: 'chromium',
+      callSite: `tests/org.spec.ts:${testCaseId}:5`,
+      page: '/settings',
+      lastSeenAt: new Date(),
+    });
+    await db
+      .insert(schema.locatorUsages)
+      .values([use(1, "getByRole('button', { name: 'Save changes' })"), use(2, "getByTestId('danger-zone')")]);
+
+    await gaps.computeScenarioGaps(db, 1);
+    const untested = await gaps.listScenarioGaps(db, 1, { detector: 'control-nobody-exercises' });
+    expect(untested.map((g) => g.subject.key)).toEqual(['button:Archive']);
+    const single = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    expect(single.map((g) => g.subject.key)).not.toContain('button:Save changes');
+  });
 });
 
 describe('computeScenarioGaps — exposure from recorded changes', () => {
@@ -501,6 +624,57 @@ describe('computeScenarioGaps — exposure from recorded changes', () => {
     await gaps.computeScenarioGaps(db, 1);
     const [gap] = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
     expect(gap!.factors).toMatchObject({ churn: 0.25, escapeHistory: 1, age: 0.1 });
+  });
+
+  test('diffs from one base count once, and a handler two recorded paths end with takes no churn', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'orders.spec.ts', title: 'places an order' },
+      { id: 2, projectId: 1, filePath: 'health.spec.ts', title: 'reports health' },
+    ]);
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'route', key: 'POST /api/orders', firstSeenRunId: 1, lastSeenRunId: 1 },
+      { projectId: 1, kind: 'route', key: 'GET /api/health', firstSeenRunId: 1, lastSeenRunId: 1 },
+    ]);
+    const edge = (
+      fromKind: string,
+      fromKey: string,
+      kind: string,
+      toKind: string,
+      toKey: string,
+      evidence?: object,
+    ) => ({
+      projectId: 1,
+      fromKind,
+      fromKey,
+      kind,
+      toKind,
+      toKey,
+      evidence: evidence ?? null,
+      lastSeenAt: new Date(),
+    });
+    await db.insert(schema.graphEdges).values([
+      edge('test', '1', 'reaches', 'route', 'POST /api/orders'),
+      edge('test', '2', 'reaches', 'route', 'GET /api/health'),
+      edge('route', 'POST /api/orders', 'handled-by', 'handler', 'server/api/orders.post.ts'),
+      edge('route', 'GET /api/health', 'handled-by', 'handler', 'server/api/health.get.ts'),
+      // Three runs of a red streak, each diffed again from the same green run, then one more diff.
+      ...['aaaaaaa1', 'bbbbbbb2', 'ccccccc3'].map((sha) =>
+        edge('commit', sha, 'changes', 'file', 'server/api/orders.post.ts', { base: 'green01' }),
+      ),
+      edge('commit', 'ddddddd4', 'changes', 'file', 'server/api/orders.post.ts', { base: 'ccccccc3' }),
+      // Two apps of a monorepo hold a file of that name.
+      ...['eeeeeee5', 'fffffff6'].flatMap((sha) => [
+        edge('commit', sha, 'changes', 'file', 'apps/web/server/api/health.get.ts'),
+        edge('commit', sha, 'changes', 'file', 'apps/admin/server/api/health.get.ts'),
+      ]),
+    ]);
+
+    await gaps.computeScenarioGaps(db, 1);
+    const single = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    const factors = new Map(single.map((g) => [g.subject.key, g.factors]));
+    expect(factors.get('POST /api/orders')).toMatchObject({ churn: 2 / 12 });
+    expect(factors.get('GET /api/health')).toMatchObject({ churn: 0.1 });
   });
 });
 

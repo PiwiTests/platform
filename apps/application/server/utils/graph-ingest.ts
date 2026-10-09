@@ -663,8 +663,10 @@ export async function ingestRequestGraph(
 /**
  * Persist `changes` edges for a diff: the head commit and every ticket named in
  * the pull request point at each changed file. Files are edge endpoints, not
- * materialized nodes. Upsert semantics, never truncate. Rows
- * carry the run's `branch` tag, like the reach graph.
+ * materialized nodes. A commit edge's evidence names the diff's `base`, so diffs
+ * that share a base (a red streak diffed again from the same green run) count
+ * as one change. Upsert semantics, never truncate. Rows carry the run's
+ * `branch` tag, like the reach graph.
  */
 export async function ingestChangesEdges(
   db: DB,
@@ -673,13 +675,13 @@ export async function ingestChangesEdges(
   headSha: string,
   tickets: string[],
   files: string[],
-  options: { branch?: string | null } = {},
+  options: { branch?: string | null; baseSha?: string | null } = {},
 ): Promise<void> {
   if (files.length === 0) return;
   const now = new Date();
   const branch = options.branch ?? null;
   const edges = new Map<string, PendingEdge>();
-  const add = (fromKind: string, fromKey: string, file: string) => {
+  const add = (fromKind: string, fromKey: string, file: string, evidence: Record<string, unknown> | null) => {
     const id = `${fromKind}\x00${fromKey}\x00changes\x00file\x00${file}`;
     edges.set(id, {
       fromKind,
@@ -688,12 +690,13 @@ export async function ingestChangesEdges(
       toKey: file,
       kind: 'changes',
       confidence: null,
-      evidence: null,
+      evidence,
     });
   };
+  const commitEvidence = options.baseSha ? { base: options.baseSha } : null;
   for (const file of files) {
-    if (headSha) add('commit', headSha, file);
-    for (const ticket of tickets) add('ticket', ticket, file);
+    if (headSha) add('commit', headSha, file, commitEvidence);
+    for (const ticket of tickets) add('ticket', ticket, file, null);
   }
   await chunkedUpsertEdges(db, projectId, runId, now, branch, [...edges.values()]);
 }

@@ -162,8 +162,8 @@ export async function getAnalyticsNewGaps(
     score: r.score ?? null,
     createdAt: new Date(r.createdAt).getTime(),
   }));
-  const muted = new Map<number, Set<string>>();
-  for (const p of included) muted.set(p.id, await loadMutedDetectors(db, p.id));
+  const withGaps = [...new Set(rows.map((r) => r.projectId))];
+  const muted = new Map(await Promise.all(withGaps.map(async (id) => [id, await loadMutedDetectors(db, id)] as const)));
   const digest = selectWeeklyDigest(gaps, ctx.period.from.getTime() - 1, DIGEST_PER_PROJECT, muted);
   return {
     projects: included.length,
