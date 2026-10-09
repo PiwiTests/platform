@@ -8,6 +8,7 @@ import { gapClassSeverity } from '../../gap-classes';
 import { resolveProjectStates } from '../capabilities';
 import { DIGEST_PER_PROJECT, selectWeeklyDigest, type DigestGap } from '../gap-digest';
 import { listAcceptedUnwritten } from '../scenario-gaps';
+import { loadMutedDetectors } from '../detector-precision';
 import { getAnalyticsContext, type ProjectAccess } from './common';
 
 const TOP_FEATURES = 8;
@@ -116,7 +117,8 @@ export async function getAnalyticsScenarioGaps(
 
 /**
  * The Test Map's weekly digest over the period: the top new open gaps per
- * project created since the period started (`selectWeeklyDigest`).
+ * project created since the period started (`selectWeeklyDigest`), without the
+ * gaps of a detector muted on its project.
  */
 export async function getAnalyticsNewGaps(
   db: DrizzleDB,
@@ -160,7 +162,9 @@ export async function getAnalyticsNewGaps(
     score: r.score ?? null,
     createdAt: new Date(r.createdAt).getTime(),
   }));
-  const digest = selectWeeklyDigest(gaps, ctx.period.from.getTime() - 1, DIGEST_PER_PROJECT);
+  const muted = new Map<number, Set<string>>();
+  for (const p of included) muted.set(p.id, await loadMutedDetectors(db, p.id));
+  const digest = selectWeeklyDigest(gaps, ctx.period.from.getTime() - 1, DIGEST_PER_PROJECT, muted);
   return {
     projects: included.length,
     items: digest.map((p) => ({
