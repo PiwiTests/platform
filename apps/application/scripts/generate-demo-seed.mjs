@@ -752,14 +752,21 @@ function shapeStep(src, duration, startTime) {
   return step;
 }
 
+/** `file:line` of a `file:line:col` location. */
+const fileLineOf = (location) => location?.replace(/:\d+$/, '') ?? null;
+
 /**
  * The project as one of its tests runs it: a web-dashboard test runs the steps
- * of its own spec, from the Test Map model; every other test runs its project's
- * themed steps.
+ * of its own spec, from the Test Map model, and a failing one stops at the call
+ * its error names; every other test runs its project's themed steps.
  */
-function stepsProjectFor(proj, title) {
-  const own = proj.id === WEB_DASHBOARD_PROJECT_ID ? webDashboardStepTitles(title) : null;
-  return own ? { ...proj, stepTitles: own } : proj;
+function stepsProjectFor(proj, title, failing = null) {
+  let own = proj.id === WEB_DASHBOARD_PROJECT_ID ? webDashboardStepTitles(title) : null;
+  if (!own) return proj;
+  const failingAt = failing ? fileLineOf(failing.call.location) : null;
+  const stop = failingAt ? own.findIndex((st) => fileLineOf(st.location) === failingAt) : -1;
+  if (stop >= 0) own = own.slice(0, stop + 1);
+  return { ...proj, stepTitles: own };
 }
 
 /**
@@ -1235,7 +1242,7 @@ for (const proj of DEMO_PROJECTS) {
       // names, and its duration follows that error.
       const failure = isFailedCase
         ? storyFailureLayout(
-            stepsProjectFor(proj, caseDef.title),
+            stepsProjectFor(proj, caseDef.title, storyEntry.failingCase),
             storyEntry.failingCase,
             drawnDuration,
             avgTestDuration,
@@ -1363,7 +1370,10 @@ for (const proj of DEMO_PROJECTS) {
         locks: JSON.stringify(demoLocks(caseDef.file, j)),
         test_meta: demoTestMeta(caseDef.file, j),
         steps,
-        locator_pages_payload_id: steps.length > 0 ? locatorPagesPayloadId(stepsProjectFor(proj, caseDef.title)) : null,
+        locator_pages_payload_id:
+          steps.length > 0
+            ? locatorPagesPayloadId(stepsProjectFor(proj, caseDef.title, isFailedCase ? storyEntry.failingCase : null))
+            : null,
         step_events: stepEvents,
         wasted_time_ms: wastedMs,
         slowest_step: slowestStep?.title ?? null,

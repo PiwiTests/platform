@@ -12,7 +12,7 @@
  */
 
 import DETECTED_GAPS from './demo-test-map-gaps.json' with { type: 'json' };
-import { SOURCE_FILES, lineOf } from './failure-stories.mjs';
+import { FAILURE_STORIES, SOURCE_FILES, lineOf } from './failure-stories.mjs';
 
 export const WEB_DASHBOARD_PROJECT_ID = 5;
 const WEB_DASHBOARD_ORIGIN = 'https://admin.example.com';
@@ -77,7 +77,7 @@ const RECORDED_CHANGES = [
     commit: 'a2f6d0b4e8c1f5a93d7b0e4c8f2a6d1b5e9c3f7a',
     files: ['server/api/auth/sso/start.post.ts', 'server/api/auth/sso/callback.get.ts'],
   },
-  { commit: 'demo010', files: ['server/api/users/index.get.ts'] },
+  { commit: 'demo010', files: ['server/api/users/index.get.ts', 'src/server/users.ts'] },
 ];
 
 /** Routes the project's OpenAPI document declares that no test requests, with their documented codes. */
@@ -299,7 +299,7 @@ const STEPS = {
     ['click', "getByRole('button', { name: 'Continue with SSO' })"],
   ],
   'shows an error for a revoked account': [
-    ['goto', '/login'],
+    ['goto', '/login', '/login?sso=revoked'],
     ['expect', "getByText('Your account has been deactivated')", 'toBeVisible'],
   ],
   'Users table paginates 25 rows per page': [
@@ -359,7 +359,18 @@ const SPEC_FILE = {
   'toggles dark mode': 'tests/admin/settings.spec.ts',
 };
 
-/** `file:line:col` of the `nth` occurrence of `needle` at or after the test's own declaration. */
+/** `file:line` → column of the calls the failure stories' errors name, which keep their column. */
+const STORY_COLUMNS = new Map(
+  FAILURE_STORIES.flatMap((story) =>
+    story.failingCases.map((c) => [`${c.frames.at(-1).file}:${c.failingLine}`, c.column]),
+  ),
+);
+
+/**
+ * `file:line:col` of the `nth` occurrence of `needle` at or after the test's own
+ * declaration: the column a failure story's error gives that line, else the
+ * needle's.
+ */
 function callSite(file, title, needle, nth) {
   const lines = SOURCE_FILES[file];
   const decl = lineOf(lines, `test('${title}'`);
@@ -367,7 +378,7 @@ function callSite(file, title, needle, nth) {
   for (let i = decl - 1; i < lines.length; i++) {
     const col = lines[i].indexOf(needle);
     if (col < 0) continue;
-    if (seen === nth) return `${file}:${i + 1}:${col + 1}`;
+    if (seen === nth) return `${file}:${i + 1}:${STORY_COLUMNS.get(`${file}:${i + 1}`) ?? col + 1}`;
     seen++;
   }
   throw new Error(`web-dashboard Test Map: ${needle} is not in ${title}`);
@@ -391,10 +402,10 @@ export function webDashboardStepTitles(title) {
       arrival = true;
       return {
         title: 'Navigate',
-        subtitle: target,
+        subtitle: extra ?? target,
         category: 'navigation',
         weight: 900,
-        params: { url: `${WEB_DASHBOARD_ORIGIN}${target}` },
+        params: { url: `${WEB_DASHBOARD_ORIGIN}${extra ?? target}` },
       };
     }
     const nth = seen.get(target) ?? 0;
@@ -557,7 +568,7 @@ function controlKey(role, name) {
 }
 
 /** Roles a label, a placeholder or a title names. */
-const LABELLED_ROLES = new Set([
+const LABELED_ROLES = new Set([
   'textbox',
   'searchbox',
   'combobox',
@@ -571,7 +582,7 @@ const LABELLED_ROLES = new Set([
 
 /**
  * The control or link a step's locator names, as the recompute resolves it from
- * the locator index: a role and name directly, a label through the one labelled
+ * the locator index: a role and name directly, a label through the one labeled
  * control carrying that name. Null for a text, a regex name or a CSS selector.
  */
 function locatorNode(target, controls, links) {
@@ -584,7 +595,7 @@ function locatorNode(target, controls, links) {
   if (!label) return null;
   const named = [...controls].filter((key) => {
     const sep = key.indexOf(':');
-    return LABELLED_ROLES.has(key.slice(0, sep)) && key.slice(sep + 1) === label[1];
+    return LABELED_ROLES.has(key.slice(0, sep)) && key.slice(sep + 1) === label[1];
   });
   return named.length === 1 ? { kind: 'control', key: named[0], confidence: 0.8 } : null;
 }

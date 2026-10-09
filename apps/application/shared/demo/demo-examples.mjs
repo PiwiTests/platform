@@ -113,7 +113,7 @@ export const DEMO_EXAMPLES = [
     doc: 'features/probes',
     title: 'Web Dashboard › Gaps',
     shows:
-      'Client probes the tests did not notice (an empty revenue response, a failed invitation, a stale organization name) and an invite form that degraded when sendgrid failed.',
+      'Client probes the tests did not notice (an empty revenue response, a failed invitation, a stale organization name), an invite form that degraded when sendgrid failed, and a revenue page that threw when clickhouse failed.',
     route: '/projects/5?tab=gaps',
     expect: { project: { id: 5, name: 'web-dashboard' }, gaps: { detectors: ['not-noticed', 'not-handled'] } },
   },
