@@ -6,9 +6,10 @@
  * facts `gatherAutoCreateFacts` collects. On top of them, this holds to the
  * daily cap, leaves alone a failure an open issue in the tracker already
  * carries the labels of (a person links that one; the activity list says so),
- * and files through the same `createIssue` path a click takes, so dedupe,
- * owner routes, required fields and the outbox apply unchanged. The issue
- * opens with what the rule counted.
+ * and files through the same `createIssue` path a click takes, so the
+ * per-cluster dedupe (a Done issue or a removed link no longer answers), owner
+ * routes, required fields and the outbox apply unchanged. The issue opens with
+ * what the rule counted.
  */
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { projects, testRuns, testRunsCases } from '../../database/schema';
@@ -103,6 +104,7 @@ export async function runTrackerAutomation(db: DbClient, runId: number): Promise
     defaultBranch: run.defaultBranch,
     now,
     ownerFallback: codeownersFallback(db, run.projectId),
+    reopenOnRegression: !!binding.policies.reopenTransitionId,
   });
   let capacity = binding.autoCreate.dailyCap - (await countAutomaticCreates(db, run.projectId, now));
   const locale = bindingLocale(binding, connection.config);
@@ -162,7 +164,8 @@ export async function runTrackerAutomation(db: DbClient, runId: number): Promise
       console.error(`[integrations] automatic creation for cluster ${clusterId} failed`, e);
       return null;
     });
-    if (outcome?.status === 'done' || outcome?.status === 'pending') {
+    // An issue already filed for the cluster is not a new one.
+    if ((outcome?.status === 'done' && !outcome.alreadyFiled) || outcome?.status === 'pending') {
       capacity--;
       filed++;
     }

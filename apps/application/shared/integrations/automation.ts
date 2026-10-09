@@ -202,7 +202,10 @@ export interface AutoCreateFacts {
   /** The triage status: `open`, `resolved` or `ignored`. */
   status: string;
   snoozed: boolean;
-  /** The cluster already carries a tracker issue. */
+  /**
+   * A tracker issue still tracks the cluster (a Done one does not, unless a
+   * regression reopens it), or a filing for it waits on the tracker.
+   */
   tracked: boolean;
   /** An affected test passed on a retry, or every one passed at the commit the cluster failed at. */
   flaky: boolean;

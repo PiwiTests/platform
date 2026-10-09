@@ -246,6 +246,19 @@ describe('clusterIssueFilings', () => {
       );
       filings = await clusterIssueFilings(db as never, [2]);
       expect(filings.failures.get(2)).toMatchObject({ error: 'connection has no usable credentials' });
+      expect(filings.failures.get(2)?.existingKey).toBeUndefined();
+
+      // A rule that left the filing to a person names the open issue it found.
+      await db.insert(schema.integrationActions).values(
+        action({
+          id: 103,
+          status: 'skipped',
+          payload: { automatic: null, existingKey: 'PIWI-40' } as never,
+          error: "PIWI-40 already carries this failure's labels: link it from the cluster page",
+        }),
+      );
+      filings = await clusterIssueFilings(db as never, [2]);
+      expect(filings.failures.get(2)?.existingKey).toBe('PIWI-40');
     } finally {
       await db.delete(schema.integrationActions);
       await db.delete(schema.integrationConnections);

@@ -37,6 +37,19 @@ export function isTrackerLink(link: { provider: string; key: string | null; conn
   return !!link.key && (link.provider === 'jira' || link.connectionId != null);
 }
 
+/**
+ * Whether a cluster's known issue still tracks its failure, the rule a new
+ * filing follows: an issue that is not Done does, and so does a Done one the
+ * binding moves out of Done because the cluster's verified fix regressed.
+ */
+export function knownIssueTracks(
+  issue: Pick<KnownIssueRef, 'statusCategory'> | null | undefined,
+  opts: { regressed: boolean; reopenOnRegression: boolean },
+): boolean {
+  if (!issue) return false;
+  return issue.statusCategory !== 'done' || (opts.regressed && opts.reopenOnRegression);
+}
+
 /** The known issue of each cluster that has one, keyed by cluster id, in one query. */
 export async function clusterKnownIssues(db: DrizzleDB, clusterIds: number[]): Promise<Map<number, KnownIssueRef>> {
   const out = new Map<number, KnownIssueRef>();
@@ -88,6 +101,8 @@ export interface IssueFilingFailure {
   error: string | null;
   /** When its last attempt ended. */
   at: string | null;
+  /** Set when a rule left the filing to a person: the open issue it found carrying the failure's labels. */
+  existingKey?: string;
 }
 
 /** Where the issue filings of some clusters stand, by cluster id. */
@@ -103,7 +118,8 @@ export interface ClusterIssueFilings {
  * actions recorded for the cluster and for its executions, since a filing asked
  * from an execution counts for its cluster. A cluster's filing is queued while
  * one of them waits on the tracker, and failed while the newest of them failed
- * or was skipped. The failure pages show both where they name the ticket.
+ * or was skipped (a rule that left the filing to a person names the open issue
+ * it found). The failure pages show both where they name the ticket.
  */
 export async function clusterIssueFilings(db: DrizzleDB, clusterIds: number[]): Promise<ClusterIssueFilings> {
   const out: ClusterIssueFilings = { queued: new Set(), failures: new Map() };
@@ -147,12 +163,24 @@ export async function clusterIssueFilings(db: DrizzleDB, clusterIds: number[]): 
     const seen = newest.get(row.clusterId);
     if (!seen || row.id > seen.id) newest.set(row.clusterId, row);
   }
+  const skippedIds = [...newest.values()].filter((row) => row.status === 'skipped').map((row) => row.id);
+  const skippedPayloads = skippedIds.length
+    ? await db
+        .select({ id: integrationActions.id, payload: integrationActions.payload })
+        .from(integrationActions)
+        .where(inArray(integrationActions.id, skippedIds))
+    : [];
+  const existingKeys = new Map(
+    skippedPayloads.map((row) => [row.id, (row.payload as { existingKey?: unknown } | null)?.existingKey]),
+  );
   for (const [clusterId, row] of newest) {
     if (row.status !== 'failed' && row.status !== 'skipped') continue;
     const at = row.finishedAt ?? row.createdAt;
+    const existingKey = existingKeys.get(row.id);
     out.failures.set(clusterId, {
       error: row.error ?? null,
       at: at ? new Date(at as unknown as string | number | Date).toISOString() : null,
+      ...(typeof existingKey === 'string' && existingKey ? { existingKey } : {}),
     });
   }
   return out;

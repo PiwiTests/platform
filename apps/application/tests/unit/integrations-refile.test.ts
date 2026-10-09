@@ -12,8 +12,8 @@ import type { DbClient } from '../../server/database';
 
 /**
  * Filing an issue for a cluster and keeping it, against a SQLite database and a
- * stubbed Jira: the cluster page and an execution of the cluster share one
- * filing, an issue whose link was removed or that is Done does not answer a
+ * stubbed Jira: the cluster page, an execution of the cluster and a rule share
+ * one filing, an issue whose link was removed or that is Done does not answer a
  * new create, and the sync's resolve and reopen policies act on a move of the
  * ticket, never on where it stands, for an issue filed or linked.
  */
@@ -27,6 +27,8 @@ const { createIssue } = await import('../../server/utils/integrations/create');
 const { syncTrackerLinks } = await import('../../server/utils/integrations/sync');
 const { deleteLink } = await import('../../shared/handlers/links');
 const { createEnrichedLink } = await import('../../server/utils/integrations/link-create');
+const { runTrackerAutomation } = await import('../../server/utils/integrations/automation');
+const { DEFAULT_AUTO_CREATE_RULE } = await import('../../shared/integrations/automation');
 
 const SITE = 'https://refile.atlassian.net';
 
@@ -44,6 +46,8 @@ function json(body: unknown, status = 200): Response {
 async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input));
   if (/\/rest\/api\/3\/issue\/createmeta\//.test(url.pathname)) return json({ total: 0, fields: [] });
+  // No issue in the tracker carries a failure's labels.
+  if (url.pathname === '/rest/api/3/search/jql') return json({ issues: [] });
   if (url.pathname === '/rest/api/3/issue' && init?.method === 'POST') {
     issueSeq += 1;
     const key = `PROJ-${issueSeq}`;
@@ -308,5 +312,60 @@ describe('sync policies act on a move of the ticket', () => {
     categories.set('PROJ-900', 'done');
     await syncTrackerLinks(dbc);
     expect((await clusterRow(cluster!.id)).status).toBe('resolved');
+  });
+});
+
+describe('a rule files through the same per-cluster filing', () => {
+  test('once per cluster, and a new issue once the first is Done', async () => {
+    await db.insert(schema.testRuns).values({ id: 2, projectId: 1, status: 'failed', startTime: new Date() });
+    const [cluster] = await db
+      .insert(schema.failureClusters)
+      .values({
+        projectId: 1,
+        fingerprint: 'fp-rule',
+        signature: 'Error: broken by rule',
+        errorType: 'unknown',
+        firstSeenRunId: 2,
+        lastSeenRunId: 2,
+      })
+      .returning({ id: schema.failureClusters.id });
+    await db.insert(schema.testRunsCases).values({
+      id: 200,
+      testRunId: 2,
+      testCaseId: 1,
+      status: 'failed',
+      error: 'Error: broken by rule',
+      failureClusterId: cluster!.id,
+    });
+    await writeProjectIntegration(dbc, 1, {
+      connectionId,
+      projectKey: 'PROJ',
+      issueType: 'Bug',
+      autoCreate: {
+        enabled: true,
+        rules: [{ ...DEFAULT_AUTO_CREATE_RULE, defaultBranch: false, minOccurrences: 1, minRuns: 1 }],
+        skipFlaky: true,
+        dailyCap: 5,
+        routeUnmatchedToDefault: false,
+      },
+    });
+
+    expect(await runTrackerAutomation(dbc, 2)).toBe(1);
+    const [first] = await clusterLinks(cluster!.id);
+    expect(created).toEqual([first!.key]);
+
+    // The issue tracks the cluster: the next failing run files nothing.
+    expect(await runTrackerAutomation(dbc, 2)).toBe(0);
+    expect(created).toHaveLength(1);
+
+    // Done while the failure goes on: the rule files a new issue, the Done one stays linked.
+    await db
+      .update(schema.entityLinks)
+      .set({ metadata: { statusCategory: 'done' } as never })
+      .where(eq(schema.entityLinks.id, first!.id));
+    expect(await runTrackerAutomation(dbc, 2)).toBe(1);
+    expect(created).toHaveLength(2);
+    expect((await clusterLinks(cluster!.id)).map((l) => l.key).sort()).toEqual([...created].sort());
+    expect(await runTrackerAutomation(dbc, 2)).toBe(0);
   });
 });
