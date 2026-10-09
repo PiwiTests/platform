@@ -338,15 +338,10 @@ const narrowing = computed(() => props.healing?.narrowingSuggestion ?? null);
 
 // Forward the fold/scroll so a clue or AI citation to `locatorHealing` can reveal it.
 const cardRef = ref<{ reveal?: () => void } | null>(null);
-// The next-step line drives the panel's own copy/pick logic rather than
-// duplicating it: reveal the panel, then run the same action its buttons do.
+// The next-step line drives the panel's own pick and alternatives rather than
+// duplicating them: reveal the panel, then run the same action its buttons do.
 defineExpose({
   reveal: () => cardRef.value?.reveal?.(),
-  copyPatch: () => copyGitApply(),
-  copyRecommendedLocator: () => {
-    const loc = recommended.value?.locator;
-    if (loc) copyLocator(loc, 'top');
-  },
   openPicker: () => {
     cardRef.value?.reveal?.();
     pickerOpen.value = true;
@@ -543,7 +538,7 @@ defineExpose({
       <!-- Ready-to-apply one-line edit, when the failing source line is known -->
       <div
         v-if="suggestedEdit"
-        data-copies="copy-patch"
+        data-copies="copy-git-apply copy-locator"
         class="rounded border border-default overflow-hidden bg-default"
       >
         <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />

@@ -14,7 +14,7 @@ export function usePatchActions() {
   }
 
   function copyGitApply(patch: string) {
-    copy(gitApplyCommand(patch), { toast: 'git apply command copied' });
+    copy(gitApplyCommand(patch), { toast: 'Apply command copied' });
   }
 
   function downloadPatch(patch: string, downloadName = 'piwi-fix') {

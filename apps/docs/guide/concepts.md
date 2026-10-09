@@ -192,8 +192,8 @@ line under the headline. It reads on the execution page and, condensed, in [aler
 
 The **one recommended action** a failure page leads with, chosen by a policy rather than offered as a menu —
 apply a diagnosed patch, replace a broken locator, reproduce locally, re-run in CI, mark a cluster resolved.
-The page shows the step, one line on why or on where its change comes from, and the button to do it; every other
-action lives in the toolbox.
+The page shows the step, the change it copies with where that change comes from (or one line on why), and the button
+to do it; every other action lives in the toolbox.
 The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step).
 
 ### Cluster state

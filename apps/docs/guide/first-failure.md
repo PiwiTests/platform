@@ -41,7 +41,7 @@ A strong or medium story leads; otherwise the cluster's completed [AI diagnosis]
 
 ## 3. Next: what to do
 
-The **Next** line names the one thing to do, chosen for you rather than offered as a menu: apply the diagnosed patch, replace the [broken locator](/features/locator-healing), reproduce it locally, re-run in CI, or mark the cluster resolved. When the step's change comes from somewhere, the line under it says where: the cluster's AI diagnosis with its confidence (and its summary, when Most likely shows another explanation), or locator healing and what it captured the locator from. Where the work is a code change, the step's **···** menu copies the exact command to re-run this test (**Copy retry command**). The full policy is on the [fix-plans page](/features/fix-plans#the-next-step).
+The **Next** line names the one thing to do, chosen for you rather than offered as a menu: apply the diagnosed patch, replace the [broken locator](/features/locator-healing), reproduce it locally, re-run in CI, or mark the cluster resolved. When the step's change comes from somewhere, the line under it says where: the cluster's AI diagnosis with its confidence (and its summary, when Most likely shows another explanation), or locator healing and what it captured the locator from. A code change shows on the line itself, up to six lines of the patch or the failing and the recommended locator, and the button says what it copies: **Copy apply command** (`git apply` with the patch inline) or **Copy locator**. Where the work is a code change, the step's **···** menu copies the exact command to re-run this test (**Copy retry command**). The full policy is on the [fix-plans page](/features/fix-plans#the-next-step).
 
 ## 4. The cluster: who else, and the ticket
 

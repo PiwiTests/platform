@@ -122,13 +122,14 @@ export function clusterLatestHeadline(
 /** The locator-healing facts the next-step policy reads. */
 export interface HealingStepFacts {
   hasHealingRecommendation: boolean;
+  healingEditAvailable: boolean;
 }
 
 /**
  * The next-step facts of one execution's locator healing: a usable
  * recommendation, counted only in a project that shows locator healing (the
  * capability neither declined nor inapplicable, the rule its Locator fix section
- * follows).
+ * follows), and whether it comes with a git-applyable edit of the failing line.
  */
 export async function getHealingStepFacts(
   db: DrizzleDB,
@@ -138,7 +139,10 @@ export async function getHealingStepFacts(
   const recommends = Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended);
   const shown =
     recommends && projectId != null && !(await isCapabilityHidden(db, projectId, 'locator-healing').catch(() => false));
-  return { hasHealingRecommendation: shown };
+  return {
+    hasHealingRecommendation: shown,
+    healingEditAvailable: shown && Boolean(healing?.edit?.unifiedDiff),
+  };
 }
 
 type ProjectScope = 'all' | Set<number>;
@@ -322,7 +326,7 @@ export async function getFailureCluster(
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
   // healing and error kind, plus the cluster's diagnosed patch and fix state.
-  let healingFacts: HealingStepFacts = { hasHealingRecommendation: false };
+  let healingFacts: HealingStepFacts = { hasHealingRecommendation: false, healingEditAvailable: false };
   let latestErrorKind: ReturnType<typeof parsePlaywrightError>['kind'] | null = null;
   let flakeLab: FlakeLabStepFacts | null = null;
   // The latest occurrence's stored error and steps also give the page its headline.

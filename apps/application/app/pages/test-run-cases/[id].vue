@@ -22,6 +22,7 @@ import { shouldNudgeFixtures } from '#shared/capability-nudge';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { issueLineForm } from '~/utils/issue-line';
+import { buildNextStepChange } from '~/utils/next-step-change';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { hasHealingAlternatives } from '#shared/locator-healing';
 
@@ -265,9 +266,9 @@ const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncDat
 );
 const fixedBefore = computed(() => fixedBeforeData.value ?? []);
 
-// The cluster's fix plan — its diagnosis patch backs the next step's copy /
-// download / open-in-IDE actions, so it is fetched once here rather than by each
-// action.
+// The cluster's fix plan — its diagnosis patch is the change an apply step
+// shows and copies, and the Diagnosis section shows it whole, so it is fetched
+// once here rather than by each action.
 const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   `test-run-case-fix-plan-${testCaseId}`,
   () => {
@@ -277,6 +278,15 @@ const { data: fixPlanData } = await useAsyncData<FixPlan | null>(
   { default: (): FixPlan | null => null, watch: [() => failureCluster.value?.id] },
 );
 const fixPlanPatch = computed(() => fixPlanData.value?.diagnosis?.patch ?? null);
+
+// The change the next step copies, from the fix plan or the healing the page
+// already loaded: the Next row shows it and its actions copy it.
+const nextStepChange = computed(() =>
+  buildNextStepChange(nextStep.value, {
+    diagnosis: fixPlanData.value?.diagnosis ?? null,
+    healing: locatorHealingData.value ?? null,
+  }),
+);
 
 // Where the next step's change comes from: the cluster's diagnosis, named in full
 // unless Most likely already shows it, or locator healing.
@@ -629,8 +639,6 @@ onUnmounted(disconnectRunStream);
 const evidenceEl = ref<HTMLElement | null>(null);
 const factsLine = ref<{ revealRawError: () => void } | null>(null);
 const locatorPanel = ref<{
-  copyPatch: () => void;
-  copyRecommendedLocator: () => void;
   openPicker: () => void;
   expandAlternatives: () => void;
 } | null>(null);
@@ -641,7 +649,7 @@ const evidenceTabs = ref<{
 } | null>(null);
 const toolbox = ref<{
   openSection: (k: FixSectionKey) => Promise<void>;
-  scrollToSection: (k: FixSectionKey) => Promise<void>;
+  scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
 } | null>(null);
 
 function scrollToEl(el: HTMLElement | null) {
@@ -672,13 +680,12 @@ const { setClusterStatus } = useClusterTriage(() => failureCluster.value?.id ?? 
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => failureCluster.value?.id ?? null,
-  fixPlanPatch: () => fixPlanPatch.value,
+  change: () => nextStepChange.value,
   ideProject: () => testCase.value?.testRun?.project ?? null,
   locatorPanel: () => locatorPanel.value,
   reproRecipe: () => reproduceData.value?.reproduce ?? null,
   diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
-  scrollToSection: (k) => toolbox.value?.scrollToSection(k),
-  openSection: (k) => toolbox.value?.openSection(k),
+  scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
   selectAttemptsTab: () => {
     evidenceTabs.value?.selectTab('attempts');
     nextTick(() => scrollToEl(evidenceEl.value));
@@ -831,6 +838,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :next-step="nextStep"
               :retry-command="retryCommand"
               :source="nextStepSource"
+              :change="nextStepChange"
+              :ide-project="testCase?.testRun?.project ?? null"
               @action="handleNextStepAction"
             />
           </template>
@@ -953,7 +962,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               </div>
             </template>
 
-            <!-- The cluster's diagnosis summary, else the execution-scope diagnosis -->
+            <!-- The cluster's diagnosis summary and its whole patch, else the execution-scope diagnosis -->
             <template #diagnosis>
               <div v-if="clusterDiagnosis" class="space-y-1.5">
                 <p class="text-sm text-toned">{{ clusterDiagnosis.summary }}</p>
@@ -967,6 +976,15 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 >
                   Open
                 </UButton>
+                <PatchBlock
+                  v-if="fixPlanPatch"
+                  data-shot="diagnosis-patch"
+                  data-copies="copy-git-apply"
+                  class="scroll-mt-4"
+                  :patch="fixPlanPatch"
+                  :validation="fixPlanData?.diagnosis?.patchValidation ?? null"
+                  :download-name="`piwi-fix-cluster-${failureCluster!.id}`"
+                />
               </div>
               <DiagnosisPanel
                 v-else

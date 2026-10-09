@@ -18,7 +18,7 @@ const { getTestRunCase } = await import('#shared/handlers/test-cases');
 const { getFailureCluster } = await import('#shared/handlers/failure-clusters');
 const { setInstanceDecisions, setProjectDecisions } = await import('#shared/handlers/capabilities');
 
-type Step = { kind: string } | null | undefined;
+type Step = { kind: string; primary: { label: string; action: string } } | null | undefined;
 
 const ERROR =
   "TimeoutError: page.waitForSelector: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('.modal.is-open') to be visible\n\n    at tests/ui/modal.spec.ts:15:16";
@@ -64,10 +64,12 @@ async function steps(): Promise<{ execution: Step; cluster: Step }> {
 }
 
 describe('the replace-locator step and the locator-healing capability', () => {
-  test('a recommendation read from the ARIA snapshot replaces the locator', async () => {
+  test('a recommendation without an edit makes the locator the change to copy', async () => {
     const { execution, cluster } = await steps();
-    expect(execution?.kind).toBe('replace-locator');
-    expect(cluster?.kind).toBe('replace-locator');
+    for (const step of [execution, cluster]) {
+      expect(step?.kind).toBe('replace-locator');
+      expect(step?.primary).toMatchObject({ label: 'Copy locator', action: 'copy-locator' });
+    }
   });
 
   test('declining the fixtures for the project hides healing, and the step with it', async () => {

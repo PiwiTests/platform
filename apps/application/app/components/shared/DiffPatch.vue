@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * A unified diff, one colored row per line with its code highlighted for the
+ * file's language, scrolling sideways inside itself. The root carries
+ * `data-diff`, which `app:measure` counts as one text style.
+ */
 import { highlightDiffRows, languageForPath } from '#shared/highlight';
 
 const props = defineProps<{
@@ -15,7 +20,7 @@ const rows = computed(() => {
 </script>
 
 <template>
-  <div class="overflow-x-auto text-xs font-mono">
+  <div data-diff class="overflow-x-auto text-xs font-mono">
     <div
       v-for="(line, i) in rows"
       :key="i"

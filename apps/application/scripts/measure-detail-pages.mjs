@@ -15,7 +15,7 @@
  * after hydration and a bounded settle.
  *
  * The budgets (`scripts/lib/detail-page-budgets.mjs`) hold at 1280×800: at most
- * 15 text styles in the execution page's situation block and 12 in the cluster
+ * 15 text styles in the execution page's situation block and 13 in the cluster
  * page's, at most 25 controls above the fold with the navbar included, at most
  * one solid primary button above the fold, and a Next step that copies a code
  * change shows that change in the block (distance 0). The script finds the Next
@@ -219,8 +219,8 @@ function measurePage({ viewportHeight, copyActions }) {
       if (parent.closest('svg title, svg desc')) continue;
       const rect = parent.getBoundingClientRect();
       if (rect.width <= 1 || rect.height <= 1) continue;
-      // A code chip counts once, whatever colors its syntax tokens take.
-      const cs = getComputedStyle(parent.closest('code') ?? parent);
+      // A code chip or a diff counts once, whatever colors its rows and tokens take.
+      const cs = getComputedStyle(parent.closest('code, [data-diff]') ?? parent);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
       styles.add(
         [

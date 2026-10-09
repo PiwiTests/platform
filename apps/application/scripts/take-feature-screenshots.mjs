@@ -2356,6 +2356,18 @@ const SCENES = [
     pad: 12,
   },
   {
+    name: 'next-step-change',
+    description: 'The Next line of a locator step: the call site, the edit it copies as a diff, its source and button',
+    tags: ['docs'],
+    out: 'docs',
+    // Cluster 2's latest occurrence has a locator edit captured from the last
+    // passing run, so its step replaces the locator and copies an apply command.
+    route: '/failure-clusters/2',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="next-step"]',
+    pad: 12,
+  },
+  {
     name: 'gather-evidence',
     description: 'Failing execution: the header, the headline and the evidence tabs on one screen (dark)',
     tags: ['docs'],
@@ -3725,6 +3737,38 @@ const SCENES = [
     viewport: { width: 375, height: 812 },
     of: '[data-shot="situation-block"]',
     pad: 8,
+  },
+
+  // ── The change a Next step copies (report artifacts) ─────────────────────
+  {
+    name: 'next-step-locator',
+    description: 'Cluster situation block whose Next line shows the locator edit it copies with Copy apply command',
+    tags: ['desktop'],
+    route: '/failure-clusters/2',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+  {
+    name: 'next-step-locator-mobile',
+    description: 'The same block at phone width, the diff scrolling inside its box',
+    tags: ['desktop'],
+    route: '/failure-clusters/2',
+    viewport: { width: 375, height: 1200 },
+    of: '[data-shot="situation-block"]',
+    pad: 8,
+  },
+  {
+    name: 'next-step-copy-locator',
+    description:
+      'Execution situation block whose locator step has no line edit: the failing and recommended locator, Copy locator',
+    tags: ['desktop'],
+    // Execution 587's healing reads the failure-time ARIA snapshot, and its
+    // waitForSelector line has no locator call to rewrite.
+    route: '/test-run-cases/587',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
   },
 
   // ── Not the latest execution (report artifacts) ──────────────────────────

@@ -67,8 +67,13 @@ export interface NextStepInput {
   /** The cluster's known ticket is Done and the newest finished run no longer fails: its key. */
   ticketDoneKey?: string | null;
 
-  /** Locator healing has a usable recommendation for a locator-resolution failure. */
+  /**
+   * Locator healing has a usable recommendation for a locator-resolution
+   * failure, in a project that shows locator healing.
+   */
   hasHealingRecommendation?: boolean;
+  /** The recommendation comes with a git-applyable edit of the failing line. */
+  healingEditAvailable?: boolean;
 
   /** A completed AI diagnosis exists, its one-line summary and the file it touches. */
   diagnosisCompleted?: boolean;
@@ -216,18 +221,29 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
   }
 
   // 3 — a locator-resolution failure that healing can repair, unless the patch
-  // comes first.
+  // comes first. The edit of the failing line is the change to apply; without
+  // one, the recommended locator is.
   if (input.hasHealingRecommendation && !patchFirst) {
-    return {
-      kind: 'replace-locator',
+    const replace = {
+      kind: 'replace-locator' as const,
       title: 'Replace the locator',
       why: 'The locator no longer resolves; healing found the element under a new locator.',
-      primary: { label: 'Copy patch', action: 'copy-patch', payload: withExecution },
-      secondary: [
-        { label: 'Copy locator', action: 'copy-locator', payload: withExecution },
-        { label: 'Pick from snapshot', action: 'pick-from-snapshot', payload: withExecution },
-        { label: 'All alternatives', action: 'all-alternatives', payload: withExecution },
-      ],
+    };
+    const pick = [
+      { label: 'Pick from snapshot', action: 'pick-from-snapshot', payload: withExecution },
+      { label: 'All alternatives', action: 'all-alternatives', payload: withExecution },
+    ];
+    if (input.healingEditAvailable) {
+      return {
+        ...replace,
+        primary: { label: 'Copy apply command', action: 'copy-git-apply', payload: withExecution },
+        secondary: [{ label: 'Copy locator', action: 'copy-locator', payload: withExecution }, ...pick],
+      };
+    }
+    return {
+      ...replace,
+      primary: { label: 'Copy locator', action: 'copy-locator', payload: withExecution },
+      secondary: pick,
     };
   }
 
@@ -240,7 +256,7 @@ function chooseStep(input: NextStepInput): Omit<NextStep, 'source'> {
       why: fixUnconfirmed
         ? 'A fix was verified, but the diagnosed patch still applied to the code at its commit.'
         : 'The diagnosis suggests a patch that applies cleanly to the current code.',
-      primary: { label: 'Copy git apply', action: 'copy-git-apply', payload: withCluster },
+      primary: { label: 'Copy apply command', action: 'copy-git-apply', payload: withCluster },
       secondary: [
         { label: 'Download .patch', action: 'download-patch', payload: withCluster },
         { label: 'Open in IDE', action: 'open-in-ide', payload: withCluster },

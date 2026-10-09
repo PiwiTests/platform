@@ -675,6 +675,68 @@ test.describe('Cluster situation block on seeded clusters', () => {
     });
   }
 
+  // The Next line shows the change it copies, from the same execution the
+  // Locator fix section reads: its added row carries the recommended locator.
+  test("#2's Next line shows the locator edit the Locator fix section recommends", async ({ page, request }) => {
+    const res = await request.get('/api/failure-clusters/2');
+    test.skip(!res.ok(), 'no cluster #2 on this database');
+    const detail = (await res.json()) as {
+      latestTestRunsCaseId: number | null;
+      nextStep: { kind: string; primary: { label: string; action: string } };
+    };
+    test.skip(
+      detail.nextStep.kind !== 'replace-locator' || !detail.latestTestRunsCaseId,
+      '#2 is not on the replace-locator step on this database',
+    );
+    const healing = (await (
+      await request.get(`/api/test-run-cases/${detail.latestTestRunsCaseId}/locator-healing`)
+    ).json()) as {
+      edit?: { unifiedDiff?: string | null } | null;
+      recommendation?: { recommended?: { locator: string } };
+    };
+    const recommended = healing.recommendation?.recommended?.locator;
+    test.skip(!healing.edit?.unifiedDiff || !recommended, "#2's latest occurrence has no locator edit");
+    expect(detail.nextStep.primary).toMatchObject({ label: 'Copy apply command', action: 'copy-git-apply' });
+
+    await page.goto('/failure-clusters/2');
+    await waitForHydration(page);
+    const preview = page.locator('[data-shot="next-step-change"]').getByRole('region', { name: 'Change preview' });
+    const rows = await preview.locator(':scope > div').allTextContents();
+    const added = rows.filter((row) => row.startsWith('+'));
+    expect(added).toHaveLength(1);
+    expect(added[0]).toContain(recommended!);
+    await expect(page.locator('[data-shot="fix-locator-fix"]')).toContainText(recommended!);
+  });
+
+  // Full patch opens the Diagnosis section at the diagnosis's patch.
+  test('an apply step opens the whole patch from Full patch', async ({ page, request }) => {
+    let target: number | null = null;
+    for (const id of [1, 3, 7, 10]) {
+      const res = await request.get(`/api/failure-clusters/${id}`);
+      if (!res.ok()) continue;
+      if (((await res.json()) as { nextStep: { kind: string } }).nextStep.kind === 'apply-patch') {
+        target = id;
+        break;
+      }
+    }
+    test.skip(target == null, 'no seeded cluster on the apply-patch step');
+
+    await page.goto(`/failure-clusters/${target}`);
+    await waitForHydration(page);
+    const change = page.locator('[data-shot="next-step-change"]');
+    await expect(change).toHaveAttribute('data-copies', 'copy-git-apply');
+    // On the cluster page Diagnosis leads, open in its own card, when the next step
+    // applies its patch; folded among More ways to fix otherwise.
+    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    if (await diagnosis.count()) {
+      if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
+      await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+    }
+    await change.getByRole('button', { name: 'Full patch' }).click();
+    if (await diagnosis.count()) await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('[data-shot="diagnosis-patch"]')).toBeInViewport();
+  });
+
   // The evidence opens on the story and the fix on the next step, independent of
   // which mutable state the seed is in. #10 ships a stored diagnosis: a step from
   // it leads with Diagnosis, and marking the cluster resolved (its verified fix,

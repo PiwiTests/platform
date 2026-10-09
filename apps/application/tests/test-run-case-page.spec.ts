@@ -2,6 +2,7 @@ import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
+import { gitApplyCommand } from '#shared/patch';
 
 /**
  * The single-column execution page: one situation block — identity, the failure
@@ -388,6 +389,12 @@ test.describe('Test-run-case page', () => {
   });
 });
 
+/** The rows of the diff the Next line shows, each with its leading marker. */
+async function nextChangeRows(page: import('@playwright/test').Page): Promise<string[]> {
+  const preview = page.locator('[data-shot="next-step-change"]').getByRole('region', { name: 'Change preview' });
+  return (await preview.locator(':scope > div').allTextContents()).map((row) => row.replace(/\u00a0/g, ' '));
+}
+
 /**
  * The story line, the line under the headline and the next step read from the
  * deterministic demo seed: #37 chains the blocked-by-pending-request story and
@@ -437,7 +444,10 @@ test.describe('Situation block on seeded cases', () => {
     await expect(next.locator('[data-shot="next-step-source"]')).toContainText(
       "From the cluster's AI diagnosis, high confidence",
     );
-    await expect(next.getByRole('button', { name: 'Copy git apply' })).toBeVisible();
+    // The primary is named by what it copies, the command in its title.
+    const apply = next.getByRole('button', { name: 'Copy apply command' });
+    await expect(apply).toBeVisible();
+    await expect(apply).toHaveAttribute('title', /^git apply <<'EOF' \.\.\. EOF, run at the repository root/);
     // `app:measure` finds the step and its action by these ids, never by the label.
     await expect(next).toHaveAttribute('data-next-kind', 'apply-patch');
     await expect(next.locator('[data-next-action]')).toHaveAttribute('data-next-action', 'copy-git-apply');
@@ -447,6 +457,60 @@ test.describe('Situation block on seeded cases', () => {
 
     // "New regression" appears exactly once on the page.
     await expect(page.getByText('New regression')).toHaveCount(1);
+  });
+
+  test('#37 shows the diagnosed patch it copies, and Full patch opens the whole patch', async ({
+    page,
+    request,
+    context,
+  }) => {
+    const detail = (await (await request.get('/api/test-run-cases/37')).json()) as {
+      failureCluster: { id: number } | null;
+    };
+    const plan = (await (await request.get(`/api/failure-clusters/${detail.failureCluster!.id}/fix-plan`)).json()) as {
+      diagnosis: { patch: string | null } | null;
+    };
+    const patch = plan.diagnosis?.patch;
+    test.skip(!patch, 'the cluster of #37 has no diagnosed patch on this database');
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+
+    // A window on the patch, its validation and how much it leaves out, above the source.
+    const change = page.locator('[data-shot="next-step-change"]');
+    await expect(change).toContainText('Applies cleanly');
+    await expect(change).toContainText(/\d+ more lines/);
+    const rows = await nextChangeRows(page);
+    const added = rows.filter((row) => row.startsWith('+'));
+    expect(added.length).toBeGreaterThan(0);
+    for (const row of rows.slice(1)) expect(patch).toContain(row);
+    await expect(page.locator('[data-shot="next-step-source"]')).toContainText(
+      "From the cluster's AI diagnosis, high confidence",
+    );
+
+    // The primary copies the command that applies the whole patch.
+    await page.locator('[data-shot="next-step"]').getByRole('button', { name: 'Copy apply command' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(gitApplyCommand(patch!));
+
+    // Full patch opens the Diagnosis section at the whole patch.
+    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+    await change.getByRole('button', { name: 'Full patch' }).click();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('[data-shot="diagnosis-patch"]')).toBeInViewport();
+  });
+
+  test('#37 keeps the patch preview inside the page at phone width', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+    await expect(page.locator('[data-shot="next-step-change"]')).toBeVisible();
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
   });
 
   test('#37 opens the evidence on the Timeline and the toolbox on Diagnosis', async ({ page }) => {
@@ -495,8 +559,43 @@ test.describe('Situation block on seeded cases', () => {
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Replace the locator');
-    await expect(next.getByRole('button', { name: 'Copy patch' })).toBeVisible();
     await expect(page.locator('[data-shot="fix-locator-fix"] [aria-expanded="true"]')).toBeVisible();
+  });
+
+  test('#587 has no line edit, so it shows and copies the recommended locator, even from a folded section', async ({
+    page,
+    request,
+    context,
+  }) => {
+    const res = await request.get('/api/test-run-cases/587');
+    test.skip(!res.ok(), 'no #587');
+    const detail = (await res.json()) as { nextStep?: { kind: string } | null };
+    const healing = (await (await request.get('/api/test-run-cases/587/locator-healing')).json()) as {
+      edit?: { unifiedDiff?: string | null } | null;
+      recommendation?: { recommended?: { locator: string } | null } | null;
+    };
+    const recommended = healing.recommendation?.recommended?.locator;
+    test.skip(
+      detail.nextStep?.kind !== 'replace-locator' || Boolean(healing.edit?.unifiedDiff) || !recommended,
+      '#587 is not a locator step without an edit on this database',
+    );
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('/test-run-cases/587');
+    await waitForHydration(page);
+
+    const next = page.locator('[data-shot="next-step"]');
+    await expect(next.locator('[data-next-action]')).toHaveAttribute('data-next-action', 'copy-locator');
+    await expect(next.getByRole('button', { name: 'Copy apply command' })).toHaveCount(0);
+    const rows = await nextChangeRows(page);
+    expect(rows.some((row) => row.startsWith('-'))).toBe(true);
+    expect(rows).toContain(`+${recommended}`);
+
+    // Folding Locator fix unmounts its panel; the copy reads the row's change.
+    const section = page.locator('[data-shot="fix-locator-fix"] button[aria-expanded]').first();
+    if ((await section.getAttribute('aria-expanded')) === 'true') await section.click();
+    await expect(section).toHaveAttribute('aria-expanded', 'false');
+    await next.getByRole('button', { name: 'Copy locator' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(recommended);
   });
 
   test('the replace-locator actions open a folded Locator fix section before acting on its panel', async ({
@@ -506,17 +605,18 @@ test.describe('Situation block on seeded cases', () => {
   }) => {
     // A seeded execution whose next step replaces the locator with a line edit;
     // which id that is differs between databases, so probe.
-    let target: { id: number; diff: string } | null = null;
+    let target: { id: number; diff: string; oldLine: string; newLine: string } | null = null;
     for (const id of [87, 533]) {
       const res = await request.get(`/api/test-run-cases/${id}`);
       if (!res.ok()) continue;
       const detail = (await res.json()) as { nextStep?: { kind: string } | null };
       if (detail.nextStep?.kind !== 'replace-locator') continue;
       const healing = (await (await request.get(`/api/test-run-cases/${id}/locator-healing`)).json()) as {
-        edit?: { unifiedDiff?: string } | null;
+        edit?: { unifiedDiff?: string; oldLine: string; newLine: string } | null;
       };
       if (healing.edit?.unifiedDiff) {
-        target = { id, diff: healing.edit.unifiedDiff };
+        const { unifiedDiff, oldLine, newLine } = healing.edit;
+        target = { id, diff: unifiedDiff, oldLine, newLine };
         break;
       }
     }
@@ -538,6 +638,11 @@ test.describe('Situation block on seeded cases', () => {
     };
     const next = page.locator('[data-shot="next-step"]');
 
+    // The row shows the line the edit rewrites, before and after.
+    const rows = await nextChangeRows(page);
+    expect(rows).toContain(`-${target!.oldLine}`);
+    expect(rows).toContain(`+${target!.newLine}`);
+
     // Pick from snapshot opens the section, then the picker.
     await fold();
     await next.getByRole('button', { name: 'More next-step actions' }).click();
@@ -552,10 +657,10 @@ test.describe('Situation block on seeded cases', () => {
     const navbarTop = (await page.getByRole('button', { name: 'More actions' }).boundingBox())?.y ?? -1;
     expect(navbarTop).toBeGreaterThanOrEqual(0);
 
-    // Copy patch copies the healing edit's diff.
+    // Copy apply command copies the command that applies the healing edit's diff.
     await fold();
-    await next.getByRole('button', { name: 'Copy patch' }).click();
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(target!.diff);
+    await next.getByRole('button', { name: 'Copy apply command' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(gitApplyCommand(target!.diff));
     expect(healingFetches).toEqual([]);
   });
 

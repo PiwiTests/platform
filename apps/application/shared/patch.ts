@@ -78,6 +78,59 @@ export function patchValidationLabel(status: PatchValidationStatus): string {
   return VALIDATION_LABELS[status] ?? VALIDATION_LABELS.unchecked;
 }
 
+/** The first changed lines of a unified diff, as a small diff of their own. */
+export interface PatchExcerpt {
+  /** The `@@` row recomputed for the window, then the window's lines; no file headers. */
+  diff: string;
+  /** The file the window is in, without its `a/` or `b/` prefix. */
+  file: string | null;
+  /** The body lines of every hunk of every file that the window leaves out. */
+  hiddenLines: number;
+  /** How many files the diff touches. */
+  files: number;
+}
+
+/**
+ * A window of at most `maxLines` body lines on the first changed run of a
+ * unified diff: the context line before it, the run of removed and added lines,
+ * the context line after it, cut at `maxLines`. The `@@` row is recomputed for
+ * the window by counting the old and new lines from the hunk's start, so every
+ * line keeps its number. Null when the diff does not parse or changes nothing.
+ */
+export function patchExcerpt(patch: string, maxLines = 6): PatchExcerpt | null {
+  const parsed = parseUnifiedDiff(patch);
+  const total = parsed.files.reduce((sum, f) => sum + f.hunks.reduce((n, h) => n + h.lines.length, 0), 0);
+  for (const file of parsed.files) {
+    for (const hunk of file.hunks) {
+      const first = hunk.lines.findIndex((line) => line[0] === '+' || line[0] === '-');
+      if (first === -1) continue;
+      let last = first;
+      while (last + 1 < hunk.lines.length && hunk.lines[last + 1]![0] !== ' ') last++;
+      const start = Math.max(0, first - 1);
+      const end = Math.min(hunk.lines.length - 1, last + 1, start + maxLines - 1);
+      const window = hunk.lines.slice(start, end + 1);
+
+      // The next old and new line numbers; an empty range's start names the line before it.
+      let oldLine = hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart;
+      let newLine = hunk.newLines === 0 ? hunk.newStart + 1 : hunk.newStart;
+      for (const line of hunk.lines.slice(0, start)) {
+        if (line[0] !== '+') oldLine++;
+        if (line[0] !== '-') newLine++;
+      }
+      const oldCount = window.filter((line) => line[0] !== '+').length;
+      const newCount = window.filter((line) => line[0] !== '-').length;
+      const range = (line: number, count: number) => `${count === 0 ? line - 1 : line},${count}`;
+      return {
+        diff: [`@@ -${range(oldLine, oldCount)} +${range(newLine, newCount)} @@`, ...window].join('\n'),
+        file: stripAbPrefix(file.newPath) ?? stripAbPrefix(file.oldPath),
+        hiddenLines: total - window.length,
+        files: parsed.files.length,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * The command that applies a unified diff from the repository root: `git apply`
  * reading the patch from a quoted heredoc, so the shell expands nothing in it

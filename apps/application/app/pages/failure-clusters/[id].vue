@@ -26,6 +26,7 @@ import { relativeTimeAgo, durationApprox, toEpochMs } from '#shared/relative-tim
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { issueLineForm } from '~/utils/issue-line';
+import { buildNextStepChange } from '~/utils/next-step-change';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
@@ -334,6 +335,15 @@ const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
 );
 const clusterLocatorHasData = computed(() => hasHealingAlternatives(clusterLocatorHealing.value));
 
+// The change the next step copies, from the fix plan or the healing the page
+// already loaded: the Next row shows it and its actions copy it.
+const nextStepChange = computed(() =>
+  buildNextStepChange(nextStep.value, {
+    diagnosis: fixPlan.value?.diagnosis ?? null,
+    healing: clusterLocatorHealing.value ?? null,
+  }),
+);
+
 // Where the next step's change comes from: the diagnosis, named in full unless
 // Most likely already shows it, or locator healing.
 const nextStepSource = computed(() =>
@@ -509,14 +519,12 @@ const evidenceTabs = ref<{
   selectTab: (t: string) => void;
 } | null>(null);
 const clusterLocatorPanel = ref<{
-  copyPatch: () => void;
-  copyRecommendedLocator: () => void;
   openPicker: () => void;
   expandAlternatives: () => void;
 } | null>(null);
 const toolbox = ref<{
   openSection: (k: FixSectionKey) => Promise<void>;
-  scrollToSection: (k: FixSectionKey) => Promise<void>;
+  scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
 } | null>(null);
 
 // The Diagnosis section renders its panel only while open: open it (and scroll to
@@ -567,13 +575,12 @@ const { setClusterStatus } = useClusterTriage(clusterId, { onSaved: () => refres
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => clusterId,
-  fixPlanPatch: () => fixPlan.value?.diagnosis?.patch ?? null,
+  change: () => nextStepChange.value,
   ideProject: () => cluster.value?.project ?? null,
   locatorPanel: () => clusterLocatorPanel.value,
   reproRecipe: () => fixPlan.value?.reproduce ?? null,
   diagnosisContextEndpoint: () => diagnosisContextEndpoint,
-  scrollToSection: (k) => toolbox.value?.scrollToSection(k),
-  openSection: (k) => toolbox.value?.openSection(k),
+  scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
   selectAttemptsTab: () => evidenceTabs.value?.selectTab('attempts'),
   setClusterStatus,
   quarantine: async () => {
@@ -712,6 +719,8 @@ const breadcrumbItems = computed(() => [
               :next-step="nextStep"
               :retry-command="retryCommand"
               :source="nextStepSource"
+              :change="nextStepChange"
+              :ide-project="cluster.project ?? null"
               @action="handleNextStepAction"
             />
           </template>

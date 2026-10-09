@@ -39,14 +39,15 @@ export const DEFAULT_MEASURE_PORT = 3060;
 
 /**
  * The Next actions that copy something, by the id the button carries
- * (`data-next-action`). A `budgeted` action copies a code change, which the
- * page shows in the situation block itself; a `reported` one copies a command
- * whose distance is printed without a verdict. Every `copy-…` primary of
- * `shared/next-step.ts` is listed here, which a unit test checks.
+ * (`data-next-action`). A `budgeted` action copies a code change (an apply
+ * command, a locator), which the page shows in the situation block itself; a
+ * `reported` one copies a command whose distance is printed without a verdict.
+ * Every `copy-…` primary of `shared/next-step.ts` is listed here, which a unit
+ * test checks.
  */
 export const NEXT_STEP_COPIES = {
   'copy-git-apply': 'budgeted',
-  'copy-patch': 'budgeted',
+  'copy-locator': 'budgeted',
   'copy-recipe': 'reported',
   'copy-flake-command': 'reported',
 };
@@ -77,7 +78,7 @@ export const DETAIL_PAGE_BUDGETS = [
     label: 'text styles',
     pages: ['cluster'],
     read: (result) => result.distinctTextStyles,
-    max: 12,
+    max: 13,
     missing: 'no situation block',
   },
   {

@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   gitApplyCommand,
   parseUnifiedDiff,
+  patchExcerpt,
   patchInCode,
   patchStillAppliesAtFix,
   patchValidationLabel,
@@ -11,6 +12,8 @@ import {
   validatePatch,
   type PatchValidationAtFix,
 } from '#shared/patch';
+import { buildHealEdit } from '#shared/heal-edit';
+import { renderSnippet, SOURCE_FILES, storyByClusterId } from '#shared/demo/failure-stories.mjs';
 
 const SAMPLE = `--- a/src/foo.ts
 +++ b/src/foo.ts
@@ -240,5 +243,101 @@ describe('patchValidationLabel', () => {
     expect(patchValidationLabel('stale-file')).toBe('Does not apply');
     expect(patchValidationLabel('invalid')).toBe('Invalid diff');
     expect(patchValidationLabel('unchecked')).toBe('Unverified');
+  });
+});
+
+describe('patchExcerpt', () => {
+  /** The excerpt's body lines, without its `@@` row. */
+  const body = (diff: string) => diff.split('\n').slice(1);
+  const seededPatch = (clusterId: number) => storyByClusterId(clusterId)!.diagnosis.fix.patch as string;
+
+  test("windows on cluster 1's first changed run and counts its second hunk as hidden", () => {
+    const patch = seededPatch(1);
+    const excerpt = patchExcerpt(patch)!;
+    expect(excerpt).toMatchObject({ file: 'tests/helpers/payment.ts', files: 1 });
+    expect(excerpt.diff.split('\n')[0]).toBe('@@ -1,2 +1,2 @@');
+    expect(body(excerpt.diff)).toEqual([
+      "-import type { Page } from '@playwright/test';",
+      "+import { test, type Page } from '@playwright/test';",
+      ' ',
+    ]);
+    const total = parseUnifiedDiff(patch).files[0]!.hunks.reduce((n, h) => n + h.lines.length, 0);
+    expect(parseUnifiedDiff(patch).files[0]!.hunks).toHaveLength(2);
+    expect(excerpt.hiddenLines).toBe(total - 3);
+  });
+
+  test("shows cluster 3's added lines between their context lines", () => {
+    const excerpt = patchExcerpt(seededPatch(3))!;
+    expect(excerpt.file).toBe('src/routes/auth.ts');
+    expect(excerpt.diff.split('\n')[0]).toBe('@@ -8,2 +8,5 @@');
+    expect(body(excerpt.diff)).toHaveLength(5);
+    expect(body(excerpt.diff).filter((l) => l.startsWith('+'))).toHaveLength(3);
+    expect(excerpt.hiddenLines).toBe(0);
+  });
+
+  test('cuts the 42-line locator edit of cluster 2 to the changed line and its neighbors', () => {
+    const spec = 'tests/checkout/checkout.spec.ts';
+    const lines = SOURCE_FILES[spec] as string[];
+    const edit = buildHealEdit({
+      location: `${spec}:23:10`,
+      sourceLine: { line: 23, text: lines[22]! },
+      failingMethod: 'getByLabel',
+      recommendedLocator: "getByTestId('email-field').getByRole('textbox')",
+      testSource: renderSnippet(lines, { declLine: 22, failingLine: 23, context: 30 }),
+    })!;
+    expect(edit.unifiedDiff).toMatch(/^@@ -1,42 \+1,42 @@$/m);
+    const excerpt = patchExcerpt(edit.unifiedDiff!)!;
+    expect(excerpt.diff.split('\n')[0]).toBe('@@ -22,3 +22,3 @@');
+    expect(body(excerpt.diff)).toEqual([` ${lines[21]}`, `-${edit.oldLine}`, `+${edit.newLine}`, ` ${lines[23]}`]);
+    expect(excerpt.hiddenLines).toBe(39);
+  });
+
+  test('keeps a deletion-only run with its context', () => {
+    const excerpt = patchExcerpt('--- a/a.ts\n+++ b/a.ts\n@@ -10,3 +10,2 @@\n a();\n-b();\n c();\n')!;
+    expect(excerpt.diff).toBe('@@ -10,3 +10,2 @@\n a();\n-b();\n c();');
+  });
+
+  test('cuts a changed run longer than the window, keeping the context before it', () => {
+    const removed = Array.from({ length: 5 }, (_, i) => `-old${i}();`);
+    const added = Array.from({ length: 5 }, (_, i) => `+new${i}();`);
+    const hunk = ['@@ -4,7 +4,7 @@', ' before();', ...removed, ...added, ' after();'];
+    const excerpt = patchExcerpt(['--- a/a.ts', '+++ b/a.ts', ...hunk].join('\n'))!;
+    expect(excerpt.diff.split('\n')[0]).toBe('@@ -4,6 +4,1 @@');
+    expect(body(excerpt.diff)).toEqual([' before();', ...removed]);
+    expect(excerpt.hiddenLines).toBe(12 - 6);
+  });
+
+  test('counts the hunks and files it leaves out', () => {
+    const second = '--- a/b.ts\n+++ b/b.ts\n@@ -1,1 +1,1 @@\n-x();\n+y();\n';
+    const excerpt = patchExcerpt(`${SAMPLE}${second}`)!;
+    expect(excerpt).toMatchObject({ file: 'src/foo.ts', files: 2, hiddenLines: 2 });
+  });
+
+  test('reads a hunk without counts, and a new file', () => {
+    expect(patchExcerpt('--- a/a.ts\n+++ b/a.ts\n@@ -3 +3 @@\n-a();\n+b();\n')!.diff).toBe(
+      '@@ -3,1 +3,1 @@\n-a();\n+b();',
+    );
+    expect(patchExcerpt('--- /dev/null\n+++ b/new.ts\n@@ -0,0 +1,2 @@\n+a();\n+b();\n')).toMatchObject({
+      diff: '@@ -0,0 +1,2 @@\n+a();\n+b();',
+      file: 'new.ts',
+    });
+  });
+
+  test('is null for a diff that does not parse or changes nothing', () => {
+    expect(patchExcerpt('not a diff')).toBeNull();
+    expect(patchExcerpt('--- a/a.ts\n+++ b/a.ts\n@@ -1,1 +1,1 @@\n a();\n')).toBeNull();
+  });
+
+  test('what it shows is in the command that applies the patch, in order', () => {
+    for (const clusterId of [1, 3, 6, 7, 10]) {
+      const patch = seededPatch(clusterId);
+      const command = gitApplyCommand(patch);
+      let from = 0;
+      for (const line of body(patchExcerpt(patch)!.diff)) {
+        const at = command.indexOf(`\n${line}\n`, from);
+        expect(at, `"${line}" in the command of cluster ${clusterId}`).toBeGreaterThanOrEqual(from);
+        from = at + 1;
+      }
+    }
   });
 });

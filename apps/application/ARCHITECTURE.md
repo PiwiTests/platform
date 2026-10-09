@@ -177,7 +177,8 @@ failed again or passed, and the Cluster row names the cluster, then its ticket (
 `IssueLine`); the cluster page has an Issue row instead. The rows are built in the handlers the demo shares
 (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from `shared/situation.ts` (with
 `shared/latest-execution.ts` over `getNewerExecutions`), `shared/cluster-state.ts` and `computeNextStep`
-(`shared/next-step.ts`); `useNextStepActions` turns the Next row's action id into behavior on both pages. Both pages choose Most likely
+(`shared/next-step.ts`); `useNextStepActions` turns the Next row's action id into behavior on both pages, copying
+the change the row shows (`buildNextStepChange`, `app/utils/next-step-change.ts`). Both pages choose Most likely
 and word where the Next step's change comes from with `shared/most-likely.ts` (`pickMostLikely`,
 `nextStepSourceLine`), one rule for the two. Under the block, the execution page shows `DidNotRunCard` for a test that did not run, `EvidenceTabs` (opening on the tab
 `useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the

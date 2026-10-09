@@ -103,7 +103,7 @@ badge: **Applies cleanly**, **Applies with offset** (`git apply` should still su
 **Does not apply** (the file diverged), **Invalid diff**, or **Unverified** (the file was not in the context). When a
 fix is [verified](./failure-clusters#did-the-fix-work), the patch is checked again at the fix's commit. The model
 is told to return no patch unless it can quote the lines it changes. Applying a patch is always manual: **Copy**,
-**Copy `git apply` command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
+**Copy apply command** or **Download `.patch`**. Only [auto-heal](./auto-heal) writes to your repository, with
 deterministic locator edits.
 
 ## Diagnoses written by an agent

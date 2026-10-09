@@ -82,11 +82,16 @@ async function openSection(key: FixSectionKey): Promise<void> {
   await nextTick();
 }
 
-/** Open a section and scroll it into view; resolves once its body is mounted. */
-async function scrollToSection(key: FixSectionKey): Promise<void> {
+/**
+ * Open a section and scroll it into view, at the element whose `data-shot` is
+ * `anchor` when the section holds one; resolves once its body is mounted.
+ */
+async function scrollToSection(key: FixSectionKey, anchor?: string): Promise<void> {
   await openSection(key);
   const scope = key === leadKey.value ? leadEl.value : rootEl.value;
-  scope?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const section = scope?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`);
+  const target = (anchor ? section?.querySelector<HTMLElement>(`[data-shot="${anchor}"]`) : null) ?? section;
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 defineExpose({ openSection, scrollToSection });

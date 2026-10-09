@@ -23,6 +23,20 @@ describe('computeNextStep — one row per rule', () => {
     expect(s.kind).toBe('replace-locator');
   });
 
+  test('3: with an edit of the failing line, the apply command first and the locator next', () => {
+    const s = step({ hasHealingRecommendation: true, healingEditAvailable: true });
+    expect(s.primary).toMatchObject({ label: 'Copy apply command', action: 'copy-git-apply' });
+    expect(s.secondary.map((a) => a.label)).toEqual(['Copy locator', 'Pick from snapshot', 'All alternatives']);
+    expect(s.secondary[0]!.action).toBe('copy-locator');
+  });
+
+  test('3: without an edit, the recommended locator is the change, and nothing offers an apply command', () => {
+    const s = step({ hasHealingRecommendation: true, healingEditAvailable: false });
+    expect(s.primary).toMatchObject({ label: 'Copy locator', action: 'copy-locator' });
+    expect(s.secondary.map((a) => a.label)).toEqual(['Pick from snapshot', 'All alternatives']);
+    expect([s.primary, ...s.secondary].some((a) => a.action === 'copy-git-apply')).toBe(false);
+  });
+
   test('4: a completed diagnosis whose patch applies cleanly', () => {
     const s = step({
       diagnosisCompleted: true,
@@ -31,6 +45,7 @@ describe('computeNextStep — one row per rule', () => {
       diagnosisSummary: 'PAGE_SIZE 50 → 25',
     });
     expect(s.kind).toBe('apply-patch');
+    expect(s.primary).toMatchObject({ label: 'Copy apply command', action: 'copy-git-apply' });
     expect(s.title).toContain('src/server/users.ts');
     // The summary is the "Most likely" line's job; the step names only the work.
     expect(s.title).not.toContain('PAGE_SIZE 50 → 25');
@@ -220,6 +235,7 @@ describe('computeNextStep — precedence between rows', () => {
       { status: 'didnotrun', blockedByCase: { id: 1 } },
       { fixVerification: 'diagnosis-verified', clusterStatus: 'open' },
       { hasHealingRecommendation: true },
+      { hasHealingRecommendation: true, healingEditAvailable: true },
       { diagnosisCompleted: true, patchAppliesCleanly: true },
       { diagnosisCompleted: true },
       { fixVerification: 'regressed' },
@@ -231,6 +247,8 @@ describe('computeNextStep — precedence between rows', () => {
       const s = computeNextStep(input);
       expect(s.primary).toBeTruthy();
       expect(typeof s.primary.action).toBe('string');
+      // A code-change step copies an apply command or a locator, never a bare patch.
+      expect([s.primary, ...s.secondary].map((a) => a.action)).not.toContain('copy-patch');
     }
   });
 });

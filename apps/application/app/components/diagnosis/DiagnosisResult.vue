@@ -491,8 +491,9 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
 
         <PatchBlock
           v-if="details.suggestedFix.patch"
+          data-shot="diagnosis-patch"
           data-copies="copy-git-apply"
-          class="mt-2"
+          class="mt-2 scroll-mt-4"
           :patch="details.suggestedFix.patch"
           :validation="patchValidation"
           :download-name="`piwi-diagnosis-${diagnosis?.id ?? 'fix'}`"

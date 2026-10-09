@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * A suggested patch, rendered once: the `patch` label with a validation badge,
- * the download / git apply / copy actions, the diff itself, and — when the
+ * the download / apply command / copy actions, the diff itself, and — when the
  * patch could not be applied — the validator's first error line. Used wherever
  * a diagnosis or a fix plan surfaces its `.patch`.
  */
@@ -104,7 +104,7 @@ function downloadPatch() {
           color="neutral"
           variant="ghost"
           icon="i-lucide-terminal"
-          title="Copy git apply command"
+          title="Copy apply command"
           @click="copyGitApply"
         />
         <UButton

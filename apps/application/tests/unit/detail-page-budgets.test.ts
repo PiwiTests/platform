@@ -30,7 +30,7 @@ function measured(route: string, overrides: Record<string, unknown> = {}) {
     nextStep: {
       kind: 'apply-patch',
       action: 'copy-git-apply',
-      label: 'Copy git apply',
+      label: 'Copy apply command',
       copies: 'budgeted',
       rendered: true,
       inBlock: true,
@@ -51,17 +51,17 @@ describe('pageKind', () => {
 });
 
 describe('evaluateBudgets', () => {
-  it('holds the execution page to 15 text styles and the cluster page to 12', () => {
+  it('holds the execution page to 15 text styles and the cluster page to 13', () => {
     const execution = byId(
       evaluateBudgets(measured('/test-run-cases/37', { distinctTextStyles: 14 }), AT_BUDGET),
       'text-styles',
     );
     expect(execution).toMatchObject({ value: 14, max: 15, verdict: 'pass' });
     const cluster = byId(
-      evaluateBudgets(measured('/failure-clusters/2', { distinctTextStyles: 13 }), AT_BUDGET),
+      evaluateBudgets(measured('/failure-clusters/2', { distinctTextStyles: 14 }), AT_BUDGET),
       'text-styles',
     );
-    expect(cluster).toMatchObject({ value: 13, max: 12, verdict: 'fail' });
+    expect(cluster).toMatchObject({ value: 14, max: 13, verdict: 'fail' });
   });
 
   it('counts at most 25 controls and one solid primary above the fold on both pages', () => {
