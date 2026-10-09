@@ -6,7 +6,10 @@ inputs it never writes, adds the signals a team already owns elsewhere, gives th
 accuracy, and joins it with the browser extension, which already sees the one thing the map cannot: the whole
 rendered surface of a page.
 
-**Status.** Proposed 2026-10-09. Nothing in it is built. The evidence comes from the web-dashboard demo project
+**Status.** Proposed 2026-10-09. Part 1 items 1, 3, 4 and 8 have shipped: page reach along the journey (read
+from the locator pages the reporter already sends, so no new capture), *API-only route* retired, nodes only
+untrusted tests reach raised as fragile, and surface drift limited to new surface. The rest is proposed. The
+evidence comes from the web-dashboard demo project
 (`shared/demo/demo-test-map.mjs`), whose gaps are exactly what the live detectors compute from its graph
 (`tests/unit/demo-test-map.test.ts` recomputes them on the seed). New wire fields, attachments and endpoints freeze
 at 1.0 and get an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -28,7 +31,7 @@ condition, the way the first record did.
 |---|---|---|---|
 | 1 | A test reaches only the page it **ends** on; pages it walks through count as unvisited | `pageUrlOf` in `server/utils/graph-ingest.ts` reads `page_state.url` | `/users/invite is linked but never visited`, although *invites a user by email* opens it |
 | 2 | No `test → control` reach is ever written, and *control nobody exercises* stays silent until one exists | `detectControlNobodyExercises` gate in `shared/handlers/scenario-gaps.ts` | 0 control gaps for 34 inventoried controls, *Delete organization* and *Transfer ownership* among them |
-| 3 | `triggers` edges are never written (`buildTriggerEdges` in `shared/graph.ts` has no caller), and `loads` covers navigation settle only | `detectApiOnlyRoute` | all 8 click-sent routes flagged *API-only*; the demo team dismissed 5 as wrong |
+| 3 | Network capture records only the page's own requests (`page.on('requestfinished')`), so no observed route is reached by request fixtures alone; `triggers` edges are never written either | `detectApiOnlyRoute` | all 8 click-sent routes flagged *API-only*; the demo team dismissed 5 as wrong |
 | 4 | *Single covering test* needs exactly one trusted test; a node only untrusted tests reach raises nothing | `detectSingleCoveringTest` (`trustedTests.length !== 1`) | `/settings/appearance` and its two routes, reached only by the flaky dark-mode test: no gap at all |
 | 5 | A feature groups only the nodes its tests reach | `syncFeatureNodes` | 25 of 61 gaps sit under *Ungrouped*; the feature map cannot show what a feature misses |
 | 6 | Hub nodes join every feature | `getFeatureMap` link rule | `GET /api/session`, reached by 9 of 10 tests, links all four features and puts "9 tests" on each |
@@ -55,22 +58,24 @@ capture.
 
 ## Part 1: fix the substrate
 
-1. **Page reach from navigations.** Write a `reaches` edge for every own-origin main-frame navigation of a test,
-   with `evidence.arrival` for the page the test ended on. The capture fixtures already listen to
-   `framenavigated` for the page inventory, so the reporter adds the list of page URLs to the wire case. Fixes
-   finding 1 and gives *single covering test* the right count.
+1. **Page reach along the journey** (shipped). A test reaches every own-origin page it ran a locator call on, read
+   from the `piwi-locator-pages` attachment the capture fixtures send on every execution, as well as the page it
+   ended on; the graph rebuild reads the stored payloads too. Fixes finding 1 and gives *single covering test* the
+   right count. A page a test only navigates through, without a locator call, stays unreached.
 2. **Control reach from the locator index.** The locator index (`locator_usages`, what the extension's overlay
    evaluates) knows, per test, the chains it ran, their actions and the pages they ran on. Parse each chain with
    `@piwitests/core/locator-chain`: a `getByRole(role, { name })` maps to a `role:name` control key directly; a test
    id, label or CSS chain maps through the element its locator snapshot resolved to (`element_tag`,
    `element_attrs`). Write `test → control` reaches with `evidence.action` = `operated` or `checked`. Wakes *control
    nobody exercises* (finding 2) and gives every control the overlay's own distinction.
-3. **Trigger edges.** Call `buildTriggerEdges` at ingest: action steps carry start times and requests carry start
-   times, and `requestInStepWindow` already pads the window. Keep the confidence as the share of executions where
-   the pairing held. *API-only route* then reads triggers (finding 3).
-4. **Untrusted-only nodes.** A node with no trusted test and at least one untrusted one becomes a fragile gap,
-   *Only untrusted tests reach it*, naming the flaky, quarantined or skipped test (finding 4). This is the
-   *phantom coverage* detector's case, wired.
+3. **Retire *API-only route*** (shipped). Its claim, *reached only by request fixtures*, cannot hold for any
+   observed route, since only the page's own requests are captured; trigger edges would have hidden the noise, not
+   fixed the claim. The recompute closes its open rows and keeps the dismissed ones. Trigger edges are still worth
+   writing for the extension's gap layer (Part 4, item 1): action steps carry start times, requests carry start
+   times, and `requestInStepWindow` already pads the window.
+4. **Untrusted-only nodes** (shipped). A node with no trusted test and at least one untrusted one is a fragile
+   *single covering test* gap, *No trusted test reaches …*, naming each test and whether it is flaky,
+   quarantined or skipped (finding 4).
 5. **Feature grouping beyond reach, and hubs.** A feature also groups, with origin `inferred` and a confidence below
    one: the pages its pages link to under the same path prefix, the controls its pages contain, and declared routes
    sharing an OpenAPI tag or a path prefix with its routes. A node reached by more than half the tests, or grouped
@@ -81,8 +86,10 @@ capture.
    from the provider and cached, not the oldest of the last twelve commits scanned (finding 7).
 7. **Route keys without the query.** The node key drops the query; the parameter names move to `attrs.query`.
    A migration merges the split nodes and their edges (finding 8).
-8. **Drift on surface only, and not at the first build.** Exclude `feature` nodes, and raise drift only for a node
-   first seen after the project's first graph run. Fix the double link prefix (finding 9).
+8. **Drift on surface only, and not at the first build** (shipped). Drift is a new node no test reaches, as the
+   first record defined it: a new node a test already reaches is covered. Feature nodes never drift, the run that
+   built the project's graph first (pruned nodes included) raises none, and a link's title names it once
+   (finding 9). Requiring no reach also keeps the pages that item 1 adds to existing graphs from reading as new.
 9. **Unhandled findings.** The fixtures already capture page errors and the ARIA snapshot: report an uncaught
    exception, or a backend error with a blank page, so the server's `classifyHandled` can return *unhandled*
    (finding 10).
@@ -92,9 +99,10 @@ capture.
     on passing executions, all stored), *assertion-light* (from `step-analysis.ts`) and *catalog method no test
     calls* (from `test_functions`) need no new data (finding 12).
 
-On the demo, the expected change is concrete: *API-only* drops from 8 rows to 0, *reachable, unvisited* loses
-`/users/invite`, three fragile gaps appear for the dark-mode test's nodes, *control nobody exercises* raises the
-controls none of the ten tests uses, and most of the 25 ungrouped gaps find a feature.
+On the demo, items 1, 3, 4 and 8 took the detected gaps from 61 to 54: *API-only* went from 8 rows to 0,
+*reachable, unvisited* lost `/users/invite`, `/login` and `/settings/organization` stopped reading as
+single-covered, and three fragile gaps appeared for the dark-mode test's nodes. Still to come: *control nobody
+exercises* raising the controls none of the ten tests uses, and most of the 25 ungrouped gaps finding a feature.
 
 ## Part 2: new inputs
 
@@ -182,8 +190,8 @@ predictions alone change nothing, so the map has to show that what it flags is w
 the page inventory: wakes three detectors"), the way the setup checklist lists capabilities.
 
 **The benchmark** extends `tests/unit/demo-test-map.test.ts`: the model labels each node with its ground truth, and
-the test reports precision and recall per detector against it. Today it would read a precision of 0 of 8 for *API-only route*;
-after Part 1, the detector raises none of them. A detector change that lowers a number fails the test until the fixture
+the test reports precision and recall per detector against it. Before Part 1 it would have read a precision of
+0 of 8 for *API-only route*, the detector Part 1 retired. A detector change that lowers a number fails the test until the fixture
 (`PIWI_UPDATE_DEMO_TEST_MAP=1`) and the labels say why.
 
 ## Part 4: the extension
@@ -196,7 +204,7 @@ Map, and its page keys were made equal to the map's precisely so the two could b
 1. **Gaps on the page.** A read endpoint returns the Test Map slice of one page key: its gaps, its controls' reach,
    the routes it loads and their probe outcomes, the pages it links to and whether a test visits them. The overlay
    draws gap classes over its own boxes: a blind-spot control, a link to an unvisited page, a control whose request
-   a probe broke unnoticed (through the `triggers` edges of Part 1), an element only an untrusted test reaches.
+   a probe broke unnoticed (through `triggers` edges, written for it), an element only an untrusted test reaches.
 2. **Draft the missing test from the element.** An untested element gets *Record a test*: the extension's recorder
    starts from the gap's draft (the path from the nearest reached page, the catalog methods, the `piwi:` annotations),
    the assertion suggester proposes the check, and the result goes to the editor
@@ -229,9 +237,9 @@ Map, and its page keys were made equal to the map's precisely so the two could b
 
 ## Delivery
 
-1. Substrate, without new captures: items 3, 4, 8, 9, 10 and 11 of Part 1, with the demo fixture regenerated.
-2. Page reach from navigations and control reach from the locator index (items 1 and 2), the reporter's wire change
-   with them.
+1. Substrate, without new captures: items 1, 3, 4 and 8 of Part 1 (shipped), then 9, 10 and 11, with the demo
+   fixture regenerated.
+2. Control reach from the locator index (item 2).
 3. Feature grouping and hubs, exposure for node gaps, query-free route keys and their migration (items 5 to 7).
 4. The indicators of Part 3, the map health panel, and the labeled benchmark.
 5. The extension's read slice and gap layer, then *Record a test* (Part 4, items 1 and 2).
@@ -252,11 +260,10 @@ Map, and its page keys were made equal to the map's precisely so the two could b
 
 ## Open questions
 
-1. Should *API-only route* survive Part 1 at all, or fold into a property of the route node?
-2. Is the hub threshold a share of tests, a share of features, or both?
-3. Does explored surface count toward *declared, never hit*, or only toward its own detector?
-4. Where does escape lift live: per project on the Gaps tab, or per instance on the admin page next to precision?
-5. Should the benchmark labels live in the model module, or in a separate fixture a contributor can extend?
+1. Is the hub threshold a share of tests, a share of features, or both?
+2. Does explored surface count toward *declared, never hit*, or only toward its own detector?
+3. Where does escape lift live: per project on the Gaps tab, or per instance on the admin page next to precision?
+4. Should the benchmark labels live in the model module, or in a separate fixture a contributor can extend?
 
 ## Not in this plan
 
