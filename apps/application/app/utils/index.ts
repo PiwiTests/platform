@@ -26,6 +26,13 @@ export const SENTENCE_LINK_CLASS = 'underline decoration-dotted underline-offset
 export const CODE_CHIP_CLASS = 'font-mono rounded-md border border-default bg-elevated px-1 box-decoration-clone';
 
 /**
+ * The color of a card's header icon: `SectionCard`'s default, and the cards that
+ * draw their own header (the evidence card). Every header icon is marked
+ * `data-card-icon`.
+ */
+export const CARD_ICON_CLASS = 'text-primary';
+
+/**
  * The selected tab of a content-level tab strip: a neutral raised surface and the
  * strongest text, never the primary color, which belongs to the page's primary
  * action. The evidence card's tab strip uses it.

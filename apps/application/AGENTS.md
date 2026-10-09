@@ -302,7 +302,12 @@ text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts,
   actions. A selected tab, a pressed switch or a selected row is neutral too, never `primary`: `SELECTED_TAB_CLASS`
   (`app/utils/index.ts`) for a tab strip, `SEGMENTED_SELECTED_CLASS` for a segmented control or view switch,
   `SELECTED_ROW_CLASS` for the row that picks what the page shows, and `CURRENT_ITEM_RING_CLASS` for the current
-  item in a strip of status-colored marks (this execution in its history, this attempt among the retries).
+  item in a strip of status-colored marks (this execution in its history, this attempt among the retries). On the
+  failure pages two tests hold it: `tests/unit/evidence-accent.test.ts` refuses a raw red, orange or green shade and
+  a primary class outside `hover:` and `focus-visible:` in the evidence card's and the affected tests' components
+  (add a new one to its list), and `tests/failure-page-accent.spec.ts` checks that nothing rendered in them changes
+  with the primary color and that the page shows at most one solid primary button. A card's header icon
+  (`CARD_ICON_CLASS`, marked `data-card-icon`) is the one exception.
 - **Links inside a sentence keep the sentence's color**: `underline decoration-dotted underline-offset-2
 hover:decoration-solid`. `text-primary` links belong in navigation lists and tables, not in prose.
 - **Badges are for exceptions, at most two per screen** — the status chip and one exceptional state (_Quarantined_, a
@@ -365,8 +370,10 @@ emerald / amber / rose. Never write a pass-rate threshold or color at a call sit
   request list) is a `DurationValue`, never `Math.round(ms) + ' ms'`, and is colored only when `durationStandout`
   (`#shared/duration-standout`) says it stands out in its test or against its usual time (the `usual` the timeline
   sends with it, from `getUsualDurations`), in the one tone of `app/utils/duration-tone.ts`. Never color it by a fixed
-  threshold at the call site. The Timeline and the Network tab read the timeline through `useExecutionTimeline`, one
-  key per execution. Web Vitals keep their standard rating bands, in `text-error` and the warning tone.
+  threshold at the call site; `tests/timeline-durations.spec.ts` checks which durations stand out, and
+  `tests/unit/evidence-accent.test.ts` refuses a raw red, orange or green shade in the evidence card's components. The
+  Timeline and the Network tab read the timeline through `useExecutionTimeline`, one key per execution. Web Vitals keep
+  their standard rating bands, in `text-error` and the warning tone.
 - **Absolute timestamps render client-only**: `prettyDateFormat` output never appears in SSR'd markup (the server host
   and the browser rarely share a time zone). Render the date with `ClientDate`, and wrap title-tooltip spans that bind
   `prettyDateFormat` in `ClientOnly`. The same holds for anything formatted with the browser's locale
