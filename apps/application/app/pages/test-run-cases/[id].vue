@@ -860,7 +860,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
         />
 
         <!-- ── Evidence ───────────────────────────────────────────────── -->
-        <div ref="evidenceEl" class="scroll-mt-4">
+        <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
+        <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
           <EvidenceTabs
             ref="evidenceTabs"
             :test-case="testCase"
@@ -876,14 +877,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
         </div>
 
         <!-- ── More ways to fix ───────────────────────────────────────── -->
-        <div class="scroll-mt-4">
-          <Toolbox
-            v-if="showFix"
-            ref="toolbox"
-            :sections="fixSections"
-            :next-step-kind="nextStep?.kind ?? null"
-            help="fix.toolbox"
-          >
+        <div v-if="showFix" class="scroll-mt-4">
+          <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
             <template #diagnosis-summary>{{ diagnosisSummary }}</template>
             <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
             <template #verify-summary>{{ verifySummary }}</template>
