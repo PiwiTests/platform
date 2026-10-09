@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui';
 import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from '~~/types/api';
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
@@ -501,26 +502,35 @@ function onIssueCreated() {
 }
 
 // ── Navbar More menu ────────────────────────────────────────────────────────
-const moreMenuItems = computed(() => {
-  const items: {
-    label: string;
-    icon: string;
-    color?: 'warning';
-    to?: string;
-    target?: '_blank';
-    onSelect?: () => void;
-  }[] = [];
-  // The retry command also appears on the next-step line (for code-change
-  // steps) and in the Verify section.
-  if (retryCommand.value && !desktopBridge.value) {
-    items.push({
-      label: 'Copy retry command',
-      icon: 'i-lucide-clipboard',
-      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
+// Grouped as on the cluster page: the ticket, the test actions, the copies, then
+// Refresh.
+const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
+  // The cluster's ticket: open it, or file or link one. The links of the
+  // execution, its test and its run are edited in the facts line's Details.
+  const issue: DropdownMenuItem[] = [];
+  if (knownIssue.value) {
+    issue.push({
+      label: `Open ${knownIssue.value.key}`,
+      icon: getProviderIcon(knownIssue.value.provider as LinkProvider),
+      to: safeHttpUrl(knownIssue.value.url) ?? undefined,
+      target: '_blank',
     });
+  } else if (canFileIssue.value && failureCluster.value?.issueFilingQueued) {
+    issue.push({
+      label: 'Filing queued · Retry',
+      icon: 'i-lucide-clock',
+      onSelect: () => (issueModalOpen.value = true),
+    });
+  } else if (canFileIssue.value && failureCluster.value) {
+    issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
   }
+  if (canEditLinks.value && failureCluster.value) {
+    issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
+  }
+
+  const testActions: DropdownMenuItem[] = [];
   if (canQuarantine.value && testCase.value?.testCaseId) {
-    items.push(
+    testActions.push(
       quarantined.value
         ? {
             label: 'Release from quarantine',
@@ -536,30 +546,21 @@ const moreMenuItems = computed(() => {
           },
     );
   }
-  // The cluster's ticket: open it, or file or link one. The links of the
-  // execution, its test and its run are edited in the facts line's Details.
-  if (knownIssue.value) {
-    items.push({
-      label: `Open ${knownIssue.value.key}`,
-      icon: getProviderIcon(knownIssue.value.provider as LinkProvider),
-      to: safeHttpUrl(knownIssue.value.url) ?? undefined,
-      target: '_blank',
+
+  const copies: DropdownMenuItem[] = [];
+  if (testCase.value?.error) copies.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
+  // The retry command also appears on the next-step line (for code-change
+  // steps) and in the Verify section.
+  if (retryCommand.value && !desktopBridge.value) {
+    copies.push({
+      label: 'Copy retry command',
+      icon: 'i-lucide-clipboard',
+      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
-  } else if (canFileIssue.value && failureCluster.value?.issueFilingQueued) {
-    items.push({
-      label: 'Filing queued · Retry',
-      icon: 'i-lucide-clock',
-      onSelect: () => (issueModalOpen.value = true),
-    });
-  } else if (canFileIssue.value && failureCluster.value) {
-    items.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
   }
-  if (canEditLinks.value && failureCluster.value) {
-    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
-  }
-  if (testCase.value?.error) items.push({ label: 'Copy failure', icon: 'i-lucide-clipboard', onSelect: copyFailure });
-  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
-  return items;
+
+  const refreshItem: DropdownMenuItem = { label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() };
+  return [issue, testActions, copies, [refreshItem]].filter((group) => group.length > 0);
 });
 
 // ── Live streaming ──────────────────────────────────────────────────────────

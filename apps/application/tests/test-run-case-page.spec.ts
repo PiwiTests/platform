@@ -197,6 +197,18 @@ test.describe('Test-run-case page', () => {
     // It is reachable in the More actions menu.
     await page.getByRole('button', { name: 'More actions' }).click();
     await expect(page.getByRole('menuitem', { name: /Copy retry command/ })).toBeVisible();
+
+    // The menu groups the ticket, the test actions, the copies, then Refresh, as
+    // on the cluster page.
+    const menu = page.getByRole('menu');
+    const items = menu.getByRole('menuitem');
+    await expect(items.last()).toHaveText('Refresh');
+    const order = ['Link an issue', 'Quarantine this test', 'Copy failure', 'Copy retry command', 'Refresh'];
+    const labels = (await items.allInnerTexts()).map((t) => t.trim());
+    expect(labels.filter((label) => order.includes(label))).toEqual(order);
+    const groups = menu.getByRole('group');
+    await expect(groups).toHaveCount(4);
+    await expect(groups.last().getByRole('menuitem')).toHaveText(['Refresh']);
   });
 
   test('the Performance tab opens and shows its Web Vitals block', async ({ page }) => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui';
 import { describeCluster, clusterSignatureLine, headlineAddsValue } from '#shared/describe-cluster';
 import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
 import { parsePlaywrightError } from '#shared/error-parse';
@@ -408,69 +409,69 @@ function copyFixPlanMarkdown() {
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
 
-const moreMenuItems = computed(() => {
-  const items: {
-    label: string;
-    icon: string;
-    color?: 'warning';
-    to?: string;
-    target?: '_blank';
-    disabled?: boolean;
-    onSelect?: () => void;
-  }[] = [];
+// Grouped as on the execution page: the ticket, the test actions, the copies,
+// then Refresh.
+const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
   // The ticket first: open it, or file or link one, from any scroll depth.
+  const issue: DropdownMenuItem[] = [];
   if (knownIssue.value) {
-    items.push({
+    issue.push({
       label: `Open ${knownIssue.value.key}`,
       icon: getProviderIcon(knownIssue.value.provider as LinkProvider),
       to: safeHttpUrl(knownIssue.value.url) ?? undefined,
       target: '_blank',
     });
   } else if (canFileIssue.value && cluster.value?.issueFilingQueued) {
-    items.push({
+    issue.push({
       label: 'Filing queued · Retry',
       icon: 'i-lucide-clock',
       onSelect: () => (issueModalOpen.value = true),
     });
   } else if (canFileIssue.value) {
-    items.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
+    issue.push({ label: 'Create issue', icon: 'i-lucide-file-plus', onSelect: () => (issueModalOpen.value = true) });
   }
   if (canLinkIssue.value) {
-    items.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
+    issue.push({ label: 'Link an issue', icon: 'i-lucide-link', onSelect: () => (linkIssueOpen.value = true) });
   }
+
+  const testActions: DropdownMenuItem[] = [];
   if (canQuarantine.value && pendingQuarantine.value.length > 0)
-    items.push({
+    testActions.push({
       label: 'Quarantine all affected tests',
       icon: 'i-lucide-shield-alert',
       color: 'warning',
       onSelect: () => quarantineAll.value?.trigger(),
     });
-  if (aiStatus.value?.configured)
-    items.push({
-      label: 'Show context',
-      icon: 'i-lucide-eye',
-      onSelect: () => void onDiagnosisPanel((panel) => panel.openContext()),
-    });
-  items.push({
-    label: 'Copy prompt',
-    icon: 'i-lucide-clipboard-copy',
-    onSelect: () => void copyAiPrompt(diagnosisContextEndpoint),
-  });
   if (canRerun.value && rerunInfo.value?.available)
-    items.push({
+    testActions.push({
       label: 'Re-run in CI',
       icon: 'i-lucide-refresh-cw',
       onSelect: () => void triggerRerun(),
     });
+
+  const copies: DropdownMenuItem[] = [
+    { label: 'Copy summary', icon: 'i-lucide-clipboard-list', onSelect: copyCluster },
+  ];
   if (rerunInfo.value?.available && retryCommand.value)
-    items.push({
+    copies.push({
       label: 'Copy retry command',
       icon: 'i-lucide-clipboard',
       onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
     });
-  items.push({ label: 'Copy summary', icon: 'i-lucide-clipboard-list', onSelect: copyCluster });
-  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: refresh });
-  return items;
+  if (aiStatus.value?.configured)
+    copies.push({
+      label: 'Show context',
+      icon: 'i-lucide-eye',
+      onSelect: () => void onDiagnosisPanel((panel) => panel.openContext()),
+    });
+  copies.push({
+    label: 'Copy prompt',
+    icon: 'i-lucide-clipboard-copy',
+    onSelect: () => void copyAiPrompt(diagnosisContextEndpoint),
+  });
+
+  const refreshItem: DropdownMenuItem = { label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: refresh };
+  return [issue, testActions, copies, [refreshItem]].filter((group) => group.length > 0);
 });
 
 // ── Section locator ──────────────────────────────────────────────────────────

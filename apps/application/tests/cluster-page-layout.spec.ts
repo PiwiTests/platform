@@ -159,6 +159,24 @@ test.describe('Failure cluster page layout', () => {
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('REQUEST');
   });
 
+  test('More actions lists the ticket, the test actions, the copies, then Refresh', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'More actions' }).click();
+
+    // The same grouping and order as the execution page's menu.
+    const menu = page.getByRole('menu');
+    const items = menu.getByRole('menuitem');
+    await expect(items.last()).toHaveText('Refresh');
+    const order = ['Link an issue', 'Quarantine all affected tests', 'Copy summary', 'Copy prompt', 'Refresh'];
+    const labels = (await items.allInnerTexts()).map((t) => t.trim());
+    expect(labels.filter((label) => order.includes(label))).toEqual(order);
+    // One group each, Refresh alone in the last.
+    const groups = menu.getByRole('group');
+    await expect(groups).toHaveCount(4);
+    await expect(groups.last().getByRole('menuitem')).toHaveText(['Refresh']);
+  });
+
   test('selecting an affected test offers "Move to a new cluster"', async ({ page }) => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
