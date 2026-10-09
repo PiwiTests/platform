@@ -745,7 +745,15 @@ const breadcrumbItems = computed(() => [
                   <NuxtLink :to="`/test-cases/${singleTest.testCaseId}`" :class="SENTENCE_LINK_CLASS">{{
                     singleTest.title
                   }}</NuxtLink
-                  >{{ occurrenceSpanText }}</template
+                  >{{ occurrenceSpanText
+                  }}<template v-if="singleTest.quarantined">
+                    ·
+                    <span
+                      data-shot="single-test-quarantined"
+                      title="Still runs and reports, but excluded from the CI gate's verdict"
+                      >quarantined</span
+                    ></template
+                  ></template
                 >
                 <template v-else>{{ occurrenceCountText }}</template>
                 <ClientOnly

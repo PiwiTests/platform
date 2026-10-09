@@ -147,7 +147,10 @@ test.describe('Failure cluster page layout', () => {
     await expect(subject).toContainText(otherTitle);
   });
 
-  test('a cluster with one affected test names it in the occurrence line, with no selector', async ({ page }) => {
+  test('a cluster with one affected test names it in the occurrence line, with no selector', async ({
+    page,
+    request,
+  }) => {
     await page.goto(`/failure-clusters/${singleClusterId}`);
     await waitForHydration(page);
 
@@ -156,6 +159,23 @@ test.describe('Failure cluster page layout', () => {
     const testLink = block.getByRole('link', { name: 'session expires after the idle limit' });
     await expect(testLink).toHaveAttribute('href', /\/test-cases\/\d+/);
     await expect(page.locator('[data-shot="evidence-subject"]')).toContainText('session expires after the idle limit');
+    await expect(block.locator('[data-shot="single-test-quarantined"]')).toHaveCount(0);
+
+    // With no Affected tests list to badge it, the occurrence line says the test is quarantined.
+    const detail = (await (await request.get(`/api/failure-clusters/${singleClusterId}`)).json()) as {
+      project: { id: number };
+      affectedTestCases: Array<{ testCaseId: number }>;
+    };
+    const testCaseId = detail.affectedTestCases[0]!.testCaseId;
+    const quarantine = `/api/projects/${detail.project.id}/quarantine`;
+    expect((await request.post(quarantine, { data: { testCaseId, reason: 'layout test' } })).ok()).toBeTruthy();
+    try {
+      await page.reload();
+      await waitForHydration(page);
+      await expect(block.locator('[data-shot="single-test-quarantined"]')).toHaveText('quarantined');
+    } finally {
+      await request.delete(`${quarantine}/${testCaseId}`);
+    }
   });
 
   test('a headline that says more than the name is the h1, with the name under it', async ({ page }) => {

@@ -77,13 +77,13 @@ signed-in user (by name or email).
 ## The cluster page
 
 A cluster page leads with a failing execution's situation block ([Your first
-failure](/guide/first-failure)), across every test that shares the failure. The heading is the latest failure's
+failure](/guide/first-failure)), across every test sharing the failure. The heading is the latest failure's
 headline when it says more (a timeout, a count) than the cluster's [name](./ai-diagnosis), which sits under it.
 Three lines are cluster-specific:
 
 - **The state line**, right above **Next**.
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*;
-  a single test is named.
+  a single test is named, *quarantined* if it is.
 - **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
   **See the changes** for the diff. When setup is missing (runs that record no commit or repository URL, a host Piwi
   does not read, or an [SCM token](/guide/source-control) missing or refused), it shows the range, the host's error
@@ -103,8 +103,8 @@ applies*, *stopped failing*, *regressed, the fix did not hold*, *resolved*, *ign
 quarantined*. When an open cluster stopped failing, or its ticket is Done and the latest finished run no longer fails
 it, the page offers **one action**, *Mark resolved*, which a fix whose patch still applies keeps in the **Next** menu;
 a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. Beside it, **Triage** sets the status (open /
-resolved / ignored), a note and the assignee, and [snoozes](#snoozing) the cluster. Every status change keeps the
-triage note and the lines Piwi added to it.
+resolved / ignored), a note and the assignee, and [snoozes](#snoozing) the cluster. A status change keeps the
+triage note and the lines Piwi added.
 
 ### Occurrences over time
 
