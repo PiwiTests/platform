@@ -3,7 +3,6 @@ import {
   renderScenarioDraft,
   detectControlNobodyExercises,
   detectReachableUnvisited,
-  detectApiOnlyRoute,
   detectNotNoticed,
   detectOrphanTest,
   detectFixDidNotHold,
@@ -52,17 +51,6 @@ describe('detectReachableUnvisited', () => {
     ]);
     expect(gaps.map((g) => g.key)).toEqual(['page:/billing']);
     expect(gaps[0]!.evidence[0]).toContain('7 pages');
-  });
-});
-
-describe('detectApiOnlyRoute', () => {
-  test('flags a reached route with no trigger and no load', () => {
-    const gaps = detectApiOnlyRoute([
-      { key: 'POST /api/exports', reached: true, hasTrigger: false, hasLoad: false },
-      { key: 'POST /api/orders', reached: true, hasTrigger: true, hasLoad: false },
-      { key: 'GET /api/unused', reached: false, hasTrigger: false, hasLoad: false },
-    ]);
-    expect(gaps.map((g) => g.key)).toEqual(['route:POST /api/exports']);
   });
 });
 

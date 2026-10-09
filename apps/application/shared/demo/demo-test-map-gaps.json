@@ -1,141 +1,5 @@
 [
   {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:GET /api/auth/sso/callback",
-    "title": "GET /api/auth/sso/callback is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:GET /api/reports/exports/:id",
-    "title": "GET /api/reports/exports/:id is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:PATCH /api/orgs/current",
-    "title": "PATCH /api/orgs/current is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:POST /api/auth/sso/start",
-    "title": "POST /api/auth/sso/start is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:POST /api/invitations",
-    "title": "POST /api/invitations is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:POST /api/reports/exports",
-    "title": "POST /api/reports/exports is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:POST /api/tokens/:id/rotate",
-    "title": "POST /api/tokens/:id/rotate is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
-    "detector": "api-only-route",
-    "class": "blind-spot",
-    "key": "route:PUT /api/me/preferences",
-    "title": "PUT /api/me/preferences is reached only by request fixtures",
-    "evidence": [
-      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.034999999999999996,
-    "test": null
-  },
-  {
     "detector": "declared-never-hit",
     "class": "blind-spot",
     "key": "route:DELETE /api/invitations/:id",
@@ -472,38 +336,6 @@
     "test": null
   },
   {
-    "detector": "reachable-unvisited",
-    "class": "blind-spot",
-    "key": "page:/users/invite",
-    "title": "/users/invite is linked but never visited",
-    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.05,
-    "test": null
-  },
-  {
-    "detector": "single-covering-test",
-    "class": "fragile",
-    "key": "page:/login",
-    "title": "Only one test reaches page /login",
-    "evidence": [
-      "Only shows an error for a revoked account reaches this — observed reach. A second scenario would make it resilient."
-    ],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.05,
-    "test": "shows an error for a revoked account"
-  },
-  {
     "detector": "single-covering-test",
     "class": "fragile",
     "key": "page:/settings/api-tokens",
@@ -523,10 +355,27 @@
   {
     "detector": "single-covering-test",
     "class": "fragile",
-    "key": "page:/settings/organization",
-    "title": "Only one test reaches page /settings/organization",
+    "key": "page:/settings/appearance",
+    "title": "No trusted test reaches page /settings/appearance",
     "evidence": [
-      "Only updates the organization name reaches this — observed reach. A second scenario would make it resilient."
+      "Only toggles dark mode (flaky) reaches this — observed reach. A trusted scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": "toggles dark mode"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "page:/users/invite",
+    "title": "Only one test reaches page /users/invite",
+    "evidence": [
+      "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
     ],
     "factors": {
       "churn": 0.1,
@@ -535,7 +384,24 @@
       "priority": 0.1
     },
     "score": 0.05,
-    "test": "updates the organization name"
+    "test": "invites a user by email"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:GET /api/me/preferences",
+    "title": "No trusted test reaches route GET /api/me/preferences",
+    "evidence": [
+      "Only toggles dark mode (flaky) reaches this — observed reach. A trusted scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": "toggles dark mode"
   },
   {
     "detector": "single-covering-test",
@@ -638,6 +504,23 @@
     },
     "score": 0.05,
     "test": "rotates the API token"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:PUT /api/me/preferences",
+    "title": "No trusted test reaches route PUT /api/me/preferences",
+    "evidence": [
+      "Only toggles dark mode (flaky) reaches this — observed reach. A trusted scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": "toggles dark mode"
   },
   {
     "detector": "success-only",
@@ -883,8 +766,8 @@
     "detector": "surface-drift",
     "class": "blind-spot",
     "key": "link:link:Single sign-on",
-    "title": "New link link:Single sign-on — confirm it is tested",
-    "evidence": ["Appeared in run #73, reached by 0 tests so far — observed reach."],
+    "title": "New link Single sign-on — confirm it is tested",
+    "evidence": ["Appeared in run #73; no test reaches it yet — observed reach."],
     "factors": {
       "churn": 0.1,
       "age": 0.1,
@@ -899,7 +782,7 @@
     "class": "blind-spot",
     "key": "page:/settings/sso",
     "title": "New page /settings/sso — confirm it is tested",
-    "evidence": ["Appeared in run #73, reached by 0 tests so far — observed reach."],
+    "evidence": ["Appeared in run #73; no test reaches it yet — observed reach."],
     "factors": {
       "churn": 0.1,
       "age": 0.1,

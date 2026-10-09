@@ -83,6 +83,53 @@ describe('detectSingleCoveringTest — trusted reach only (F7)', () => {
     expect(out[0]!.testCaseId).toBe(1);
   });
 
+  test('a node only untrusted tests reach is raised, naming each test and why', () => {
+    const [gap, ...rest] = gaps.detectSingleCoveringTest([
+      {
+        nodeKind: 'page',
+        nodeKey: '/settings/appearance',
+        tests: [
+          { testCaseId: 3, title: 'toggles dark mode', trusted: false, untrustedReason: 'flaky' },
+          {
+            testCaseId: 4,
+            title: 'keeps the density',
+            priority: 'high',
+            trusted: false,
+            untrustedReason: 'quarantined',
+          },
+        ],
+      },
+    ]);
+    expect(rest).toEqual([]);
+    expect(gap!.class).toBe('fragile');
+    expect(gap!.title).toBe('No trusted test reaches page /settings/appearance');
+    expect(gap!.evidence[0]).toBe(
+      'Only keeps the density (quarantined) and toggles dark mode (flaky) reach this — observed reach. A trusted scenario would make it resilient.',
+    );
+    // The highest-priority test is the one the draft starts from.
+    expect(gap!.testCaseId).toBe(4);
+    expect(gap!.priority).toBe('high');
+  });
+
+  test('the evidence names three untrusted tests, counts the rest, and says which did not run', () => {
+    const [gap] = gaps.detectSingleCoveringTest([
+      {
+        nodeKind: 'page',
+        nodeKey: '/dashboard',
+        tests: [
+          { testCaseId: 5, title: 'e', trusted: false, untrustedReason: 'quarantined' },
+          { testCaseId: 1, title: 'a', trusted: false, untrustedReason: 'did-not-run' },
+          { testCaseId: 4, title: 'd', trusted: false, untrustedReason: 'flaky' },
+          { testCaseId: 2, title: 'b', trusted: false, untrustedReason: 'skipped' },
+        ],
+      },
+    ]);
+    expect(gap!.evidence[0]).toBe(
+      'Only a (did not run), b (skipped), d (flaky) and 1 more reach this — observed reach. A trusted scenario would make it resilient.',
+    );
+    expect(gap!.testCaseId).toBe(1);
+  });
+
   test('two trusted tests are not single-covered', () => {
     expect(
       gaps.detectSingleCoveringTest([
@@ -274,6 +321,50 @@ describe('computeScenarioGaps — trusted reach discounts flaky/quarantined (F7)
     const gap = list.find((r) => r.subject.key === 'GET /api/cart');
     expect(gap).toBeTruthy();
     expect(gap!.testCaseId).toBe(1);
+  });
+});
+
+describe('computeScenarioGaps — retired detectors and the first graph run', () => {
+  test('a retired detector’s open and accepted rows close with no run credited, a dismissed one keeps its verdict', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    const row = (key: string, status: string, extra: Record<string, unknown> = {}) => ({
+      projectId: 1,
+      detector: 'api-only-route',
+      class: 'blind-spot',
+      key,
+      title: `${key} is reached only by request fixtures`,
+      status,
+      ...extra,
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([
+        row('route:POST /a', 'open'),
+        row('route:POST /b', 'accepted', { acceptedAt: new Date() }),
+        row('route:POST /c', 'dismissed', { dismissReason: 'wrong' }),
+      ]);
+
+    await gaps.computeScenarioGaps(db, 1);
+    const rows = await db.select().from(schema.scenarioGaps).where(eq(schema.scenarioGaps.detector, 'api-only-route'));
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    expect(byKey.get('route:POST /a')).toMatchObject({ status: 'closed', closedByRunId: null });
+    expect(byKey.get('route:POST /b')).toMatchObject({ status: 'closed', closedByRunId: null });
+    expect(byKey.get('route:POST /c')).toMatchObject({ status: 'dismissed', dismissReason: 'wrong' });
+    expect((await loadDetectorPrecision(db, 1)).map((p) => p.detector)).not.toContain('api-only-route');
+  });
+
+  test('a pruned node still marks the run that built the graph, so later new surface drifts', async () => {
+    for (const id of [1, 5]) {
+      await db.insert(schema.testRuns).values({ id, projectId: 1, status: 'passed', startTime: new Date(id) });
+    }
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'page', key: '/old', firstSeenRunId: 1, lastSeenRunId: 1, prunedAt: new Date() },
+      { projectId: 1, kind: 'page', key: '/redesigned', firstSeenRunId: 5, lastSeenRunId: 5 },
+    ]);
+
+    await gaps.computeScenarioGaps(db, 1);
+    const drift = await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' });
+    expect(drift.map((g) => g.subject.key)).toEqual(['/redesigned']);
   });
 });
 

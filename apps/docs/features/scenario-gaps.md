@@ -117,8 +117,8 @@ to your channels. Agents list and draft gaps with
 
 ## What feeds the map
 
-Every run adds the routes its tests requested on the application's own origin and the page each test ended on. Three
-optional sources add the rest:
+Every run adds the routes its tests requested on the application's own origin and the pages they ran locator calls
+on or ended on. Three optional sources add the rest:
 
 - **The page inventory.** With `capturePageInventory` on (off by default), the reporter records the controls (role
   and accessible name) and links of each page a passing run visits, at most 200 of each per page, never a field

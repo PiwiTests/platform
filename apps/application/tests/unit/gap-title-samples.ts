@@ -39,6 +39,11 @@ export const GAP_TITLE_SAMPLES: Array<[detector: string, english: string, french
   ],
   ['single-covering-test', 'Only one test reaches route GET /api/cart', 'Un seul test atteint la route GET /api/cart'],
   [
+    'single-covering-test',
+    'No trusted test reaches page /settings/appearance',
+    'Aucun test fiable n’atteint la page /settings/appearance',
+  ],
+  [
     'surface-drift',
     'New page /billing/plans — confirm it is tested',
     `Nouvelle page /billing/plans${NBSP}: vérifier qu’elle est testée`,

@@ -48,6 +48,8 @@ import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { resolveStoredDefaultBranch, type DefaultBranchProject } from './scm/stored-default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
+import { resolveCasePayloadContents } from './case-payloads';
+import { parseStoredLocatorPages } from './locator-pages';
 import { isLabRun } from '#shared/handlers/probes';
 import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import type { DbClient as DB } from '../database';
@@ -56,7 +58,10 @@ import type { DbClient as DB } from '../database';
 export interface RunGraphReach {
   testCaseId: number;
   routes: Array<{ method: string; normalizedUrl: string; status: number; url?: string | null }>;
+  /** The URL of the page each execution ended on. */
   pages: string[];
+  /** The keys of the pages it ran locator calls on, which carry no URL of their own. */
+  visitedPages?: string[];
 }
 
 interface PendingNode {
@@ -84,15 +89,21 @@ function pageUrlOf(pageState: unknown): string | null {
   return typeof url === 'string' && url.length > 0 ? url : null;
 }
 
+/** The pages an execution ran locator calls on, as `piwi-locator-pages` records them. */
+type LocatorPagesOfRow = ReadonlyArray<{ origin: string; page: string }> | null | undefined;
+
 /**
  * Fold the per-execution rows of one run into per-test-case reach. A test that
  * ran several times (retries, browsers) contributes the union of what each
- * execution touched. When `origins` is given, only requests to one of those
- * origins become routes — third-party beacons and CDN assets are dropped before
- * the fold, so they never key a node.
+ * execution touched. A test reaches the page it ended on and every page it ran a
+ * locator call on. When `origins` is given, only requests and pages on one of
+ * those origins count — third-party beacons, CDN assets and redirects are
+ * dropped before the fold, so they never key a node. A locator page counts only
+ * against a known origin: its key has no host, so a third-party sign-in page
+ * would otherwise merge into the application's page of the same path.
  */
 export function collectRunGraphReaches(
-  rows: Array<{ testCaseId: number | null | undefined; pageState: unknown }>,
+  rows: Array<{ testCaseId: number | null | undefined; pageState: unknown; locatorPages?: LocatorPagesOfRow }>,
   networkBuilders: Array<{
     items: Array<{ method: string; normalizedUrl: string; status: number; url?: string | null }>;
   }>,
@@ -104,6 +115,7 @@ export function collectRunGraphReaches(
     {
       routes: Map<string, { method: string; normalizedUrl: string; status: number; url?: string | null }>;
       pages: Set<string>;
+      visitedPages: Set<string>;
     }
   >();
 
@@ -112,7 +124,7 @@ export function collectRunGraphReaches(
     if (testCaseId == null) continue;
     let entry = byCase.get(testCaseId);
     if (!entry) {
-      entry = { routes: new Map(), pages: new Set() };
+      entry = { routes: new Map(), pages: new Set(), visitedPages: new Set() };
       byCase.set(testCaseId, entry);
     }
     for (const item of networkBuilders[i]?.items ?? []) {
@@ -124,12 +136,18 @@ export function collectRunGraphReaches(
     // Own-origin pages only, like routes: a third-party redirect (checkout, OAuth)
     // is not this app's surface and must not become a page node.
     if (url && isOwnOriginRequest(url, origins)) entry.pages.add(url);
+    for (const use of rows[i]!.locatorPages ?? []) {
+      if (!origins.has(use.origin)) continue;
+      const key = pageNodeKey(use.page);
+      if (key) entry.visitedPages.add(key);
+    }
   }
 
   return [...byCase].map(([testCaseId, e]) => ({
     testCaseId,
     routes: [...e.routes.values()],
     pages: [...e.pages],
+    visitedPages: [...e.visitedPages],
   }));
 }
 
@@ -340,6 +358,23 @@ export async function ingestRunGraph(
       const key = pageNodeKey(url);
       if (!key) continue;
       addNode('page', key, { url });
+      addEdge({
+        fromKind: 'test',
+        fromKey: from,
+        toKind: 'page',
+        toKey: key,
+        kind: 'reaches',
+        confidence: 1,
+        evidence: null,
+      });
+    }
+  }
+  // Pages known only by their key come after every page with a URL, so a node
+  // keeps the real URL another test ended on; a null `attrs` leaves a stored one.
+  for (const reach of reaches) {
+    const from = testEndpointKey(reach.testCaseId);
+    for (const key of reach.visitedPages ?? []) {
+      addNode('page', key);
       addEdge({
         fromKind: 'test',
         fromKey: from,
@@ -735,10 +770,19 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
     // canonical graph — the same rule the live ingest path applies.
     if (isLabRun(run.metadata)) continue;
     const cases = await db
-      .select({ id: testRunsCases.id, testCaseId: testRunsCases.testCaseId, pageState: testRunsCases.pageState })
+      .select({
+        id: testRunsCases.id,
+        testCaseId: testRunsCases.testCaseId,
+        pageState: testRunsCases.pageState,
+        locatorPagesPayloadId: testRunsCases.locatorPagesPayloadId,
+      })
       .from(testRunsCases)
       .where(eq(testRunsCases.testRunId, run.id));
     if (cases.length === 0) continue;
+    const locatorPagePayloads = await resolveCasePayloadContents(
+      db,
+      cases.map((c) => c.locatorPagesPayloadId),
+    );
 
     const requests = await db
       .select({
@@ -769,7 +813,14 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
     if (origins.size === 0) origins = originsFromDocumentRequests(requests);
     const branch = project ? await resolveRunBranchTag(db, project, run.metadata, run.branch) : null;
 
-    const rows = cases.map((c) => ({ testCaseId: c.testCaseId, pageState: c.pageState }));
+    // Executions share content-addressed payloads, so each is parsed once.
+    const locatorPagesById = new Map<number, ReturnType<typeof parseStoredLocatorPages>>();
+    for (const [id, content] of locatorPagePayloads) locatorPagesById.set(id, parseStoredLocatorPages(content));
+    const rows = cases.map((c) => ({
+      testCaseId: c.testCaseId,
+      pageState: c.pageState,
+      locatorPages: c.locatorPagesPayloadId != null ? locatorPagesById.get(c.locatorPagesPayloadId) : null,
+    }));
     const builders = cases.map((c) => ({ items: byCase.get(c.id) ?? [] }));
     await ingestRunGraph(db, projectId, run.id, collectRunGraphReaches(rows, builders, { origins }), { branch });
     processed++;

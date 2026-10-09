@@ -3,7 +3,7 @@
  * product, ten tests against a surface many times their size.
  *
  * One model drives every row the seed writes for it: each test's requests and
- * the page it ends on, the inventory of the pages its passing runs visit, the
+ * the pages it runs locators on, the inventory of the pages its passing runs visit, the
  * handler and dependencies behind each route, the declared OpenAPI surface and
  * the probe outcomes. The gaps listed at the end are what the live detectors
  * find in that graph; `demo-test-map.test.ts` recomputes them from the seed and
@@ -181,9 +181,10 @@ const PAGES = {
 };
 
 /**
- * Each test's journey: the pages it visits in order, ending on the last, and the
- * requests it makes, as `[method, path, status]`. The seed writes the requests on
- * every execution and the last page as where the execution ended.
+ * Each test's journey: the pages it runs locators on in order, ending on the last,
+ * and the requests it makes, as `[method, path, status]`. The seed writes the
+ * requests on every execution and the last page as where the execution ended;
+ * the test reaches every page of its journey.
  */
 const WEB_DASHBOARD_JOURNEYS = {
   'signs in with SSO redirect': {
@@ -324,27 +325,21 @@ const DAY_MS = 86_400_000;
 
 /**
  * The team's verdicts on the detected gaps, by detector and key: the gap accepted
- * more than a week ago whose test was never written, a snoozed dependency, the
- * API-only routes dismissed as wrong (the controls that send them are clicked,
- * not loaded) and a page dismissed as not worth testing.
+ * more than a week ago whose test was never written, a snoozed dependency and a
+ * page dismissed as not worth testing.
  */
 const TRIAGE = {
   'success-only POST /api/invitations': { status: 'accepted', acceptedDaysAgo: 9 },
   'unprobed-dependency dependency:vault': { status: 'snoozed', snoozedForDays: 5 },
-  'api-only-route route:POST /api/auth/sso/start': { status: 'dismissed', reason: 'wrong' },
-  'api-only-route route:GET /api/auth/sso/callback': { status: 'dismissed', reason: 'wrong' },
-  'api-only-route route:PATCH /api/orgs/current': { status: 'dismissed', reason: 'wrong' },
-  'api-only-route route:POST /api/tokens/:id/rotate': { status: 'dismissed', reason: 'wrong' },
-  'api-only-route route:PUT /api/me/preferences': { status: 'dismissed', reason: 'wrong' },
   'reachable-unvisited page:/request-access': { status: 'dismissed', reason: 'not-worth-testing' },
 };
 
 const FLOOR_FACTORS = { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 };
 
 /**
- * Gaps the ledger has already closed, which the detectors no longer raise: the
- * dashboard page a second test was named as covering, and the callback route a
- * revoked-account test made answer 403.
+ * Gaps the ledger has closed, which the detectors do not raise: the dashboard
+ * page, once a second test's journey through it was recorded, and the callback
+ * route a revoked-account test made answer 403.
  */
 const CLOSED = [
   {
@@ -358,7 +353,7 @@ const CLOSED = [
     factors: { ...FLOOR_FACTORS, priority: 0.4 },
     score: 0.0707,
     test: 'signs in with SSO redirect',
-    coveredDaysAgo: 6,
+    closedDaysAgo: 6,
   },
   {
     detector: 'success-only',
@@ -493,10 +488,10 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
     for (const route of spec.loads) addEdge('page', page, 'loads', 'route', route);
   }
 
-  // Reach: every route a test requested, and the page it ended on.
+  // Reach: every route a test requested, and every page of its journey.
   const reachedBy = new Map(); // "kind\0key" → test titles
-  const reach = (title, kind, key, evidence = null, origin = 'observed') => {
-    addEdge('test', caseId(title), 'reaches', kind, key, { confidence: 1, origin, evidence });
+  const reach = (title, kind, key, evidence = null) => {
+    addEdge('test', caseId(title), 'reaches', kind, key, { confidence: 1, evidence });
     const id = `${kind}\x00${key}`;
     reachedBy.set(id, new Set([...(reachedBy.get(id) ?? []), title]));
   };
@@ -504,10 +499,8 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
     for (const request of journey.requests) {
       reach(title, 'route', routeKeyOf(request), { method: request[0], status: request[2] });
     }
-    reach(title, 'page', journey.pages[journey.pages.length - 1]);
+    for (const page of journey.pages) reach(title, 'page', page);
   }
-  // A covered-by verdict: the revenue chart test was named as covering the dashboard page.
-  reach('renders the revenue chart', 'page', '/dashboard', null, 'manual');
 
   // Features from the `piwi:feature` tag: each groups the routes and pages its tests reach.
   for (const [id, titles] of reachedBy) {
@@ -596,13 +589,12 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
     gaps.push(gapRow(gap, 'gap', extra));
   }
   for (const gap of CLOSED) {
-    const daysAgo = gap.coveredDaysAgo ?? gap.closedDaysAgo;
     gaps.push(
       gapRow(gap, 'gap', {
         status: 'closed',
-        closed_at: at - daysAgo * DAY_MS,
-        updated_at: at - daysAgo * DAY_MS,
-        ...(gap.coveredDaysAgo ? { covered_at: at - daysAgo * DAY_MS } : { closed_by_run_id: runIds[2] }),
+        closed_at: at - gap.closedDaysAgo * DAY_MS,
+        updated_at: at - gap.closedDaysAgo * DAY_MS,
+        closed_by_run_id: runIds[2],
       }),
     );
   }

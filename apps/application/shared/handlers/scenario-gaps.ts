@@ -8,7 +8,23 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  min,
+  ne,
+  not,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { z } from 'zod';
 import {
   failureClusters,
@@ -25,6 +41,7 @@ import {
 } from '../../server/database/schema';
 import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
 import { notLabRun } from './probes';
+import { RETIRED_DETECTORS } from './detector-precision';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -295,28 +312,55 @@ export function detectDeclaredNeverHit(nodes: DeclaredNode[], windowRuns = HISTO
   return gaps;
 }
 
+/** Why a test's reach is not trusted. */
+export type UntrustedReason = 'flaky' | 'quarantined' | 'skipped' | 'did-not-run';
+
+/** How an untrusted test is named in evidence. */
+const UNTRUSTED_LABEL: Record<UntrustedReason | 'untrusted', string> = {
+  flaky: 'flaky',
+  quarantined: 'quarantined',
+  skipped: 'skipped',
+  'did-not-run': 'did not run',
+  untrusted: 'untrusted',
+};
+
+/** The untrusted tests an evidence line names; the rest are counted. */
+const UNTRUSTED_NAMED = 3;
+
 /** A node's reach — which test cases observably exercise it. */
 export interface NodeReach {
   nodeKind: string;
   nodeKey: string;
   /**
    * Distinct test cases reaching this node, each with its display title.
-   * `trusted` is false for a flaky, quarantined or currently-skipped test;
-   * absent counts as trusted, so pure callers need not set it.
+   * `trusted` is false for a flaky, quarantined or currently-skipped test, and
+   * `untrustedReason` says which; absent counts as trusted, so pure callers need
+   * not set it.
    */
-  tests: Array<{ testCaseId: number; title: string; priority?: string | null; trusted?: boolean }>;
+  tests: Array<{
+    testCaseId: number;
+    title: string;
+    priority?: string | null;
+    trusted?: boolean;
+    untrustedReason?: UntrustedReason;
+  }>;
 }
 
 /**
- * Single covering test — a node reached by exactly one *trusted* test. Fragile:
- * one flaky test away from no coverage at all. Flaky, quarantined and skipped
- * tests are not trusted reach, so a node they alone reach still counts as
- * single-covered — and a trusted test plus a flaky one is single, not double.
+ * Single covering test — a node reached by exactly one *trusted* test, or by
+ * tests none of which is trusted. Fragile: one flaky test away from no coverage
+ * at all. Flaky, quarantined and skipped tests are not trusted reach, so a
+ * trusted test plus a flaky one is single, not double, and a node only untrusted
+ * tests reach is named with the reason each is not trusted.
  */
 export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
     const trustedTests = node.tests.filter((t) => t.trusted !== false);
+    if (trustedTests.length === 0 && node.tests.length > 0) {
+      gaps.push(untrustedOnlyGap(node));
+      continue;
+    }
     if (trustedTests.length !== 1) continue;
     const only = trustedTests[0]!;
     gaps.push({
@@ -324,7 +368,7 @@ export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
       kind: 'gap',
       class: 'fragile',
       key: `${node.nodeKind}:${node.nodeKey}`,
-      title: `Only one test reaches ${node.nodeKind} ${node.nodeKey}`,
+      title: `Only one test reaches ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)}`,
       evidence: [`Only ${only.title} reaches this — observed reach. A second scenario would make it resilient.`],
       confidence: 0.5,
       testCaseId: only.testCaseId,
@@ -332,6 +376,36 @@ export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
     });
   }
   return gaps;
+}
+
+/** The gap for a node only untrusted tests reach, naming each test and why it is not trusted. */
+function untrustedOnlyGap(node: NodeReach): DetectedGap {
+  // Highest priority first, then by title and id, so the evidence and the draft's
+  // starting test are the same on every recompute.
+  const tests = [...node.tests].sort(
+    (a, b) =>
+      priorityFactor(b.priority) - priorityFactor(a.priority) ||
+      a.title.localeCompare(b.title) ||
+      a.testCaseId - b.testCaseId,
+  );
+  const named = tests
+    .slice(0, UNTRUSTED_NAMED)
+    .map((t) => `${t.title} (${UNTRUSTED_LABEL[t.untrustedReason ?? 'untrusted']})`);
+  if (tests.length > UNTRUSTED_NAMED) named.push(`${tests.length - UNTRUSTED_NAMED} more`);
+  const list = named.length === 1 ? named[0]! : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+  return {
+    detector: 'single-covering-test',
+    kind: 'gap',
+    class: 'fragile',
+    key: `${node.nodeKind}:${node.nodeKey}`,
+    title: `No trusted test reaches ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)}`,
+    evidence: [
+      `Only ${list} ${tests.length === 1 ? 'reaches' : 'reach'} this — observed reach. A trusted scenario would make it resilient.`,
+    ],
+    confidence: 0.6,
+    testCaseId: tests[0]!.testCaseId,
+    priority: tests[0]!.priority ?? null,
+  };
 }
 
 /** A node with its first- and last-seen runs and reach count. */
@@ -344,23 +418,38 @@ export interface NodeDrift {
 }
 
 /**
- * Surface drift — a node first seen in the latest run. New surface the suite may
- * not yet exercise deliberately; the reach count is stated honestly.
+ * A node's name in a gap title. Link keys carry their own `link:` prefix, which
+ * the title's kind word already says.
  */
-export function detectSurfaceDrift(nodes: NodeDrift[], latestRunId: number | null): DetectedGap[] {
-  if (latestRunId == null) return [];
+function nodeLabel(kind: string, key: string): string {
+  return key.startsWith(`${kind}:`) ? key.slice(kind.length + 1) : key;
+}
+
+/**
+ * Surface drift — a node first seen in the latest run that no test reaches: new
+ * surface the suite does not exercise yet. A new node a test already reaches is
+ * covered, not drift. Features are derived from test tags, not surface, so they
+ * never drift; and the run that built the project's graph first
+ * (`firstGraphRunId`) has nothing to compare with, so every node it saw is the
+ * baseline, not drift.
+ */
+export function detectSurfaceDrift(
+  nodes: NodeDrift[],
+  latestRunId: number | null,
+  firstGraphRunId: number | null = null,
+): DetectedGap[] {
+  if (latestRunId == null || latestRunId === firstGraphRunId) return [];
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
     if (node.firstSeenRunId !== latestRunId) continue;
+    if (node.nodeKind === 'feature' || node.reachCount > 0) continue;
     gaps.push({
       detector: 'surface-drift',
       kind: 'gap',
       class: 'blind-spot',
       key: `${node.nodeKind}:${node.nodeKey}`,
-      title: `New ${node.nodeKind} ${node.nodeKey} — confirm it is tested`,
-      evidence: [
-        `Appeared in run #${latestRunId}, reached by ${node.reachCount} test${node.reachCount === 1 ? '' : 's'} so far — observed reach.`,
-      ],
+      title: `New ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)} — confirm it is tested`,
+      evidence: [`Appeared in run #${latestRunId}; no test reaches it yet — observed reach.`],
       confidence: 0.4,
       priority: node.priority ?? null,
     });
@@ -482,37 +571,6 @@ export function detectReachableUnvisited(pages: PageLinkReach[]): DetectedGap[] 
         `Linked from ${p.linkedFrom} page${p.linkedFrom === 1 ? '' : 's'} · never navigated to — observed reach.`,
       ],
       confidence: clamp01(0.4 + Math.min(0.4, p.linkedFrom / 10)),
-    });
-  }
-  return gaps;
-}
-
-/** A route node, whether a test reaches it, and whether a control/page drives it. */
-export interface RouteEntryReach {
-  key: string;
-  reached: boolean;
-  hasTrigger: boolean;
-  hasLoad: boolean;
-}
-
-/**
- * API-only route — a route the suite reaches only through request fixtures: no
- * control triggers it and no page loads it. Blind spot (or headless by design).
- */
-export function detectApiOnlyRoute(routes: RouteEntryReach[]): DetectedGap[] {
-  const gaps: DetectedGap[] = [];
-  for (const r of routes) {
-    if (!r.reached || r.hasTrigger || r.hasLoad) continue;
-    gaps.push({
-      detector: 'api-only-route',
-      kind: 'gap',
-      class: 'blind-spot',
-      key: `route:${r.key}`,
-      title: `${r.key} is reached only by request fixtures`,
-      evidence: [
-        `No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design.`,
-      ],
-      confidence: 0.35,
     });
   }
   return gaps;
@@ -1189,8 +1247,14 @@ async function latestExecutionStatus(db: DrizzleDB, ids: number[]): Promise<Map<
  * was skipped or did-not-run. Such a test is a fragile single cover, never a
  * second trusted one, so single-covering-test discounts it.
  */
-async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: number[]): Promise<Set<number>> {
-  const untrusted = new Set<number>();
+async function loadUntrustedTests(
+  db: DrizzleDB,
+  projectId: number,
+  ids: number[],
+): Promise<Map<number, UntrustedReason>> {
+  // Later reasons win: a test that did not run says more than a quarantine, and a
+  // quarantine more than a flaky classification.
+  const untrusted = new Map<number, UntrustedReason>();
   if (ids.length === 0) return untrusted;
   for (let i = 0; i < ids.length; i += 200) {
     const slice = ids.slice(i, i + 200);
@@ -1200,7 +1264,7 @@ async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: numbe
       .where(
         and(eq(testCases.projectId, projectId), inArray(testCases.id, slice), isNotNull(testCases.flakyRootCause)),
       );
-    for (const r of flaky) untrusted.add(r.id);
+    for (const r of flaky) untrusted.set(r.id, 'flaky');
     const quarantined = await db
       .select({ id: quarantinedTests.testCaseId })
       .from(quarantinedTests)
@@ -1211,12 +1275,35 @@ async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: numbe
           isNull(quarantinedTests.releasedAt),
         ),
       );
-    for (const r of quarantined) untrusted.add(r.id);
+    for (const r of quarantined) untrusted.set(r.id, 'quarantined');
   }
   for (const [id, status] of await latestExecutionStatus(db, ids)) {
-    if (status === 'skipped' || status === 'didnotrun' || status === 'didnot-run') untrusted.add(id);
+    if (status === 'skipped') untrusted.set(id, 'skipped');
+    else if (status === 'didnotrun' || status === 'didnot-run') untrusted.set(id, 'did-not-run');
   }
   return untrusted;
+}
+
+/**
+ * The run that first built the project's graph: the earliest first-seen run of
+ * its observed, canonical surface, pruned nodes included, so a later sweep does
+ * not move it. Features (written by the recompute), declared nodes (stamped on
+ * ingest) and code-reach files are not observed surface.
+ */
+async function loadFirstGraphRunId(db: DrizzleDB, projectId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ first: min(graphNodes.firstSeenRunId) })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        isNull(graphNodes.branch),
+        ne(graphNodes.kind, 'feature'),
+        notInArray(graphNodes.origin, ['manifest', 'openapi']),
+        not(and(eq(graphNodes.kind, 'file'), eq(graphNodes.origin, 'coverage'))!),
+      ),
+    );
+  return row?.first ?? null;
 }
 
 /**
@@ -1333,7 +1420,7 @@ export async function computeScenarioGaps(
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
-  const untrustedTests = await loadUntrustedTestIds(db, projectId, [...testIds]);
+  const untrustedTests = await loadUntrustedTests(db, projectId, [...testIds]);
 
   // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
   // so vanished surface neither reaches detectors nor re-flags as drift.
@@ -1413,6 +1500,7 @@ export async function computeScenarioGaps(
         title: meta.get(id)?.title ?? `test ${id}`,
         priority: meta.get(id)?.priority ?? null,
         trusted: !untrustedTests.has(id),
+        untrustedReason: untrustedTests.get(id),
       })),
     });
     // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
@@ -1430,7 +1518,7 @@ export async function computeScenarioGaps(
   }
 
   // Breadth edges the graph detectors read: contains (page → control), links
-  // (page → page), triggers/loads (into a route) and checks (probe outcomes).
+  // (page → page), checks (probe outcomes), handled-by and calls.
   const breadthEdges = await db
     .select({
       kind: graphEdges.kind,
@@ -1444,15 +1532,13 @@ export async function computeScenarioGaps(
     .where(
       and(
         eq(graphEdges.projectId, projectId),
-        inArray(graphEdges.kind, ['contains', 'links', 'triggers', 'loads', 'checks', 'calls', 'handled-by']),
+        inArray(graphEdges.kind, ['contains', 'links', 'checks', 'calls', 'handled-by']),
         edgeBranchScope,
       ),
     );
 
   const pagesByControl = new Map<string, Set<string>>(); // control key → containing pages
   const linkSourcesByPage = new Map<string, Set<string>>(); // target page → source pages
-  const triggeredRoutes = new Set<string>();
-  const loadedRoutes = new Set<string>();
   // Every checks edge per route, kept per probing test so opposite outcomes on
   // one route are reduced deterministically rather than overwriting each other.
   const checksByRoute = new Map<string, Array<{ testKey: string; outcome: string; fault: string | null }>>();
@@ -1468,10 +1554,6 @@ export async function computeScenarioGaps(
       const set = linkSourcesByPage.get(e.toKey) ?? new Set<string>();
       set.add(e.fromKey);
       linkSourcesByPage.set(e.toKey, set);
-    } else if (e.kind === 'triggers' && e.toKind === 'route') {
-      triggeredRoutes.add(e.toKey);
-    } else if (e.kind === 'loads' && e.toKind === 'route') {
-      loadedRoutes.add(e.toKey);
     } else if (e.kind === 'handled-by' && e.fromKind === 'route' && e.toKind === 'handler') {
       const set = routesByHandler.get(e.toKey) ?? new Set<string>();
       set.add(e.fromKey);
@@ -1518,7 +1600,6 @@ export async function computeScenarioGaps(
 
   const controlReach: ControlReach[] = [];
   const pageLinkReach: PageLinkReach[] = [];
-  const routeEntryReach: RouteEntryReach[] = [];
   for (const node of nodeRows) {
     const nodeKey = `${node.kind}\x00${node.key}`;
     const reachCount = reachByNode.get(nodeKey)?.size ?? 0;
@@ -1534,13 +1615,6 @@ export async function computeScenarioGaps(
         key: node.key,
         reached: reachCount > 0,
         linkedFrom: linkSourcesByPage.get(node.key)?.size ?? 0,
-      });
-    } else if (node.kind === 'route') {
-      routeEntryReach.push({
-        key: node.key,
-        reached: reachCount > 0,
-        hasTrigger: triggeredRoutes.has(node.key),
-        hasLoad: loadedRoutes.has(node.key),
       });
     }
   }
@@ -1610,10 +1684,9 @@ export async function computeScenarioGaps(
     ...detectReportedBugEscapes(openReports),
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(nodeReach),
-    ...detectSurfaceDrift(nodeDrift, latestRunId),
+    ...detectSurfaceDrift(nodeDrift, latestRunId, await loadFirstGraphRunId(db, projectId)),
     ...detectControlNobodyExercises(controlReach),
     ...detectReachableUnvisited(pageLinkReach),
-    ...detectApiOnlyRoute(routeEntryReach),
     ...detectNotNoticed(checkOutcomes),
     ...detectOrphanTest(testReachRecency),
     ...detectFixDidNotHold(regressedClusters),
@@ -1636,7 +1709,6 @@ export async function computeScenarioGaps(
       'surface-drift',
       'control-nobody-exercises',
       'reachable-unvisited',
-      'api-only-route',
       'not-noticed',
       'orphan-test',
       'fix-did-not-hold',
@@ -1649,7 +1721,28 @@ export async function computeScenarioGaps(
     closeStatuses,
   );
   const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode, closeStatuses);
-  return { upserted, closed: closed + closedChanged };
+  const closedRetired = await closeRetiredDetectorGaps(db, projectId);
+  return { upserted, closed: closed + closedChanged + closedRetired };
+}
+
+/**
+ * Close the open, snoozed and accepted rows of retired detectors. No run closed
+ * them, so `closed_by_run_id` stays empty; a dismissed row keeps its verdict.
+ */
+async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promise<number> {
+  const now = new Date();
+  const closed = await db
+    .update(scenarioGaps)
+    .set({ status: 'closed', closedAt: now, closedByRunId: null, updatedAt: now })
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        inArray(scenarioGaps.detector, RETIRED_DETECTORS),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+      ),
+    )
+    .returning({ id: scenarioGaps.id });
+  return closed.length;
 }
 
 /**
