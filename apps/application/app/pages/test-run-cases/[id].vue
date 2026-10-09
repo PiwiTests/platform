@@ -135,7 +135,7 @@ const aiIntents = computed<AiStepIntent[] | null>(() => {
   return usage?.intents ?? null;
 });
 
-// ── Fix card ────────────────────────────────────────────────────────────────
+// ── More ways to fix ────────────────────────────────────────────────────────
 /** Whether the desktop (Tauri) bridge is present — set on mount below. */
 const desktopBridge = ref(false);
 
@@ -327,7 +327,7 @@ const showVerify = computed(() => Boolean(rerunInfo.value?.available) || desktop
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
 
-/** The Fix card's sections, in the order the card renders them. */
+/** The sections of More ways to fix this execution offers; the toolbox orders them. */
 const fixSections = computed<FixSectionKey[]>(() => {
   const s: FixSectionKey[] = [];
   if (showLocatorFix.value) s.push('locator-fix');
@@ -340,7 +340,7 @@ const fixSections = computed<FixSectionKey[]>(() => {
   return s;
 });
 
-// The Fix card covers a failing execution (something to fix) or one that blocked
+// More ways to fix covers a failing execution (something to fix) or one that blocked
 // others. A pass that needed a retry has nothing to fix here: its failed
 // attempt's page holds the tools.
 const showFix = computed(() => (Boolean(verdict.value) && !isPassedOnRetry.value) || blockedTests.value.length > 0);

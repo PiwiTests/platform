@@ -41,7 +41,7 @@ or connection error. That's one cluster, one fix, and no test code involved.
 A cluster page puts the whole investigation on one screen: the situation block across every test that
 shares the failure, with a [state line](/features/failure-clusters#the-state-line) and **Triage** beside it, which sets
 one status (open, resolved or ignored), a note and an assignee for the entire group, then the occurrence sparkline
-and what changed since the last passing run. The affected tests and their evidence follow. Forty tests, three
+and what changed since the last passing run. The section the **Next** line points at follows as its own card, then the affected tests and their evidence. Forty tests, three
 decisions.
 
 Clusters stay open across runs, so the next red build attaches to the same row rather than starting the

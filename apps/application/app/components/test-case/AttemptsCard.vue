@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The Attempts tab for a flaky test: a strip of every attempt (retry number,
- * status, duration, a "this one" marker on the opened execution), and below it
+ * The Attempts tab for a flaky test: a strip of every attempt (Attempt 1 first,
+ * its status and duration, a "this one" marker on the opened execution), and below it
  * "what differed" between the failing attempt and the attempt that passed on
  * retry — the flakiness fingerprint. The diff is loaded lazily from
  * `/attempt-diff` when the tab is first opened (this card mounts under a `v-if`).

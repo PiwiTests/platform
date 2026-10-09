@@ -32,7 +32,7 @@ const props = defineProps<{
   storageKey?: string;
   /**
    * Render the panel body without a card wrapper — for embedding inside another
-   * card's section (the Fix card). The provenance note leads, then the
+   * card's section (More ways to fix). The provenance note leads, then the
    * recommendation and the alternatives; the card title, icon and count are
    * dropped since the host section already labels it.
    */
@@ -56,7 +56,7 @@ const props = defineProps<{
 // Asks the host to reveal the page diff — the structural proof of a rename.
 const emit = defineEmits<{ 'show-page-diff': [] }>();
 
-// A card-less wrapper for the embedded (Fix card) variant: renders the
+// A card-less wrapper for the embedded (More ways to fix) variant: renders the
 // provenance note first, then the actions, then the body — and swallows the
 // card-only props so they never leak onto the DOM. `data-shot` still falls
 // through to the root so the docs scene keeps its target.
@@ -88,8 +88,8 @@ const BareCard = defineComponent({
   },
 });
 
-// Card-less inside the Fix card; fold on the cluster page (storageKey set);
-// a plain card on the standalone test-case page.
+// Card-less inside More ways to fix (`chrome` false); a folding card when the
+// host passes `storageKey`; else a plain card (the standalone test-case page).
 const cardComponent = computed(() =>
   props.chrome === false ? BareCard : props.storageKey ? CollapsibleSectionCard : SectionCard,
 );

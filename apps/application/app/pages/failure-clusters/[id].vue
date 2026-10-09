@@ -313,7 +313,7 @@ function refresh() {
   refreshRerun();
 }
 
-// ── Fix card ─────────────────────────────────────────────────────────────────
+// ── More ways to fix ─────────────────────────────────────────────────────────
 // Diagnosis first, then the locator fix, the verify command and the fix plan.
 // The Locator fix section applies only to a locator-resolution failure — the same
 // gate the execution page uses; a count mismatch or a value assertion has none.

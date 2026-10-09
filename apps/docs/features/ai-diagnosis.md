@@ -74,7 +74,7 @@ A diagnosis is grounded in your actual run, not a generic "ask AI" button. Each 
 
 A cluster page diagnoses every failure that shares a fingerprint. On a single failing
 [execution](./evidence#one-execution-diagnosis-first), the **Diagnosis** section of **More ways to fix** shows the
-cluster's completed diagnosis with an **Open** link to it; without one, it diagnoses just that execution, with the same
+cluster's diagnosis summary and patch with an **Open** link; without one, it diagnoses just that execution, with the same
 panel and model: handy when a failure has not clustered yet. Execution and cluster
 diagnoses are stored separately, and running one never overwrites the other.
 

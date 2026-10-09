@@ -65,7 +65,7 @@ Below the evidence, **More ways to fix** is the folded toolbox holding every *ot
 
 - a **[replacement locator](/features/locator-healing)** when a locator broke, ranked by stability and in your suite's own style;
 - the **[AI diagnosis](/features/ai-diagnosis)** and its validated patch, when you've configured a model (optional, and grounded in your real diff);
-- **verify** (re-run in CI or locally), **reproduce and bisect**, whether this failure was **fixed before**, the tests it **blocked**, and the **[fix plan](/features/fix-plans)** as Markdown.
+- **verify** (re-run in CI or locally), **reproduce and bisect**, whether this failure was **fixed before**, the tests it **blocked**, and a link to the cluster's **[fix plan](/features/fix-plans)**.
 
 Below the toolbox, a **history** strip shows this test's recent executions and how long it has been failing.
 

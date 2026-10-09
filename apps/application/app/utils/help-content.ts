@@ -608,11 +608,11 @@ export const HELP_TOPICS = {
   'case.evidence': {
     title: 'Evidence',
     text: [
-      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the page at the failure, the test source, the network requests, the console output, the app state at the end, and the browser performance. The tab opens on the view the story points at.',
+      'Everything captured for this execution, one tab per view: the failure timeline (steps, network and console on one clock), the attempts of a test that retried, the page at the failure, the test source, the locators it used, the network requests, the console output, the app state at the end, and the browser performance. It opens on the tab a strong or medium clue cites when that is the source or the performance, else on the Timeline when it can place two or more items; a test that passed on retry opens on Attempts. On a cluster, the line above the tabs names the test and the run it shows.',
       '',
       '- **Timeline** colors a step’s or a request’s duration only when it stands out, and **Network** a request’s by the same rule: at least 1 s, and either a third of the test or more, or twice its usual time and 1 s more, the usual time being the median over the last five passing runs on the same browser (shown under it). A step with parameters opens them from its title, and an arrow at the edge of the axis marks a bar that runs on outside the window.',
       '- **Screen** shows the page as views: its screenshot, its DOM, its accessibility tree, the visual and page diffs, the video. **Open in picker** finds a locator on that DOM; the failing step on the timeline carries the same first three.',
-      '- **Most likely** marks what it cites: a dot on the tab that holds it, and its own label on the timeline rows. A citation opens the tab and rings the request or console entry it names for a moment.',
+      '- **Most likely** marks what it cites: a dot on the tab that holds it, and "Cited by Most likely" on the timeline rows. A citation opens the tab and rings the request or console entry it names for a moment.',
       '- **An empty tab** says whether the evidence was never captured, captured with nothing to show, or does not apply.',
     ].join('\n'),
     doc: 'features/evidence#one-execution-diagnosis-first',
@@ -635,7 +635,7 @@ export const HELP_TOPICS = {
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan as Markdown (the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page: on an execution in this card, on a cluster as a card of its own under the situation block. Open the others as you need them.',
+    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page: on an execution in this card, on a cluster as a card of its own under the situation block. Open the others as you need them.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {
@@ -658,7 +658,7 @@ export const HELP_TOPICS = {
       '',
       '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything.',
       '- **Type chips** hide or show the steps, requests, console entries, dialogs and backend logs in the window. **Only** or Alt-click shows just one type; the failing step and the last shown type always stay. The line beside them says what is hidden, and the choice is remembered in this browser.',
-      '- **The list below** reads it chronologically — click a line to jump to that step, console entry or request.',
+      '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
       '',
       'When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',

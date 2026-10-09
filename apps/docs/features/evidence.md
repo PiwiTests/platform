@@ -33,13 +33,13 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 - **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
   browser dialogs, with the failure marked, over a table giving each step's and request's offset (`t-1.1s`) and
   duration, colored only when it lasts at least 1 s and a third of the test, or twice its time in recent passing
-  runs. **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
+  runs and 1 s more. **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
   **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
   shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
   [**Page diff**](#page-diff), **Video**) over the trace and attachments. **Open in picker** finds a locator on that
-  DOM from any view.
+  DOM.
 - **Source**: the test source as a call stack (the line that threw plus its callers), deepened
   [with a trace](#trace-powered-deep-views).
 - **Network**: the requests with inline [backend logs](/guide/backend-logs); one with no response shows the browser's

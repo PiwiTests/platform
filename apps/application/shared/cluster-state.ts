@@ -1,9 +1,8 @@
 /**
  * The cluster state: one sentence with one verb that says whether a failure
  * cluster is still failing, fixed, regressed, resolved, ignored, snoozed or
- * quarantined — and the single control that changes it. It replaces the four
- * contradicting status signals (a segmented button, a verification badge, its
- * own sentence and a snooze menu) with one line the reader can act on.
+ * quarantined — and the single control that changes it, as one line the reader
+ * can act on.
  *
  * Pure: it reads the cluster's stored fields and the project's run order (which
  * run is latest, how recent the last occurrence is) and never queries anything.

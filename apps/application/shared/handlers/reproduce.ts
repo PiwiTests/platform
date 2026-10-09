@@ -149,7 +149,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
 
 /**
  * The reproduction recipe and bisect for a single execution — the version the
- * execution page's Fix card renders. Returns null when the execution is gone.
+ * execution page's More ways to fix renders. Returns null when the execution is gone.
  */
 export async function buildExecutionReproduce(db: DrizzleDB, executionId: number): Promise<ReproduceContext | null> {
   const [row] = await db
