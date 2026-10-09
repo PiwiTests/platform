@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { FAILURE_STORIES } from '#shared/demo/failure-stories.mjs';
 
 interface StreamedStep {
@@ -23,6 +23,15 @@ interface CompleteEvent {
   dialogs: Array<{ closedAt: number }> | null;
 }
 
+let simulator: typeof import('~~/app/demo/simulator');
+
+// The simulator's module graph is large: loaded before the tests, its import
+// never counts against the first test's timeout when the whole suite runs.
+// It reads `$fetch` at call time, so the stub below still applies.
+beforeAll(async () => {
+  simulator = await import('~~/app/demo/simulator');
+}, 60_000);
+
 /**
  * Run a simulator scenario against a stubbed reporter API on fake timers and
  * return the `complete` events it streamed.
@@ -41,7 +50,7 @@ async function streamScenario(id: string): Promise<CompleteEvent[]> {
       return {};
     }),
   );
-  const { DEMO_SCENARIOS, runSimulation } = await import('~~/app/demo/simulator');
+  const { DEMO_SCENARIOS, runSimulation } = simulator;
   const run = runSimulation(DEMO_SCENARIOS.find((s) => s.id === id)!);
   await vi.runAllTimersAsync();
   await run;
