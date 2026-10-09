@@ -9,6 +9,7 @@ import {
   locatorExpression,
   parseLocatorExpression,
   computeNarrowingSuggestion,
+  hasHealingAlternatives,
 } from '#shared/locator-healing';
 import type { RankedLocator } from '#shared/locator-healing.types';
 import { extractLeafSelector } from '#shared/error-fingerprint';
@@ -322,6 +323,33 @@ describe('locatorExpression', () => {
   test('falls back to positional args for an unknown method', () => {
     expect(locatorExpression('frameLocator', { args: ['#frame'] })).toBe("frameLocator('#frame')");
     expect(locatorExpression('getByRole', {})).toBe('getByRole()');
+  });
+});
+
+describe('hasHealingAlternatives', () => {
+  const alt: RankedLocator = {
+    locator: "getByRole('button', { name: 'Pay' })",
+    method: 'getByRole',
+    args: { role: 'button', name: 'Pay' },
+    score: 90,
+  };
+  const none = { fromDiffRename: null, fromElementMatch: null, fromPriorSuccess: null, fromAriaSnapshot: null };
+
+  test('a ranked list from any rung of the lookup counts', () => {
+    for (const key of ['fromDiffRename', 'fromElementMatch', 'fromPriorSuccess', 'fromAriaSnapshot'] as const) {
+      expect(hasHealingAlternatives({ ...none, source: 'prior-run', [key]: [alt] })).toBe(true);
+    }
+  });
+
+  test("a rename the run's own diff made counts on its own", () => {
+    expect(hasHealingAlternatives({ ...none, source: 'diff-rename', fromDiffRename: [alt] })).toBe(true);
+  });
+
+  test('no answer, a none source or only empty lists show nothing', () => {
+    expect(hasHealingAlternatives(null)).toBe(false);
+    expect(hasHealingAlternatives(undefined)).toBe(false);
+    expect(hasHealingAlternatives({ ...none, source: 'none', fromPriorSuccess: [alt] })).toBe(false);
+    expect(hasHealingAlternatives({ ...none, source: 'prior-run', fromPriorSuccess: [] })).toBe(false);
   });
 });
 

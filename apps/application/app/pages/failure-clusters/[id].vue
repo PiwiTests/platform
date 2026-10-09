@@ -8,6 +8,7 @@ import type { ComponentPublicInstance } from 'vue';
 import type { FailureClusterDetail, TraceInfo } from '~~/types/api';
 import type { FixPlan } from '#shared/fix-plan.types';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
+import { hasHealingAlternatives } from '#shared/locator-healing';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/components/shared/Toolbox.vue';
 import type { RerunInfo } from '~/composables/useCiRerun';
@@ -331,14 +332,7 @@ const { data: clusterLocatorHealing } = await useFetch<LocatorHealingResult>(
     key: `locator-healing-${locatorCaseId}`,
   },
 );
-const clusterLocatorHasData = computed(() => {
-  const h = clusterLocatorHealing.value;
-  return (
-    !!h &&
-    h.source !== 'none' &&
-    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
-  );
-});
+const clusterLocatorHasData = computed(() => hasHealingAlternatives(clusterLocatorHealing.value));
 const {
   state: clusterCapState,
   isHidden: clusterCapHidden,

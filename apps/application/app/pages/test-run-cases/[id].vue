@@ -23,6 +23,7 @@ import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { issueLineForm } from '~/utils/issue-line';
 import type { LocatorHealingResult } from '#shared/locator-healing.types';
+import { hasHealingAlternatives } from '#shared/locator-healing';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -230,14 +231,7 @@ const { data: locatorHealingData } = await useFetch<LocatorHealingResult>(
     key: `locator-healing-${testCaseId}`,
   },
 );
-const locatorHealingHasData = computed(() => {
-  const h = locatorHealingData.value;
-  return (
-    !!h &&
-    h.source !== 'none' &&
-    !!(h.fromElementMatch?.length || h.fromPriorSuccess?.length || h.fromAriaSnapshot?.length)
-  );
-});
+const locatorHealingHasData = computed(() => hasHealingAlternatives(locatorHealingData.value));
 const showLocatorFix = computed(
   () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );

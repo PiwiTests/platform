@@ -8,7 +8,7 @@
  */
 
 import { defineComponent, h } from 'vue';
-import { recommendLocatorFix, locatorExpression } from '#shared/locator-healing';
+import { recommendLocatorFix, locatorExpression, hasHealingAlternatives } from '#shared/locator-healing';
 import type { RankedLocator, LocatorFixRecommendation, LocatorHealingResult } from '#shared/locator-healing.types';
 import type { AiStepIntent, TraceInfo } from '~~/types/api';
 import SectionCard from './SectionCard.vue';
@@ -94,17 +94,7 @@ const cardComponent = computed(() =>
 );
 const cardBind = computed(() => (props.chrome !== false && props.storageKey ? { storageKey: props.storageKey } : {}));
 
-const hasData = computed(
-  () =>
-    !!props.healing &&
-    props.healing.source !== 'none' &&
-    !!(
-      props.healing.fromDiffRename?.length ||
-      props.healing.fromElementMatch?.length ||
-      props.healing.fromPriorSuccess?.length ||
-      props.healing.fromAriaSnapshot?.length
-    ),
-);
+const hasData = computed(() => hasHealingAlternatives(props.healing));
 
 const alternatives = computed<RankedLocator[]>(() => {
   if (!props.healing) return [];
