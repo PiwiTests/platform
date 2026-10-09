@@ -78,13 +78,16 @@ export function patchValidationLabel(status: PatchValidationStatus): string {
   return VALIDATION_LABELS[status] ?? VALIDATION_LABELS.unchecked;
 }
 
-/** The first changed lines of a unified diff, as a small diff of their own. */
+/** A few lines of a unified diff around one changed run, as a small diff of their own. */
 export interface PatchExcerpt {
   /** The `@@` row recomputed for the window, then the window's lines; no file headers. */
   diff: string;
   /** The file the window is in, without its `a/` or `b/` prefix. */
   file: string | null;
-  /** The body lines of every hunk of every file that the window leaves out. */
+  /**
+   * The body lines of every hunk of every file that the window leaves out,
+   * except a blank context line it drops after its run.
+   */
   hiddenLines: number;
   /** The removed and added lines among `hiddenLines`. */
   hiddenChanges: number;
@@ -92,50 +95,92 @@ export interface PatchExcerpt {
   files: number;
 }
 
+/** A run of removed and added lines inside a hunk: `first` and `last` index its lines. */
+interface ChangedRun {
+  file: PatchFile;
+  hunk: PatchHunk;
+  first: number;
+  last: number;
+}
+
 const isChange = (line: string) => line[0] === '+' || line[0] === '-';
 
+/** A JavaScript or TypeScript import statement (not a dynamic `import(…)`). */
+const IMPORT_RE = /^\s*import\b(?!\s*\()/;
+
+/** Whether every non-blank line a run changes is an import statement. */
+function importsOnly(run: ChangedRun): boolean {
+  const changed = run.hunk.lines.slice(run.first, run.last + 1).map((line) => line.slice(1));
+  const code = changed.filter((text) => text.trim() !== '');
+  return code.length > 0 && code.every((text) => IMPORT_RE.test(text));
+}
+
 /**
- * A window of at most `maxLines` body lines on the first changed run of a
- * unified diff: the context line before it, the run of removed and added lines,
- * the context line after it, cut at `maxLines`. The `@@` row is recomputed for
- * the window by counting the old and new lines from the hunk's start, so every
- * line keeps its number. Null when the diff does not parse or changes nothing.
+ * The changed run a short preview shows: the one with the most removed and
+ * added lines, the first on a tie. A run that only changes imports counts when
+ * the diff changes nothing else, since the substance of a fix is rarely there.
+ */
+function previewRun(runs: ChangedRun[]): ChangedRun | null {
+  const code = runs.filter((run) => !importsOnly(run));
+  let best: ChangedRun | null = null;
+  for (const run of code.length > 0 ? code : runs) {
+    if (!best || run.last - run.first > best.last - best.first) best = run;
+  }
+  return best;
+}
+
+/**
+ * A window of at most `maxLines` body lines on one changed run of a unified
+ * diff (`previewRun`): the context line before it, the run of removed and added
+ * lines, and the context line after it unless that line is blank, cut at
+ * `maxLines`. The `@@` row is recomputed for the window by counting the old and
+ * new lines from the hunk's start, so every line keeps its number. Null when
+ * the diff does not parse or changes nothing.
  */
 export function patchExcerpt(patch: string, maxLines = 6): PatchExcerpt | null {
   const parsed = parseUnifiedDiff(patch);
-  const hunks = parsed.files.flatMap((f) => f.hunks);
-  const total = hunks.reduce((n, h) => n + h.lines.length, 0);
-  const totalChanges = hunks.reduce((n, h) => n + h.lines.filter(isChange).length, 0);
+  const runs: ChangedRun[] = [];
+  let total = 0;
+  let totalChanges = 0;
   for (const file of parsed.files) {
     for (const hunk of file.hunks) {
-      const first = hunk.lines.findIndex(isChange);
-      if (first === -1) continue;
-      let last = first;
-      while (last + 1 < hunk.lines.length && hunk.lines[last + 1]![0] !== ' ') last++;
-      const start = Math.max(0, first - 1);
-      const end = Math.min(hunk.lines.length - 1, last + 1, start + maxLines - 1);
-      const window = hunk.lines.slice(start, end + 1);
-
-      // The next old and new line numbers; an empty range's start names the line before it.
-      let oldLine = hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart;
-      let newLine = hunk.newLines === 0 ? hunk.newStart + 1 : hunk.newStart;
-      for (const line of hunk.lines.slice(0, start)) {
-        if (line[0] !== '+') oldLine++;
-        if (line[0] !== '-') newLine++;
+      total += hunk.lines.length;
+      for (let i = 0; i < hunk.lines.length; i++) {
+        if (!isChange(hunk.lines[i]!)) continue;
+        const first = i;
+        while (i + 1 < hunk.lines.length && isChange(hunk.lines[i + 1]!)) i++;
+        runs.push({ file, hunk, first, last: i });
+        totalChanges += i - first + 1;
       }
-      const oldCount = window.filter((line) => line[0] !== '+').length;
-      const newCount = window.filter((line) => line[0] !== '-').length;
-      const range = (line: number, count: number) => `${count === 0 ? line - 1 : line},${count}`;
-      return {
-        diff: [`@@ -${range(oldLine, oldCount)} +${range(newLine, newCount)} @@`, ...window].join('\n'),
-        file: stripAbPrefix(file.newPath) ?? stripAbPrefix(file.oldPath),
-        hiddenLines: total - window.length,
-        hiddenChanges: totalChanges - window.filter(isChange).length,
-        files: parsed.files.length,
-      };
     }
   }
-  return null;
+  const run = previewRun(runs);
+  if (!run) return null;
+
+  const { file, hunk, first, last } = run;
+  const start = Math.max(0, first - 1);
+  let end = Math.min(hunk.lines.length - 1, last + 1, start + maxLines - 1);
+  const blankAfter = end > last && hunk.lines[end]!.slice(1).trim() === '';
+  if (blankAfter) end--;
+  const window = hunk.lines.slice(start, end + 1);
+
+  // The next old and new line numbers; an empty range's start names the line before it.
+  let oldLine = hunk.oldLines === 0 ? hunk.oldStart + 1 : hunk.oldStart;
+  let newLine = hunk.newLines === 0 ? hunk.newStart + 1 : hunk.newStart;
+  for (const line of hunk.lines.slice(0, start)) {
+    if (line[0] !== '+') oldLine++;
+    if (line[0] !== '-') newLine++;
+  }
+  const oldCount = window.filter((line) => line[0] !== '+').length;
+  const newCount = window.filter((line) => line[0] !== '-').length;
+  const range = (line: number, count: number) => `${count === 0 ? line - 1 : line},${count}`;
+  return {
+    diff: [`@@ -${range(oldLine, oldCount)} +${range(newLine, newCount)} @@`, ...window].join('\n'),
+    file: stripAbPrefix(file.newPath) ?? stripAbPrefix(file.oldPath),
+    hiddenLines: total - window.length - (blankAfter ? 1 : 0),
+    hiddenChanges: totalChanges - window.filter(isChange).length,
+    files: parsed.files.length,
+  };
 }
 
 /**

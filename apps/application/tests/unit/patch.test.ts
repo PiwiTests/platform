@@ -251,20 +251,66 @@ describe('patchExcerpt', () => {
   const body = (diff: string) => diff.split('\n').slice(1);
   const seededPatch = (clusterId: number) => storyByClusterId(clusterId)!.diagnosis.fix.patch as string;
 
-  test("windows on cluster 1's first changed run and counts its second hunk as hidden", () => {
+  test("windows on cluster 1's fix, past its import tweak, and counts everything else as hidden", () => {
     const patch = seededPatch(1);
     const excerpt = patchExcerpt(patch)!;
     expect(excerpt).toMatchObject({ file: 'tests/helpers/payment.ts', files: 1 });
-    expect(excerpt.diff.split('\n')[0]).toBe('@@ -1,2 +1,2 @@');
+    expect(excerpt.diff.split('\n')[0]).toBe('@@ -11,2 +11,4 @@');
     expect(body(excerpt.diff)).toEqual([
-      "-import type { Page } from '@playwright/test';",
-      "+import { test, type Page } from '@playwright/test';",
-      ' ',
+      ' export async function fillPaymentDetails(page: Page) {',
+      '+  test.slow();',
+      "+  const quoteResponse = page.waitForResponse('**/api/checkout/quote');",
+      "   await page.getByLabel('Card number').fill(TEST_CARD);",
     ]);
-    const total = parseUnifiedDiff(patch).files[0]!.hunks.reduce((n, h) => n + h.lines.length, 0);
-    expect(parseUnifiedDiff(patch).files[0]!.hunks).toHaveLength(2);
-    expect(excerpt.hiddenLines).toBe(total - 3);
+    const hunks = parseUnifiedDiff(patch).files[0]!.hunks;
+    expect(hunks).toHaveLength(2);
+    const total = hunks.reduce((n, h) => n + h.lines.length, 0);
+    expect(excerpt.hiddenLines).toBe(total - 4);
+    // The import tweak and the awaited response stay out of the window.
     expect(excerpt.hiddenChanges).toBe(3);
+  });
+
+  test('windows on the run with the most changed lines, the first on a tie', () => {
+    const diff = [
+      '--- a/a.ts',
+      '+++ b/a.ts',
+      '@@ -1,9 +1,10 @@',
+      ' one();',
+      '-two();',
+      '+deux();',
+      ' three();',
+      ' four();',
+      '-five();',
+      '+cinq();',
+      '+cinq2();',
+      ' six();',
+      ' seven();',
+      '-eight();',
+      '+huit();',
+      ' nine();',
+    ].join('\n');
+    expect(body(patchExcerpt(diff)!.diff)).toEqual([' four();', '-five();', '+cinq();', '+cinq2();', ' six();']);
+    const tie = '--- a/a.ts\n+++ b/a.ts\n@@ -1,4 +1,2 @@\n a();\n-b();\n c();\n-d();\n';
+    expect(body(patchExcerpt(tie)!.diff)).toEqual([' a();', '-b();', ' c();']);
+  });
+
+  test('shows an import-only change when the diff changes nothing else', () => {
+    const excerpt = patchExcerpt(
+      "--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,2 @@\n-import { a } from './a';\n+import { a, b } from './a';\n x();\n",
+    )!;
+    expect(body(excerpt.diff)).toEqual(["-import { a } from './a';", "+import { a, b } from './a';", ' x();']);
+    expect(excerpt).toMatchObject({ hiddenLines: 0, hiddenChanges: 0 });
+  });
+
+  test('drops a blank context line after the run, and keeps one before it', () => {
+    const excerpt = patchExcerpt('--- a/a.ts\n+++ b/a.ts\n@@ -4,3 +4,3 @@\n \n-a();\n+b();\n \n')!;
+    expect(excerpt.diff).toBe('@@ -4,2 +4,2 @@\n \n-a();\n+b();');
+    // The dropped line is blank: nothing for "N more lines" to count.
+    expect(excerpt.hiddenLines).toBe(0);
+    // Cluster 10's patch ends on a blank context line.
+    const seeded = patchExcerpt(seededPatch(10))!;
+    expect(body(seeded.diff).at(-1)).toBe('+const PAGE_SIZE = 25;');
+    expect(seeded.hiddenLines).toBe(0);
   });
 
   test("shows cluster 3's added lines between their context lines", () => {

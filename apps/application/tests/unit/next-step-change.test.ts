@@ -57,8 +57,10 @@ describe('buildNextStepChange', () => {
       location: null,
       validation: 'Applies cleanly',
     });
-    expect(change.excerpt).toMatch(/^@@ -1,2 \+1,2 @@\n-import type \{ Page \}/);
-    expect(change.hiddenLines).toBeGreaterThan(0);
+    expect(change.excerpt).toMatch(/^@@ -11,2 \+11,4 @@\n export async function fillPaymentDetails/);
+    expect(change.excerpt).toContain('+  test.slow();');
+    // Full patch opens the rest, so every line the window leaves out counts.
+    expect(change.hiddenLines).toBe(13);
   });
 
   test('a replace step with an edit shows a window on its diff, counts no unchanged line, and copies it whole', () => {
