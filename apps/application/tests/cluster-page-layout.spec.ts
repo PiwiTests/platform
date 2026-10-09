@@ -128,19 +128,34 @@ test.describe('Failure cluster page layout', () => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
 
-    // The tabbed evidence card is open, and the selected affected-test row carries
-    // the "Open execution" link.
+    // The card says what the selection does, and the tabbed evidence names its
+    // subject: the test, its run and the link to that execution.
+    const card = page.locator('[data-shot="cluster-affected-tests"]');
+    await expect(card).toContainText('The evidence below shows the selected test.');
     await expect(page.getByRole('tablist', { name: 'Evidence sections' })).toBeVisible();
-    const link = page.getByRole('link', { name: 'Open execution' });
-    await expect(link).toBeVisible();
+    const subject = page.locator('[data-shot="evidence-subject"]');
+    await expect(subject).toContainText('latest occurrence');
+    const link = subject.getByRole('link', { name: 'Open execution' });
     await expect(link).toHaveAttribute('href', /\/test-run-cases\/\d+/);
 
-    // Selecting the other affected test retargets the evidence (and the link).
+    // Selecting the other affected test retargets the evidence, its subject and the link.
     const before = await link.getAttribute('href');
-    await page.locator('[data-shot="cluster-affected-tests"] [role="button"][aria-pressed="false"]').first().click();
-    await expect
-      .poll(async () => page.getByRole('link', { name: 'Open execution' }).getAttribute('href'))
-      .not.toBe(before);
+    const other = card.locator('[role="button"][aria-pressed="false"]').first();
+    const otherTitle = (await other.innerText()).split('\n')[0]!.trim();
+    await other.click();
+    await expect.poll(async () => link.getAttribute('href')).not.toBe(before);
+    await expect(subject).toContainText(otherTitle);
+  });
+
+  test('a cluster with one affected test names it in the occurrence line, with no selector', async ({ page }) => {
+    await page.goto(`/failure-clusters/${singleClusterId}`);
+    await waitForHydration(page);
+
+    await expect(page.locator('[data-shot="cluster-affected-tests"]')).toHaveCount(0);
+    const block = page.locator('[data-shot="situation-block"]');
+    const testLink = block.getByRole('link', { name: 'session expires after the idle limit' });
+    await expect(testLink).toHaveAttribute('href', /\/test-cases\/\d+/);
+    await expect(page.locator('[data-shot="evidence-subject"]')).toContainText('session expires after the idle limit');
   });
 
   test('a headline that says more than the name is the h1, with the name under it', async ({ page }) => {

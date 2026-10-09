@@ -92,6 +92,10 @@ const selectedExecId = computed(() =>
     ? latestExecId.value
     : (selectedCase.value?.recentTestRunsCaseId ?? null),
 );
+const isLatestOccurrence = computed(() => selectedExecId.value === latestExecId.value);
+// A cluster with one affected test names it in the Occurrences line and needs
+// no selector; the rule reads the full count, not the listed page.
+const singleTest = computed(() => (cluster.value?.affectedTests === 1 ? (affectedCases.value[0] ?? null) : null));
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();
@@ -186,12 +190,16 @@ const occurrenceSpan = computed(() => {
   if (first == null || last == null || last - first < 60_000) return null;
   return durationApprox(last - first);
 });
+const occurrencesText = computed(() => {
+  const n = cluster.value?.occurrences ?? 0;
+  return `${n} occurrence${n === 1 ? '' : 's'}`;
+});
+const occurrenceSpanText = computed(() => (occurrenceSpan.value ? ` over ${occurrenceSpan.value}` : ''));
 const occurrenceCountText = computed(() => {
   const c = cluster.value;
   if (!c) return '';
-  const occ = `${c.occurrences} occurrence${c.occurrences === 1 ? '' : 's'}`;
   const tests = `${c.affectedTests} test${c.affectedTests === 1 ? '' : 's'}`;
-  return `${occ} in ${tests}${occurrenceSpan.value ? ` over ${occurrenceSpan.value}` : ''}`;
+  return `${occurrencesText.value} in ${tests}${occurrenceSpanText.value}`;
 });
 const lastSeenAgo = computed(() => relativeTimeAgo(cluster.value?.lastSeenAt ?? null));
 const occurrenceAria = computed(() =>
@@ -729,7 +737,14 @@ const breadcrumbItems = computed(() => [
                 :label="`Occurrences per run — ${occurrenceAria}`"
               />
               <span>
-                {{ occurrenceCountText }}
+                <template v-if="singleTest"
+                  >{{ occurrencesText }} in
+                  <NuxtLink :to="`/test-cases/${singleTest.testCaseId}`" :class="SENTENCE_LINK_CLASS">{{
+                    singleTest.title
+                  }}</NuxtLink
+                  >{{ occurrenceSpanText }}</template
+                >
+                <template v-else>{{ occurrenceCountText }}</template>
                 <ClientOnly
                   ><template v-if="lastSeenAgo"> · last {{ lastSeenAgo }}</template></ClientOnly
                 >
@@ -756,13 +771,12 @@ const breadcrumbItems = computed(() => [
               <ClusterInvestigation />
             </div>
 
-            <!-- ── Affected tests: the evidence selector, above the evidence ── -->
+            <!-- ── Affected tests: the evidence selector, above the evidence, with several tests ── -->
             <ClusterAffectedTests
+              v-if="!singleTest"
               v-model:selected-case-id="selectedCaseId"
               :cluster-id="clusterId"
               :cases="cluster.affectedTestCases ?? []"
-              :selected-run-id="selectedRunId"
-              :selected-exec-id="selectedExecId"
               :project-id="cluster.project?.id"
               :project-key="cluster.project?.id"
               :project-name="cluster.project?.name"
@@ -782,7 +796,22 @@ const breadcrumbItems = computed(() => [
                 :can-decide-fixtures="canDecideClusterCap"
                 help="case.evidence"
                 @decline-fixtures="declineClusterFixtures"
-              />
+              >
+                <!-- The test, the run and the occurrence the evidence is of -->
+                <template v-if="selectedCase" #subject>
+                  {{ selectedCase.title }}
+                  <template v-if="selectedRunId">
+                    ·
+                    <NuxtLink :to="`/test-runs/${selectedRunId}`" :class="SENTENCE_LINK_CLASS"
+                      >run #{{ selectedRunId }}</NuxtLink
+                    >, {{ isLatestOccurrence ? 'latest occurrence' : "this test's latest occurrence" }}
+                  </template>
+                  ·
+                  <NuxtLink :to="`/test-run-cases/${selectedExecId}`" :class="SENTENCE_LINK_CLASS"
+                    >Open execution</NuxtLink
+                  >
+                </template>
+              </EvidenceTabs>
             </div>
 
             <!-- ── Occurrences over time, with the fix and a regression marked ── -->

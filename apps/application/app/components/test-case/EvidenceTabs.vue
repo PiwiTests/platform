@@ -422,6 +422,10 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
           </template>
         </ClientOnly>
       </div>
+      <!-- What the evidence is of, when the page shows one execution among several -->
+      <p v-if="$slots.subject" data-shot="evidence-subject" class="-mt-1 mb-2.5 text-xs text-muted break-words">
+        <slot name="subject" />
+      </p>
       <!-- The strip wraps onto as many rows as it needs, so no tab is ever
            hidden off the edge of the card. -->
       <div class="flex flex-wrap items-center gap-1" role="tablist" aria-label="Evidence sections">

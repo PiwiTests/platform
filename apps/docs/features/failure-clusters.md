@@ -14,7 +14,7 @@ into a **failure inbox**: the problems you still owe a decision.
 ## How failures are grouped
 
 Failed executions that share the same **error fingerprint** join one cluster, so twenty stack traces read as
-*"20 failures, 3 root causes"*. Clustering is always on, with no configuration.
+*"20 failures, 3 root causes"*. Clustering is always on.
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
   emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
@@ -82,7 +82,8 @@ headline when it says more (a timeout, a count) than the cluster's [name](./ai-d
 Three lines are cluster-specific:
 
 - **The state line**, right above **Next**.
-- **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*.
+- **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*;
+  a single test is named.
 - **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
   **See the changes** for the diff. When setup is missing (runs that record no commit or repository URL, a host Piwi
   does not read, or an [SCM token](/guide/source-control) missing or refused), it shows the range, the host's error
@@ -90,7 +91,7 @@ Three lines are cluster-specific:
   checkout. With no passing run yet, **Browse commits** picks a baseline. The same commit on both sides means the
   change is not in the code.
 
-The **Affected tests** list selects which test's latest execution the evidence shows; its **Move to a new cluster**
+With several tests, the **Affected tests** list picks the one the evidence shows; **Move to a new cluster**
 [splits tests off](./ai-diagnosis#split-a-cluster-by-hand). The fix section **Next** points at leads under the block;
 the rest fold into [**More ways to fix**](./fix-plans#more-ways-to-fix).
 
@@ -112,7 +113,7 @@ A chart counts the cluster's failures per day, week or month, marking when its *
 ## Did the fix work?
 
 When a run executes every test a cluster covers and they all pass, Piwi records the fix: the run, the commit, and how
-long the cluster was open. Three verdicts, because they are not the same claim:
+long the cluster was open. Three verdicts, each a different claim:
 
 | Verdict | Means |
 |---|---|
