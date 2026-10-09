@@ -51,6 +51,12 @@ import { demoTestMeta, demoTags, demoLocks, buildAiUsage } from '../shared/demo/
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
+import {
+  WEB_DASHBOARD_PROJECT_ID,
+  buildWebDashboardTestMap,
+  webDashboardFinalPage,
+  webDashboardRequests,
+} from '../shared/demo/demo-test-map.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Overridable so concurrent callers (e.g. two unit test files regenerating in
@@ -862,6 +868,20 @@ function buildNetwork(proj, storyEntry) {
 }
 
 /**
+ * The requests one execution makes. A web-dashboard test makes the requests of its
+ * Test Map journey, plus the requests its failure story adds; the themed list is
+ * still built so the random stream the rest of the seed reads is unchanged.
+ */
+function executionRequests(proj, storyEntry, title) {
+  const themed = buildNetwork(proj, storyEntry);
+  if (proj.id !== WEB_DASHBOARD_PROJECT_ID) return themed;
+  const journey = webDashboardRequests(title);
+  const story = storyEntry?.story.evidence.failingNetwork ?? [];
+  const fromStory = themed.filter((req) => story.some((o) => o.method === req.method && o.url === req.url));
+  return [...journey, ...fromStory];
+}
+
+/**
  * Synthesize a small server-side span tree for a captured request so the demo
  * shows the X-Piwi-Trace waterfall. Pure arithmetic (no rng) to keep the seed
  * reproducible; span ids are scoped per request. Returns null for static assets.
@@ -942,11 +962,13 @@ function buildWebVitals(proj, failing) {
 }
 
 /** Themed page state; failing stories may drop localStorage keys (e.g. an unresolved quote). */
-function buildPageState(proj, storyEntry) {
+function buildPageState(proj, storyEntry, title) {
   if (!proj.pageState) return null;
   const drop = new Set(storyEntry?.story.evidence.pageStateDropKeys ?? []);
+  // A web-dashboard test ends on the last page of its Test Map journey.
+  const finalPage = proj.id === WEB_DASHBOARD_PROJECT_ID ? webDashboardFinalPage(title) : null;
   return {
-    url: proj.pageState.url,
+    url: finalPage ?? proj.pageState.url,
     hash: null,
     historyState: null,
     localStorage: proj.pageState.localStorage.filter((e) => !drop.has(e.key)),
@@ -1328,7 +1350,7 @@ for (const proj of DEMO_PROJECTS) {
         slowest_step: slowestStep?.title ?? null,
         slowest_step_duration: slowestStep?.duration ?? null,
         web_vitals: isDidNotRunCase || noPage ? null : buildWebVitals(proj, isFailedCase),
-        page_state: isDidNotRunCase || noPage ? null : buildPageState(proj, storyEntry),
+        page_state: isDidNotRunCase || noPage ? null : buildPageState(proj, storyEntry, caseDef.title),
         ai_usage: isDidNotRunCase || noPage ? null : await buildAiUsage(caseDef),
         console_logs: consoleLogs,
         dialogs,
@@ -1359,7 +1381,7 @@ for (const proj of DEMO_PROJECTS) {
         const unreached = isFailedCase ? (story.evidence.unreachedNetwork ?? []) : [];
         const storyIndex = (req) => storyRequests.findIndex((o) => o.method === req.method && o.url === req.url);
         let requestStartMs = caseStartMs + SEED_FIRST_REQUEST_OFFSET_MS;
-        for (const req of buildNetwork(proj, storyEntry)) {
+        for (const req of executionRequests(proj, storyEntry, caseDef.title)) {
           if (unreached.some((o) => o.method === req.method && o.url === req.url)) continue;
           const own = storyIndex(req);
           const startTime =
@@ -1373,7 +1395,7 @@ for (const proj of DEMO_PROJECTS) {
             test_run_id: runId,
             method: req.method,
             url: req.url,
-            normalized_url: seedNormalizeUrl(req.url),
+            normalized_url: req.normalizedUrl ?? seedNormalizeUrl(req.url),
             status: req.status,
             duration: req.duration ?? null,
             start_time: startTime,
@@ -4360,7 +4382,7 @@ const REBASE_SQL = [
   `UPDATE flake_experiments SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS};`,
   `UPDATE graph_nodes SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS}, pruned_at = pruned_at + ${D_MS};`,
   `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
-  `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS};`,
+  `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS}, snoozed_until = snoozed_until + ${D_MS};`,
   '',
   '-- ISO timestamps embedded in JSON columns',
   `UPDATE test_runs SET metadata = json_set(metadata, '$.incident.decidedAt', ` +
@@ -4843,7 +4865,6 @@ const SCENARIO_GAPS = [
     title: 'Declared route DELETE /api/orders/:id — never reached',
     evidence: ['Declared in OpenAPI · 0 tests in 30 runs · documents 200, 401, 404, 409 — observed reach.'],
     factors: { churn: 0.4, age: 0.5, escapeHistory: 0.1, priority: 0.4 },
-    score: 0.0056,
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
@@ -4874,7 +4895,6 @@ const SCENARIO_GAPS = [
     title: 'payments-svc is never probed',
     evidence: ['Called by 1 route · no probe has checked what happens when it fails — schedule a dependency probe.'],
     factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
-    score: 0.0004,
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
@@ -4888,7 +4908,6 @@ const SCENARIO_GAPS = [
     title: 'src/api/orders.post.ts changed but not reached',
     evidence: [`+41 −3 · no test in run #${gapRun.id} · 0 in 30 runs — observed reach.`],
     factors: { churn: 0.9, age: 0.8, escapeHistory: 1, priority: 0.7 },
-    score: 0.4536,
     ticket: 'PROJ-418',
     test_run_id: gapRun.id,
     pr_number: 418,
@@ -4907,7 +4926,6 @@ const SCENARIO_GAPS = [
       'Only should complete checkout with credit card reaches this — observed reach. A second scenario would make it resilient.',
     ],
     factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.4 },
-    score: 0.0002,
     test_case_id: 1,
     status: 'open',
     created_at: BASE_START_MS,
@@ -4922,7 +4940,6 @@ const SCENARIO_GAPS = [
     title: 'GET /api/cart: no error path under test',
     evidence: ['Observed 412 times over the last 30 runs, always 200 — observed reach, no error path exercised.'],
     factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
-    score: 0.0001,
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
@@ -4938,7 +4955,6 @@ const SCENARIO_GAPS = [
       'A probe (status-500) on POST /api/orders did not make any test fail — assert the effect the request should have.',
     ],
     factors: { churn: 0.9, age: 0.8, escapeHistory: 1, priority: 0.7 },
-    score: 0.4032,
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
@@ -4952,7 +4968,6 @@ const SCENARIO_GAPS = [
     title: 'No test exercises control button:Export invoices',
     evidence: ['On 1 page · no locator targets it — observed reach.'],
     factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
-    score: 0.0004,
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
@@ -4966,15 +4981,15 @@ const SCENARIO_GAPS = [
     title: '/billing/plans is linked but never visited',
     evidence: ['Linked from 1 page · never navigated to — observed reach.'],
     factors: { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 },
-    score: 0.0005,
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
   },
   {
-    // Accepted a while ago but no test was written — the Home "accepted gaps not
-    // yet written" inbox queue. Its subject route has no reaches edge, so it
-    // stays in the queue until the test lands.
+    // Accepted ten days before the gap run but no test was written — past the
+    // one-week cutoff of the Home "accepted gaps not yet written" inbox queue.
+    // Its subject route has no reaches edge, so it stays in the queue until the
+    // test lands.
     project_id: 1,
     kind: 'gap',
     detector: 'single-covering-test',
@@ -4983,13 +4998,48 @@ const SCENARIO_GAPS = [
     title: 'Only one test reaches route GET /api/orders/:id/receipt',
     evidence: ['Only views an order receipt reaches this — observed reach. A second scenario would make it resilient.'],
     factors: { churn: 0.3, age: 0.4, escapeHistory: 0.1, priority: 0.4 },
-    score: 0.03,
     status: 'accepted',
-    accepted_at: BASE_START_MS,
-    created_at: BASE_START_MS,
-    updated_at: BASE_START_MS,
+    accepted_at: BASE_START_MS - 10 * 86_400_000,
+    created_at: BASE_START_MS - 12 * 86_400_000,
+    updated_at: BASE_START_MS - 10 * 86_400_000,
   },
 ];
+
+// A gap's score as the detectors rank it (`scoreGap` in shared/handlers/scenario-gaps.ts):
+// the detector's confidence × the geometric mean of the four exposure factors. A finding
+// keeps its own score, severity × exposure.
+const SEEDED_GAP_CONFIDENCE = {
+  'declared-never-hit': 0.7,
+  'unprobed-dependency': 0.4,
+  'changed-unreached': 0.9,
+  'single-covering-test': 0.5,
+  'success-only': 1,
+  'not-noticed': 0.8,
+  'control-nobody-exercises': 0.4,
+  'reachable-unvisited': 0.5,
+};
+for (const gap of SCENARIO_GAPS) {
+  if (gap.kind !== 'gap') continue;
+  const { churn, age, escapeHistory, priority } = gap.factors;
+  const exposure = Math.pow(churn * age * escapeHistory * priority, 1 / 4);
+  gap.score = Math.round(SEEDED_GAP_CONFIDENCE[gap.detector] * exposure * 10000) / 10000;
+}
+
+// The web-dashboard Test Map: a whole admin console against a ten-test suite, from
+// the model in shared/demo/demo-test-map.mjs.
+{
+  const proj = DEMO_PROJECTS.find((p) => p.id === WEB_DASHBOARD_PROJECT_ID);
+  const caseIds = new Map(proj.cases.map((c) => [c.title, caseIdByKey.get(`${proj.id}\x00${c.file}\x00${c.title}`)]));
+  const features = new Map(proj.cases.map((c, i) => [c.title, demoTestMeta(c.file, i)?.feature ?? null]));
+  const runIds = TEST_RUNS.filter((r) => r.project_id === proj.id)
+    .map((r) => r.id)
+    .sort((a, b) => a - b);
+  const map = buildWebDashboardTestMap({ caseIds, runIds, features, at: BASE_START_MS });
+  GRAPH_NODES.push(...map.nodes);
+  GRAPH_EDGES.push(...map.edges);
+  PROBES.push(...map.probes);
+  SCENARIO_GAPS.push(...map.gaps);
+}
 
 // The v2.4.0 release marker, linked to the run it keeps.
 const releaseRun = TEST_RUNS.find((r) => r.keep_source === 'marker');

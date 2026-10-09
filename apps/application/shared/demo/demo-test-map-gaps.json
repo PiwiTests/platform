@@ -1,0 +1,972 @@
+[
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:GET /api/auth/sso/callback",
+    "title": "GET /api/auth/sso/callback is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:GET /api/reports/exports/:id",
+    "title": "GET /api/reports/exports/:id is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:PATCH /api/orgs/current",
+    "title": "PATCH /api/orgs/current is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:POST /api/auth/sso/start",
+    "title": "POST /api/auth/sso/start is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:POST /api/invitations",
+    "title": "POST /api/invitations is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:POST /api/reports/exports",
+    "title": "POST /api/reports/exports is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:POST /api/tokens/:id/rotate",
+    "title": "POST /api/tokens/:id/rotate is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "api-only-route",
+    "class": "blind-spot",
+    "key": "route:PUT /api/me/preferences",
+    "title": "PUT /api/me/preferences is reached only by request fixtures",
+    "evidence": [
+      "No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.034999999999999996,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:DELETE /api/invitations/:id",
+    "title": "Declared route DELETE /api/invitations/:id — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 204, 404 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:DELETE /api/orgs/current",
+    "title": "Declared route DELETE /api/orgs/current — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 202, 403, 409 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:DELETE /api/tokens/:id",
+    "title": "Declared route DELETE /api/tokens/:id — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 204, 404 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:DELETE /api/users/:id",
+    "title": "Declared route DELETE /api/users/:id — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 204, 403, 404 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:GET /api/audit-log",
+    "title": "Declared route GET /api/audit-log — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 200, 403 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:GET /api/billing/invoices",
+    "title": "Declared route GET /api/billing/invoices — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 200, 402 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:PATCH /api/users/:id",
+    "title": "Declared route PATCH /api/users/:id — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 200, 403, 404, 422 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:POST /api/auth/password/reset",
+    "title": "Declared route POST /api/auth/password/reset — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 202, 429 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:POST /api/billing/subscription",
+    "title": "Declared route POST /api/billing/subscription — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 200, 402, 409 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "declared-never-hit",
+    "class": "blind-spot",
+    "key": "route:POST /api/integrations/slack",
+    "title": "Declared route POST /api/integrations/slack — never reached",
+    "evidence": ["Declared in OpenAPI · 0 tests in 30 runs · documents 201, 400, 409 — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "not-noticed",
+    "class": "false-comfort",
+    "key": "route:GET /api/reports/revenue",
+    "title": "Tests pass when GET /api/reports/revenue breaks",
+    "evidence": [
+      "A probe (empty-body) on GET /api/reports/revenue did not make renders the revenue chart fail — assert the effect the request should have."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.08000000000000002,
+    "test": null
+  },
+  {
+    "detector": "not-noticed",
+    "class": "false-comfort",
+    "key": "route:PATCH /api/orgs/current",
+    "title": "Tests pass when PATCH /api/orgs/current breaks",
+    "evidence": [
+      "A probe (stale-value) on PATCH /api/orgs/current did not make updates the organization name fail — assert the effect the request should have."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.08000000000000002,
+    "test": null
+  },
+  {
+    "detector": "not-noticed",
+    "class": "false-comfort",
+    "key": "route:POST /api/invitations",
+    "title": "Tests pass when POST /api/invitations breaks",
+    "evidence": [
+      "A probe (status-500) on POST /api/invitations did not make invites a user by email fail — assert the effect the request should have."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.08000000000000002,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/audit-log",
+    "title": "/audit-log is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/billing",
+    "title": "/billing is linked but never visited",
+    "evidence": ["Linked from 4 pages · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.08000000000000002,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/forgot-password",
+    "title": "/forgot-password is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/integrations",
+    "title": "/integrations is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/reports/schedules",
+    "title": "/reports/schedules is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/request-access",
+    "title": "/request-access is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/roles",
+    "title": "/roles is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/settings/security",
+    "title": "/settings/security is linked but never visited",
+    "evidence": ["Linked from 3 pages · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06999999999999999,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/settings/sso",
+    "title": "/settings/sso is linked but never visited",
+    "evidence": ["Linked from 2 pages · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06000000000000001,
+    "test": null
+  },
+  {
+    "detector": "reachable-unvisited",
+    "class": "blind-spot",
+    "key": "page:/users/invite",
+    "title": "/users/invite is linked but never visited",
+    "evidence": ["Linked from 1 page · never navigated to — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "page:/login",
+    "title": "Only one test reaches page /login",
+    "evidence": [
+      "Only shows an error for a revoked account reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "shows an error for a revoked account"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "page:/settings/api-tokens",
+    "title": "Only one test reaches page /settings/api-tokens",
+    "evidence": [
+      "Only rotates the API token reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "rotates the API token"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "page:/settings/organization",
+    "title": "Only one test reaches page /settings/organization",
+    "evidence": [
+      "Only updates the organization name reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "updates the organization name"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:GET /api/reports/exports/:id",
+    "title": "Only one test reaches route GET /api/reports/exports/:id",
+    "evidence": [
+      "Only exports the monthly report as CSV reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "exports the monthly report as CSV"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:GET /api/tokens",
+    "title": "Only one test reaches route GET /api/tokens",
+    "evidence": [
+      "Only rotates the API token reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "rotates the API token"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:PATCH /api/orgs/current",
+    "title": "Only one test reaches route PATCH /api/orgs/current",
+    "evidence": [
+      "Only updates the organization name reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "updates the organization name"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:POST /api/invitations",
+    "title": "Only one test reaches route POST /api/invitations",
+    "evidence": [
+      "Only invites a user by email reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "invites a user by email"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:POST /api/reports/exports",
+    "title": "Only one test reaches route POST /api/reports/exports",
+    "evidence": [
+      "Only exports the monthly report as CSV reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "exports the monthly report as CSV"
+  },
+  {
+    "detector": "single-covering-test",
+    "class": "fragile",
+    "key": "route:POST /api/tokens/:id/rotate",
+    "title": "Only one test reaches route POST /api/tokens/:id/rotate",
+    "evidence": [
+      "Only rotates the API token reaches this — observed reach. A second scenario would make it resilient."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": "rotates the API token"
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/dashboard/summary",
+    "title": "GET /api/dashboard/summary: no error path under test",
+    "evidence": ["Observed 24 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.1414213562373095,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/me/preferences",
+    "title": "GET /api/me/preferences: no error path under test",
+    "evidence": ["Observed 13 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.065,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/orgs/current",
+    "title": "GET /api/orgs/current: no error path under test",
+    "evidence": ["Observed 23 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.1414213562373095,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/reports/exports/:id",
+    "title": "GET /api/reports/exports/:id: no error path under test",
+    "evidence": ["Observed 12 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/reports/revenue",
+    "title": "GET /api/reports/revenue: no error path under test",
+    "evidence": ["Observed 24 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.1,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/roles",
+    "title": "GET /api/roles: no error path under test",
+    "evidence": ["Observed 36 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.1,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/session",
+    "title": "GET /api/session: documented 401 never tested",
+    "evidence": [
+      "Observed 107 times over the last 30 runs, always 200 — observed reach, no error path exercised.",
+      "Documents 401 — never returned under test."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.1414213562373095,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/tokens",
+    "title": "GET /api/tokens: no error path under test",
+    "evidence": ["Observed 11 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05500000000000001,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "GET /api/users",
+    "title": "GET /api/users: no error path under test",
+    "evidence": ["Observed 36 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.1,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "PATCH /api/orgs/current",
+    "title": "PATCH /api/orgs/current: documented 403/422 never tested",
+    "evidence": [
+      "Observed 11 times over the last 30 runs, always 200 — observed reach, no error path exercised.",
+      "Documents 403, 422 — never returned under test."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.08500000000000002,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "POST /api/auth/sso/start",
+    "title": "POST /api/auth/sso/start: no error path under test",
+    "evidence": ["Observed 24 times over the last 30 runs, always 303 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.4
+    },
+    "score": 0.1414213562373095,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "POST /api/invitations",
+    "title": "POST /api/invitations: documented 409/422 never tested",
+    "evidence": [
+      "Observed 12 times over the last 30 runs, always 201 — observed reach, no error path exercised.",
+      "Documents 409, 422 — never returned under test."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.09,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "POST /api/reports/exports",
+    "title": "POST /api/reports/exports: documented 429 never tested",
+    "evidence": [
+      "Observed 12 times over the last 30 runs, always 202 — observed reach, no error path exercised.",
+      "Documents 429 — never returned under test."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.09,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "POST /api/tokens/:id/rotate",
+    "title": "POST /api/tokens/:id/rotate: documented 403/404 never tested",
+    "evidence": [
+      "Observed 11 times over the last 30 runs, always 200 — observed reach, no error path exercised.",
+      "Documents 403, 404 — never returned under test."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.08500000000000002,
+    "test": null
+  },
+  {
+    "detector": "success-only",
+    "class": "blind-spot",
+    "key": "PUT /api/me/preferences",
+    "title": "PUT /api/me/preferences: no error path under test",
+    "evidence": ["Observed 13 times over the last 30 runs, always 200 — observed reach, no error path exercised."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.065,
+    "test": null
+  },
+  {
+    "detector": "surface-drift",
+    "class": "blind-spot",
+    "key": "link:link:Single sign-on",
+    "title": "New link link:Single sign-on — confirm it is tested",
+    "evidence": ["Appeared in run #73, reached by 0 tests so far — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "surface-drift",
+    "class": "blind-spot",
+    "key": "page:/settings/sso",
+    "title": "New page /settings/sso — confirm it is tested",
+    "evidence": ["Appeared in run #73, reached by 0 tests so far — observed reach."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "unprobed-dependency",
+    "class": "false-comfort",
+    "key": "dependency:clickhouse",
+    "title": "clickhouse is never probed",
+    "evidence": ["Called by 3 routes · no probe has checked what happens when it fails — schedule a dependency probe."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": null
+  },
+  {
+    "detector": "unprobed-dependency",
+    "class": "false-comfort",
+    "key": "dependency:okta",
+    "title": "okta is never probed",
+    "evidence": ["Called by 2 routes · no probe has checked what happens when it fails — schedule a dependency probe."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "unprobed-dependency",
+    "class": "false-comfort",
+    "key": "dependency:redis",
+    "title": "redis is never probed",
+    "evidence": ["Called by 3 routes · no probe has checked what happens when it fails — schedule a dependency probe."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": null
+  },
+  {
+    "detector": "unprobed-dependency",
+    "class": "false-comfort",
+    "key": "dependency:vault",
+    "title": "vault is never probed",
+    "evidence": ["Called by 1 route · no probe has checked what happens when it fails — schedule a dependency probe."],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  }
+]

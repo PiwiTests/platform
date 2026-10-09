@@ -27,6 +27,10 @@ const DEMO_OWNERS = [
   { match: /\/api\//, owner: '@platform-team', feature: 'API' },
   { match: /\/ui\//, owner: '@design-systems', feature: 'Design system' },
   { match: /\/auth\//, owner: '@identity-team', feature: 'Identity' },
+  { match: /\/admin\/login\./, owner: '@identity-team', feature: 'Sign-in' },
+  { match: /\/admin\/users\./, owner: '@admin-team', feature: 'Users' },
+  { match: /\/admin\/reports\./, owner: '@insights-team', feature: 'Reports' },
+  { match: /\/admin\/settings\./, owner: '@admin-team', feature: 'Settings' },
 ];
 
 export function demoTestMeta(filePath, index) {
