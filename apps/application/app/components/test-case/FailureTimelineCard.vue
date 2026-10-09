@@ -138,7 +138,7 @@ const allItems = computed<TimelineItem[]>(() => {
 
 const placedCount = computed(() => allItems.value.length);
 
-// The rows the Most likely line cites carry its label.
+// The rows the Most likely line cites say so.
 const citedIds = computed(() => citedItemIds(allItems.value, props.cited ?? []));
 function isCited(item: TimelineItem | null): boolean {
   return item != null && citedIds.value.has(item.id);
@@ -1005,7 +1005,7 @@ function revealItem(item: TimelineItem) {
             >
               <div class="flex items-center gap-2">
                 <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
-                <span v-if="isCited(entry.item)" class="text-xs text-muted">Most likely</span>
+                <span v-if="isCited(entry.item)" class="text-xs text-muted">Cited by Most likely</span>
                 <span
                   v-if="showAxis && entry.item"
                   class="ml-auto tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
@@ -1101,7 +1101,7 @@ function revealItem(item: TimelineItem) {
                   }}<span v-if="entry.item.kind === 'network'" class="text-gray-500"> → {{ entry.item.status }}</span>
                 </span>
                 <span v-if="isCited(entry.item)" class="ml-auto shrink-0 text-xs text-muted whitespace-nowrap"
-                  >Most likely</span
+                  >Cited by Most likely</span
                 >
                 <span
                   v-if="showAxis"
@@ -1223,7 +1223,7 @@ function revealItem(item: TimelineItem) {
                             <StepLabel :step="entry.step" />
                           </span>
                           <span v-if="isCited(entry.item)" class="ml-1.5 text-xs text-muted whitespace-nowrap"
-                            >Most likely</span
+                            >Cited by Most likely</span
                           >
                         </div>
                         <StepParams
@@ -1308,7 +1308,7 @@ function revealItem(item: TimelineItem) {
                         → {{ entry.item.status }}</span
                       >
                       <span v-if="isCited(entry.item)" class="ml-1.5 text-xs text-muted whitespace-nowrap"
-                        >Most likely</span
+                        >Cited by Most likely</span
                       >
                     </div>
                   </td>

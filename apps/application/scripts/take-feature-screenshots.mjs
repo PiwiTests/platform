@@ -3526,7 +3526,7 @@ const SCENES = [
     description:
       'Execution #37: the timeline rows and the tabs Most likely cites, then its Console and its Network citation opened, the tab strip in view and the entry ringed',
     // Execution 37's story chains the 28.4 s quote request and the console
-    // warning: both rows read "Most likely", and Screen, Network and Console carry the mark.
+    // warning: both rows read "Cited by Most likely", and Screen, Network and Console carry the mark.
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 800 },
     outputs: ['timeline-cited-row.png', 'timeline-cited-row-console.png', 'timeline-cited-row-network.png'],

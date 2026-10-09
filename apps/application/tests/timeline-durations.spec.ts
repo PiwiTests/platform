@@ -176,7 +176,7 @@ test.describe('Timeline durations', () => {
     // citation: its row says so, and so does the tab that lists it.
     const quoteRow = table.locator('tr', { hasText: QUOTE_REQUEST });
     await expect(quoteRow).toHaveAttribute('data-cited', '');
-    await expect(quoteRow).toContainText('Most likely');
+    await expect(quoteRow).toContainText('Cited by Most likely');
     await expect(table.locator('tr', { hasText: PAGE_REQUEST })).not.toHaveAttribute('data-cited');
     await expect(networkTab).toHaveAttribute('data-cited', '');
     await expect(tabs.getByRole('tab', { name: 'Timeline', exact: true })).not.toHaveAttribute('data-cited');
