@@ -37,10 +37,14 @@ covered on [Uncovered changes in pull requests](/features/uncovered-changes). A 
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
-[locator index](/features/locator-usage): a test reaches a control when one of its locators names it by role and
-name, when an alternative captured for that locator does, or when a label, placeholder or title names exactly one
-control. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control nobody exercises* stays silent
-until a locator reaches some control on the project.
+[locator index](/features/locator-usage), for uses seen in the last 180 days. A test reaches a control when one of its
+locators names it by role and name, when an alternative captured for that locator does, or when the name matches as
+Playwright matches it without `exact` (a case-insensitive part of exactly one name of that role). A label,
+placeholder or title reaches the one input-like control (textbox, combobox, checkbox, radio, switch, …) carrying that
+name. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control nobody exercises* stays silent until a
+locator reaches some control on the project. A test that clicks or fills an element no node matches, through a test
+id or a CSS selector, might have used any control on that page, so neither *Control nobody exercises* nor *Single
+covering test* raises those controls.
 
 ## Exposure
 
@@ -56,8 +60,10 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 
 Churn, age and escape history come from the [source control](/guide/source-control) connection and apply to the
 files a pull request changed. A gap on a route, a handler or a dependency draws churn and escape history from the
-handler files behind it: the commits whose diffs the default-branch runs recorded on them over the last 90 days, and
-whether one of those is a fixing commit. Age needs each file's history, so it stays at 0.1 there. The other detectors
+handler files behind it, read from the diffs default-branch runs recorded over the last 90 days. Each run diffs from
+its last green run, so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
+files in the diff that ended on a fixing commit, which holds every change since the last green run. Age needs each
+file's history, so it stays at 0.1 there. The other detectors
 rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
 route's reach.
 

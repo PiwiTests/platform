@@ -80,8 +80,9 @@ a delay, a mutated response or a failed dependency call. The instrumentation rep
 it did not honor records as *inconclusive*, never as a pass.
 
 Two signals come back: whether the test noticed, as with a client probe, and whether the application coped. An
-uncaught page error, or a blank page after a backend error, makes an **unhandled** finding; a console error, a dialog,
-a backend error or a blank page alone makes a **degraded** one. Findings rank by severity and reach, and the
+uncaught page error once the fault applied, or a blank page (no accessible content when the test ends) after a backend
+error, makes an **unhandled** finding. A console error, a dialog, a backend error or a blank page alone makes a
+**degraded** one. A fault the server never applied makes no finding. Findings rank by severity and reach, and the
 *unprobed dependency* detector names the dependencies no probe has failed yet.
 
 It needs:
