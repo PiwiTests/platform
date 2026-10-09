@@ -9,7 +9,7 @@ lang: en-US
 When a test fails, everything Piwi captured about that attempt lands on one screen: what each tab holds, where it
 came from, and what a trace adds.
 
-Two pages are involved, and [Core concepts](/guide/concepts#execution) draws the line between them:
+Two pages are involved, told apart in [Core concepts](/guide/concepts#execution):
 
 | Page | Path | Answers |
 |---|---|---|
@@ -50,9 +50,9 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
 of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error, opens on
-**Attempts** and keeps its next step; any other passing execution shows identity and facts only. A test that **did
-not run** gives its reason as Most likely, with no evidence card. Network, console, Web Vitals, ARIA and
-alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
+**Attempts** and keeps its next step; any other passing execution shows identity and facts, with the evidence on
+**Timeline**. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
+Web Vitals, ARIA and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 
 ### Clues
 
@@ -119,7 +119,7 @@ step. The [in-execution page diff](#page-diff) reads the same snapshots.
 ### Recovered from the trace without the fixtures
 
 With the reporter alone and a trace uploaded, the dashboard recovers the **console** entries, the **network requests**
-(including the failed and aborted ones) and the failure-time **ARIA snapshot** from the trace at ingest. Cards showing
+(including failed and aborted ones) and the failure-time **ARIA snapshot** from the trace at ingest. Cards showing
 this data carry a **derived from the trace** chip, and fixture-captured data is never replaced.
 
 ### Why a card is empty
