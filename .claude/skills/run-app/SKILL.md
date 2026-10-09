@@ -22,7 +22,9 @@ first run, opens the route, waits for hydration and for the page to settle, scre
 npm run app:screens -- --route /test-run-cases/37 --expand --height 2400
 ```
 
-- `--expand` unfolds every collapsed section first (the More ways to fix sections start folded).
+- `--expand` unfolds the collapsible cards first (console, network, test source and the other evidence cards
+  start folded). More ways to fix is not one of them: it opens only the section the Next step points at,
+  one at a time, so click another section in a scene's `run` to see it.
 - `--height` is how you see more of a page: the dashboard scrolls inside a panel, so a full-page
   screenshot of the document only ever shows one viewport. Use 2000–3000 for a detail page.
 - `--width` sets the viewport width (default 1280), `--name` the file stem.
