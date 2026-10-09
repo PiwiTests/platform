@@ -23,6 +23,7 @@ import {
   buildSourceFrames,
   buildWebAssertionError,
   authoredFailureSteps,
+  authoredBeforeEachMs,
   storyEvidenceTimes,
   FAILURE_TEARDOWN_MS,
 } from '#shared/demo/failure-stories.mjs';
@@ -48,6 +49,8 @@ interface SimStep {
   title: string;
   duration: number;
   category: string;
+  /** Ms from the test start, on a test whose times are relative to its attempt. */
+  at?: number;
   /** Playwright 1.63 step target (rendered locator or URL), carried separately. */
   subtitle?: string;
   /** Playwright 1.63 curated per-step arguments. */
@@ -94,6 +97,12 @@ interface SimTest {
   testMeta?: { owner?: string | null; priority?: string | null; feature?: string | null } | null;
   suitePath?: string[];
   suiteConfig?: Array<{ mode: string; annotations: Array<{ type: string; description?: string }> }>;
+  /**
+   * The step (`at`), console, dialog and request times are ms from the
+   * attempt's start, stamped onto it when the attempt runs: a story test
+   * places its evidence where its story puts it in the execution.
+   */
+  relativeTimes?: boolean;
 }
 
 export interface DemoScenario {
@@ -405,17 +414,55 @@ function buildNetworkRequests(opts: { slow?: boolean; paymentError?: boolean } =
 }
 
 /**
- * Stamp sequential start times onto simulated requests, the way the fixtures
- * record `request.timing().startTime`: each one starts shortly after the
- * previous one finished.
+ * Stamp sequential start times onto simulated requests from `from`, the way the
+ * fixtures record `request.timing().startTime`: each one starts shortly after
+ * the previous one finished. A request's backend log entries keep their spacing
+ * and the first one sits mid-request, so the backend lane lines up with it.
  */
-function withStartTimes(requests: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  let startTime = Date.now();
+function withStartTimes(
+  requests: Array<Record<string, unknown>>,
+  from: number = Date.now(),
+): Array<Record<string, unknown>> {
+  let startTime = from;
   return requests.map((req) => {
-    const stamped = { ...req, startTime };
-    startTime += Number(req.duration ?? 0) + vary(40);
+    const duration = Number(req.duration ?? 0);
+    const logs = req.serverLogs as Array<{ timestamp: number }> | undefined;
+    const first = logs?.length ? Math.min(...logs.map((l) => l.timestamp)) : 0;
+    const at = startTime + Math.round(duration / 2);
+    const stamped = {
+      ...req,
+      startTime,
+      ...(logs?.length ? { serverLogs: logs.map((l) => ({ ...l, timestamp: at + (l.timestamp - first) })) } : {}),
+    };
+    startTime += duration + vary(40);
     return stamped;
   });
+}
+
+/**
+ * A relative-times test's steps, console entries, dialogs and requests (with
+ * their backend log entries) stamped onto its attempt, which started at
+ * `startedAt` (epoch ms).
+ */
+function stampAttemptTimes(test: SimTest, a: SimAttempt, startedAt: number) {
+  const at = (ms: unknown) => startedAt + Number(ms ?? 0);
+  return {
+    steps: test.steps.map(({ at: offset, ...step }) => ({ ...step, startTime: at(offset) })),
+    consoleLogs: a.consoleLogs?.map((entry) => ({ ...entry, timestamp: at(entry.timestamp) })),
+    dialogs: a.dialogs?.map((dialog) => ({ ...dialog, closedAt: at(dialog.closedAt) })),
+    networkRequests: test.networkRequests.map((req) => ({
+      ...req,
+      startTime: at(req.startTime),
+      ...(Array.isArray(req.serverLogs)
+        ? {
+            serverLogs: (req.serverLogs as Array<Record<string, unknown>>).map((log) => ({
+              ...log,
+              timestamp: at(log.timestamp),
+            })),
+          }
+        : {}),
+    })),
+  };
 }
 
 function buildWebVitals(slow = false): Record<string, unknown> {
@@ -659,6 +706,33 @@ function buildWaitHeavyStepEvents(testDuration: number, file: string, line: numb
   return events;
 }
 
+/**
+ * Step events for a test running a story's authored steps: its fixtures and
+ * the beforeEach hook that runs the authored navigation, a framework load
+ * wait, and the after hooks at the end of the attempt. The test never sleeps,
+ * so nothing is wasted. startedAt values are 0-based offsets remapped to
+ * absolute epoch ms in workerLoop.
+ */
+function buildStoryStepEvents(
+  attemptDuration: number,
+  hooks: { context: number; page: number; beforeEach: number },
+): Array<Record<string, unknown>> {
+  const offset = hooks.context + hooks.page + hooks.beforeEach;
+  const afterHookDur = vary(90, 0.2);
+  return [
+    beforeHooksEvent(0, hooks.context, hooks.page, hooks.beforeEach),
+    {
+      title: 'Wait for load state',
+      category: 'wait',
+      startedAt: offset,
+      duration: vary(420, 0.25),
+      status: 'passed',
+      location: null,
+    },
+    afterHooksEvent(attemptDuration - afterHookDur, afterHookDur),
+  ];
+}
+
 function baseTests(opts: BaseTestOptions = {}): SimTest[] {
   return CHECKOUT_TESTS.map((t, i) => {
     const duration = vary(Math.round(t.duration * (opts.durationFactor ?? 1)), 0.12);
@@ -773,30 +847,40 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
       // splitting into a lookalike duplicate.
       for (const i of [0, 1]) {
         const failingCase = CLUSTER1_STORY.failingCases[i]!;
-        // The story's own steps: the checkout fields, then the Pay click the
-        // test timeout stops, with the story's evidence placed around it.
-        const placed = authoredFailureSteps(failingCase, { scale: vary(1000, 0.1) / 1000 })!;
+        // The story's own steps once the fixtures are set up: the beforeEach
+        // navigation, the checkout fields, then the Pay click the test timeout
+        // stops, with the story's evidence placed around it. Every time is in
+        // ms from the attempt's start, which workerLoop stamps on.
+        const scale = vary(1000, 0.1) / 1000;
+        const context = vary(75, 0.2);
+        const page = vary(55, 0.2);
+        const placed = authoredFailureSteps(failingCase, { scale, startMs: context + page })!;
         const payClick = placed.at(-1)!;
         const failedDuration = payClick.at + payClick.duration + FAILURE_TEARDOWN_MS;
         const times = storyEvidenceTimes(CLUSTER1_STORY, payClick);
-        const steps: SimStep[] = placed.map(({ at: _at, ...step }) => step);
-        const slowest = steps.reduce((a, b) => (a.duration > b.duration ? a : b));
-        tests[i]!.steps = steps;
+        const slowest = placed.reduce((a, b) => (a.duration > b.duration ? a : b));
+        tests[i]!.relativeTimes = true;
+        tests[i]!.steps = placed;
         tests[i]!.slowestStep = slowest.title;
         tests[i]!.slowestStepDuration = slowest.duration;
-        const startedAt = Date.now();
+        tests[i]!.stepEvents = buildStoryStepEvents(failedDuration, {
+          context,
+          page,
+          beforeEach: authoredBeforeEachMs(failingCase, { scale }),
+        });
+        tests[i]!.wastedTimeMs = null;
         tests[i]!.attempts = [
           {
             status: 'failed',
             duration: failedDuration,
             error: failingCase.error,
-            consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, startedAt, times.console),
+            consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, 0, times.console),
             // The first holder also leaves a confirm dialog open at the failure
             // moment — it blocks the page until dismissed, so the Pay action
             // never resolves. Feeds the dialogs lane and the dialog clue.
             dialogs:
               i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
-                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: startedAt + times.dialogClosedAt }]
+                ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: times.dialogClosedAt }]
                 : undefined,
             testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
             testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
@@ -814,8 +898,8 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           (r) => !skipped.some((o) => o.method === r.method && o.url === r.url),
         );
         tests[i]!.networkRequests = [
-          ...withStartTimes(base),
-          ...own.map((o, k) => ({ ...o, startTime: startedAt + times.requests[k]! })),
+          ...withStartTimes(base, 0),
+          ...own.map((o, k) => ({ ...o, startTime: times.requests[k]! })),
         ];
       }
       // One test fails with a new error signature — a brand-new cluster
@@ -1311,6 +1395,15 @@ async function runSingleSimulation(
           }
         }
 
+        const stamped = test.relativeTimes
+          ? stampAttemptTimes(test, a, startedAt)
+          : {
+              steps: test.steps,
+              consoleLogs: a.consoleLogs,
+              dialogs: a.dialogs,
+              networkRequests: test.networkRequests,
+            };
+
         await postEvents([
           {
             type: 'complete',
@@ -1329,7 +1422,7 @@ async function runSingleSimulation(
               duration: att.duration ?? test.duration,
               startedAt: startedAt - (attempt - i) * (test.duration + WORKER_GAP_MS),
             })),
-            steps: test.steps,
+            steps: stamped.steps,
             // Remap 0-based step event offsets to absolute epoch ms anchored to
             // this test's actual startedAt, so each test's segments appear in
             // the correct position on the WorkersTimeline.
@@ -1339,7 +1432,7 @@ async function runSingleSimulation(
             slowestStep: test.slowestStep,
             slowestStepDuration: test.slowestStepDuration,
             wastedTimeMs: test.wastedTimeMs ?? null,
-            networkRequests: test.networkRequests,
+            networkRequests: stamped.networkRequests,
             webVitals: test.webVitals,
             pageState: test.pageState ?? null,
             locatorPages: test.steps?.length ? buildLocatorPages() : null,
@@ -1347,8 +1440,8 @@ async function runSingleSimulation(
             tags: test.tags,
             locks: test.locks,
             testMeta: test.testMeta,
-            consoleLogs: a.consoleLogs ?? null,
-            dialogs: a.dialogs ?? null,
+            consoleLogs: stamped.consoleLogs ?? null,
+            dialogs: stamped.dialogs ?? null,
             ariaSnapshot: a.ariaSnapshot ?? null,
             testSource: a.testSource ?? null,
             testSourceFrames: a.testSourceFrames ?? null,
