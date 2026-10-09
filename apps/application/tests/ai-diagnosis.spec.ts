@@ -395,52 +395,101 @@ test.describe.serial('AI diagnosis endpoints', () => {
     expect(body.diagnosis!.category).toBe('app-bug');
   });
 
-  test('Show context and Re-diagnose reach the Diagnosis panel on the cluster page', async ({ page, request }) => {
+  test('Show context and Re-diagnose reach the Diagnosis panel that leads the cluster page', async ({
+    page,
+    request,
+  }) => {
     expect(clusterId).toBeTruthy();
+    // A completed diagnosis whose patch is absent: the step follows the diagnosis,
+    // with Re-diagnose as its one secondary action, so it sits inline.
+    const detail = (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()) as {
+      nextStep: { kind: string; secondary?: Array<{ action: string }> } | null;
+    };
+    expect(detail.nextStep?.kind).toBe('follow-diagnosis');
+    expect(detail.nextStep?.secondary?.map((a) => a.action)).toEqual(['re-diagnose']);
+
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
 
     // A step from the diagnosis puts Diagnosis in its own card, always open.
-    // Otherwise it is a folded section of More ways to fix, whose body (and so
-    // its diagnosis panel) is not mounted until it opens.
-    const leads = (await page.locator('[data-shot="fix-lead"] [data-shot="fix-diagnosis"]').count()) > 0;
-    const diagnosis = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded]').first();
-    const fold = async () => {
-      if (leads) return;
-      if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
-      await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
-    };
-    const expectOpen = async () => {
-      if (leads) await expect(page.locator('[data-shot="fix-lead"] [data-shot="cluster-diagnosis"]')).toBeVisible();
-      else await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
-    };
+    const panel = page.locator('[data-shot="fix-lead"] [data-shot="cluster-diagnosis"]');
+    await expect(panel).toBeVisible();
+    await expect(page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"]')).toHaveCount(0);
 
-    // More actions › Show context opens the section, then the context modal.
-    await fold();
+    // More actions › Show context opens the context modal.
     await page.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Show context' }).click();
     const context = page.getByRole('dialog').filter({ hasText: 'Context sent to AI' });
     await expect(context).toBeVisible();
-    await expectOpen();
     await page.keyboard.press('Escape');
     await expect(context).toHaveCount(0);
 
-    // The next step's Re-diagnose opens the section, then asks for a new diagnosis
-    // (answered here without reaching the server, so the stored one stays).
-    const detail = (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()) as {
-      nextStep: { secondary?: Array<{ action: string }> } | null;
-    };
-    // Re-diagnose is the step's one secondary action, so it sits inline.
-    expect(detail.nextStep?.secondary?.map((a) => a.action)).toEqual(['re-diagnose']);
+    // The next step's Re-diagnose asks for a new diagnosis (answered here without
+    // reaching the server, so the stored one stays).
     const diagnoseRequests: string[] = [];
     await page.route(/\/api\/failure-clusters\/\d+\/diagnose/, async (route) => {
       diagnoseRequests.push(route.request().url());
       await route.abort();
     });
-    await fold();
     await page.locator('[data-shot="next-step"]').getByRole('button', { name: 'Re-diagnose' }).click();
-    await expectOpen();
+    await expect(panel).toBeVisible();
     await expect.poll(() => diagnoseRequests.length).toBeGreaterThan(0);
+  });
+
+  test('Show context opens a folded Diagnosis section when the next step is not from the diagnosis', async ({
+    page,
+    request,
+  }) => {
+    // A cluster whose test passed again: the step is Mark resolved, which points at
+    // no section, so Diagnosis is a folded section of More ways to fix and its
+    // panel is not mounted until the section opens.
+    const title = 'logout clears the session';
+    const location = 'tests/logout.spec.ts:8:3';
+    // Letters, not digits: the fingerprint masks numbers, so each attempt gets a cluster of its own.
+    const token = String(Date.now()).replace(/\d/g, (d) => 'klmnopqrst'[Number(d)]!);
+    const { runId } = await submitRun(request, [
+      {
+        title,
+        status: 'failed',
+        duration: 1000,
+        location,
+        error: `Error: logout left the session open ${token}`,
+      },
+    ]);
+    const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
+      testCases: Array<{ status: string; failureClusterId?: number }>;
+    };
+    const foldedClusterId = run.testCases.find((c) => c.status === 'failed')?.failureClusterId;
+    expect(foldedClusterId).toBeTruthy();
+    await submitRun(request, [{ title, status: 'passed', duration: 900, location }]);
+    // The fix is recorded in the background after the passing run is stored.
+    await expect
+      .poll(
+        async () =>
+          (
+            (await (await request.get(`/api/failure-clusters/${foldedClusterId}`)).json()) as {
+              nextStep: { kind: string } | null;
+            }
+          ).nextStep?.kind,
+        { timeout: 15_000 },
+      )
+      .toBe('mark-resolved');
+
+    await page.goto(`/failure-clusters/${foldedClusterId}`);
+    await waitForHydration(page);
+
+    await expect(page.locator('[data-shot="fix-lead"]')).toHaveCount(0);
+    const diagnosis = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-shot="cluster-diagnosis"]')).toHaveCount(0);
+
+    // More actions › Show context opens the section, mounts its panel, then the modal.
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Show context' }).click();
+    const context = page.getByRole('dialog').filter({ hasText: 'Context sent to AI' });
+    await expect(context).toBeVisible();
+    await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('[data-shot="fix"] [data-shot="cluster-diagnosis"]')).toBeVisible();
   });
 
   test('a completed diagnosis stores a context hash matching the current context, so it is not stale', async ({

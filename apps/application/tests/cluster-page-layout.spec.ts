@@ -3,6 +3,8 @@ import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 import { pickMostLikely, type MostLikely } from '#shared/most-likely';
 import type { FailureClue, FailureStory } from '#shared/failure-clues';
+import type { NextStepKind } from '#shared/next-step';
+import { NEXT_STEP_SECTION } from '../app/utils/fix-sections';
 
 /**
  * Failure-cluster detail page layout: one situation block, read top to bottom.
@@ -204,6 +206,33 @@ test.describe('Failure cluster page layout', () => {
       .poll(async () => page.getByRole('link', { name: 'Open execution' }).getAttribute('href'))
       .not.toBe(href);
     await expect(h1).toHaveText(before);
+  });
+
+  // The section the next step points at is a card of its own under the block,
+  // above the affected tests and the evidence; every other way to fix is folded.
+  test('the fix section of the next step leads above the affected tests and the evidence', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    // The step the page renders (reproduce, or diagnose while AI is configured).
+    const kind = (await page.locator('[data-shot="next-step"]').getAttribute('data-next-kind')) as NextStepKind;
+    const key = NEXT_STEP_SECTION[kind];
+    expect(key, `the ${kind} step points at a section`).toBeTruthy();
+
+    const lead = page.locator(`[data-shot="fix-lead"] [data-shot="fix-${key}"]`);
+    await expect(lead).toBeVisible();
+    const leadTop = (await lead.boundingBox())!.y;
+    for (const below of ['cluster-affected-tests', 'evidence-card']) {
+      const el = page.locator(`[data-shot="${below}"]`);
+      await expect(el).toBeVisible();
+      expect(leadTop, `the lead section sits above ${below}`).toBeLessThan((await el.boundingBox())!.y);
+    }
+
+    const toolbox = page.locator('[data-shot="fix"]');
+    await expect(toolbox.locator(`[data-shot="fix-${key}"]`)).toHaveCount(0);
+    const toggles = toolbox.locator('button[aria-expanded]');
+    expect(await toggles.count()).toBeGreaterThan(0);
+    for (const toggle of await toggles.all()) await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('the occurrence chart and Activity fold at the foot of the page', async ({ page, request }) => {
