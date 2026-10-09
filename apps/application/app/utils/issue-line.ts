@@ -48,6 +48,16 @@ export function filingFailureSentence(error: string | null | undefined, ago?: st
   return endSentence(`${failed}: ${text}`);
 }
 
+/**
+ * The Issue line's sentence for a filing a rule left to a person, because an
+ * open issue already carries the failure's labels: it names that issue, so
+ * linking it is the obvious next move. It says how long ago when given.
+ */
+export function filingSkippedSentence(existingKey: string, ago?: string | null): string {
+  const skipped = ago ? `Automatic filing skipped ${ago}` : 'Automatic filing skipped';
+  return `${skipped}: ${existingKey} is already open with this failure's labels.`;
+}
+
 /** The issue key link's tooltip: the key, the issue's summary, and that the link opens the tracker. */
 export function issueKeyTitle(key: string, summary: string | null | undefined, tracker: string | null): string {
   const opens = `Opens in ${tracker ?? 'the tracker'}.`;

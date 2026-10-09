@@ -1,5 +1,11 @@
 import { describe, test, expect } from 'vitest';
-import { filingFailureSentence, issueKeyTitle, issueLineForm, type IssueLineFacts } from '../../app/utils/issue-line';
+import {
+  filingFailureSentence,
+  filingSkippedSentence,
+  issueKeyTitle,
+  issueLineForm,
+  type IssueLineFacts,
+} from '../../app/utils/issue-line';
 
 const facts = (over: Partial<IssueLineFacts> = {}): IssueLineFacts => ({
   hasKnownIssue: false,
@@ -66,6 +72,17 @@ describe('filingFailureSentence', () => {
       'The last filing failed 3 days ago: Jira answered “Severity is required.”',
     );
     expect(filingFailureSentence(null, '3 days ago')).toBe('The last filing failed 3 days ago.');
+  });
+});
+
+describe('filingSkippedSentence', () => {
+  test('names the open issue a rule found, with how long ago when given', () => {
+    expect(filingSkippedSentence('PROJ-900')).toBe(
+      "Automatic filing skipped: PROJ-900 is already open with this failure's labels.",
+    );
+    expect(filingSkippedSentence('PROJ-900', '2 hours ago')).toBe(
+      "Automatic filing skipped 2 hours ago: PROJ-900 is already open with this failure's labels.",
+    );
   });
 });
 

@@ -5,11 +5,11 @@
  * The rules and guards live in `#shared/integrations/automation` and read the
  * facts `gatherAutoCreateFacts` collects. On top of them, this holds to the
  * daily cap, leaves alone a failure an open issue in the tracker already
- * carries the labels of (a person links that one; the activity list says so),
- * and files through the same `createIssue` path a click takes, so the
- * per-cluster dedupe (a Done issue or a removed link no longer answers), owner
- * routes, required fields and the outbox apply unchanged. The issue opens with
- * what the rule counted.
+ * carries the labels of (a person links that one; the activity list and the
+ * failure pages' Issue line say so), and files through the same `createIssue`
+ * path a click takes, so the per-cluster dedupe (a Done issue or a removed link
+ * no longer answers), owner routes, required fields and the outbox apply
+ * unchanged. The issue opens with what the rule counted.
  */
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { projects, testRuns, testRunsCases } from '../../database/schema';

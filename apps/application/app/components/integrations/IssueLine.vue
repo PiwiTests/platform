@@ -11,13 +11,14 @@
  * untracked open cluster says it has none and offers to file or link one; a
  * filing the tracker has not answered yet shows as queued. Where filing is
  * offered, a last filing that failed for good is named with its age and reason,
- * so filing again is not a blind retry. The page owns the create and link
+ * so filing again is not a blind retry, and one a rule left to a person names
+ * the open issue it found, so linking it is the next move. The page owns the create and link
  * dialogs: this line emits. The block that renders this line provides its label.
  */
 import type { IssueFilingFailure } from '#shared/handlers/known-issues';
 import { getProviderName, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
-import { filingFailureSentence, issueKeyTitle, type IssueLineForm } from '~/utils/issue-line';
+import { filingFailureSentence, filingSkippedSentence, issueKeyTitle, type IssueLineForm } from '~/utils/issue-line';
 
 const props = defineProps<{
   form: IssueLineForm;
@@ -66,7 +67,10 @@ onMounted(() => {
 const failureSentence = computed(() => {
   const failure = props.filingFailure;
   if (!failure || !canFile.value) return null;
-  return filingFailureSentence(failure.error, mounted.value && failure.at ? formatRelativeTime(failure.at) : null);
+  const ago = mounted.value && failure.at ? formatRelativeTime(failure.at) : null;
+  return failure.existingKey
+    ? filingSkippedSentence(failure.existingKey, ago)
+    : filingFailureSentence(failure.error, ago);
 });
 </script>
 
