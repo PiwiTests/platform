@@ -629,7 +629,7 @@ export const HELP_TOPICS = {
   },
   'cluster.activity': {
     title: 'Activity',
-    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it, and what Piwi wrote to the cluster’s tracker issue: the issue it filed, its comments and its moves.',
+    text: 'The fix attempts reported on this cluster, from the dashboard, an editor or an agent over MCP, each with what the runs made of it: verified when the tests passed on a commit that carried it (its commit, a Piwi-Cluster trailer in a commit message, or its branch), regressed when the cluster failed again. Below them, every write an agent made to this cluster over MCP, with the API key that made it, and what Piwi wrote to the cluster’s tracker issue: the issue it filed, by hand or by a rule, its comments, its moves and its description updates, and a filing a rule left to a person because an open issue already carried the failure’s labels.',
     doc: 'features/agent-skills#what-agents-report-back',
   },
   'fix.toolbox': {
