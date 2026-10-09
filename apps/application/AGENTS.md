@@ -730,6 +730,13 @@ example's `expect` against the generated seed (the entity its route opens, and t
 seed change that moves or changes one fails there, naming the example: update the entry (route, `expect`, `shows`)
 in the same change, never the check.
 
+**`tests/unit/failure-lines-coherence.test.ts` guards the failure pages' lines over the seed**: it builds every
+cluster's and problem execution's Most likely, State, Situation and Next through the shared handlers, with and without
+an AI provider, and fails when two lines contradict each other (a Next from the diagnosis that does not quote it beside
+another Most likely, a cluster and its latest occurrence leading or acting differently, a verified fix whose State and
+Next disagree). A seed or policy change that trips a rule fixes the lines, never the rule; its last test names the
+seeded pages each rule must reach.
+
 ## MCP tool conventions (MUST follow)
 
 MCP tools (`server/utils/mcp/tools.ts`, route `server/routes/mcp.post.ts`, definitions `shared/mcp-tools.ts`) return
