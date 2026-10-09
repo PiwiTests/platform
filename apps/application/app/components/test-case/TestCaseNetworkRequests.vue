@@ -345,6 +345,7 @@ function rowAccent(r: DecoratedRequest): string {
           </div>
           <UTabs
             v-model="filter"
+            color="neutral"
             :items="filterItems"
             size="xs"
             variant="link"
@@ -354,6 +355,7 @@ function rowAccent(r: DecoratedRequest): string {
         <UTabs
           v-if="hasTrace"
           v-model="view"
+          color="neutral"
           :items="viewItems"
           size="xs"
           variant="pill"
@@ -568,7 +570,9 @@ function rowAccent(r: DecoratedRequest): string {
       <span>
         Want to go deeper? Record traces (<code>trace: 'retain-on-failure'</code>) to see every request with headers,
         timing and bodies here.
-        <DocLink to="features/evidence#trace-powered-deep-views" no-icon class="underline">Learn more</DocLink>
+        <DocLink to="features/evidence#trace-powered-deep-views" no-icon :class="['text-inherit', SENTENCE_LINK_CLASS]"
+          >Learn more</DocLink
+        >
       </span>
     </p>
   </component>
