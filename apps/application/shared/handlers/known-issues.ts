@@ -103,7 +103,7 @@ export interface ClusterIssueFilings {
  * actions recorded for the cluster and for its executions, since a filing asked
  * from an execution counts for its cluster. A cluster's filing is queued while
  * one of them waits on the tracker, and failed while the newest of them failed
- * or was skipped. The pages show both on the Issue line.
+ * or was skipped. The failure pages show both where they name the ticket.
  */
 export async function clusterIssueFilings(db: DrizzleDB, clusterIds: number[]): Promise<ClusterIssueFilings> {
   const out: ClusterIssueFilings = { queued: new Set(), failures: new Map() };

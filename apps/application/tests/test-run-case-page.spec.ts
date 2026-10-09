@@ -1,11 +1,12 @@
+import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 /**
  * The single-column execution page: one situation block — identity, the failure
- * headline, the most likely explanation, the situation sentence and the next
- * step, with the raw error one click away behind *Raw error* — then one evidence
+ * headline and the line under it, the most likely explanation, the next step and
+ * the cluster, with the raw error one click away behind *Raw error* — then one evidence
  * card with content-level tabs (Timeline, Screen, Source, Network, Console,
  * State, Performance), then the Fix card and the History block. A passing
  * execution shows identity and facts only, on the Timeline tab, with no Fix card.
@@ -132,20 +133,28 @@ test.describe('Test-run-case page', () => {
     });
     await expect(headline).toBeVisible();
 
-    // The situation sentence says since when, in one clause; the next step follows.
-    const situation = page.locator('[data-shot="situation"]');
-    await expect(situation).toBeVisible();
-    await expect(situation).toContainText(/failed in this run/i);
+    // The line under the headline says since when, and that nothing ran the test since.
+    const meta = page.locator('[data-shot="execution-meta"]');
+    await expect(meta).toBeVisible();
+    await expect(meta).toContainText(/failed in this run/i);
+    await expect(meta).toContainText('Latest execution of this test');
     const nextStep = page.locator('[data-shot="next-step"]');
     await expect(nextStep).toBeVisible();
     await expect(page.locator('[data-shot="situation-block"]')).toContainText('Next');
 
     // The lines read the explanation, then the action, then the context: the
-    // ticket comes after the next step.
+    // Cluster line names the cluster, then its ticket, after the next step. The
+    // execution page has no Situation line and no Issue line of its own.
     const labels = (await block.locator('dl > dt').allInnerTexts()).map((t) => t.trim());
-    expect(labels).toContain('Issue');
-    expect(labels.indexOf('Next')).toBeLessThan(labels.indexOf('Issue'));
+    expect(labels).toContain('Cluster');
+    expect(labels).not.toContain('Situation');
+    expect(labels).not.toContain('Issue');
+    expect(labels.indexOf('Next')).toBe(labels.indexOf('Cluster') - 1);
     if (labels.includes('Most likely')) expect(labels[0]).toBe('Most likely');
+    const clusterLine = page.locator('[data-shot="cluster-line"]');
+    await expect(clusterLine.getByRole('link', { name: /cluster #\d+/i })).toBeVisible();
+    await expect(clusterLine).toContainText('No issue yet.');
+    await expect(clusterLine.getByRole('button', { name: 'Link an issue' })).toBeVisible();
 
     // The raw error is a disclosure on the facts line, collapsed by default,
     // and reachable — with its Copy failure action — in one click.
@@ -186,7 +195,8 @@ test.describe('Test-run-case page', () => {
     await expect(timelineTab).toHaveAttribute('aria-selected', 'true');
     // No failure → no headline, no story, no situation, no next step, no Fix card.
     await expect(page.getByRole('button', { name: 'Raw error' })).toHaveCount(0);
-    await expect(page.locator('[data-shot="situation"]')).toHaveCount(0);
+    await expect(page.locator('[data-shot="execution-meta"]')).toHaveCount(0);
+    await expect(page.locator('[data-shot="cluster-line"]')).toHaveCount(0);
     await expect(page.locator('[data-shot="next-step"]')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Fix', exact: true })).toHaveCount(0);
     // A passing execution shows the steps table without the failure axis or its
@@ -379,7 +389,7 @@ test.describe('Test-run-case page', () => {
 });
 
 /**
- * The story line, the situation sentence and the next step read from the
+ * The story line, the line under the headline and the next step read from the
  * deterministic demo seed: #37 chains the blocked-by-pending-request story and
  * proposes the diagnosed patch, #587 replaces a locator, #682 reproduces. These
  * run only when the seeded cases are present (a demo-seeded server); a bare test
@@ -400,17 +410,25 @@ test.describe('Situation block on seeded cases', () => {
 
     // The block reads the explanation, the action, then the context.
     const labels = (await page.locator('[data-shot="situation-block"] dl > dt').allInnerTexts()).map((t) => t.trim());
-    expect(labels).toEqual(['Most likely', 'Situation', 'Next', 'Issue']);
+    expect(labels).toEqual(['Most likely', 'Next', 'Cluster']);
 
     // Most likely — the blocked-by-pending-request story, Strong, 3 clues agree.
     await expect(page.getByText('Most likely', { exact: true })).toBeVisible();
     await expect(page.getByText('Strong', { exact: true })).toBeVisible();
     await expect(page.getByText(/3 clues agree/)).toBeVisible();
 
-    // The situation sentence names the regression once, and links the cluster.
-    const situation = page.locator('[data-shot="situation"]');
-    await expect(situation).toContainText('New regression');
-    await expect(situation.getByRole('link', { name: /cluster #/ })).toBeVisible();
+    // The line under the headline names the regression once, and says later runs
+    // failed again, with one link to the newest execution; the Cluster line links
+    // the cluster, then names its issue.
+    const meta = page.locator('[data-shot="execution-meta"]');
+    await expect(meta).toContainText('New regression');
+    await expect(meta).toContainText('Not the latest');
+    const openLatest = meta.getByRole('link', { name: 'Open the latest' });
+    await expect(openLatest).toHaveAttribute('href', /^\/test-run-cases\/\d+$/);
+    await expect(meta.getByRole('link', { name: /run #/ })).toHaveCount(0);
+    const clusterLine = page.locator('[data-shot="cluster-line"]');
+    await expect(clusterLine.getByRole('link', { name: /cluster #/ })).toBeVisible();
+    await expect(clusterLine.locator('[data-shot="issue-line"]')).toBeVisible();
 
     // The next step applies the diagnosed fix; its overflow menu copies the retry command.
     const next = page.locator('[data-shot="next-step"]');
@@ -559,5 +577,107 @@ test.describe('Situation block on seeded cases', () => {
     await page.goto('/test-run-cases/13');
     await waitForHydration(page);
     await expect(page.getByText('Most likely', { exact: true })).toBeVisible();
+  });
+});
+
+/**
+ * The line under the headline says whether the execution is the latest of its
+ * test: two failing runs of one test, then a passing one, in the same project.
+ */
+test.describe('Latest execution line', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  const base = Date.now() - 3 * 60 * 60 * 1000;
+  const failure = {
+    title: 'cart keeps its items',
+    location: 'tests/cart.spec.ts:7:1',
+    duration: 1200,
+    retries: 0,
+    error:
+      'Error: expect(locator).toHaveText(expected) failed\n\nLocator: getByTestId(\'cart-count\')\nExpected: "2"\nReceived: "0"',
+  };
+
+  async function submit(request: APIRequestContext, at: number, passed: boolean) {
+    const res = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.LATEST_EXECUTION_LINE,
+        status: passed ? 'passed' : 'failed',
+        startTime: new Date(at).toISOString(),
+        duration: 5000,
+        totalTests: 1,
+        passedTests: passed ? 1 : 0,
+        failedTests: passed ? 0 : 1,
+        skippedTests: 0,
+        testCases: [
+          passed
+            ? { title: failure.title, location: failure.location, duration: 900, retries: 0, status: 'passed' }
+            : { ...failure, status: 'failed' },
+        ],
+      },
+    });
+    const { runId } = (await res.json()) as { runId: number };
+    const run = await (await request.get(`/api/test-runs/${runId}`)).json();
+    return { runId, executionId: run.testCases[0].executionId as number };
+  }
+
+  let runA: { runId: number; executionId: number };
+  let runB: { runId: number; executionId: number };
+
+  test.beforeAll(async ({ request }) => {
+    runA = await submit(request, base, false);
+    runB = await submit(request, base + 60 * 60 * 1000, false);
+  });
+
+  test('an older failure says a later run failed again and links the newest execution', async ({ page }) => {
+    const hydrationErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.text().includes('Hydration completed but contains mismatches')) hydrationErrors.push(msg.text());
+    });
+    await page.goto(`/test-run-cases/${runA.executionId}`);
+    await waitForHydration(page);
+
+    const meta = page.locator('[data-shot="execution-meta"]');
+    await expect(meta).toContainText(`Not the latest: failed again in run #${runB.runId}`);
+    await expect(meta.getByRole('link', { name: 'Open the latest' })).toHaveAttribute(
+      'href',
+      `/test-run-cases/${runB.executionId}`,
+    );
+    expect(hydrationErrors).toEqual([]);
+  });
+
+  test('the newest failure is the latest execution', async ({ page }) => {
+    await page.goto(`/test-run-cases/${runB.executionId}`);
+    await waitForHydration(page);
+    const meta = page.locator('[data-shot="execution-meta"]');
+    await expect(meta).toContainText('Latest execution of this test');
+    await expect(meta.getByRole('link', { name: 'Open the latest' })).toHaveCount(0);
+  });
+
+  test('once a later run passes, the older failure says so', async ({ page, request }) => {
+    const runC = await submit(request, base + 2 * 60 * 60 * 1000, true);
+    await page.goto(`/test-run-cases/${runA.executionId}`);
+    await waitForHydration(page);
+    const meta = page.locator('[data-shot="execution-meta"]');
+    await expect(meta).toContainText(`Not the latest: passed in run #${runC.runId}`);
+    await expect(meta.getByRole('link', { name: 'Open the latest' })).toHaveAttribute(
+      'href',
+      `/test-run-cases/${runC.executionId}`,
+    );
+  });
+
+  test('at phone width the latest part reads on its own line, with no horizontal scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/test-run-cases/${runA.executionId}`);
+    await waitForHydration(page);
+    const since = page.getByTestId('execution-meta-since');
+    const latest = page.getByTestId('execution-meta-latest');
+    await expect(latest).toBeVisible();
+    const sinceBox = (await since.boundingBox())!;
+    const latestBox = (await latest.boundingBox())!;
+    expect(latestBox.y).toBeGreaterThanOrEqual(sinceBox.y + sinceBox.height - 1);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

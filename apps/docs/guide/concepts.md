@@ -181,10 +181,12 @@ clue, never instead of a strong or medium story, by one rule on the execution an
 
 ### Situation
 
-The **one sentence of context** under the explanation: since when the failure has been happening (and on
-which commit and author), how many other tests share the cause and the cluster they join, whether an earlier
-fix regressed, and who owns it. An exceptional case — a new regression, a pass on retry, an infrastructure
-blip — leads it as a badge. It reads on the execution page and, condensed, in [alerts](/features/notifications).
+The **context** of a failing execution, in two places on its page. The line under the headline says since when
+the failure has been happening (on which commit and author) and whether a newer execution of the test, in the same
+Playwright project, failed again or passed, with a link to the newest one. The **Cluster** line says how many other
+tests share the cause and the cluster they join, its status, whether an earlier fix did not hold and who owns it,
+then the cluster's issue. An exceptional case (a new regression, a pass on retry, an infrastructure blip) leads the
+line under the headline. It reads on the execution page and, condensed, in [alerts](/features/notifications).
 
 ### Next step
 

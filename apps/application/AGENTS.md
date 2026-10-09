@@ -280,8 +280,9 @@ text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts,
   a color or a bold span is never what tells two lines apart.
 - **The situation block reads explanation, action, context**, in the one order of `SITUATION_ROWS`
   (`app/utils/situation-rows.ts`): _Most likely_ first, then _State_ right above _Next_, then the context lines, the
-  ticket (_Issue_) first. A page fills the lines it has and never reorders them; a new line takes its place in that
-  list.
+  cluster and its ticket first (the execution page's _Cluster_ line ends with the ticket, the cluster page's _Issue_
+  line holds it). A page fills the lines it has and never reorders them; a new line takes its place in that list.
+  Facts about the execution itself (since when, whether it is the latest) are the meta line under the headline.
 - **The situation block's left edge carries the page's status color** (`SituationBlock :edge`): the execution's
   outcome color, the cluster state's dot color. It is the status, not an accent, and nothing else in the block
   repeats it.

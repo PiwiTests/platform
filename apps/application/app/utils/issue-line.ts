@@ -1,9 +1,10 @@
 /**
- * Whether a failure page shows its Issue row, and in which form. One rule for
- * the execution page and the cluster page, so the ticket sits in the same place
- * on both: a tracked cluster always shows its issue; an untracked one offers to
- * file or link only while it is open and not snoozed, and only to a viewer who
- * can do one of the two; a filing waiting on the tracker shows as such.
+ * Whether a failure page shows the cluster's ticket, and in which form: the
+ * cluster page's Issue line, the end of the execution page's Cluster line. One
+ * rule for both pages: a tracked cluster always shows its issue; an untracked
+ * one offers to file or link only while it is open and not snoozed, and only to
+ * a viewer who can do one of the two; a filing waiting on the tracker shows as
+ * such.
  */
 export interface IssueLineFacts {
   hasKnownIssue: boolean;

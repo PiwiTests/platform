@@ -38,7 +38,7 @@ after it.
 | Known flake suspect<br>`known-flake-suspect` | strong when a [Flake Lab](/features/flake-lab) experiment reproduced the suspect, else weak | This failure shows one of its test's [suspects](/features/flaky-tests#suspects), when it shows several, the one an experiment reproduced, else the highest ranked: a slow or failed route, a test alongside or just before, load or a browser. The detail gives this failure's value and the suspect's counts, and, once reproduced, the arm against its control ("3 of 4 under delay GET /api/cart 1.8 s, against 0 of 10 without"). |
 
 Clues are ranked by strength, then by membership of the story, then by how close they sit to the moment of failure, and
-the list is capped at eight. An earlier fix that regressed is not a clue: the situation sentence carries it.
+the list is capped at eight. An earlier fix that regressed is not a clue: the execution's **Cluster** line carries it.
 
 ## Stories
 

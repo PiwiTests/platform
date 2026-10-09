@@ -116,6 +116,7 @@ export const PROJECT = {
   JIRA_LIVE: 'jira-live-test',
   KEYBOARD_NAV: 'keyboard-nav-test',
   LABEL_OVERRIDE: 'label-override-project',
+  LATEST_EXECUTION_LINE: 'latest-execution-line-test',
   LATEST_RUN_TEST: 'latest-run-test',
   LIST_VISIBLE: 'list-visible-project',
   LOCATORS_PAGE: 'locators-page-test',

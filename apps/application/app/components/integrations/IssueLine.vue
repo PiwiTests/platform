@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /**
- * "Issue" — the ticket a failure cluster is tracked in, as one line of the
- * situation block on the execution page and on the cluster page, so the ticket
- * sits in the same place on both. A tracked cluster names its issue, the key a
- * link to the tracker whose tooltip gives the issue's summary, and its status;
- * an issue Done while the failure goes on says so and offers a new one (once the
- * failure stopped, both failure pages offer to resolve the cluster instead). An
+ * The ticket a failure cluster is tracked in: the Issue line of the cluster
+ * page's situation block, and the end of the Cluster line on the execution
+ * page, where the cluster's own sentence comes first (the `lead` slot), so the
+ * ticket sits beside the cluster it tracks on both pages. A tracked cluster
+ * names its issue, the key a link to the tracker whose tooltip gives the
+ * issue's summary, and its status; an issue Done while the failure goes on says
+ * so and offers a new one (once the failure stopped, both failure pages offer to
+ * resolve the cluster instead). An
  * untracked open cluster says it has none and offers to file or link one; a
  * filing the tracker has not answered yet shows as queued. Where filing is
  * offered, a last filing that failed for good is named with its age and reason,
@@ -72,6 +74,7 @@ const failureSentence = computed(() => {
   <div data-shot="issue-line" class="space-y-1">
     <template v-if="form === 'tracked' && knownIssue">
       <p>
+        <slot name="lead" />
         Tracked in
         <a
           :href="safeHttpUrl(knownIssue.url) ?? undefined"
@@ -96,11 +99,12 @@ const failureSentence = computed(() => {
     </template>
 
     <p v-else-if="form === 'queued'" data-testid="issue-line-queued">
+      <slot name="lead" />
       Filing queued: Jira did not answer yet. Piwi retries and links the issue once it is created.
     </p>
 
     <template v-else-if="form === 'untracked'">
-      <p>No issue yet.</p>
+      <p><slot name="lead" /> No issue yet.</p>
       <p v-if="failureSentence" class="text-xs text-muted" data-testid="issue-line-filing-failed">
         {{ failureSentence }}
       </p>

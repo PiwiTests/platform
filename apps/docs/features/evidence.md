@@ -21,7 +21,7 @@ Links from a run land on an execution; the test's title links to its test case.
 ## One execution, diagnosis-first
 
 A failing execution reads top to bottom in one column. It opens on the **situation block** (the headline, the most
-likely cause, the situation and the next step), described once on [Your first failure,
+likely cause, the next step and the cluster), described once on [Your first failure,
 explained](/guide/first-failure). Traces stream in while the run is still running.
 
 <figure>

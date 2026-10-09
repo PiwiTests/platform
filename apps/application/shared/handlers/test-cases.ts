@@ -10,13 +10,14 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, isNull, isNotNull, notInArray } from 'drizzle-orm';
+import { eq, and, or, desc, gt, gte, sql, isNull, isNotNull, notInArray } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
+import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
 import { computeNextStep } from '../next-step';
 import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
 import { getClusterPatchFacts } from './failure-clusters';
@@ -208,6 +209,46 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime))
+    .limit(50);
+}
+
+/**
+ * The executions of a test newer than one execution: its later attempts in the
+ * same run, and every attempt in a run that started later (a tie on the start
+ * time goes to the higher run id), newest first. Every Playwright project and
+ * every branch, lab runs left out; `summarizeNewerExecutions` keeps the
+ * execution's own project. Fifty rows at most.
+ */
+export async function getNewerExecutions(
+  db: DrizzleDB,
+  ref: { testCaseId: number; runId: number; runStartTime: Date | null; retries: number },
+): Promise<NewerExecutionRow[]> {
+  const laterRun = ref.runStartTime
+    ? or(
+        gt(testRuns.startTime, ref.runStartTime),
+        and(eq(testRuns.startTime, ref.runStartTime), gt(testRuns.id, ref.runId)),
+      )
+    : gt(testRuns.id, ref.runId);
+  return db
+    .select({
+      id: testRunsCases.id,
+      runId: testRuns.id,
+      status: testRunsCases.status,
+      retries: testRunsCases.retries,
+      browserName: testRunsCases.browserName,
+      failureClusterId: testRunsCases.failureClusterId,
+      startTime: testRuns.startTime,
+    })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(
+      and(
+        eq(testRunsCases.testCaseId, ref.testCaseId),
+        notLabRun(testRuns.origin),
+        or(laterRun, and(eq(testRuns.id, ref.runId), gt(testRunsCases.retries, ref.retries))),
+      ),
+    )
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id), desc(testRunsCases.retries))
     .limit(50);
 }
 
@@ -526,12 +567,26 @@ export async function getTestRunCase(
     owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
   });
 
-  // The situation sentence and the single next step — built from the verdict and
+  // The situation lines and the single next step, built from the verdict and
   // the same healing / diagnosis facts the toolbox reads, so the top of the page
   // says what to do without re-deriving it in the UI.
   const healing = await getLocatorHealing(db, id).catch(() => null);
   const patchFacts = failureCluster
     ? await getClusterPatchFacts(db, failureCluster.id, { fixLandedRunId: failureCluster.fixLandedRunId })
+    : null;
+  // Whether a newer execution of the test, in the same Playwright project,
+  // failed again or passed: sent for every execution, and said under a failing
+  // one's headline.
+  const latest = testRun
+    ? summarizeNewerExecutions(
+        { runId: trc.testRunId, browserName: trc.browserName ?? null, failureClusterId: trc.failureClusterId ?? null },
+        await getNewerExecutions(db, {
+          testCaseId: trc.testCaseId,
+          runId: trc.testRunId,
+          runStartTime: testRun.startTime ?? null,
+          retries: trc.retries ?? 0,
+        }),
+      )
     : null;
   const situation = verdict
     ? buildSituation({
@@ -541,6 +596,7 @@ export async function getTestRunCase(
         owner: verdict.owner,
         clusterStatus: failureCluster?.status ?? null,
         assignee: failureCluster?.assignee ?? null,
+        latest,
         now: opts.now,
       })
     : null;
@@ -642,6 +698,7 @@ export async function getTestRunCase(
     failureCluster,
     verdict,
     situation,
+    latest,
     nextStep,
     quarantined,
     testRun: testRun ? { ...testRunPublic, project, reports: reportList, links: linksForRun } : testRun,

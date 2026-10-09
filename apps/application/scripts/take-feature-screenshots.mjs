@@ -3616,10 +3616,12 @@ const SCENES = [
   // ── Failure headline (report artifacts) ──────────────────────────────────
   {
     name: 'failure-headline',
-    description: 'Failing execution: the situation block — headline, most likely, situation and next step',
+    description:
+      'Failing execution: the situation block, the headline and the line under it (since when, not the latest), most likely, next step and the cluster',
     tags: ['desktop'],
-    // Execution 37 is clustered with a sibling in its run, so the situation
-    // sentence carries the cluster link next to the regression badge.
+    // Execution 37 is a new regression clustered with a sibling in its run, and
+    // its test failed again in later runs: the line under the headline says so,
+    // and the Cluster line names the sibling.
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 900 },
     of: '[data-shot="situation-block"]',
@@ -3627,7 +3629,7 @@ const SCENES = [
   },
   {
     name: 'failure-headline-mobile',
-    description: 'The same situation block at phone width',
+    description: 'The same situation block at phone width, "Not the latest" on a line of its own',
     tags: ['desktop'],
     route: '/test-run-cases/37',
     viewport: { width: 375, height: 812 },
@@ -3635,10 +3637,32 @@ const SCENES = [
     pad: 8,
   },
 
-  // ── Issue line on the execution page (report artifacts) ──────────────────
+  // ── Not the latest execution (report artifacts) ──────────────────────────
+  {
+    name: 'execution-latest-passed',
+    description:
+      'Failing execution whose test passed in a later run: "Not the latest: passed in run #N" under the headline',
+    tags: ['desktop'],
+    // Execution 711 failed in cluster #10; the same test passed in a later run.
+    route: '/test-run-cases/711',
+    viewport: { width: 1280, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 12,
+  },
+  {
+    name: 'execution-latest-passed-mobile',
+    description: 'The same situation block at phone width',
+    tags: ['desktop'],
+    route: '/test-run-cases/711',
+    viewport: { width: 390, height: 900 },
+    of: '[data-shot="situation-block"]',
+    pad: 8,
+  },
+
+  // ── The ticket on the execution page (report artifacts) ──────────────────
   {
     name: 'execution-issue-line',
-    description: "Failing execution whose cluster is tracked: the Issue line names the cluster's issue",
+    description: "Failing execution whose cluster is tracked: the Cluster line ends with the cluster's issue",
     tags: ['desktop'],
     prepare: prepareClusterOneTracked,
     route: '/test-run-cases/37',
@@ -3664,7 +3688,7 @@ const SCENES = [
   },
   {
     name: 'execution-issue-line-untracked',
-    description: 'Failing execution whose cluster has no issue: the Issue line offers to create or link one',
+    description: 'Failing execution whose cluster has no issue: the Cluster line offers to create or link one',
     tags: ['desktop'],
     prepare: prepareJiraSceneConnection,
     route: '/test-run-cases/87',

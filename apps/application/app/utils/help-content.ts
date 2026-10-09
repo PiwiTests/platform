@@ -44,7 +44,7 @@ export const HELP_TOPICS = {
   // ── Issue tracking ──────────────────────────────────────────────────────
   'integrations.create-issue': {
     title: 'Create issue',
-    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links it to the failure’s cluster as its known issue, so the key shows on the cluster page, on every execution of the cluster, in the inbox, Slack, email and PR comments. Filing again for the same cluster, from its page or one of its executions, names the issue already filed until that issue is Done or unlinked; then it files a new one, and a Done issue stays linked. A filing Jira refused shows on the Issue line with Jira’s reason. The modal offers to link an existing issue instead.',
+    text: 'File a Jira issue from this failure, with the fix plan as its body. Piwi links it to the failure’s cluster as its known issue, so the key shows on the cluster page, on every execution of the cluster, in the inbox, Slack, email and PR comments. Filing again for the same cluster, from its page or one of its executions, names the issue already filed until that issue is Done or unlinked; then it files a new one, and a Done issue stays linked. A filing Jira refused shows beside the ticket on both pages, with Jira’s reason. The modal offers to link an existing issue instead.',
     doc: 'features/issue-tracking#what-it-does-exactly',
   },
   'integrations.required-fields': {
@@ -54,7 +54,7 @@ export const HELP_TOPICS = {
   },
   'integrations.known-issue': {
     title: 'Known issue',
-    text: 'The tracker issue this cluster is tracked by: the newest Jira issue, or issue on a connected tracker, linked to it. Linking or filing another keeps the earlier one linked, and the new one takes its place. Its key and status show on the Issue line of the cluster and execution pages, and wherever the cluster is listed.',
+    text: 'The tracker issue this cluster is tracked by: the newest Jira issue, or issue on a connected tracker, linked to it. Linking or filing another keeps the earlier one linked, and the new one takes its place. Its key and status show on the cluster page’s Issue line, at the end of an execution’s Cluster line, and wherever the cluster is listed.',
     doc: 'features/issue-tracking#the-key-travels',
   },
 
@@ -560,7 +560,7 @@ export const HELP_TOPICS = {
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
-    text: "One block that answers three questions: what broke (the headline, built from the Playwright error itself), what is most likely behind it (a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue; the cluster page follows the same rule), what is going on (since when, on which commit, in how many other tests, who owns it — one sentence), and what to do next (one action chosen by a policy, with where its change comes from). Every clue, the raw error and the rest of the facts are one click away.",
+    text: "One block, read top to bottom: what broke (the headline, built from the Playwright error itself), and under it since when, on which commit, and whether a newer execution of the test failed again or passed; what is most likely behind it (a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue; the cluster page follows the same rule); what to do next (one action chosen by a policy, with where its change comes from); then the cluster the failure belongs to, with its issue. Every clue, the raw error and the rest of the facts are one click away.",
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {

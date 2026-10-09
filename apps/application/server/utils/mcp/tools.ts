@@ -35,6 +35,7 @@ import {
 import { parseBisectResultBody } from '@piwitests/core/bisect';
 import { AGENT_DIAGNOSIS_ERRORS, parseAgentDiagnosis } from '#shared/agent-diagnosis';
 import { parseFixAttempt } from '#shared/fix-attempts';
+import type { LatestExecution } from '#shared/latest-execution';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
 import { clusterTrailerLine } from '#shared/commit-trailers';
 import { parseSetRunIncident } from '#shared/run-incident';
@@ -975,7 +976,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!plan) return null;
     const enriched = await enrichFixPlanOwnership(db, cluster.projectId, plan);
 
-    // Additive: the story, the situation sentence and the computed next step,
+    // Additive: the story, the situation and the computed next step,
     // read on the cluster's latest occurrence through the shared handlers.
     const clusterDetail = await getFailureCluster(db, clusterId).catch(() => null);
     const latestId = clusterDetail?.latestTestRunsCaseId ?? null;
@@ -2254,6 +2255,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const story = cluesResult?.story ?? null;
     const nextStep = (detail as { nextStep?: unknown } | null)?.nextStep ?? null;
     const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
+    const latest = (detail as { latest?: LatestExecution | null } | null)?.latest ?? null;
 
     return dropNulls({
       executionId: id,
@@ -2267,6 +2269,14 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         ? dropNulls({ id: story.id, sentence: story.sentence, strength: story.strength, clueIds: story.clueIds })
         : null,
       situation: situation?.text || null,
+      latest: latest
+        ? dropNulls({
+            isLatest: latest.isLatest,
+            executionId: latest.newest?.executionId ?? null,
+            runId: latest.newest?.runId ?? null,
+            status: latest.newest?.status ?? null,
+          })
+        : null,
       nextStep: nextStep ?? null,
       clues: cluesResult ? compactClues(cluesResult) : null,
       clusterId: row.failureClusterId || null,

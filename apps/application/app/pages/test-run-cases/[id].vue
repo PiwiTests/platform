@@ -14,11 +14,10 @@ import type { RerunInfo } from '~/composables/useCiRerun';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
-import type { Situation, SituationPart } from '#shared/situation';
+import type { Situation } from '#shared/situation';
 import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { NextStep } from '#shared/next-step';
 import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
-import { commitUrl } from '#shared/scm-urls';
 import { shouldNudgeFixtures } from '#shared/capability-nudge';
 import { getProviderIcon, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
@@ -158,16 +157,15 @@ const mostLikely = computed(() =>
   pickMostLikely({ story: story.value, clues: clues.value, diagnosis: mostLikelyDiagnosis.value }),
 );
 
-// The situation sentence and the single next step, built server-side from the
-// verdict and the same healing / diagnosis facts the toolbox reads.
+// The situation lines (since when and whether a newer execution failed again,
+// under the headline; the cluster, in the Cluster line) and the single next
+// step, built server-side from the verdict and the same healing / diagnosis
+// facts the toolbox reads.
 const situation = computed(() => (testCase.value as { situation?: Situation | null } | null)?.situation ?? null);
 const nextStep = computed(() => (testCase.value as { nextStep?: NextStep | null } | null)?.nextStep ?? null);
 
-// A `commit` part of the situation links to the SCM host only when the run has a repository.
+// A commit in the situation links to the SCM host only when the run has a repository.
 const repositoryUrl = computed(() => reproduceData.value?.desktop?.repositoryUrl ?? null);
-function situationCommitHref(part: SituationPart): string | null {
-  return part.id != null ? commitUrl(repositoryUrl.value, String(part.id)) : null;
-}
 
 // The story, situation and next lines are only for a problem execution; a passing
 // one shows identity and facts alone.
@@ -493,7 +491,7 @@ function copyFailure() {
   copyRich(plain, html, { toast: 'Failure copied' });
 }
 
-// ── The cluster's issue: the Issue line, the menu, and their dialogs ─────────
+// ── The cluster's issue: the Cluster line's ticket, the menu, and their dialogs
 const { hasTracker } = useTrackerStatus();
 // The execution carries its cluster's issue, so it is current right after a create.
 const knownIssue = computed(() => failureCluster.value?.knownIssue ?? null);
@@ -801,6 +799,13 @@ const { handle: handleNextStepAction } = useNextStepActions({
             >
               {{ verdict.detail }}
             </p>
+            <!-- Since when it fails, on which commit, and whether a newer execution failed again or passed. -->
+            <ExecutionMetaLine
+              v-if="situation"
+              :since="situation.since"
+              :latest="situation.latest"
+              :repository-url="repositoryUrl"
+            />
             <!-- The capture-fixtures nudge, at the point where their absence is felt. -->
             <p v-if="showFixturesNudge" data-shot="fixtures-nudge" class="mt-2 text-xs text-muted">
               Capture fixtures would have recorded the network activity behind this failure.
@@ -820,32 +825,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
           </template>
 
-          <!-- Line 4: the situation sentence — one clause per fact, with links -->
-          <template v-if="situation" #situation>
-            <p data-shot="situation">
-              <template v-for="(part, i) in situation.parts" :key="i">
-                <NuxtLink
-                  v-if="part.href"
-                  :to="part.href"
-                  :class="[SENTENCE_LINK_CLASS, part.kind === 'commit' ? CODE_CHIP_CLASS : '']"
-                  >{{ part.text }}</NuxtLink
-                >
-                <a
-                  v-else-if="part.kind === 'commit' && situationCommitHref(part)"
-                  :href="situationCommitHref(part)!"
-                  target="_blank"
-                  rel="noopener"
-                  :class="[SENTENCE_LINK_CLASS, CODE_CHIP_CLASS]"
-                  >{{ part.text }}</a
-                >
-                <span v-else-if="part.kind === 'commit'" :class="CODE_CHIP_CLASS">{{ part.text }}</span>
-                <span v-else-if="part.kind === 'owner'" class="text-highlighted">{{ part.text }}</span>
-                <template v-else>{{ part.text }}</template>
-              </template>
-            </p>
-          </template>
-
-          <!-- Line 5: the next step -->
+          <!-- Line 4: the next step -->
           <template v-if="isProblem && nextStep" #next>
             <NextStepLine
               :next-step="nextStep"
@@ -855,21 +835,31 @@ const { handle: handleNextStepAction } = useNextStepActions({
             />
           </template>
 
-          <!-- Line 6: the issue, the ticket the cluster is tracked in or the way to file or link one -->
-          <template v-if="isProblem && issueForm" #issue>
-            <IssueLine
-              :form="issueForm"
-              :project-id="executionProjectId"
-              :cluster-status="failureCluster?.status"
-              :failure-goes-on="failureCluster?.failureGoesOn === true"
-              :known-issue="knownIssue"
-              :filing-failure="failureCluster?.issueFilingFailure ?? null"
-              @create="issueModalOpen = true"
-              @link="linkIssueOpen = true"
-            />
+          <!-- Line 5: the cluster, then its ticket or the way to file or link one -->
+          <template v-if="isProblem && (situation?.cluster || issueForm)" #cluster>
+            <div data-shot="cluster-line">
+              <IssueLine
+                v-if="issueForm"
+                :form="issueForm"
+                :project-id="executionProjectId"
+                :cluster-status="failureCluster?.status"
+                :failure-goes-on="failureCluster?.failureGoesOn === true"
+                :known-issue="knownIssue"
+                :filing-failure="failureCluster?.issueFilingFailure ?? null"
+                @create="issueModalOpen = true"
+                @link="linkIssueOpen = true"
+              >
+                <template v-if="situation?.cluster" #lead
+                  ><SituationParts :parts="situation.cluster.parts" :repository-url="repositoryUrl"
+                /></template>
+              </IssueLine>
+              <p v-else-if="situation?.cluster">
+                <SituationParts :parts="situation.cluster.parts" :repository-url="repositoryUrl" />
+              </p>
+            </div>
           </template>
 
-          <!-- Line 7: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 6: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"

@@ -168,21 +168,23 @@ case across runs) · `/test-run-cases/[id]` (one execution) · `/failure-cluster
 **Failure pages.** `/test-run-cases/[id]` (one execution) and `/failure-clusters/[id]` read top to bottom in one
 column. Both open on `SituationBlock`: an identity kicker, the headline as the page's `h1`, then labelled rows in the
 order of `SITUATION_ROWS` (`app/utils/situation-rows.ts`), the explanation, then the action, then the context (Most
-likely `StoryLine`, Situation, State `ClusterStateLine`, Next `NextStepLine`, Issue `IssueLine`, Occurrences, What
-changed `WhatChangedLine`, The suite; a page fills the rows it has) and a facts line
-(`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. The rows are built in the handlers the demo
-shares (`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from `shared/situation.ts`,
-`shared/cluster-state.ts` and `computeNextStep` (`shared/next-step.ts`); `useNextStepActions` turns the Next row's
-action id into behavior on both pages. Both pages choose Most likely and word where the Next step's change comes from
-with `shared/most-likely.ts` (`pickMostLikely`, `nextStepSourceLine`), one rule for the two. Under the block, the
-execution page shows `DidNotRunCard` for a test that did not run, `EvidenceTabs` (opening on the tab `useEvidenceHint`
-picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step
-points at open) and History (`HistoryStrip`). The cluster page shows `ClusterInvestigation` when there is a diff to
-browse, `ClusterAffectedTests` (its selection picks the execution the evidence shows), `EvidenceTabs`,
-`ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both pages provide a section locator
-(`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites. `/bug-reports/[id]` opens on
-the same block with Situation, State, Next and The suite. `npm run app:measure` holds the two failure pages to their
-budgets (text styles, controls above the fold, the Next step beside what it copies).
+likely `StoryLine`, Situation, State `ClusterStateLine`, Next `NextStepLine`, Cluster, Issue `IssueLine`,
+Occurrences, What changed `WhatChangedLine`, The suite; a page fills the rows it has) and a facts line
+(`ExecutionFactsLine`, `ClusterFactsLine`) holding Details and Raw error. On the execution page a meta line under the
+headline (`ExecutionMetaLine`) says since when it fails, on which commit, and whether a newer execution of the test
+failed again or passed, and the Cluster row names the cluster, then its ticket (`SituationParts` in the lead of
+`IssueLine`); the cluster page has an Issue row instead. The rows are built in the handlers the demo shares
+(`shared/handlers/test-cases.ts`, `shared/handlers/failure-clusters.ts`) from `shared/situation.ts` (with
+`shared/latest-execution.ts` over `getNewerExecutions`), `shared/cluster-state.ts` and `computeNextStep`
+(`shared/next-step.ts`); `useNextStepActions` turns the Next row's action id into behavior on both pages. Both pages choose Most likely
+and word where the Next step's change comes from with `shared/most-likely.ts` (`pickMostLikely`,
+`nextStepSourceLine`), one rule for the two. Under the block, the execution page shows `DidNotRunCard` for a test that did not run, `EvidenceTabs` (opening on the tab
+`useEvidenceHint` picks from the leading clue), the `Toolbox` (More ways to fix: one folded section per way to fix, the
+one the next step points at open) and History (`HistoryStrip`). The cluster page shows `ClusterInvestigation` when
+there is a diff to browse, `ClusterAffectedTests` (its selection picks the execution the evidence shows), `EvidenceTabs`, `ClusterOccurrenceTrend`, `ClusterActivity` and the `Toolbox`. Both
+pages provide a section locator (`clusterSectionLocatorKey`) so a clue or an AI citation reveals the evidence it cites.
+`/bug-reports/[id]` opens on the same block with Situation, State, Next and The suite. `npm run app:measure` holds the
+two failure pages to their budgets (text styles, controls above the fold, the Next step beside what it copies).
 
 ### Components (`app/components/`)
 

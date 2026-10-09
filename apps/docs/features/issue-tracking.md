@@ -21,9 +21,9 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 ## What it does, exactly
 
 - **Create issue** appears on a failure cluster, on a failing execution, on each inbox row (plus the `c` key and a
-  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). On the cluster
-  and execution pages, the **Issue** line offers *Create issue* and *Link an issue* until the cluster has a ticket, then
-  names it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
+  *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). The cluster's
+  **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
+  ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps) and *Links* back to Piwi. Every section
   degrades independently.
@@ -43,8 +43,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
 A cluster's **known issue** is its most recently linked ticket; earlier ones stay among its links, which an execution's
 *Details* also lists. Its key follows the failure everywhere:
 
-- the **Issue** line of the cluster and of a failing execution, the **inbox row** and the execution's row in the
-  **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
+- the cluster's **Issue** line and a failing execution's **Cluster** line, the **inbox row** and the execution's row in
+  the **run's test list** show the key with its status; the **search** (Ctrl K) finds the cluster from the key;
 - `cluster.new`, `cluster.fixed` and `cluster.regressed` **Slack** messages name it, as does the `cluster.new` email;
 - the **pull-request feedback** comment says *tracked in PROJ-123* on each failure whose cluster has one;
 - the **fix plan** lists it under *Links*, and the `get_cluster` / `get_fix_plan` MCP tools return it.

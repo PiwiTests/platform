@@ -19,11 +19,14 @@ describe('SITUATION_ROWS: explanation, action, context', () => {
     expect(at('state') + 1).toBe(at('next'));
   });
 
-  test('every context line comes after the next step, the issue first', () => {
-    for (const slot of ['issue', 'occurrences', 'whatChanged', 'suite'] as const) {
+  test('every context line comes after the next step, the cluster and its ticket first', () => {
+    for (const slot of ['cluster', 'issue', 'occurrences', 'whatChanged', 'suite'] as const) {
       expect(at(slot), slot).toBeGreaterThan(at('next'));
     }
-    expect(at('issue')).toBe(at('next') + 1);
+    // The execution page's Cluster line, else the cluster page's Issue line,
+    // follows the next step.
+    expect(at('cluster')).toBe(at('next') + 1);
+    expect(at('issue')).toBe(at('cluster') + 1);
   });
 
   test('labels are sentence case', () => {

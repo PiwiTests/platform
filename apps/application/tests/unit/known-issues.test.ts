@@ -113,7 +113,7 @@ describe('clusterKnownIssues', () => {
 });
 
 describe('the surfaces around an execution carry its cluster issue', () => {
-  test('the execution detail carries it for the Issue line, and the situation leaves it to that line', async () => {
+  test('the execution detail carries it for the Cluster line, and the situation leaves it to the ticket', async () => {
     const execution = (await getTestRunCase(db as never, 10)) as {
       failureCluster: { knownIssue: { key: string } | null; failureGoesOn: boolean | null } | null;
       situation: { text: string } | null;
