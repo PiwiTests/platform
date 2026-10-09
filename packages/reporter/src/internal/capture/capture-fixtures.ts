@@ -759,26 +759,16 @@ async function stashPageState(sink: CaptureSink, closing: { page?: Page; context
   await internalCall(page, () => readPageBeforeClose(sink, page));
 }
 
-/** Whether the page shows no text at all, read within a second; false when it cannot be read. */
+/**
+ * Whether the page holds no accessible content once its document has loaded:
+ * an empty ARIA snapshot of the body, as the server reads a blank page. An image
+ * with a name or an iframe with content is not blank; a read that fails is not
+ * either.
+ */
 async function readBlankPage(page: Page): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      page.evaluate(() => {
-        // Runs in the page; the reporter compiles without the DOM library.
-        const doc = (globalThis as { document?: { body?: { innerText?: string } | null } }).document;
-        return !(doc?.body?.innerText ?? '').trim();
-      }),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), 1000);
-        timer.unref?.();
-      }),
-    ]);
-  } catch {
-    return false;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+  await page.waitForLoadState('domcontentloaded', { timeout: 1000 }).catch(() => {});
+  const aria = await ariaSnapshotBestEffort(page.locator('body'), 1000);
+  return aria != null && aria.trim() === '';
 }
 
 /** The reads {@link stashPageState} takes from the page about to close. */
@@ -1489,11 +1479,11 @@ function instrumentPage(page: Page): void {
     });
   }
 
-  // An exception the page threw and nothing caught: a server probe's sign the
-  // application did not handle the fault.
+  // An exception the page threw and nothing caught once a server probe's fault
+  // was applied: its sign the application did not handle the fault.
   page.on('pageerror', () => {
     const sink = currentSink;
-    if (sink?.probeItem?.level === 'server') sink.probePageErrors++;
+    if (sink?.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
   });
 
   page.on('console', (msg: ConsoleMessage) => {
@@ -2076,12 +2066,13 @@ export const piwiFixtures: Fixtures<
         if (sink.probeItem) {
           const applied = sink.probeInterception?.applied() ?? false;
           const level = sink.probeItem.level ?? 'client';
-          // `handled` classifies a server fault for the resilience findings, from
-          // the page errors, console errors, dialogs and blank page this test
-          // collected plus the backend error the probe response's trace carried.
-          // Client faults never reach the server, so they record `n/a`.
+          // `handled` classifies an applied server fault for the resilience
+          // findings, from the page errors after it applied, the console errors
+          // and dialogs this test collected, the blank page and the backend error
+          // the probe response's trace carried. Client faults never reach the
+          // server and a fault not applied did nothing, so both record `n/a`.
           const handled =
-            level === 'server'
+            level === 'server' && applied
               ? classifyProbeHandled({
                   consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
                   dialogs: sink.dialogs.length,

@@ -74,9 +74,9 @@ export interface ProbeResilienceSignals {
   dialogs: number;
   /** A backend error (5xx / error root span) rode back in the probe response's trace. */
   backendError: boolean;
-  /** Exceptions the page threw that nothing caught. */
+  /** Exceptions the page threw, and nothing caught, once the fault applied. */
   pageErrors?: number;
-  /** The page showed no text as it closed. */
+  /** The page held no accessible content (an empty ARIA snapshot) as it closed. */
   blankPage?: boolean;
 }
 
