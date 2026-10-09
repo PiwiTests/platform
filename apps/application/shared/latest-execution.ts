@@ -43,12 +43,17 @@ export interface LatestExecution {
     at: string | number | Date | null;
     /** A later attempt of the execution's own run. */
     sameRun: boolean;
-    /** It failed in the execution's own failure cluster. */
-    sameCluster: boolean;
+    /**
+     * It failed in the execution's own failure cluster: true or false when both
+     * clusters are known, null when either is not (nothing is known about its error).
+     */
+    sameCluster: boolean | null;
   } | null;
   /** The later runs it failed in again, newest first, up to the newest run it did not fail in. */
   failedAgainRunIds: number[];
   failedAgainCount: number;
+  /** How many of those runs failed in a known other cluster: with another error. */
+  failedAgainInOtherClusterCount: number;
   /** Another Playwright project ran the test later. */
   laterInOtherProject: boolean;
   /** The Playwright project the line is about, null when the execution names none. */
@@ -86,10 +91,18 @@ export function summarizeNewerExecutions(
     return startMs(b.startTime) - startMs(a.startTime) || b.runId - a.runId;
   });
 
+  // Whether a row failed in the execution's own cluster; null when either cluster is unknown.
+  const sameCluster = (r: NewerExecutionRow): boolean | null =>
+    r.failureClusterId == null || current.failureClusterId == null
+      ? null
+      : r.failureClusterId === current.failureClusterId;
+
   const failedAgainRunIds: number[] = [];
+  let failedAgainInOtherClusterCount = 0;
   for (const r of finals) {
     if (r.runId === current.runId || !isFailedStatus(r.status)) break;
     failedAgainRunIds.push(r.runId);
+    if (sameCluster(r) === false) failedAgainInOtherClusterCount++;
   }
 
   const top = finals[0] ?? null;
@@ -103,11 +116,12 @@ export function summarizeNewerExecutions(
           retries: top.retries ?? 0,
           at: top.startTime,
           sameRun: top.runId === current.runId,
-          sameCluster: top.failureClusterId != null && top.failureClusterId === current.failureClusterId,
+          sameCluster: sameCluster(top),
         }
       : null,
     failedAgainRunIds,
     failedAgainCount: failedAgainRunIds.length,
+    failedAgainInOtherClusterCount,
     laterInOtherProject,
     projectName: project || null,
   };

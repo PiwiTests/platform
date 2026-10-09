@@ -154,40 +154,56 @@ function outcomeWords(status: string, retries: number): string {
   return status;
 }
 
+/**
+ * Which runs of the streak failed with another error: `all` of them, the
+ * newest only among others (`newest`), or none worth saying. A run whose
+ * cluster is unknown is not another error.
+ */
+function anotherErrorIn(latest: LatestExecution, input: SituationInput): 'all' | 'newest' | null {
+  if (input.cluster == null || latest.newest?.sameCluster !== false) return null;
+  const count = latest.failedAgainCount;
+  return count <= 1 || latest.failedAgainInOtherClusterCount >= count ? 'all' : 'newest';
+}
+
+/** Where a newer failure happened: `run #2 and run #1`, `4 later runs, most recently run #9`. */
+function failedAgainWhere(latest: LatestExecution, newestRunId: number, anotherError: 'all' | 'newest' | null): string {
+  const count = latest.failedAgainCount;
+  const newestNote = anotherError === 'newest' ? 'most recently with another error in ' : 'most recently ';
+  if (count > 2) return `${count} later runs, ${newestNote}run #${newestRunId}`;
+  const runs = runList(latest.failedAgainRunIds.length ? latest.failedAgainRunIds : [newestRunId]);
+  return anotherError === 'newest' ? `${runs}, most recently with another error` : runs;
+}
+
 /** Whether a newer execution failed again or passed: the line beside the since line. */
 function latestLine(latest: LatestExecution, input: SituationInput, now: Date): SituationLine | null {
   const line = new LineBuilder();
   const newest = latest.newest;
+  // With other Playwright projects run later, the line says which project it is about.
+  const project = latest.laterInOtherProject && latest.projectName ? latest.projectName : null;
   if (!newest) {
-    line.push(
-      'text',
-      latest.laterInOtherProject && latest.projectName
-        ? `Latest ${latest.projectName} execution of this test`
-        : 'Latest execution of this test',
-    );
+    line.push('text', project ? `Latest ${project} execution of this test` : 'Latest execution of this test');
     return line.build();
   }
 
+  const lead = project ? `Not the latest ${project} execution` : 'Not the latest';
   const failed = isFailedStatus(newest.status);
-  const anotherError = failed && !newest.sameCluster && input.cluster != null;
   if (newest.sameRun) {
     // "Not the latest: attempt 2 of this run passed"
     const did = failed ? 'failed again' : outcomeWords(newest.status, 0);
-    line.push('text', `Not the latest: attempt ${newest.retries + 1} of this run ${did}`);
+    line.push('text', `${lead}: attempt ${newest.retries + 1} of this run ${did}`);
   } else {
     const rel = relativeTimeAgo(newest.at, now);
     let what: string;
     if (failed) {
-      const again = `failed again${anotherError ? ' with another error' : ''}`;
-      const count = latest.failedAgainCount;
-      what =
-        count > 2
-          ? `${again} in ${count} later runs, most recently run #${newest.runId}`
-          : `${again} in ${runList(latest.failedAgainRunIds.length ? latest.failedAgainRunIds : [newest.runId])}`;
+      // "failed again with another error in run #2", "failed again in run #6 and
+      // run #5, most recently with another error"
+      const anotherError = anotherErrorIn(latest, input);
+      const again = `failed again${anotherError === 'all' ? ' with another error' : ''}`;
+      what = `${again} in ${failedAgainWhere(latest, newest.runId, anotherError)}`;
     } else {
       what = `${outcomeWords(newest.status, newest.retries)} in run #${newest.runId}`;
     }
-    line.push('text', `Not the latest: ${what}${rel ? `, ${rel}` : ''}`);
+    line.push('text', `${lead}: ${what}${rel ? `, ${rel}` : ''}`);
   }
   line.push('execution', 'Open the latest', {
     id: newest.executionId,

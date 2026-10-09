@@ -24,6 +24,7 @@ function latest(overrides: Partial<LatestExecution> = {}): LatestExecution {
     newest: null,
     failedAgainRunIds: [],
     failedAgainCount: 0,
+    failedAgainInOtherClusterCount: 0,
     laterInOtherProject: false,
     projectName: 'Chromium',
     ...overrides,
@@ -148,8 +149,46 @@ describe('the latest line', () => {
   });
 
   test('a later failure in another cluster is another error', () => {
-    expect(buildSituation(base({ latest: newer([2], { sameCluster: false }) })).latest!.text).toBe(
+    const other = newer([2], { sameCluster: false }, { failedAgainInOtherClusterCount: 1 });
+    expect(buildSituation(base({ latest: other })).latest!.text).toBe(
       'Not the latest: failed again with another error in run #2, 53 minutes ago',
+    );
+  });
+
+  test('another error is said of the runs it holds for', () => {
+    const text = (runIds: number[], otherCount: number) =>
+      buildSituation(
+        base({ latest: newer(runIds, { sameCluster: false }, { failedAgainInOtherClusterCount: otherCount }) }),
+      ).latest!.text;
+    // Every run of the streak in another cluster.
+    expect(text([6, 5], 2)).toBe(
+      'Not the latest: failed again with another error in run #6 and run #5, 53 minutes ago',
+    );
+    expect(text([8, 7, 6, 5], 4)).toBe(
+      'Not the latest: failed again with another error in 4 later runs, most recently run #8, 53 minutes ago',
+    );
+    // Only the newest in another cluster.
+    expect(text([6, 5], 1)).toBe(
+      'Not the latest: failed again in run #6 and run #5, most recently with another error, 53 minutes ago',
+    );
+    expect(text([8, 7, 6, 5], 1)).toBe(
+      'Not the latest: failed again in 4 later runs, most recently with another error in run #8, 53 minutes ago',
+    );
+  });
+
+  test('a later failure whose cluster is unknown is not called another error', () => {
+    expect(buildSituation(base({ latest: newer([6, 5], { sameCluster: null }) })).latest!.text).toBe(
+      'Not the latest: failed again in run #6 and run #5, 53 minutes ago',
+    );
+  });
+
+  test('another project ran later: the not-the-latest form names its own project', () => {
+    expect(buildSituation(base({ latest: newer([2, 1], {}, { laterInOtherProject: true }) })).latest!.text).toBe(
+      'Not the latest Chromium execution: failed again in run #2 and run #1, 53 minutes ago',
+    );
+    const sameRun = newer([], { runId: 4, status: 'passed', retries: 1, sameRun: true }, { laterInOtherProject: true });
+    expect(buildSituation(base({ latest: sameRun })).latest!.text).toBe(
+      'Not the latest Chromium execution: attempt 2 of this run passed',
     );
   });
 
@@ -262,7 +301,7 @@ describe('buildSituation: whole examples', () => {
   test('no long dash and no arrow in any line', () => {
     const inputs = [
       base(),
-      base({ latest: newer([2, 1], { sameCluster: false }) }),
+      base({ latest: newer([2, 1], { sameCluster: false }, { failedAgainInOtherClusterCount: 1 }) }),
       base({ why: 'passed-on-retry', cluster: null }),
       base({ since: since({ isFirstFailure: false }), assignee: 'Avery' }),
     ];

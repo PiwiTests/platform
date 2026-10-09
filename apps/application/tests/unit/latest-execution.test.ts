@@ -84,6 +84,27 @@ describe('summarizeNewerExecutions', () => {
     const s = summarizeNewerExecutions(current, [row({ runId: 6, failureClusterId: 9 })]);
     expect(s.newest).toMatchObject({ sameCluster: false });
     expect(s.failedAgainRunIds).toEqual([6]);
+    expect(s.failedAgainInOtherClusterCount).toBe(1);
+  });
+
+  test('the streak counts the runs in another cluster, run by run', () => {
+    // Runs 5 to 7 fail in the execution's own cluster, run 8 in cluster 9.
+    const rows = [row({ runId: 5 }), row({ runId: 6 }), row({ runId: 7 }), row({ runId: 8, failureClusterId: 9 })];
+    const s = summarizeNewerExecutions(current, rows);
+    expect(s).toMatchObject({ failedAgainCount: 4, failedAgainInOtherClusterCount: 1, newest: { sameCluster: false } });
+    const two = summarizeNewerExecutions(current, [row({ runId: 5 }), row({ runId: 6, failureClusterId: 9 })]);
+    expect(two).toMatchObject({ failedAgainRunIds: [6, 5], failedAgainInOtherClusterCount: 1 });
+    const allOther = [row({ runId: 5, failureClusterId: 9 }), row({ runId: 6, failureClusterId: 9 })];
+    expect(summarizeNewerExecutions(current, allOther).failedAgainInOtherClusterCount).toBe(2);
+  });
+
+  test('a newer failure with no cluster, or an execution with none, is unknown, not another error', () => {
+    const s = summarizeNewerExecutions(current, [row({ runId: 6, failureClusterId: null })]);
+    expect(s.newest).toMatchObject({ sameCluster: null });
+    expect(s.failedAgainInOtherClusterCount).toBe(0);
+    const unclustered = summarizeNewerExecutions({ ...current, failureClusterId: null }, [row({ runId: 6 })]);
+    expect(unclustered.newest).toMatchObject({ sameCluster: null });
+    expect(unclustered.failedAgainInOtherClusterCount).toBe(0);
   });
 
   test("a later attempt of the execution's own run is newer, behind any later run", () => {

@@ -29,7 +29,7 @@ A smaller line under the headline says since when it fails, on which commit and 
 
 > *New regression since a1b2c3d by Alice Chen, 1 day ago · Not the latest: failed again in run #2 and run #1, 53 minutes ago · Open the latest*
 
-*Latest execution of this test* means nothing ran it since; otherwise the line says what the newer runs did (failed again, with another error, or passed) and **Open the latest** goes to the newest execution. Only the same Playwright project counts: a Firefox pass does not clear a Chromium failure. An exceptional case (a new regression, a pass on retry, a newly flaky test, an infrastructure failure) leads the line.
+*Latest execution of this test* means nothing ran it since; otherwise the line says what the newer runs did (failed again, with another error, or passed) and **Open the latest** goes to the newest execution. Only the same Playwright project counts, and the line names it when another project ran later: a Firefox pass does not clear a Chromium failure. An exceptional case (a new regression, a pass on retry, a newly flaky test, an infrastructure failure) leads the line.
 
 ## 2. Most likely: why
 
