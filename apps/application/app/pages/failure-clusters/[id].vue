@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
-import { describeCluster, clusterSignatureLine, headlineAddsValue } from '#shared/describe-cluster';
-import { caseHeadline, type FailureVerdict } from '#shared/failure-verdict';
+import {
+  describeCluster,
+  clusterErrorTypeLabel,
+  clusterSignatureLine,
+  headlineAddsValue,
+} from '#shared/describe-cluster';
 import { parsePlaywrightError } from '#shared/error-parse';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import type { ComponentPublicInstance } from 'vue';
@@ -66,7 +70,7 @@ useHead(computed(() => ({ title: `${clusterName.value} — Piwi Dashboard` })));
 // cluster handler orders first).
 const affectedCases = computed(() => cluster.value?.affectedTestCases ?? []);
 // The latest occurrence — the execution in the last-seen run — is the default
-// the page opens on, for both the evidence and the headline.
+// the evidence opens on.
 const latestExecId = computed(
   () => cluster.value?.latestTestRunsCaseId ?? affectedCases.value[0]?.recentTestRunsCaseId ?? null,
 );
@@ -88,7 +92,6 @@ const selectedExecId = computed(() =>
     ? latestExecId.value
     : (selectedCase.value?.recentTestRunsCaseId ?? null),
 );
-const isLatestOccurrence = computed(() => selectedExecId.value === latestExecId.value);
 
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();
@@ -126,55 +129,32 @@ const defaultHint = useEvidenceHint(clues, story);
 const hasTrace = computed(() => (execTraces.value?.length ?? 0) > 0);
 const selectedRunId = computed(() => (execution.value as { testRun?: { id?: number } } | null)?.testRun?.id ?? null);
 
-// ── Headline built from the latest occurrence's own error ────────────────────
-// The loaded execution is the latest occurrence; its stored error drives the
-// headline. When no execution can be loaded the cluster's stored sample error is
-// the fallback, and it reflects the first occurrence.
-const execError = computed(() => (execution.value as { error?: string | null } | null)?.error ?? null);
-const execSteps = computed(() => (execution.value as { steps?: unknown } | null)?.steps ?? null);
-const clusterVerdict = computed<FailureVerdict | null>(() => {
-  const c = cluster.value;
-  if (!c) return null;
-  const error = execError.value ?? c.sampleError;
-  if (!error) return null;
-  const desc = caseHeadline({ error, steps: execError.value ? execSteps.value : null });
-  if (!desc) return null;
-  const parsed = parsePlaywrightError(error);
-  return {
-    ...desc,
-    kind: parsed.kind,
-    locator: parsed.locator,
-    isLocatorResolutionFailure: parsed.isLocatorResolutionFailure,
-    why: null,
-    since: {
-      firstFailingRunId: c.firstSeenRunId,
-      firstFailingAt: c.firstSeenAt,
-      isFirstFailure: false,
-      commit: null,
-      fixedBefore: null,
-    },
-    cluster: null,
-    owner: c.owner,
-  };
+// ── The heading: the latest occurrence's headline when it says more ─────────
+// The server builds the headline from the latest occurrence, so the heading
+// never follows the Affected tests selection. It leads only when it carries a
+// value the name lacks (an expected/received pair, a timeout, a count), and the
+// name then sits under it.
+const latestHeadline = computed(() => cluster.value?.latestHeadline ?? null);
+const headlineLeads = computed(() =>
+  headlineAddsValue(clusterName.value, latestHeadline.value?.parts.map((p) => p.text).join('') ?? ''),
+);
+// Where the headline comes from, on hover.
+const headlineSource = computed(() => {
+  const h = latestHeadline.value;
+  return h ? `From the ${h.source === 'latest' ? 'latest' : 'first'} occurrence, run #${h.runId}` : undefined;
 });
-const headlineProvenance = computed(() => {
-  const c = cluster.value;
-  if (!c) return null;
-  if (execError.value && selectedRunId.value) {
-    return `${isLatestOccurrence.value ? 'latest occurrence' : 'occurrence'}, run #${selectedRunId.value}`;
-  }
-  return `first occurrence, run #${c.firstSeenRunId}`;
-});
-
-// The latest occurrence's headline earns a second, smaller line only when it
-// carries a value the name lacks (an expected/received pair, a timeout, a count).
-const headlineText = computed(() => clusterVerdict.value?.parts.map((p) => p.text).join('') ?? '');
-const showSecondHeadline = computed(() => headlineAddsValue(clusterName.value, headlineText.value));
-// Where that second line comes from, on hover.
-const headlineTitle = computed(() => (headlineProvenance.value ? `From the ${headlineProvenance.value}` : undefined));
 
 // The name as prose and the locators written into it, each rendered as code.
 const clusterNameParts = computed(() => splitLocatorParts(clusterName.value));
+const errorTypeLabel = computed(() => clusterErrorTypeLabel(cluster.value?.errorType));
+
+// The selected execution's stored error, else the cluster's sample error: the
+// Locator fix section applies only to a locator-resolution failure.
+const execError = computed(() => (execution.value as { error?: string | null } | null)?.error ?? null);
+const isLocatorFailure = computed(() => {
+  const error = execError.value ?? cluster.value?.sampleError ?? null;
+  return Boolean(error && parsePlaywrightError(error).isLocatorResolutionFailure);
+});
 
 // ── Cluster state, occurrences and the next step (served on the endpoint) ────
 const clusterState = computed(() => cluster.value?.clusterState ?? null);
@@ -255,7 +235,7 @@ function copyCluster() {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const meta = [
-    c.errorType,
+    errorTypeLabel.value,
     `${c.occurrences} occurrence${c.occurrences === 1 ? '' : 's'}`,
     `${c.affectedTests} test${c.affectedTests === 1 ? '' : 's'} affected`,
     c.status !== 'open' ? formatTriageStatus(c.status) : null,
@@ -327,7 +307,7 @@ function refresh() {
 // gate the execution page uses; a count mismatch or a value assertion has none.
 // It reads the latest occurrence, the execution the next step checked.
 const locatorCaseId = latestExecId.value;
-const hasLocatorPanel = computed(() => Boolean(clusterVerdict.value?.isLocatorResolutionFailure && locatorCaseId));
+const hasLocatorPanel = computed(() => Boolean(isLocatorFailure.value && locatorCaseId));
 
 // The page fetches the healing once and hands it to the panel, so the Locator fix
 // section appears only when there is something to show, and never when healing
@@ -659,9 +639,9 @@ const breadcrumbItems = computed(() => [
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span class="text-highlighted">Failure cluster #{{ clusterId }}</span>
-              <template v-if="cluster.errorType">
+              <template v-if="errorTypeLabel">
                 <span aria-hidden="true">·</span>
-                <span>{{ cluster.errorType }}</span>
+                <span>{{ errorTypeLabel }}</span>
               </template>
               <template v-if="cluster.project">
                 <span aria-hidden="true">·</span>
@@ -676,22 +656,29 @@ const breadcrumbItems = computed(() => [
             </div>
           </template>
 
-          <!-- Line 2: the cluster name as the h1; the latest headline as a second line only when it adds value -->
+          <!-- Line 2: the h1, the latest headline when it says more than the name, the name under it -->
           <template #headline>
-            <h1 class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words">
+            <template v-if="headlineLeads && latestHeadline">
+              <h1
+                data-shot="failure-headline"
+                class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words"
+                :title="headlineSource"
+              >
+                <FailureHeadline :parts="latestHeadline.parts" chip />
+              </h1>
+              <p data-shot="cluster-name" class="text-sm text-muted mt-1 break-words">
+                <template v-for="(part, i) in clusterNameParts" :key="i">
+                  <LocatorCode v-if="part.kind === 'locator'" :locator="part.text" chip class="text-[0.92em]" />
+                  <template v-else>{{ part.text }}</template>
+                </template>
+              </p>
+            </template>
+            <h1 v-else class="text-lg sm:text-xl font-semibold leading-snug text-highlighted break-words">
               <template v-for="(part, i) in clusterNameParts" :key="i">
                 <LocatorCode v-if="part.kind === 'locator'" :locator="part.text" chip class="text-[0.92em]" />
                 <template v-else>{{ part.text }}</template>
               </template>
             </h1>
-            <p
-              v-if="clusterVerdict && showSecondHeadline"
-              data-shot="failure-headline"
-              class="text-sm text-muted mt-1"
-              :title="headlineTitle"
-            >
-              <FailureHeadline :parts="clusterVerdict.parts" chip />
-            </p>
           </template>
 
           <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow -->

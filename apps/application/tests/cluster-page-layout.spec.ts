@@ -20,6 +20,9 @@ const sharedError = (frame: string) =>
   `TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Submit' })\n    at ${frame}`;
 
 let clusterId = 0;
+// A third failure with an error of its own: a one-test cluster whose error type
+// is `unknown` and whose headline (a 30 s test timeout) says more than its name.
+let singleClusterId = 0;
 
 async function seedCluster(request: APIRequestContext) {
   await retryPost(request, '/api/test-runs/submit', {
@@ -28,9 +31,9 @@ async function seedCluster(request: APIRequestContext) {
       status: 'failed',
       startTime: new Date().toISOString(),
       duration: 30000,
-      totalTests: 2,
+      totalTests: 3,
       passedTests: 0,
-      failedTests: 2,
+      failedTests: 3,
       skippedTests: 0,
       testCases: [
         {
@@ -47,6 +50,13 @@ async function seedCluster(request: APIRequestContext) {
           location: 'tests/checkout.spec.ts:9:1',
           error: sharedError('tests/checkout.spec.ts:9:1'),
         },
+        {
+          title: 'session expires after the idle limit',
+          status: 'failed',
+          duration: 30000,
+          location: 'tests/session.spec.ts:14:3',
+          error: 'Test timeout of 30000ms exceeded.',
+        },
       ],
     },
     timeout: 20000,
@@ -58,11 +68,13 @@ async function seedCluster(request: APIRequestContext) {
   const detail = await (await request.get(`/api/projects/${project.id}`)).json();
   const runId = detail.testRuns[0].id as number;
   const run = await (await request.get(`/api/test-runs/${runId}`)).json();
-  const failed = (run.testCases as Array<{ status: string; failureClusterId?: number }>).find(
-    (c) => c.status === 'failed' && c.failureClusterId,
-  );
-  expect(failed?.failureClusterId).toBeTruthy();
-  return failed!.failureClusterId!;
+  const cases = run.testCases as Array<{ title: string; status: string; failureClusterId?: number }>;
+  const shared = cases.find((c) => c.title === 'login submits the form' && c.failureClusterId);
+  const single = cases.find((c) => c.title === 'session expires after the idle limit' && c.failureClusterId);
+  expect(shared?.failureClusterId).toBeTruthy();
+  expect(single?.failureClusterId).toBeTruthy();
+  expect(single!.failureClusterId).not.toBe(shared!.failureClusterId);
+  return { shared: shared!.failureClusterId!, single: single!.failureClusterId! };
 }
 
 test.describe('Failure cluster page layout', () => {
@@ -73,7 +85,7 @@ test.describe('Failure cluster page layout', () => {
   test.setTimeout(90000);
 
   test.beforeAll(async ({ request }) => {
-    clusterId = await seedCluster(request);
+    ({ shared: clusterId, single: singleClusterId } = await seedCluster(request));
   });
 
   test('the state line carries the sentence, the Triage panel and the occurrence facts', async ({ page }) => {
@@ -129,6 +141,34 @@ test.describe('Failure cluster page layout', () => {
     await expect
       .poll(async () => page.getByRole('link', { name: 'Open execution' }).getAttribute('href'))
       .not.toBe(before);
+  });
+
+  test('a headline that says more than the name is the h1, with the name under it', async ({ page }) => {
+    await page.goto(`/failure-clusters/${singleClusterId}`);
+    await waitForHydration(page);
+
+    // The latest occurrence's headline carries the timeout the name lacks.
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('30 s');
+    const name = page.locator('[data-shot="cluster-name"]');
+    await expect(name).toBeVisible();
+    expect(await name.evaluate((el) => el.tagName)).toBe('P');
+    // The classifier's catch-all type says nothing, so the identity line omits it.
+    await expect(page.locator('[data-shot="situation-block"]')).not.toContainText('unknown');
+  });
+
+  test('the h1 does not follow the affected-tests selection', async ({ page }) => {
+    await page.goto(`/failure-clusters/${clusterId}`);
+    await waitForHydration(page);
+
+    const h1 = page.getByRole('heading', { level: 1 });
+    const before = await h1.innerText();
+    const link = page.getByRole('link', { name: 'Open execution' });
+    const href = await link.getAttribute('href');
+    await page.locator('[data-shot="cluster-affected-tests"] [role="button"][aria-pressed="false"]').first().click();
+    await expect
+      .poll(async () => page.getByRole('link', { name: 'Open execution' }).getAttribute('href'))
+      .not.toBe(href);
+    await expect(h1).toHaveText(before);
   });
 
   test('the raw error is behind a "Raw error" disclosure', async ({ page }) => {

@@ -77,8 +77,9 @@ signed-in user (by name or email).
 ## The cluster page
 
 A cluster page leads with the same situation block as a failing execution ([Your first
-failure](/guide/first-failure)), across every test that shares the failure. The heading is the cluster's name (its
-[AI title](./ai-diagnosis) when one exists), and three lines are specific to a cluster:
+failure](/guide/first-failure)), across every test that shares the failure. The heading is the latest failure's
+headline when it says more (a timeout, a count) than the cluster's [name](./ai-diagnosis), which then sits under it.
+Three lines are cluster-specific:
 
 - **The state line**, right above **Next**.
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*.

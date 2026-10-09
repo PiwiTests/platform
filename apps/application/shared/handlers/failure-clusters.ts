@@ -15,7 +15,7 @@ import { isLabRun } from './probes';
 
 import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
-import type { OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
+import type { ClusterLatestHeadline, OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
 import { splitFailureCluster } from './failure-cluster-ops';
 import { clusterIssueFilings, clusterKnownIssues, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
@@ -30,6 +30,7 @@ import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type Snooz
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
+import { caseHeadline } from '#shared/failure-verdict';
 import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
@@ -100,6 +101,21 @@ export async function getClusterPatchFacts(
     patchAppliesCleanly: hasPatch && patchApplies(validationStatus),
     patchAppliesAtFix: hasPatch && patchStillAppliesAtFix(storedPatchValidationAtFix(details), cluster.fixLandedRunId),
   };
+}
+
+/**
+ * The headline of a cluster's latest occurrence, read from its stored error and
+ * steps; the cluster's sample error, kept from its first occurrence, when that
+ * execution has none. Null when neither carries an error.
+ */
+export function clusterLatestHeadline(
+  cluster: { sampleError: string | null; lastSeenRunId: number; firstSeenRunId: number },
+  latestExec: { error: string | null; steps: unknown } | null,
+): ClusterLatestHeadline | null {
+  const latest = latestExec?.error ? caseHeadline({ error: latestExec.error, steps: latestExec.steps }) : null;
+  if (latest) return { parts: latest.parts, detail: latest.detail, source: 'latest', runId: cluster.lastSeenRunId };
+  const first = cluster.sampleError ? caseHeadline({ error: cluster.sampleError }) : null;
+  return first ? { parts: first.parts, detail: first.detail, source: 'first', runId: cluster.firstSeenRunId } : null;
 }
 
 type ProjectScope = 'all' | Set<number>;
@@ -286,8 +302,10 @@ export async function getFailureCluster(
   let hasHealingRecommendation = false;
   let latestErrorKind: ReturnType<typeof parsePlaywrightError>['kind'] | null = null;
   let flakeLab: FlakeLabStepFacts | null = null;
+  // The latest occurrence's stored error and steps also give the page its headline.
+  let latestExec: { error: string | null; steps: unknown } | null = null;
   if (latestOccurrence?.id) {
-    const [healing, [latestExec]] = await Promise.all([
+    const [healing, [execRow]] = await Promise.all([
       getLocatorHealing(db, latestOccurrence.id).catch(() => null),
       db
         .select({
@@ -299,19 +317,20 @@ export async function getFailureCluster(
         .from(testRunsCases)
         .where(eq(testRunsCases.id, latestOccurrence.id)),
     ]);
+    latestExec = execRow ?? null;
     hasHealingRecommendation = Boolean(healing && healing.applicable !== false && healing.recommendation?.recommended);
-    if (latestExec?.error) {
-      latestErrorKind = parsePlaywrightError(latestExec.error, {
+    if (execRow?.error) {
+      latestErrorKind = parsePlaywrightError(execRow.error, {
         stepParams: failingStepParams(
-          Array.isArray(latestExec.steps) ? (latestExec.steps as Parameters<typeof failingStepParams>[0]) : null,
-          latestExec.error,
+          Array.isArray(execRow.steps) ? (execRow.steps as Parameters<typeof failingStepParams>[0]) : null,
+          execRow.error,
         ),
       }).kind;
     }
     // The latest occurrence passed on a retry, or its test's history both fails and
     // passes: the Flake Lab may hold the next step.
     const testCaseId = latestOccurrence.testCaseId;
-    const retryPassed = latestExec?.status === 'passed' && (latestExec.retries ?? 0) > 0;
+    const retryPassed = execRow?.status === 'passed' && (execRow.retries ?? 0) > 0;
     if (
       testCaseId != null &&
       (retryPassed || (await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) &&
@@ -349,6 +368,7 @@ export async function getFailureCluster(
 
   return {
     ...cluster,
+    latestHeadline: clusterLatestHeadline(cluster, latestExec),
     affectedTests: Number(countRow?.affectedTests ?? 0),
     lastSeenRunStatus: lastRun?.status ?? null,
     lastSeenAt: lastRun?.startTime ?? null,

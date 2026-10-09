@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'Get failure cluster detail',
     description:
-      'Returns detailed information about a failure cluster including affected tests, last seen run status, project info, and diagnosis.',
+      "Returns detailed information about a failure cluster including affected tests, last seen run status, project info, and diagnosis. `latestHeadline` is the one-line headline of the cluster's latest occurrence (`source: 'latest'`), or of its stored sample error (`source: 'first'`) when that execution has no error, with the run it comes from.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },

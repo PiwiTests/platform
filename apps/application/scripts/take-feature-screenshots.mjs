@@ -2100,7 +2100,8 @@ const SCENES = [
   },
   {
     name: 'cluster-issue-line',
-    description: "Cluster situation block with the Issue line naming the cluster's Jira issue and its status",
+    description:
+      "Cluster situation block: the latest failure's headline as the heading, the cluster's name under it, and the Issue line naming the cluster's Jira issue and its status",
     tags: ['docs'],
     out: 'docs',
     // Pin a Jira issue to the cluster so its key shows on the Issue line. The

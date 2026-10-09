@@ -17,6 +17,7 @@ import type { ScmProviderName } from '#shared/scm-urls';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
+import type { HeadlinePart } from '#shared/describe-failure';
 import type { IssueFilingFailure, KnownIssueRef } from '#shared/handlers/known-issues';
 import type { AccessSummary, InstanceRole } from '#shared/permissions';
 export type { TestMetadata, TestSourceFrame };
@@ -28,6 +29,19 @@ export interface OccurrenceSeriesPoint {
   runId: number;
   startedAt: string | Date | null;
   occurrences: number;
+}
+
+/**
+ * The headline of a cluster's latest occurrence, or of its first one (the stored
+ * sample error) when the latest execution carries no error.
+ */
+export interface ClusterLatestHeadline {
+  parts: HeadlinePart[];
+  /** A second, shorter fact the headline left out, or null. */
+  detail: string | null;
+  source: 'latest' | 'first';
+  /** The run the occurrence it reads failed in. */
+  runId: number;
 }
 
 // ============================================================================
@@ -1075,6 +1089,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   latestTestRunsCaseId: number | null;
   /** The test case that latest occurrence belongs to. */
   latestTestCaseId: number | null;
+  /** The latest occurrence's headline, the page's heading when it says more than the cluster's name. */
+  latestHeadline: ClusterLatestHeadline | null;
   diagnosis: DiagnosisCompact | null;
   project: { id: number; name: string; label: string | null } | null;
   affectedTestCases: Array<{
