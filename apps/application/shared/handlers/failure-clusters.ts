@@ -179,8 +179,9 @@ export async function getFailureCluster(
   const reconcileKnownIssue = knownIssue ? { key: knownIssue.key, statusCategory: knownIssue.statusCategory } : null;
 
   // The cluster's owner from the representative test's `piwi:owner` annotation
-  // (the most-affected test wins). The server route layers CODEOWNERS on top when
-  // no annotation exists, the same as the execution page's verdict owner.
+  // (the most-affected test wins). The server route adds the CODEOWNERS owner when
+  // no annotation exists; the execution page resolves it the same way through
+  // `getTestRunCase`'s `resolveOwner`.
   const annotationOwner = (affectedTestCases[0] as { owner?: string | null } | undefined)?.owner ?? null;
   const owner = annotationOwner
     ? { name: annotationOwner, source: 'annotation' as const }

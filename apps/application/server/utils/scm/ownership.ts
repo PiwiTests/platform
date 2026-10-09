@@ -122,6 +122,19 @@ export async function resolveOwners<T extends OwnableTest>(
 }
 
 /**
+ * The owner the repository's CODEOWNERS names for one spec file, shaped as the
+ * `resolveOwner` option of `getTestRunCase`. A failed CODEOWNERS read resolves
+ * to no owner, so it never blocks the page or the agent tool that asked.
+ */
+export function codeownersOwnerResolver(db: DbClient, projectId: number) {
+  return async (filePath: string): Promise<string | null> => {
+    const test: OwnableTest = { filePath, owner: null };
+    const resolved = await resolveOwners(db, projectId, [test]).catch(() => new Map<OwnableTest, ResolvedOwner>());
+    return resolved.get(test)?.owner ?? null;
+  };
+}
+
+/**
  * Attach the effective owner to each row of a list, leaving the row's own
  * `owner` field authoritative when it already has one. Shaped for the read
  * paths (flaky leaderboard, pull-request comment) that need the answer inline.

@@ -218,7 +218,8 @@ export async function getTestRunCase(
   // stored wasted_time_ms (computed at ingest) is authoritative.
   wastedPatterns: readonly string[] | null = null,
   // Server-only signals the next-step policy reads, and the owner of a spec file
-  // the repository's CODEOWNERS names; the demo and MCP callers omit them.
+  // the repository's CODEOWNERS names; the demo omits them all, the MCP tools
+  // pass only the owner.
   opts: {
     aiConfigured?: boolean;
     ciRerunAvailable?: boolean;

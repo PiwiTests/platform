@@ -70,7 +70,7 @@ and stay in sync, and you can **[file the issue from the failure](/features/issu
 ## Owners and assignees
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
-cluster page (not the inbox) falls back to the repository's `CODEOWNERS`. You can override it by **assigning** the cluster to a person:
+cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. **Assigning** the cluster to a person overrides it:
 an assignee takes precedence over the derived owner, and the **Mine** queue matches either one against the
 signed-in user (by name or email).
 

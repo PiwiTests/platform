@@ -10,7 +10,7 @@ import {
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { buildFixPlan } from '../fix-plan';
-import { enrichFixPlanOwnership } from '../scm/ownership';
+import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
 import { getNetworkRequests, getFailureGroups } from '#shared/handlers/test-runs';
 import {
   getTestCase,
@@ -981,7 +981,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const latestId = clusterDetail?.latestTestRunsCaseId ?? null;
     const [cluesResult, detail] = await Promise.all([
       latestId ? getFailureClues(db, latestId).catch(() => null) : Promise.resolve(null),
-      latestId ? getTestRunCase(db, latestId).catch(() => null) : Promise.resolve(null),
+      latestId
+        ? getTestRunCase(db, latestId, null, {
+            resolveOwner: codeownersOwnerResolver(db, cluster.projectId),
+          }).catch(() => null)
+        : Promise.resolve(null),
     ]);
     const story = cluesResult?.story ?? null;
     const situation = (detail as { situation?: { text?: string } | null } | null)?.situation ?? null;
@@ -2218,7 +2222,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   // ── explain_failure ────────────────────────────────────────────────────────
   async explain_failure(db, params, ctx) {
     const id = numericParam(params.executionId, 'executionId');
-    if ((await checkEntityScope(db, ctx, id, resolveTestRunCaseProjectId)) === 'not-found') return null;
+    const projectId = await resolveTestRunCaseProjectId(db, id);
+    if (projectId == null) return null;
+    assertProject(ctx, projectId);
 
     const [row] = await db.select().from(testRunsCases).where(eq(testRunsCases.id, id));
     if (!row) return null;
@@ -2241,7 +2247,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         : Promise.resolve(null),
       getFailureClues(db, id).catch(() => null),
       getPageDiff(db, id).catch(() => null),
-      getTestRunCase(db, id).catch(() => null),
+      getTestRunCase(db, id, null, { resolveOwner: codeownersOwnerResolver(db, projectId) }).catch(() => null),
     ]);
 
     const rec = healing && healing.source !== 'none' ? healing.recommendation?.recommended : null;
