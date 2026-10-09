@@ -457,7 +457,7 @@ function rowAccent(r: DecoratedRequest): string {
 
           <span
             v-if="req.serverMs != null"
-            class="shrink-0 inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 tabular-nums"
+            class="shrink-0 inline-flex items-center gap-1 text-xs text-muted tabular-nums"
             :title="`Server-side processing time (${req.spans.length} span${req.spans.length === 1 ? '' : 's'})`"
           >
             <UIcon name="i-lucide-server" class="size-3.5" /><DurationValue :ms="req.serverMs" no-title />
