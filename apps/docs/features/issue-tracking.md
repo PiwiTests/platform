@@ -57,12 +57,12 @@ A cluster's **known issue** is its most recently linked ticket; earlier ones sta
 
 Once a cluster carries a known issue, Piwi keeps the two in step. A background sync
 ([`PIWI_INTEGRATIONS_SYNC_MINUTES`](/reference/configuration), default 15 min) reads each tracked issue back and caches
-its status, title and assignee (open clusters every sweep, resolved ones daily). On top of that, per-project **policies** — all **off by default**, each a durable deduped outbox action —
-write back as the cluster evolves:
+its status, title and assignee (open clusters every sweep, resolved ones daily). Per-project **policies**, all **off by
+default**, each a durable deduped outbox action, write back as the cluster evolves:
 
 | When Piwi observes | What Piwi does |
 |---|---|
-| A cluster's **fix lands** (stopped failing or diagnosis verified) | Comments *Fix landed in run #N …*, and — with *transition on fix* — moves the issue. |
+| A cluster's **fix lands** (stopped failing or diagnosis verified) | Comments *Fix landed in run #N …*, and with *transition on fix* moves the issue. |
 | A cluster **regresses** | Comments *Regressed in run #N …*, and optionally reopens the issue. |
 | **New occurrences** on an open ticket | At most one note a day or a week: *Still failing — +N occurrences in 3 runs …*, with what is new. |
 | A cluster is **merged** | With *comment on merge*, notes it on both issues; the survivor inherits the links. |
@@ -83,7 +83,8 @@ the default branch, older than the binding's age (default 2 days), with no issue
 A Project admin or an administrator binds the project under **Project → Settings → Issue tracker**: the connection, Jira project and issue
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
-labels. The create-issue draft picks the first matching route, so a team's failures reach that team's destination. The rules that file issues on their own are [Issue automation](./issue-automation).
+labels. The create-issue draft picks the first matching route, so a team's failures reach that team's destination.
+Rules that file issues on their own: [Issue automation](./issue-automation).
 
 <div class="doc-screenshot">
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
@@ -102,8 +103,9 @@ the issue type's create screen and asks for every required field Jira does not f
   what it takes; an agent passes them in `fields`.
 
 Transitions are checked the same way: for *transition on fix* and the reopen transition, the binding suggests the
-transitions an issue offers and asks for their required fields, such as a *Resolution*. A requirement no screen shows,
-such as a workflow validator, comes back as Jira's refusal naming the field.
+transitions an issue offers and asks for their required fields, such as a *Resolution*; a move that would leave one
+empty fails at once, naming it. A requirement no screen shows, such as a workflow validator, comes back as Jira's
+refusal naming the field.
 
 <div class="doc-screenshot">
   <img src="/screenshots/create-issue-required-fields.png" alt="The Create issue modal with a Required by Jira block: Severity prefilled with Major from the project settings, an empty Team field, and the footer saying Jira still needs Team">
