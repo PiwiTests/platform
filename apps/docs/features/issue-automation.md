@@ -48,7 +48,8 @@ still tracks it or its filing is queued, or when it looks flaky (one of its test
 at the commit it failed at), unless *Leave out failures that look flaky* is off. Two more guards hold:
 
 - **An open issue in the tracker already carries the failure's labels** (`piwi-cluster-<id>` or `piwi-fp-<hash>`):
-  Piwi leaves the link to a person, and the activity list and the cluster's Issue line say which issue it found.
+  Piwi leaves the link to a person. The cluster's Activity and Issue line name the issue it found and offer *Link an
+  issue*, beside a Done issue too. An issue the cluster already links is left for the next sync to read back.
 - **The daily cap**: at most this many issues filed automatically per project in any 24 hours (default 5).
 
 With [owner routes](./issue-tracking#the-project-binding), an issue goes to the route of the cluster's owner (its

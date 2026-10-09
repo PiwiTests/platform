@@ -14,8 +14,10 @@ import type { DbClient } from '../../server/database';
  * Filing an issue for a cluster and keeping it, against a SQLite database and a
  * stubbed Jira: the cluster page, an execution of the cluster and a rule share
  * one filing, an issue whose link was removed or that is Done does not answer a
- * new create, and the sync's resolve and reopen policies act on a move of the
- * ticket, never on where it stands, for an issue filed or linked.
+ * new create, a rule that finds an open issue with the failure's labels leaves
+ * it to a person (unless the cluster already links it), and the sync's resolve
+ * and reopen policies act on a move of the ticket, never on where it stands,
+ * for an issue filed or linked.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -29,10 +31,13 @@ const { deleteLink } = await import('../../shared/handlers/links');
 const { createEnrichedLink } = await import('../../server/utils/integrations/link-create');
 const { runTrackerAutomation } = await import('../../server/utils/integrations/automation');
 const { DEFAULT_AUTO_CREATE_RULE } = await import('../../shared/integrations/automation');
+const { clusterIssueFilings } = await import('../../shared/handlers/known-issues');
 
 const SITE = 'https://refile.atlassian.net';
 
 let created: string[] = [];
+/** The issues the label search finds, by key; it keeps those not Done, as Jira's would. */
+let labeled: string[] = [];
 let issueSeq = 0;
 /** The category each stub issue reads back with, by key. */
 const categories = new Map<string, 'new' | 'indeterminate' | 'done'>();
@@ -46,8 +51,19 @@ function json(body: unknown, status = 200): Response {
 async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input));
   if (/\/rest\/api\/3\/issue\/createmeta\//.test(url.pathname)) return json({ total: 0, fields: [] });
-  // No issue in the tracker carries a failure's labels.
-  if (url.pathname === '/rest/api/3/search/jql') return json({ issues: [] });
+  // The issues a test says carry a failure's labels; none by default.
+  if (url.pathname === '/rest/api/3/search/jql') {
+    return json({
+      issues: labeled.map((key) => {
+        const category = categories.get(key) ?? 'new';
+        return {
+          id: String(10000 + Number(key.split('-')[1])),
+          key,
+          fields: { summary: 'Broken', status: { name: STATUS_NAME[category], statusCategory: { key: category } } },
+        };
+      }),
+    });
+  }
   if (url.pathname === '/rest/api/3/issue' && init?.method === 'POST') {
     issueSeq += 1;
     const key = `PROJ-${issueSeq}`;
@@ -123,6 +139,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   created = [];
+  labeled = [];
 });
 
 function file(entityType: 'failure_cluster' | 'test_runs_case', entityId: number) {
@@ -367,5 +384,91 @@ describe('a rule files through the same per-cluster filing', () => {
     expect(created).toHaveLength(2);
     expect((await clusterLinks(cluster!.id)).map((l) => l.key).sort()).toEqual([...created].sort());
     expect(await runTrackerAutomation(dbc, 2)).toBe(0);
+  });
+});
+
+describe("a rule that finds an open issue with the failure's labels", () => {
+  /** A cluster failing in a run of its own, whose rule-filed issue the last sync read Done. */
+  async function clusterWithDoneIssue(runId: number, fingerprint: string) {
+    await writeProjectIntegration(dbc, 1, {
+      connectionId,
+      projectKey: 'PROJ',
+      issueType: 'Bug',
+      autoCreate: {
+        enabled: true,
+        rules: [{ ...DEFAULT_AUTO_CREATE_RULE, defaultBranch: false, minOccurrences: 1, minRuns: 1 }],
+        skipFlaky: true,
+        dailyCap: 50,
+        routeUnmatchedToDefault: false,
+      },
+    });
+    await db.insert(schema.testRuns).values({ id: runId, projectId: 1, status: 'failed', startTime: new Date() });
+    const [cluster] = await db
+      .insert(schema.failureClusters)
+      .values({
+        projectId: 1,
+        fingerprint,
+        signature: `Error: ${fingerprint}`,
+        errorType: 'unknown',
+        firstSeenRunId: runId,
+        lastSeenRunId: runId,
+      })
+      .returning({ id: schema.failureClusters.id });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: runId,
+      testCaseId: 1,
+      status: 'failed',
+      error: `Error: ${fingerprint}`,
+      failureClusterId: cluster!.id,
+    });
+    expect(await runTrackerAutomation(dbc, runId)).toBe(1);
+    const [link] = await clusterLinks(cluster!.id);
+    await db
+      .update(schema.entityLinks)
+      .set({ metadata: { statusCategory: 'done' } as never })
+      .where(eq(schema.entityLinks.id, link!.id));
+    categories.set(link!.key!, 'done');
+    created = [];
+    return { clusterId: cluster!.id, key: link!.key! };
+  }
+
+  async function filingsOf(clusterId: number) {
+    const all = await db.select().from(schema.integrationActions);
+    return all.filter((a) => a.kind === 'create-issue' && a.entityId === clusterId);
+  }
+
+  test("finding the cluster's own issue open again files nothing and records nothing", async () => {
+    const { clusterId, key } = await clusterWithDoneIssue(10, 'fp-own-labels');
+    // The tracker has the issue open again; the sync has not read it back yet.
+    categories.set(key, 'indeterminate');
+    labeled = [key];
+    expect(await runTrackerAutomation(dbc, 10)).toBe(0);
+    expect(created).toEqual([]);
+    expect((await filingsOf(clusterId)).map((a) => a.status)).toEqual(['done']);
+    expect((await clusterIssueFilings(db as never, [clusterId])).failures.get(clusterId)).toBeUndefined();
+  });
+
+  test('another open issue is named on the cluster, beside its Done filing, which is retired', async () => {
+    const { clusterId, key } = await clusterWithDoneIssue(11, 'fp-other-labels');
+    categories.set('PROJ-77', 'indeterminate');
+    labeled = ['PROJ-77'];
+    expect(await runTrackerAutomation(dbc, 11)).toBe(0);
+    expect(created).toEqual([]);
+
+    const filings = await filingsOf(clusterId);
+    const liveKey = `create-issue:failure_cluster:${clusterId}:conn${connectionId}`;
+    expect(filings.find((a) => a.dedupeKey === liveKey)).toMatchObject({
+      status: 'skipped',
+      payload: { existingKey: 'PROJ-77' },
+    });
+    expect(filings.find((a) => a.status === 'done')?.dedupeKey).toMatch(new RegExp(`^${liveKey}:retired:`));
+    expect((await clusterIssueFilings(db as never, [clusterId])).failures.get(clusterId)).toMatchObject({
+      existingKey: 'PROJ-77',
+    });
+
+    // Once no open issue carries the labels, the rule files a new issue beside the Done one.
+    labeled = [];
+    expect(await runTrackerAutomation(dbc, 11)).toBe(1);
+    expect((await clusterLinks(clusterId)).map((l) => l.key)).toEqual(expect.arrayContaining([key, created[0]]));
   });
 });

@@ -1,3 +1,5 @@
+import type { IssueFilingFailure } from '#shared/handlers/known-issues';
+
 /**
  * Whether a failure page shows the cluster's ticket, and in which form: the
  * cluster page's Issue line, the end of the execution page's Cluster line. One
@@ -56,6 +58,16 @@ export function filingFailureSentence(error: string | null | undefined, ago?: st
 export function filingSkippedSentence(existingKey: string, ago?: string | null): string {
   const skipped = ago ? `Automatic filing skipped ${ago}` : 'Automatic filing skipped';
   return `${skipped}: ${existingKey} is already open with this failure's labels.`;
+}
+
+/**
+ * Whether the Issue line offers to link the open issue a rule found carrying
+ * the failure's labels: the cluster's newest filing names it and the viewer
+ * may link. It holds beside a Done issue too, where filing a new one is the
+ * other move.
+ */
+export function offersFoundIssueLink(failure: IssueFilingFailure | null | undefined, canLink: boolean): boolean {
+  return canLink && !!failure?.existingKey;
 }
 
 /** The issue key link's tooltip: the key, the issue's summary, and that the link opens the tracker. */

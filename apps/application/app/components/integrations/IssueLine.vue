@@ -7,18 +7,24 @@
  * names its issue, the key a link to the tracker whose tooltip gives the
  * issue's summary, and its status; an issue Done while the failure goes on says
  * so and offers a new one (once the failure stopped, both failure pages offer to
- * resolve the cluster instead). An
- * untracked open cluster says it has none and offers to file or link one; a
- * filing the tracker has not answered yet shows as queued. Where filing is
- * offered, a last filing that failed for good is named with its age and reason,
- * so filing again is not a blind retry, and one a rule left to a person names
- * the open issue it found, so linking it is the next move. The page owns the create and link
- * dialogs: this line emits. The block that renders this line provides its label.
+ * resolve the cluster instead). An untracked open cluster says it has none and
+ * offers to file or link one; a filing the tracker has not answered yet shows
+ * as queued. Where filing is offered, a last filing that failed for good is
+ * named with its age and reason, so filing again is not a blind retry, and one
+ * a rule left to a person names the open issue it found and offers to link it,
+ * beside a Done issue too. The page owns the create and link dialogs: this line
+ * emits. The block that renders this line provides its label.
  */
 import type { IssueFilingFailure } from '#shared/handlers/known-issues';
 import { getProviderName, type LinkProvider } from '#shared/link-detect';
 import { safeHttpUrl } from '#shared/utils/safe-url';
-import { filingFailureSentence, filingSkippedSentence, issueKeyTitle, type IssueLineForm } from '~/utils/issue-line';
+import {
+  filingFailureSentence,
+  filingSkippedSentence,
+  issueKeyTitle,
+  offersFoundIssueLink,
+  type IssueLineForm,
+} from '~/utils/issue-line';
 
 const props = defineProps<{
   form: IssueLineForm;
@@ -64,9 +70,11 @@ const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;
 });
+/** A rule left the filing to a person: the open issue it found is one click from linked. */
+const linksFound = computed(() => offersFoundIssueLink(props.filingFailure, canLink.value));
 const failureSentence = computed(() => {
   const failure = props.filingFailure;
-  if (!failure || !canFile.value) return null;
+  if (!failure || !(canFile.value || linksFound.value)) return null;
   const ago = mounted.value && failure.at ? formatRelativeTime(failure.at) : null;
   return failure.existingKey
     ? filingSkippedSentence(failure.existingKey, ago)
@@ -96,8 +104,13 @@ const failureSentence = computed(() => {
         <p v-if="failureSentence" class="text-xs text-muted" data-testid="issue-line-filing-failed">
           {{ failureSentence }}
         </p>
-        <div v-if="canFile" class="flex flex-wrap items-center gap-2 pt-1">
-          <UButton size="xs" color="neutral" variant="outline" @click="emit('create')">File a new issue</UButton>
+        <div v-if="canFile || linksFound" class="flex flex-wrap items-center gap-2 pt-1">
+          <UButton v-if="canFile" size="xs" color="neutral" variant="outline" @click="emit('create')"
+            >File a new issue</UButton
+          >
+          <UButton v-if="linksFound" size="xs" color="neutral" variant="outline" @click="emit('link')">
+            Link an issue
+          </UButton>
         </div>
       </template>
     </template>

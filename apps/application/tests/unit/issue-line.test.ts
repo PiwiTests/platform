@@ -4,6 +4,7 @@ import {
   filingSkippedSentence,
   issueKeyTitle,
   issueLineForm,
+  offersFoundIssueLink,
   type IssueLineFacts,
 } from '../../app/utils/issue-line';
 
@@ -83,6 +84,19 @@ describe('filingSkippedSentence', () => {
     expect(filingSkippedSentence('PROJ-900', '2 hours ago')).toBe(
       "Automatic filing skipped 2 hours ago: PROJ-900 is already open with this failure's labels.",
     );
+  });
+});
+
+describe('offersFoundIssueLink', () => {
+  test('offers to link the open issue a rule found, beside a Done issue too, to a viewer who may link', () => {
+    const skipped = { error: null, at: null, existingKey: 'PROJ-900' };
+    expect(offersFoundIssueLink(skipped, true)).toBe(true);
+    expect(offersFoundIssueLink(skipped, false)).toBe(false);
+  });
+
+  test('a failed filing names no issue to link', () => {
+    expect(offersFoundIssueLink({ error: 'Severity is required', at: null }, true)).toBe(false);
+    expect(offersFoundIssueLink(null, true)).toBe(false);
   });
 });
 
