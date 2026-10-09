@@ -28,7 +28,7 @@ export type ScmStatusKind =
   | 'no-repository'
   /** The repository is on a host Piwi does not read. */
   | 'unsupported-host'
-  /** The host did not return the changes. */
+  /** The host did not return the changes: no token, an error, or a linked folder without the commits. */
   | 'fetch-failed'
   /** Nothing is known about the commits. */
   | 'unavailable';
@@ -53,8 +53,10 @@ export interface ScmStatus {
   gitCommand: string | null;
   /** A repository access token would let Piwi read the range. */
   needsToken: boolean;
-  /** The error the host returned, for a tooltip. */
+  /** The error the host returned. */
   error: string | null;
+  /** The host's error as the line shows it, `GitHub error: Not Found`. */
+  errorText: string | null;
 }
 
 const HOST_LABEL: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
@@ -91,6 +93,7 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
     gitCommand: null,
     needsToken: false,
     error: null,
+    errorText: null,
   };
   if (!scm) return base;
 
@@ -100,6 +103,7 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
     compare: scm.compareUrl && host ? { url: scm.compareUrl, label: `Compare on ${host}` } : null,
     gitCommand: scm.gitCommand ?? null,
     error: scm.error ?? null,
+    errorText: scm.error ? `${host ?? 'Host'} error: ${scm.error}` : null,
   };
   const range = scm.range ? `${scm.range.from}..${scm.range.to}` : null;
   if (range) {
@@ -180,7 +184,8 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
       kind: 'fetch-failed',
       text,
       setupGap: true,
-      help: 'cluster.scm-fetch-failed',
+      // With a token set, the host's error is the cause, not a missing token.
+      help: scm.hasToken ? 'cluster.scm-host-error' : 'cluster.scm-fetch-failed',
       detail: scm.hasToken ? what : `${what}: a private repository needs an access token`,
       needsToken: !scm.hasToken,
     };

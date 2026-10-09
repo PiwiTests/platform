@@ -278,6 +278,13 @@ test.describe('What changed with a setup gap', () => {
     await expect(page.getByRole('menuitem', { name: 'Copy git log' })).toBeVisible();
   });
 
+  test('the server render shows the line looking for the change, not a sentence that flashes', async ({ request }) => {
+    const html = await (await request.get(`/failure-clusters/${setupClusterId}`)).text();
+    expect(html).toContain('data-shot="what-changed"');
+    expect(html).toContain('Looking for the change');
+    expect(html).not.toContain('No commit information');
+  });
+
   test('at phone width the line wraps with no horizontal scroll', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/failure-clusters/${setupClusterId}`);

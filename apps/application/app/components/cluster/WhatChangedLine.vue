@@ -6,12 +6,13 @@
  * they are counted from — and links to the full card below the block, where the
  * baseline picker, the commits and the diff live. A gap the configuration fills
  * (no commit or repository recorded, a host Piwi does not read or that did not
- * answer) is the range in the meta style, the host's compare page when there is
- * one, and a help hint that says what to set up; the page's More actions copy
- * the `git log` command. Any other case with nothing to diff says why, keeps
- * the range usable where it is known, and offers the commit browser where one
- * can work, so a cluster without a baseline is not a dead end: picking commits
- * opens the card. Until the coverage arrives, the line says it is looking.
+ * answer) is the range in the meta style, the host's error when it returned one,
+ * the host's compare page when there is one, and a help hint that says what to
+ * set up; the page's More actions copy the `git log` command. Any other case
+ * with nothing to diff says why, keeps the range usable where it is known, and
+ * offers the commit browser where one can work, so a cluster without a baseline
+ * is not a dead end: picking commits opens the card. Until the coverage
+ * arrives, the line says it is looking.
  */
 const {
   clusterId,
@@ -80,17 +81,23 @@ const summary = computed(() => {
     <template v-else-if="hasChangesToShow">
       <span>
         {{ status.text }}
-        <span v-if="status.detail" class="text-muted" :title="status.error ?? undefined">— {{ status.detail }}</span>
+        <span v-if="status.detail" class="text-muted">— {{ status.detail }}</span>
+      </span>
+      <span v-if="status.errorText" class="text-xs text-muted break-words" data-testid="what-changed-error">
+        {{ status.errorText }}
       </span>
       <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('see')">Change the range</button>
     </template>
 
-    <!-- A setup gap: the range, the host's compare page, and the help that says what to set up -->
+    <!-- A setup gap: the range, the host's error, its compare page, and the help that says what to set up -->
     <template v-else-if="status.setupGap">
-      <!-- The whole line is one meta style, the range included. -->
-      <span class="text-xs text-muted" :title="status.error ?? undefined" data-testid="what-changed-range">
+      <!-- The whole line is one meta style, the range included (the typography rule's one exception to mono code). -->
+      <span class="text-xs text-muted" data-testid="what-changed-range">
         <template v-if="status.range">{{ status.range }} {{ status.origin }}</template>
         <template v-else>No commit recorded</template>
+      </span>
+      <span v-if="status.errorText" class="text-xs text-muted break-words" data-testid="what-changed-error">
+        {{ status.errorText }}
       </span>
       <a
         v-if="status.compare"
@@ -109,7 +116,7 @@ const summary = computed(() => {
     <template v-else>
       <span>
         {{ status.text }}
-        <span v-if="status.detail" class="text-muted" :title="status.error ?? undefined">— {{ status.detail }}</span>
+        <span v-if="status.detail" class="text-muted">— {{ status.detail }}</span>
       </span>
       <a
         v-if="status.compare"

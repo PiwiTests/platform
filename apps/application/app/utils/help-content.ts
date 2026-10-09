@@ -106,6 +106,11 @@ export const HELP_TOPICS = {
     text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → Repository access**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
+  'cluster.scm-host-error': {
+    title: 'Host error',
+    text: 'Piwi asked the host for the commits in this range with the SCM token set, and the host answered with the error the line shows. A 403 or a 404 means the token cannot read this repository: give it read access to the repository contents. A rate limit or a server error passes with time: open the cluster again later. Until then, **More actions › Copy git log** lists the range in your own clone.',
+    doc: 'guide/source-control#troubleshooting',
+  },
 
   // ── Analytics ─────────────────────────────────────────────────────────
   'analytics.insights': {

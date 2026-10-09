@@ -99,6 +99,13 @@ describe('describeScmStatus', () => {
     const status = describeScmStatus(scm({ error: 'GitHub API 502' }));
     expect(status.needsToken).toBe(false);
     expect(status.detail).toBe('GitHub did not return the changes');
+    expect(status.help).toBe('cluster.scm-host-error');
+  });
+
+  test("the host's error is a clause the line shows", () => {
+    expect(describeScmStatus(scm({ error: 'Bad credentials' })).errorText).toBe('GitHub error: Bad credentials');
+    expect(describeScmStatus(scm({ hasToken: false, error: 'Not Found' })).errorText).toBe('GitHub error: Not Found');
+    expect(describeScmStatus(scm({ hasToken: false })).errorText).toBeNull();
   });
 
   test('a readable range with no file changed says so', () => {
@@ -136,6 +143,8 @@ describe('describeScmStatus: setup gaps', () => {
     ],
     ['fetch-failed', scm({ hasToken: false, error: 'GitHub API 404: Not Found' }), 'cluster.scm-fetch-failed'],
     ['fetch-failed', scm({ hasToken: false, localGit: true }), 'cluster.scm-fetch-failed'],
+    ['fetch-failed', scm({ hasToken: false }), 'cluster.scm-fetch-failed'],
+    ['fetch-failed', scm({ error: 'API rate limit exceeded' }), 'cluster.scm-host-error'],
   ] as const)('%s is a setup gap with its own help', (kind, coverage, help) => {
     expect(describeScmStatus(coverage)).toMatchObject({ kind, setupGap: true, help });
   });

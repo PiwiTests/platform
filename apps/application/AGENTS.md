@@ -273,8 +273,10 @@ summaries, list rows). Dense tables and code views are exempt only where a rule 
 - **Four text styles per block, no more**: a heading (`text-lg sm:text-xl font-semibold text-highlighted`, at most
   one per block), a body (`text-sm text-highlighted leading-relaxed`, every sentence), a label (`text-sm font-semibold
 text-highlighted`) and a meta style (`text-xs text-muted` — qualifiers, facts, footers). Code — a locator, a path, a
-  commit — is the body or meta style in `font-mono`. Nothing else in the block: no `text-toned`/`text-dimmed` mixed
-  with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
+  commit — is the body or meta style in `font-mono`. One exception: the commit range of a _What changed_ setup gap
+  (`a1b2c3d..e4f5a6b since the last passing run`) is a line of meta facts with no sentence, and keeps the meta font
+  so the cluster block stays within its text-style budget. Nothing else in the block: no `text-toned`/`text-dimmed`
+  mixed with `text-muted`, no italics, no uppercase micro-labels, no `font-semibold` on a sentence.
 - **Structure with layout, not with styling.** A block with several kinds of lines gets one label column
   (`SituationBlock` renders a `<dl>` with an 8 rem label column), so the reader scans labels, not formatting. A badge,
   a color or a bold span is never what tells two lines apart.

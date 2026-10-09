@@ -84,8 +84,8 @@ failure](/guide/first-failure)), across every test that shares the failure. The 
 - **The occurrence sparkline**: how often it failed across recent runs, *N occurrences in M tests over D · last X ago*.
 - **What changed**: the commits and files between the last passing run (or your baseline) and this failure, with
   **See the changes** for the diff. When setup is missing (runs that record no commit or repository URL, a host Piwi
-  does not read, or a private repository without an [SCM token](/guide/source-control)), it shows the range, the
-  host's **Compare** page and a help hint on what to set up; **More actions › Copy git log** lists the range in your
+  does not read, or an [SCM token](/guide/source-control) missing or refused), it shows the range, the host's error
+  and **Compare** page, and a help hint on what to set up; **More actions › Copy git log** lists the range in your
   checkout. With no passing run yet, **Browse commits** picks a baseline. The same commit on both sides means the
   change is not in the code.
 
