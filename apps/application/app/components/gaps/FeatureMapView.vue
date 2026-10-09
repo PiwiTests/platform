@@ -129,10 +129,20 @@ function shortKey(key: string): string {
   return key.length > 20 ? `${key.slice(0, 19)}…` : key;
 }
 
+/** `n noun`, the noun plural unless `n` is one. */
+function counted(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+/** A feature's members, as `4 routes · 1 page · 2 controls`. */
+function membersLabel(f: MapFeature): string {
+  return `${counted(f.members.routes, 'route')} · ${counted(f.members.pages, 'page')} · ${counted(f.members.controls, 'control')}`;
+}
+
 function featureTitle(f: MapFeature): string {
   const gaps = gapCount(f);
   const shared = (map.value?.links ?? []).filter((l) => l.from === f.key || l.to === f.key).length;
-  return `${f.key}\n${f.members.routes} routes · ${f.members.pages} pages · ${f.members.controls} controls · reached by ${f.tests} tests\n${gaps} open gap${gaps === 1 ? '' : 's'}${f.worstClass ? ` (worst: ${f.worstClass})` : ''}${shared ? `\nshares nodes with ${shared} feature${shared === 1 ? '' : 's'}` : ''}`;
+  return `${f.key}\n${membersLabel(f)} · reached by ${counted(f.tests, 'test')}\n${gaps} open gap${gaps === 1 ? '' : 's'}${f.worstClass ? ` (worst: ${f.worstClass})` : ''}${shared ? `\nshares nodes with ${shared} feature${shared === 1 ? '' : 's'}` : ''}`;
 }
 
 function isSelected(key: string): boolean {
@@ -272,10 +282,8 @@ const legend = computed(() => {
             @mouseleave="hovered = null"
           >
             <span class="min-w-0 basis-40 grow truncate text-sm font-medium text-highlighted">{{ f.key }}</span>
-            <span class="text-xs text-muted tabular-nums"
-              >{{ f.members.routes }} routes · {{ f.members.pages }} pages · {{ f.members.controls }} controls</span
-            >
-            <span class="text-xs text-muted tabular-nums">{{ f.tests }} tests</span>
+            <span class="text-xs text-muted tabular-nums">{{ membersLabel(f) }}</span>
+            <span class="text-xs text-muted tabular-nums">{{ counted(f.tests, 'test') }}</span>
             <span class="flex items-center gap-1">
               <UBadge
                 v-if="gapCount(f) > 0"
