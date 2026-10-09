@@ -24,6 +24,8 @@ import type { FixPlan } from '#shared/fix-plan.types';
  *
  * The rules, one test each:
  * - a verified fix reads the same in State and Next;
+ * - a test that passed on retry compares its attempts or takes its Flake Lab step,
+ *   with no Most likely;
  * - a Next from the diagnosis quotes it when Most likely shows something else;
  * - a cluster and its latest occurrence's execution lead with the same Most likely;
  * - no Next says nothing explains the failure beside a strong or medium Most likely;
@@ -38,6 +40,13 @@ import type { FixPlan } from '#shared/fix-plan.types';
 
 /** The statuses whose execution page shows Most likely and Next. */
 const PROBLEM_STATUSES = ['failed', 'timedOut', 'timedout', 'didnotrun'];
+
+/** The steps a test that passed on retry takes: compare its attempts, or the Flake Lab's next experiment. */
+const RETRY_PASS_STEPS: ReadonlySet<NextStep['kind']> = new Set([
+  'compare-attempts',
+  'reproduce-flake',
+  'verify-flake-fix',
+]);
 
 /** Cluster-level steps: the cluster page and its latest occurrence's page must agree on them. */
 const CLUSTER_LEVEL_STEPS: ReadonlySet<NextStep['kind']> = new Set([
@@ -74,6 +83,8 @@ interface PageLines {
   page: 'cluster' | 'execution';
   id: number;
   aiConfigured: boolean;
+  /** An execution that passed on retry. */
+  retryPass: boolean;
   fixVerification: string | null;
   /** The cluster page's latest occurrence, whose clues it shows. */
   latestExecutionId: number | null;
@@ -214,6 +225,7 @@ async function pageBuilders(db: DrizzleDB, now: Date) {
       page: 'cluster',
       id,
       aiConfigured,
+      retryPass: false,
       fixVerification: cluster.fixVerification ?? null,
       latestExecutionId: latest,
       diagnosis,
@@ -226,28 +238,32 @@ async function pageBuilders(db: DrizzleDB, now: Date) {
     };
   }
 
-  // The execution page shows Most likely only beside a verdict, and Next only on
-  // a problem execution; its source line reads Most likely as computed.
+  // The execution page shows Most likely only on a problem execution with a
+  // verdict, and Next on a problem execution or one that passed on retry; its
+  // source line reads Most likely as computed.
   async function executionPage(id: number, aiConfigured: boolean, label: string): Promise<PageLines> {
     const execution = await getTestRunCase(db, id, null, { aiConfigured, now });
     if (!execution) throw new Error(`execution #${id} not found`);
-    const clues = await cluesFor(id);
-    const diagnosis = completedDiagnosis(execution.failureCluster?.diagnosis ?? null);
-    const computed = pickMostLikely({ story: clues.story, clues: clues.clues, diagnosis });
-    const mostLikely = execution.verdict ? computed : null;
     const isProblem = PROBLEM_STATUSES.includes(execution.status);
+    const retryPass = execution.status === 'passed' && (execution.retries ?? 0) > 0;
+    const clues = isProblem ? await cluesFor(id) : null;
+    const diagnosis = completedDiagnosis(execution.failureCluster?.diagnosis ?? null);
+    const computed = pickMostLikely({ story: clues?.story, clues: clues?.clues, diagnosis });
+    const mostLikely = isProblem && execution.verdict ? computed : null;
+    const showsNext = isProblem || retryPass;
     return {
       label,
       page: 'execution',
       id,
       aiConfigured,
+      retryPass,
       fixVerification: execution.failureCluster?.fixVerification ?? null,
       latestExecutionId: null,
       diagnosis,
       mostLikely,
       strength: shownStrength(mostLikely, clues),
-      next: isProblem ? execution.nextStep : null,
-      sourceLine: isProblem
+      next: showsNext ? execution.nextStep : null,
+      sourceLine: showsNext
         ? await sourceLine(
             execution.nextStep,
             { mostLikely: computed, diagnosis, scope: 'execution' },
@@ -308,16 +324,17 @@ beforeAll(async () => {
   const clusterIds = await ids('SELECT id FROM failure_clusters ORDER BY id');
   const statuses = PROBLEM_STATUSES.map((s) => `'${s}'`).join(', ');
   const problemIds = await ids(`SELECT id FROM test_runs_cases WHERE status IN (${statuses}) ORDER BY id`);
+  const retryPassIds = await ids(`SELECT id FROM test_runs_cases WHERE status = 'passed' AND retries > 0 ORDER BY id`);
 
   for (const aiConfigured of [true, false]) {
     const suffix = aiConfigured ? '' : ' (no AI provider)';
     const clusters: PageLines[] = [];
     for (const id of clusterIds) clusters.push(await builders.clusterPage(id, aiConfigured, `cluster #${id}${suffix}`));
     pages.push(...clusters);
-    // Every problem execution, and every cluster's latest occurrence as its
-    // handler names it, whatever its status.
+    // Every problem execution, every retry pass, and every cluster's latest
+    // occurrence as its handler names it, whatever its status.
     const latestIds = clusters.flatMap((c) => (c.latestExecutionId != null ? [c.latestExecutionId] : []));
-    for (const id of [...new Set([...problemIds, ...latestIds])].sort((a, b) => a - b)) {
+    for (const id of [...new Set([...problemIds, ...retryPassIds, ...latestIds])].sort((a, b) => a - b)) {
       pages.push(await builders.executionPage(id, aiConfigured, `execution #${id}${suffix}`));
     }
   }
@@ -363,6 +380,17 @@ function verifiedFixRule(): RuleResult {
       ? p.state.action === 'mark-resolved' && p.next.kind !== 'mark-resolved'
       : p.state.kind !== 'fix-unconfirmed' || p.state.action === 'mark-resolved';
     if (broken) result.violations.push(describePage(p));
+  }
+  return result;
+}
+
+/** A retry pass compares its attempts or takes its Flake Lab step, and shows no Most likely. */
+function retryPassRule(): RuleResult {
+  const result: RuleResult = { checked: [], violations: [] };
+  for (const p of all()) {
+    if (!p.retryPass) continue;
+    result.checked.push(p.label);
+    if (!p.next || !RETRY_PASS_STEPS.has(p.next.kind) || p.mostLikely) result.violations.push(describePage(p));
   }
   return result;
 }
@@ -443,6 +471,10 @@ describe('failure page lines over the demo seed', () => {
     expect(verifiedFixRule().violations).toEqual([]);
   });
 
+  test('a test that passed on retry compares its attempts or takes its Flake Lab step, with no Most likely', () => {
+    expect(retryPassRule().violations).toEqual([]);
+  });
+
   test('a Next from the diagnosis quotes it when Most likely shows something else', () => {
     expect(diagnosisSourceRule().violations).toEqual([]);
   });
@@ -470,6 +502,9 @@ describe('failure page lines over the demo seed', () => {
     expect(reached(verifiedFixRule)).toEqual(
       expect.arrayContaining(['cluster #10', 'cluster #10, patch applying at its fix']),
     );
+    // #768 failed its first attempt in the seed's generic flaky test; #21 is the
+    // Flake Lab's verified flake.
+    expect(reached(retryPassRule)).toEqual(expect.arrayContaining(['execution #768', 'execution #21']));
     // #37 and cluster #1 lead with the quote story while Next applies the diagnosed patch.
     expect(reached(diagnosisSourceRule)).toEqual(expect.arrayContaining(['execution #37', 'cluster #1']));
     expect(reached(sameMostLikelyRule)).toEqual(expect.arrayContaining(['cluster #1', 'cluster #10']));

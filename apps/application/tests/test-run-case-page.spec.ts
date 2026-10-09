@@ -435,7 +435,8 @@ async function nextChangeRows(page: import('@playwright/test').Page): Promise<st
 /**
  * The story line, the line under the headline and the next step read from the
  * deterministic demo seed: #37 chains the blocked-by-pending-request story and
- * proposes the diagnosed patch, #587 replaces a locator, #682 reproduces. These
+ * proposes the diagnosed patch, #587 replaces a locator, #682 reproduces, #768
+ * and #21 passed on retry and lead with their failed attempt. These
  * run only when the seeded cases are present (a demo-seeded server); a bare test
  * DB has no such ids, so the block skips rather than fails.
  */
@@ -726,6 +727,40 @@ test.describe('Situation block on seeded cases', () => {
     await page.goto('/test-run-cases/13');
     await waitForHydration(page);
     await expect(page.getByText('Most likely', { exact: true })).toBeVisible();
+  });
+
+  test("#768 opens on Attempts with the failed attempt's headline and a linked 1/2", async ({ page }) => {
+    const res = await page.request.get('/api/test-run-cases/768');
+    test.skip(!res.ok(), 'no #768');
+    const detail = (await res.json()) as { verdict: { attempt: { executionId: number } | null } | null };
+    const failedId = detail.verdict?.attempt?.executionId;
+    expect(failedId, 'the seed stores the failed attempt of #768').toBeTruthy();
+    await page.goto('/test-run-cases/768');
+    await waitForHydration(page);
+    await expect(page.getByText('Passed on retry', { exact: true })).toHaveCount(1);
+    await expect(page.locator('[data-shot="failure-headline"]')).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Attempts/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-shot="execution-meta"]').getByRole('link', { name: 'attempt 1' })).toHaveAttribute(
+      'href',
+      `/test-run-cases/${failedId}`,
+    );
+    await expect(
+      page.getByRole('group', { name: 'Attempts of this test in this run' }).getByRole('link', { name: /1\/2/ }),
+    ).toHaveAttribute('href', `/test-run-cases/${failedId}`);
+    await expect(page.locator('[data-shot="next-step"]')).toContainText(
+      'Compare the failing attempt with the passing one',
+    );
+  });
+
+  test('#21 proposes the Flake Lab verify step', async ({ page }) => {
+    test.skip(!(await (await page.request.get('/api/test-run-cases/21')).ok()), 'no #21');
+    await page.goto('/test-run-cases/21');
+    await waitForHydration(page);
+    const next = page.locator('[data-shot="next-step"]');
+    await expect(next).toContainText('Verify the flake fix');
+    await expect(next.getByRole('button', { name: 'Copy verify command' })).toBeVisible();
+    await expect(page.getByText('Most likely', { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-shot="fix"]')).toHaveCount(0);
   });
 });
 

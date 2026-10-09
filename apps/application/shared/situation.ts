@@ -3,7 +3,8 @@
  * where each belongs:
  *
  * - `since`, under the headline: why and since when it fails, on which commit
- *   and author (and the owner when there is no cluster);
+ *   and author (and the owner when there is no cluster); for a test that passed
+ *   on retry, which attempt failed and which passed;
  * - `latest`, beside it: whether a newer execution of the test failed again or
  *   passed, with one link to it;
  * - `cluster`, the block's Cluster line: how many other tests of the run share
@@ -11,8 +12,8 @@
  *   hold, and who owns it.
  *
  * `text` joins the three as sentences, for the MCP tools. Each line returns
- * typed parts so the UI can turn the run, commit, cluster and execution into
- * links. Pure assembly over the verdict and the latest-execution summary the
+ * typed parts so the UI can turn the run, commit, cluster, attempt and execution
+ * into links. Pure assembly over the verdict and the latest-execution summary the
  * endpoints already build; every clause is omitted when its fact is unknown.
  */
 import type { FailureVerdict, FailureWhy } from '#shared/failure-verdict';
@@ -20,11 +21,15 @@ import type { LatestExecution } from '#shared/latest-execution';
 import { relativeTimeAgo } from '#shared/relative-time';
 import { isFailedStatus } from '#shared/utils/test-counts';
 
-/** One span of a line: plain text, or a linkable reference the UI can render. */
+/**
+ * One span of a line: plain text, or a linkable reference the UI can render.
+ * An `attempt` is an attempt of the same run named inside the sentence, linked
+ * to the execution that holds it.
+ */
 export interface SituationPart {
-  kind: 'text' | 'run' | 'commit' | 'cluster' | 'owner' | 'test' | 'execution';
+  kind: 'text' | 'run' | 'commit' | 'cluster' | 'owner' | 'test' | 'execution' | 'attempt';
   text: string;
-  /** The entity id behind a `run` / `commit` / `cluster` / `execution` part, for the link. */
+  /** The entity id behind a `run` / `commit` / `cluster` / `execution` / `attempt` part, for the link. */
   id?: string | number;
   /** An optional app-relative href the UI may use directly. */
   href?: string;
@@ -58,6 +63,15 @@ export interface SituationInput {
   assignee?: string | null;
   /** The newer executions of the test, summed up; null leaves the latest line out. */
   latest?: LatestExecution | null;
+  /**
+   * A test that passed on retry: the attempt that failed, with the execution
+   * that holds it, and the attempt that passed (retry indexes, 0 first). With
+   * the `passed-on-retry` why, the since line says which attempt failed in
+   * place of since when it fails.
+   */
+  attempt?: { failedRetry: number; failedExecutionId: number; passedRetry: number } | null;
+  /** The test newly passes only on retry: leads a retry pass's since line. */
+  newFlaky?: boolean;
   /** Fixed for tests; defaults to now. */
   now?: Date;
 }
@@ -100,8 +114,24 @@ function sinceLine(input: SituationInput, now: Date): SituationLine {
   const commit = since.commit;
   const rel = relativeTimeAgo(since.firstFailingAt, now);
   const by = commit?.author ? ` by ${commit.author}` : '';
+  const attempt = input.why === 'passed-on-retry' ? input.attempt : null;
 
-  if (since.isFirstFailure && input.why === 'new-regression' && commit) {
+  if (attempt) {
+    // "Newly flaky, failed on attempt 1, passed on attempt 2, on a1b2c3d by Alice
+    // Chen": the status chip says it passed on retry, the line which attempt failed.
+    if (input.newFlaky) line.push('text', `${WHY_LEAD['new-flaky']}, `);
+    line.push('text', 'failed on ');
+    line.push('attempt', `attempt ${attempt.failedRetry + 1}`, {
+      id: attempt.failedExecutionId,
+      href: `/test-run-cases/${attempt.failedExecutionId}`,
+    });
+    line.push('text', `, passed on attempt ${attempt.passedRetry + 1}`);
+    if (commit) {
+      line.push('text', ', on ');
+      line.push('commit', commit.shortSha, { id: commit.sha });
+      line.push('text', by);
+    }
+  } else if (since.isFirstFailure && input.why === 'new-regression' && commit) {
     // "New regression since a1b2c3d by Alice Chen, 1 day ago"
     line.push('text', `${WHY_LEAD['new-regression']} since `);
     line.push('commit', commit.shortSha, { id: commit.sha });

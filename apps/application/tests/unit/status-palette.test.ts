@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { STATUS_PALETTE, statusPalette, statusPaletteKey } from '../../app/utils/status-palette';
-import { formatExecutionStatus } from '../../app/utils/index';
+import { formatExecutionStatus, statusChipLabel } from '../../app/utils/index';
 
 describe('statusPaletteKey', () => {
   test('maps each outcome to its own palette entry', () => {
@@ -70,5 +70,15 @@ describe('formatExecutionStatus', () => {
     expect(formatExecutionStatus('passed', 2)).toBe('passed on retry');
     expect(formatExecutionStatus('passed', 0)).toBe('passed');
     expect(formatExecutionStatus('timedout')).toBe('timed out');
+  });
+});
+
+describe('statusChipLabel', () => {
+  test('reads the execution status in sentence case', () => {
+    expect(statusChipLabel('passed', 1)).toBe('Passed on retry');
+    expect(statusChipLabel('passed')).toBe('Passed');
+    expect(statusChipLabel('didnotrun')).toBe("Didn't run");
+    expect(statusChipLabel('timedOut')).toBe('Timed out');
+    expect(statusChipLabel('failed', 1)).toBe('Failed');
   });
 });

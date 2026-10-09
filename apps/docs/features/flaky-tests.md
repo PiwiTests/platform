@@ -136,7 +136,7 @@ Individual test cases in a run carry at-a-glance badges:
 
 Filters on the run's test-case list show only new regressions or new flaky tests.
 
-A failing execution shows the same badges in its header (see [Test case detail](./evidence#one-execution-diagnosis-first)).
+An [execution](./evidence#one-execution-diagnosis-first) shows them in its status chip and the line under its headline.
 
 ## Spec health by file
 

@@ -285,7 +285,7 @@ export async function getTestRunCase(
   // Every attempt is its own execution row (unique on run + test case + retries
   // + browser), so each stored attempt maps to the sibling row that holds it.
   const siblingRows = await db
-    .select({ id: testRunsCases.id, retries: testRunsCases.retries })
+    .select({ id: testRunsCases.id, retries: testRunsCases.retries, status: testRunsCases.status })
     .from(testRunsCases)
     .where(
       and(
@@ -301,6 +301,27 @@ export async function getTestRunCase(
         executionId: executionByRetry.get(a.retry) ?? null,
       }))
     : null;
+
+  // A pass that needed a retry has no error of its own: its headline, steps and
+  // `why` come from the last failed attempt of the same run, test and browser.
+  const retries = trc.retries ?? 0;
+  const passedOnRetry = trc.status === 'passed' && retries > 0;
+  const failedSibling = passedOnRetry
+    ? (siblingRows as Array<{ id: number; retries: number | null; status: string }>)
+        .filter((r) => (r.retries ?? 0) < retries && isFailedStatus(r.status))
+        .sort((a, b) => (b.retries ?? 0) - (a.retries ?? 0))[0]
+    : undefined;
+  const [failedAttempt] = failedSibling
+    ? await db
+        .select({
+          id: testRunsCases.id,
+          retries: testRunsCases.retries,
+          error: testRunsCases.error,
+          steps: testRunsCases.steps,
+        })
+        .from(testRunsCases)
+        .where(eq(testRunsCases.id, failedSibling.id))
+    : [];
 
   const [[testCase], [testRun], reportList, attachmentList] = await Promise.all([
     db
@@ -549,30 +570,40 @@ export async function getTestRunCase(
   const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
-  // cluster and owner — built from what is already loaded above. The owner is
-  // the test's own annotation, else the one `resolveOwner` finds for its spec file.
+  // cluster and owner — built from what is already loaded above, and for a retry
+  // pass from its failed attempt, with no cluster: that attempt's page carries
+  // it. The owner is the test's own annotation, else the one `resolveOwner`
+  // finds for its spec file.
   const scm = ((testRun?.metadata as RunMetadata | null)?.scm ?? null) as {
     commit?: string | null;
     branch?: string | null;
     author?: string | null;
     commitMessage?: string | null;
   } | null;
+  const verdictError = failedAttempt ? failedAttempt.error : trc.error;
   const codeOwner =
-    trc.error?.trim() && !testCase?.owner && testCase?.filePath && opts.resolveOwner
+    verdictError?.trim() && !testCase?.owner && testCase?.filePath && opts.resolveOwner
       ? await opts.resolveOwner(testCase.filePath)
       : null;
   const verdict = buildFailureVerdict({
-    error: trc.error,
-    steps: trc.steps,
+    error: verdictError,
+    steps: failedAttempt ? failedAttempt.steps : trc.steps,
     status: trc.status,
     retries: trc.retries,
     isNewRegression: trc.isNewRegression,
     isNewFlaky: trc.isNewFlaky,
     runId: trc.testRunId,
     scm,
-    cluster: failureCluster ? { ...failureCluster, sampleError: null, filePath: testCase?.filePath ?? null } : null,
+    cluster:
+      failureCluster && !failedAttempt
+        ? { ...failureCluster, sampleError: null, filePath: testCase?.filePath ?? null }
+        : null,
     owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
+    fromAttempt: failedAttempt ? { retry: failedAttempt.retries ?? 0, executionId: failedAttempt.id } : null,
   });
+  // A retry pass is one with or without its failed attempt stored: the policy
+  // reads it from the status alone when there is no verdict.
+  const why = verdict?.why ?? (passedOnRetry ? 'passed-on-retry' : null);
 
   // The situation lines and the single next step, built from the verdict and
   // the same healing / diagnosis facts the toolbox reads, so the top of the page
@@ -605,6 +636,10 @@ export async function getTestRunCase(
         clusterStatus: failureCluster?.status ?? null,
         assignee: failureCluster?.assignee ?? null,
         latest,
+        attempt: verdict.attempt
+          ? { failedRetry: verdict.attempt.retry, failedExecutionId: verdict.attempt.executionId, passedRetry: retries }
+          : null,
+        newFlaky: Boolean(trc.isNewFlaky),
         now: opts.now,
       })
     : null;
@@ -612,10 +647,10 @@ export async function getTestRunCase(
   // fix. Flaky: a retry pass, or a failure that is not a new regression of a test
   // whose history both fails and passes.
   const flaked =
-    verdict?.why === 'passed-on-retry' ||
-    verdict?.why === 'new-flaky' ||
+    why === 'passed-on-retry' ||
+    why === 'new-flaky' ||
     (isFailedStatus(trc.status) &&
-      verdict?.why !== 'new-regression' &&
+      why !== 'new-regression' &&
       trc.testCaseId != null &&
       (await mayHaveFlakeSuspects(db, trc.testCaseId).catch(() => false)));
   const flakeLab =
@@ -643,7 +678,7 @@ export async function getTestRunCase(
     patchValidationStatus: patchFacts?.patchValidationStatus ?? null,
     patchAppliesCleanly: patchFacts?.patchAppliesCleanly ?? false,
     patchAppliesAtFix: patchFacts?.patchAppliesAtFix ?? false,
-    why: verdict?.why ?? null,
+    why,
     errorKind: verdict?.kind ?? null,
     aiConfigured: opts.aiConfigured ?? false,
     ciRerunAvailable: opts.ciRerunAvailable ?? false,

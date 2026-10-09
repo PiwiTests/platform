@@ -44,7 +44,7 @@ Read it like this:
 |---|---|
 | Solid green, then red from one run onward | A regression. Find the commit in that gap. |
 | Red/green alternating for weeks | A flake that happened to fail on your run. |
-| Green, then red, and the failing execution **passed on retry** | A flake — the execution's header carries a *Passed on retry* badge. |
+| Green, then red, and the failing execution **passed on retry** | A flake: its status reads *Passed on retry*, and its headline is the failed attempt's error. |
 | Newly red *and* the failure is shared with other tests | Probably neither — see [triaging a mass failure](./mass-failure). |
 
 ## 3. Find what changed around it

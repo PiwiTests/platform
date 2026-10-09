@@ -185,8 +185,9 @@ The **context** of a failing execution, in two places on its page. The line unde
 the failure has been happening (on which commit and author) and whether a newer execution of the test, in the same
 Playwright project, failed again or passed, with a link to the newest one. The **Cluster** line says how many other
 tests share the cause and the cluster they join, its status, whether an earlier fix did not hold and who owns it,
-then the cluster's issue. An exceptional case (a new regression, a pass on retry, an infrastructure blip) leads the
-line under the headline. It reads on the execution page and, condensed, in [alerts](/features/notifications).
+then the cluster's issue. An exceptional case (a new regression, a newly flaky test, an infrastructure blip) leads
+the line under the headline; for a test that passed on retry, the line says which attempt failed. It reads on the
+execution page and, condensed, in [alerts](/features/notifications).
 
 ### Next step
 

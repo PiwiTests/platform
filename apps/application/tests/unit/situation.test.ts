@@ -120,6 +120,54 @@ describe('the since line', () => {
   });
 });
 
+describe('the since line of a retry pass', () => {
+  const retryPass = (overrides: Partial<SituationInput> = {}) =>
+    base({
+      why: 'passed-on-retry',
+      cluster: null,
+      attempt: { failedRetry: 0, failedExecutionId: 41, passedRetry: 1 },
+      ...overrides,
+    });
+
+  test('says which attempt failed and which passed, then the commit and the owner', () => {
+    const line = buildSituation(retryPass()).since;
+    expect(line.text).toBe('Failed on attempt 1, passed on attempt 2, on a1b2c3d by Alice Chen. Owner @checkout-team');
+    expect(line.text).not.toContain('Passed on retry');
+    expect(line.text).not.toContain('first failed in this run');
+  });
+
+  test('links the failed attempt to its execution', () => {
+    const line = buildSituation(retryPass()).since;
+    expect(line.parts.find((p) => p.kind === 'attempt')).toEqual({
+      kind: 'attempt',
+      text: 'attempt 1',
+      id: 41,
+      href: '/test-run-cases/41',
+    });
+    expect(line.parts.filter((p) => p.href)).toHaveLength(1);
+  });
+
+  test('a newly flaky test leads with it, and only then', () => {
+    expect(buildSituation(retryPass({ newFlaky: true })).since.text).toBe(
+      'Newly flaky, failed on attempt 1, passed on attempt 2, on a1b2c3d by Alice Chen. Owner @checkout-team',
+    );
+    expect(buildSituation(retryPass({ newFlaky: false })).since.text).not.toContain('Newly flaky');
+  });
+
+  test('a later attempt, with no commit recorded', () => {
+    const input = retryPass({
+      since: since({ commit: null }),
+      owner: null,
+      attempt: { failedRetry: 1, failedExecutionId: 42, passedRetry: 2 },
+    });
+    expect(buildSituation(input).since.text).toBe('Failed on attempt 2, passed on attempt 3');
+  });
+
+  test('has no cluster line', () => {
+    expect(buildSituation(retryPass()).cluster).toBeNull();
+  });
+});
+
 describe('the latest line', () => {
   test('the latest execution says so, with no link', () => {
     const line = buildSituation(base()).latest!;

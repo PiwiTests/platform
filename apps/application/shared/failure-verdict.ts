@@ -3,7 +3,9 @@
  * the dashboard already stores about it — why it failed (a new regression, a
  * retry pass, a flaky start, an infrastructure error), since when (the
  * cluster's first failing run, the commit the run was on), which cluster it
- * shares with how many other tests in the run, and who owns the test.
+ * shares with how many other tests in the run, and who owns the test. A test
+ * that passed on retry gets the verdict of its failed attempt, which names
+ * that attempt.
  *
  * Pure assembly over rows the caller has already loaded, so the server route,
  * the demo mirror and the MCP tools build the same object.
@@ -61,6 +63,19 @@ export interface FailureVerdict extends FailureDescription {
     otherTestsInRun: number;
   } | null;
   owner: VerdictOwner | null;
+  /**
+   * The attempt the headline comes from when it is not this execution: the
+   * failed attempt of a test that passed on retry, with the execution that
+   * holds it. Null when the headline is this execution's own error.
+   */
+  attempt: VerdictAttempt | null;
+}
+
+/** An attempt of the same run, test and browser, and the execution that holds it. */
+export interface VerdictAttempt {
+  /** Playwright's retry index: 0 is the first attempt. */
+  retry: number;
+  executionId: number;
 }
 
 /** Who owns a failing test, and where that came from. */
@@ -111,6 +126,11 @@ export interface FailureVerdictInput {
     | null;
   /** The test's `piwi:owner` annotation, or an owner resolved elsewhere with its source. */
   owner?: string | VerdictOwner | null;
+  /**
+   * The attempt `error` and `steps` were read from, when it is not the
+   * execution `status` and `retries` describe (a retry pass's failed attempt).
+   */
+  fromAttempt?: VerdictAttempt | null;
 }
 
 /** Cluster error kinds that point at the environment rather than the test or the app. */
@@ -182,5 +202,6 @@ export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict 
       : typeof input.owner === 'string'
         ? { name: input.owner, source: 'annotation' }
         : input.owner,
+    attempt: input.fromAttempt ?? null,
   };
 }

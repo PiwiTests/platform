@@ -10,7 +10,8 @@ import { compileCodeowners, parseCodeowners } from '@piwitests/core/codeowners';
  * The situation sentence an agent reads names the owner the execution page
  * names: explain_failure and get_fix_plan fall back to the repository's
  * CODEOWNERS for a failing test with no `piwi:owner` annotation. explain_failure
- * also says whether the execution is the latest of its test, and which one is.
+ * also says whether the execution is the latest of its test, and which one is,
+ * and gives a test that passed on retry its failed attempt's headline.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -120,5 +121,30 @@ describe('whether the execution is the latest, as an agent reads it', () => {
     expect(result.latest).toEqual({ isLatest: false, executionId: 11, runId: 2, status: 'failed' });
     const newest = (await tool('explain_failure')(db as never, { executionId: 11 }, viewer)) as { latest?: Latest };
     expect(newest.latest).toEqual({ isLatest: true });
+  });
+});
+
+describe('a test that passed on retry, as an agent reads it', () => {
+  test("explain_failure gives its failed attempt's headline, the attempt in the situation and the attempts step", async () => {
+    await db
+      .insert(schema.testCases)
+      .values({ id: 2, projectId: 1, title: 'keeps the cart', filePath: 'tests/cart.spec.ts' });
+    await db
+      .insert(schema.testRuns)
+      .values({ id: 3, projectId: 1, status: 'passed', startTime: new Date('2026-09-03T10:00:00Z') });
+    await db.insert(schema.testRunsCases).values([
+      { id: 20, testRunId: 3, testCaseId: 2, status: 'failed', retries: 0, error: 'Error: card declined' },
+      { id: 21, testRunId: 3, testCaseId: 2, status: 'passed', retries: 1 },
+    ]);
+    const failed = (await tool('explain_failure')(db as never, { executionId: 20 }, viewer)) as { headline?: string };
+    const result = (await tool('explain_failure')(db as never, { executionId: 21 }, viewer)) as {
+      headline?: string;
+      situation?: string;
+      nextStep?: { kind: string };
+    };
+    expect(failed.headline).toBeTruthy();
+    expect(result.headline).toBe(failed.headline);
+    expect(result.situation).toMatch(/^Failed on attempt 1, passed on attempt 2/);
+    expect(result.nextStep?.kind).toBe('compare-attempts');
   });
 });

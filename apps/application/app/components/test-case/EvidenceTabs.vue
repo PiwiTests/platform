@@ -5,10 +5,10 @@
  * an execution. A tab that lists items shows their count as plain text, an
  * empty tab is dimmed and still opens to state why it is empty, and the open
  * tab is marked in neutral tones: the primary color belongs to the page's
- * primary action. The default
- * tab is the one the strongest clue cites, else Timeline when it can place two
- * or more items, else Screen. The Screen tab is one strip of views of the page
- * at the failure (`FailingStepSnapshot`), over the execution's files. A clue or
+ * primary action. A pass that needed a retry opens on Attempts; otherwise the
+ * default tab is the one the strongest clue cites, else Timeline when it can
+ * place two or more items, else Screen. The Screen tab is one strip of views of
+ * the page at the failure (`FailingStepSnapshot`), over the execution's files. A clue or
  * diagnosis citation switches to the tab (and the Screen view) that holds the
  * evidence and scrolls to it. The Playwright trace opens from the card's header,
  * whichever tab is showing. A test that never ran and left nothing behind shows
@@ -254,6 +254,9 @@ const hasNoEvidence = computed(
 const showFixturesFooter = computed(() => !props.suppressFixturesFooter && fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
+  // A pass that needed a retry leads with what differed between its attempts.
+  const retries = Number(props.testCase?.retries ?? 0);
+  if (status.value === 'passed' && retries > 0 && hasMultipleAttempts.value) return 'attempts';
   // A passing execution has no failure to lead with — open on the Timeline.
   if (!hasError.value) return 'timeline';
 

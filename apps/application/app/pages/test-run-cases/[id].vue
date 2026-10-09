@@ -49,11 +49,22 @@ const { data: historyData } = await useAsyncData(
   { default: (): TestCaseHistoryPoint[] => [], watch: [() => testCase.value?.testCaseId] },
 );
 
+// The story, situation and next lines are only for a problem execution; a passing
+// one shows identity and facts alone, and one that passed on retry adds the
+// failed attempt's headline, the line under it and the next step.
+const isProblem = computed(() => {
+  const s = testCase.value?.status;
+  return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
+});
+const isPassedOnRetry = computed(() => statusPaletteKey(testCase.value?.status, testCase.value?.retries) === 'flaky');
+
 // The deterministic clues and the story that chains them: Most likely chooses
 // between them and the cluster's diagnosis, folds every clue under its
-// disclosure, and the top clue's section chooses the default evidence tab.
+// disclosure, and the top clue's section chooses the default evidence tab. A
+// passing execution has no failure to explain, so they are not fetched.
 const { data: cluesData } = await useFetch<FailureCluesResult>(`/api/test-run-cases/${testCaseId}/clues`, {
   default: (): FailureCluesResult => ({ clues: [], story: null, failureAt: null }),
+  immediate: isProblem.value,
 });
 const clues = computed(() => cluesData.value?.clues ?? []);
 const story = computed(() => cluesData.value?.story ?? null);
@@ -168,13 +179,6 @@ const nextStep = computed(() => (testCase.value as { nextStep?: NextStep | null 
 // A commit in the situation links to the SCM host only when the run has a repository.
 const repositoryUrl = computed(() => reproduceData.value?.desktop?.repositoryUrl ?? null);
 
-// The story, situation and next lines are only for a problem execution; a passing
-// one shows identity and facts alone.
-const isProblem = computed(() => {
-  const s = testCase.value?.status;
-  return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
-});
-
 const blockedTests = computed(() => (testCase.value as { blockedTests?: BlockedCaseRef[] } | null)?.blockedTests ?? []);
 
 // The capture-fixtures nudge: one contextual line under the headline that offers
@@ -220,9 +224,9 @@ async function declineFixturesForProject() {
   }
 }
 
-/** A locator-resolution failure — the only case the Locator fix section applies to. */
+/** A locator-resolution failure of this execution — the only case the Locator fix section applies to. */
 const isLocatorFailure = computed(() =>
-  Boolean(verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
+  Boolean(isProblem.value && verdict.value?.isLocatorResolutionFailure && testCase.value?.testRun?.id),
 );
 
 // The Locator fix section rides on the healing data. The page fetches it once and
@@ -331,8 +335,10 @@ const fixSections = computed<FixSectionKey[]>(() => {
   return s;
 });
 
-// The Fix card covers a failing execution (something to fix) or one that blocked others.
-const showFix = computed(() => Boolean(verdict.value) || blockedTests.value.length > 0);
+// The Fix card covers a failing execution (something to fix) or one that blocked
+// others. A pass that needed a retry has nothing to fix here: its failed
+// attempt's page holds the tools.
+const showFix = computed(() => (Boolean(verdict.value) && !isPassedOnRetry.value) || blockedTests.value.length > 0);
 
 // ── Folded one-line summaries for the toolbox sections ───────────────────────
 const { aiStatus } = useAiStatus();
@@ -365,10 +371,11 @@ const statusEdge = computed(() =>
 );
 
 /**
- * Exceptional badges only. The why-signals (regression, passed on retry, newly
- * flaky) live in the headline's fact row when there is a headline, so they show
- * in the header only for an execution with no headline (a passing or
- * passed-on-retry attempt) — a fact appears once. Playwright marks always show.
+ * Exceptional badges only. The status chip says a pass needed a retry, and the
+ * why-signals (regression, newly flaky) lead the line under the headline when
+ * there is a headline, so they show here only for an execution with none (a
+ * pass whose failed attempt is not stored) — a fact appears once. Playwright
+ * marks always show.
  */
 const headerBadges = computed(() => {
   const tc = testCase.value;
@@ -395,13 +402,6 @@ const headerBadges = computed(() => {
         color: 'error',
         icon: 'i-lucide-git-pull-request-arrow',
         title: 'Passed in the baseline run, failing here',
-      });
-    if (tc.status === 'passed' && (tc.retries ?? 0) > 0)
-      out.push({
-        label: 'Passed on retry',
-        color: 'flaky',
-        icon: 'i-lucide-refresh-cw',
-        title: 'This test failed then passed on a retry',
       });
     if (tc.isNewFlaky)
       out.push({
@@ -775,7 +775,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <!-- Line 1: identity kicker — status, title, marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <StatusChip :status="testCase?.status ?? ''" class="shrink-0" />
+              <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
               <span class="text-highlighted min-w-0 break-words">
                 {{ testCase?.title || `Execution #${testCaseId}` }}
               </span>
@@ -791,7 +791,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </div>
           </template>
 
-          <!-- Line 2: the headline — the page's h1 -->
+          <!-- Line 2: the headline — the page's h1; for a retry pass, its failed attempt's -->
           <template v-if="verdict" #headline>
             <h1
               data-shot="failure-headline"
@@ -806,7 +806,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             >
               {{ verdict.detail }}
             </p>
-            <!-- Since when it fails, on which commit, and whether a newer execution failed again or passed. -->
+            <!-- Since when it fails (for a retry pass, which attempt failed), on which commit, and whether a newer execution failed again or passed. -->
             <ExecutionMetaLine
               v-if="situation"
               :since="situation.since"
@@ -828,12 +828,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
           </template>
 
           <!-- Line 3: most likely — the one explanation, by the rule both failure pages follow -->
-          <template v-if="verdict && mostLikely" #story>
+          <template v-if="isProblem && verdict && mostLikely" #story>
             <StoryLine :most-likely="mostLikely" :clues="clues" :failure-at="cluesFailureAt" />
           </template>
 
           <!-- Line 4: the next step -->
-          <template v-if="isProblem && nextStep" #next>
+          <template v-if="(isProblem || isPassedOnRetry) && nextStep" #next>
             <NextStepLine
               :next-step="nextStep"
               :retry-command="retryCommand"

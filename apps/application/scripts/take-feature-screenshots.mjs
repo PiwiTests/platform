@@ -3985,6 +3985,13 @@ const SCENES = [
     viewport: { width: 390, height: 800 },
   },
   {
+    name: 'execution-retry-pass-flake-lab',
+    description: 'Execution page first screen for a retry pass whose flake the Flake Lab reproduced (1280×800)',
+    // Execution 21 passed on retry; its next step verifies the flake fix under the condition the lab found.
+    route: '/test-run-cases/21',
+    viewport: { width: 1280, height: 800 },
+  },
+  {
     name: 'did-not-run-clarity',
     description: 'Execution page first screen for a test that did not run (1280×800 clarity baseline)',
     // Execution 748 never ran: its run stopped at the max-failures limit.

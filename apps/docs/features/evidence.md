@@ -16,13 +16,11 @@ Two pages are involved, and [Core concepts](/guide/concepts#execution) draws the
 | **Execution** | `/test-run-cases/:id` | "why did this attempt fail?": [the diagnosis view](#one-execution-diagnosis-first) |
 | **Test case** | `/test-cases/:id` | "how has this test behaved over time?": [its history](#the-test-case-page) |
 
-Links from a run land on an execution; the test's title links to its test case.
-
 ## One execution, diagnosis-first
 
 A failing execution reads top to bottom in one column. It opens on the **situation block** (the headline, the most
 likely cause, the next step and the cluster), described once on [Your first failure,
-explained](/guide/first-failure). Traces stream in while the run is still running.
+explained](/guide/first-failure).
 
 <figure>
   <img src="/screenshots/gather-evidence.png" alt="A failing execution: one situation block, then one evidence card whose tabs (Timeline, Screen, Source, Network, Console, State, Performance) hold the captured evidence">
@@ -51,9 +49,9 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   performance hints and Web Vitals.
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
-of this test's recent executions. A **passing** execution shows the identity and facts lines only, with the evidence
-card on **Timeline**. Network, console, Web Vitals, ARIA and alternative-locator data come from the
-[capture fixtures](/guide/capture-fixtures).
+of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error, opens on
+**Attempts** and keeps its next step; any other passing execution shows identity and facts only. Network, console,
+Web Vitals, ARIA and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 
 ### Clues
 

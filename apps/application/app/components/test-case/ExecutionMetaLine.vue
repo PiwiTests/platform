@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * The meta line under a failing execution's headline: why and since when it
- * fails, on which commit and author, then whether it is the latest execution of
+ * fails (for a pass that needed a retry, which attempt failed, linked to it),
+ * on which commit and author, then whether it is the latest execution of
  * its test, with one link to the newest one when it is not. One meta style; the
  * commit sits in a code chip. Below `sm` the latest part starts its own line, so
  * "Not the latest" reads as a fact of its own on a phone; the link wraps with

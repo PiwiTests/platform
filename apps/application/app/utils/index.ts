@@ -300,6 +300,12 @@ export function formatExecutionStatus(status: string, retries?: number | null): 
   return statusPaletteKey(status, retries) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
 }
 
+/** The status chip's label: the execution's status in sentence case ("Passed on retry", "Didn't run"). */
+export function statusChipLabel(status: string, retries?: number | null): string {
+  const label = formatExecutionStatus(status, retries);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 /**
  * Whether a test-case status is a failure for filtering, sorting and display.
  * Timeouts fold into failures everywhere (the run counters do the same).
