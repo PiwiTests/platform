@@ -725,7 +725,8 @@ share `app/demo/db.client.ts`.
 - **The web-dashboard Test Map** (`shared/demo/demo-test-map.mjs`) is checked against the live recompute by
   `tests/unit/demo-test-map.test.ts`: the seeded gaps (`demo-test-map-gaps.json`), control reach and feature groups
   must be what a recompute writes. The model also labels its ground truth (`expectedWebDashboardGaps`: a control or
-  link label on each step, the flaky tests), and the test scores each detector's precision and recall against it
+  link label on each step, the flaky tests, the catalog's callers, the passing tests the application errored under),
+  and the test scores each detector's precision and recall against it
   (`demo-test-map-benchmark.json`): any changed score fails, and a lower one is named. After a change to the model or
   a detector, run the test with `PIWI_UPDATE_DEMO_TEST_MAP=1`, format both files, re-seed and run it again; say in the
   commit why a score moved.
