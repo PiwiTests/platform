@@ -67,6 +67,19 @@ file's history, so it stays at 0.1 there. The other detectors
 rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
 route's reach.
 
+## Features
+
+A feature groups the routes, pages and controls the tests tagged with it reach. Each recompute also gives it what no
+feature reaches, with a confidence below one: the controls on its pages (0.8), the pages they link to under the same
+first path segment (0.6) and those pages' controls (0.5), and the declared routes sharing the first two path segments
+of a route it reaches (0.6). A gap on such a node sits under the feature, so the map shows what a feature misses, not
+only what its tests touch. A dependency and a page under another path stay ungrouped.
+
+With three features or more, a node more than half the tests reach, or more than half the features group, is a
+**hub**, such as the session route every test calls. The feature graph still draws it, but it adds no member, test,
+gap or link to a feature; its gaps sit under *Shared by most features*. The groups are rebuilt on every recompute, so
+a feature that loses its tag leaves the map.
+
 ## What the graph includes
 
 The graph stays proportional to the application's surface, not its data volume:

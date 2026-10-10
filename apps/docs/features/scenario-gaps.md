@@ -57,12 +57,14 @@ factors and its evidence lines.
 
 The tab opens on the **feature map**: one circle per feature (from the
 [`piwi:feature` tag](/reference/test-metadata)), sized by the routes, pages and controls it groups, colored by its
-worst open gap, and linked to the features it shares nodes with. The ranked list beside it carries every feature,
-however many.
+worst open gap, and linked to the features it shares nodes with. A feature also groups what its tests miss nearby,
+such as the controls on its pages, and a **hub** most tests reach links no features
+([how features group](/reference/gap-detectors#features)). The ranked list beside it carries every feature, however
+many.
 
 <figure>
   <img src="/screenshots/scenario-gaps-feature-map.png" alt="Feature map: four feature circles colored by worst gap, beside their counts">
-  <figcaption>Four features of an admin console, linked through the routes they share.</figcaption>
+  <figcaption>Four features of an admin console, each with what it groups, its tests and its worst gap.</figcaption>
 </figure>
 
 A feature, or a gap's node, opens in the **feature graph**: the node in the middle, what leads into it on the left,
@@ -82,7 +84,7 @@ Every gap takes the same four verbs as an inbox item:
 
 <figure>
   <img src="/screenshots/scenario-gaps-tab.png" alt="Five ranked gaps of the Users feature with evidence and triage verbs">
-  <figcaption>Gaps of one feature, ranked, each with its evidence and the inbox verbs.</figcaption>
+  <figcaption>The top gaps of one feature, ranked, each with its evidence and the inbox verbs.</figcaption>
 </figure>
 
 - **Accept** copies a draft test skeleton to your clipboard: a title from the gap, the `piwi:` annotations of the

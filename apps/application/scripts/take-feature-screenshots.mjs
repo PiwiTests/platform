@@ -2018,7 +2018,7 @@ const SCENES = [
   {
     name: 'scenario-gaps-tab',
     description:
-      'Gaps tab: the Users feature of the web-dashboard project, its gaps ranked with class, evidence and verbs',
+      'Gaps tab: the Users feature of the web-dashboard project, its top five gaps ranked with class, evidence and verbs',
     tags: ['docs'],
     out: 'docs',
     route: '/projects/5?tab=gaps',
@@ -2028,6 +2028,10 @@ const SCENES = [
         .locator('[data-shot="gaps-group-Users"]')
         .waitFor({ timeout: 15000 })
         .catch(() => {});
+      // The feature holds more gaps than a docs figure shows: keep the top five.
+      await page.addStyleTag({
+        content: '[data-shot="gaps-group-Users"] [data-shot^="gap-"]:nth-child(n+6) { display: none !important; }',
+      });
       await settle();
       await shoot(undefined, { of: '[data-shot="gaps-group-Users"]', pad: 12 });
     },
