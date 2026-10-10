@@ -28,11 +28,14 @@
  * is how more of a page gets into one image); `--name` picks the file stem.
  *
  * Every scene declares a `mode`: `web` (the default) captures the dashboard as
- * a browser serves it, `desktop` captures the Tauri shell — the server runs
- * with `NUXT_PUBLIC_DESKTOP=true` and a mocked Tauri IPC bridge is injected
- * into the page, so no shell build is needed. A desktop scene can shape what
- * the mock answers (linked folder, inspection result). A run covering both
- * modes boots one server per mode, web first.
+ * a browser serves it, `tour` the same with the demo's guided tour switched on
+ * (`NUXT_PUBLIC_DEMO_TOUR=true`), for scenes of the tour itself, and `desktop`
+ * captures the Tauri shell — the server runs with `NUXT_PUBLIC_DESKTOP=true`
+ * and a mocked Tauri IPC bridge is injected into the page, so no shell build is
+ * needed. A desktop scene can shape what the mock answers (linked folder,
+ * inspection result). A run covering several modes boots one server per mode,
+ * web first. With `--url`, every scene drives that one server, so point a tour
+ * scene at a server started with `NUXT_PUBLIC_DEMO_TOUR=true`.
  *
  * Output goes where the scene's `out` says: `screens` → `.screens/` (gitignored
  * report artifacts) and `docs` → `apps/docs/public/screenshots/` (committed
@@ -475,8 +478,8 @@ function reportNoRepositoryCluster(request, base) {
   return noRepositoryCluster;
 }
 
-/** Surfaces a scene can be captured against. */
-const MODES = ['web', 'desktop'];
+/** Surfaces a scene can be captured against, in the order a run boots their servers. */
+const MODES = ['web', 'tour', 'desktop'];
 
 /** Cookie `@nuxtjs/color-mode` reads the stored light/dark preference from (`colorMode` in nuxt.config.ts). */
 const COLOR_MODE_COOKIE = 'piwi-color-mode';
@@ -631,8 +634,9 @@ const READY_INSPECTION = {
  *
  * Scene options:
  *   description — one line, shown by --list
- *   mode        — 'web' (default) or 'desktop'; picks the server the scene runs
- *                 against, and whether the mocked Tauri bridge is injected
+ *   mode        — 'web' (default), 'tour' or 'desktop'; picks the server the
+ *                 scene runs against ('tour': the guided tour switched on), and
+ *                 whether the mocked Tauri bridge is injected ('desktop')
  *   tags        — ['docs'] / ['desktop']; --tag selects on these
  *   out         — 'screens' (default) or 'docs'
  *   file        — output basename, default `<name>.png`
@@ -1209,6 +1213,62 @@ function quarantineDismissScene(width, suffix) {
       `quarantine-dismiss${suffix}-release.png`,
     ],
   };
+}
+
+/**
+ * Waits for the guided tour's prompt, which a first visit gets by itself on a
+ * `tour` server (a scene's browser context starts with nothing stored), and for
+ * it to finish sliding in.
+ */
+async function waitForTourPrompt(page) {
+  const prompt = page.getByTestId('tour-prompt');
+  await prompt.waitFor({ state: 'visible', timeout: 30_000 });
+  await prompt.evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((a) => a.finished)));
+}
+
+/**
+ * Starts a role's tour from the prompt, in `language` when given (its name in
+ * the prompt's select, `Français`), and waits for the first stop to settle: the
+ * popover rendered and the cutout on the stop's target. A stop whose target is
+ * missing settles centered, with an empty `data-tour-target`.
+ */
+async function startTourFromPrompt(page, { profile, language }) {
+  await waitForTourPrompt(page);
+  if (language) {
+    await page.getByTestId('tour-language').click();
+    await page.getByRole('option', { name: language }).click();
+  }
+  await page.getByTestId(`tour-profile-${profile}`).click();
+  const popover = page.locator('.driver-popover.piwi-tour[data-tour-settled]');
+  await popover.waitFor({ timeout: 60_000 });
+  const target = await popover.getAttribute('data-tour-target');
+  if (target) await page.locator(`[data-tour="${target}"].driver-active-element`).waitFor();
+}
+
+/**
+ * Walks the running tour with Next, calling `atStop` on each stop once it has
+ * settled (its id, its target, empty for a stop shown centered), and ends the
+ * tour on its last stop.
+ */
+async function walkTourStops(page, atStop) {
+  let last = null;
+  for (;;) {
+    const popover = page.locator(
+      `.driver-popover.piwi-tour[data-tour-settled]${last ? `:not([data-tour-stop="${last}"])` : ''}`,
+    );
+    await popover.waitFor({ timeout: 60_000 });
+    const stop = await popover.evaluate((node) => ({
+      id: node.dataset.tourStop,
+      target: node.dataset.tourTarget,
+      isLast: Boolean(node.querySelector('.driver-popover-done-btn')),
+    }));
+    if (stop.target) await page.locator(`[data-tour="${stop.target}"].driver-active-element`).waitFor();
+    await atStop(stop);
+    if (stop.isLast) break;
+    last = stop.id;
+    await popover.locator('.driver-popover-next-btn').click();
+  }
+  await page.keyboard.press('Escape');
 }
 
 const SCENES = [
@@ -4533,6 +4593,71 @@ const SCENES = [
       'run-changes-fallback-narrow.png',
     ],
   },
+
+  // ── Demo guided tour (report artifacts) ──────────────────────────────────
+  // The demo's tour, which `mode: 'tour'` switches on for the dev server: the
+  // prompt a first visit gets, then the developer tour's first stop.
+  ...[
+    { name: 'demo-tour-prompt', viewport: { width: 1280, height: 860 } },
+    { name: 'demo-tour-prompt-mobile', viewport: { width: 390, height: 844 } },
+  ].map(({ name, viewport }) => ({
+    name,
+    description: `Guided tour: the prompt a first visit gets, over the home page, at ${viewport.width} px`,
+    mode: 'tour',
+    route: '/',
+    viewport,
+    async run({ page, shoot, settle }) {
+      await waitForTourPrompt(page);
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'demo-tour-stop', what: 'at 1280 px' },
+    { name: 'demo-tour-stop-mobile', viewport: { width: 390, height: 844 }, what: 'at 390 px' },
+    { name: 'demo-tour-stop-fr', language: 'Français', what: 'in French' },
+    { name: 'demo-tour-stop-dark', colorScheme: 'dark', what: 'in dark mode' },
+  ].map(({ name, viewport = { width: 1280, height: 860 }, language, colorScheme, what }) => ({
+    name,
+    description: `Guided tour: the developer tour's first stop, its popover over the failing execution, ${what}`,
+    mode: 'tour',
+    route: '/',
+    viewport,
+    colorScheme,
+    async run({ page, shoot, settle }) {
+      await startTourFromPrompt(page, { profile: 'developer', language });
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'demo-tour-walk',
+    description:
+      'Guided tour: every stop of every role’s tour at 1280 px, one image per stop; the demo banner’s stops, which a dev server has no banner for, are left out',
+    mode: 'tour',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      await waitForTourPrompt(page);
+      const profiles = await page
+        .locator('[data-testid^="tour-profile-"]')
+        .evaluateAll((cards) => cards.map((card) => card.dataset.testid.replace('tour-profile-', '')));
+      for (const profile of profiles) {
+        // A started tour is never asked about again: forget it, so the next visit gets the prompt.
+        await page.evaluate(() => localStorage.removeItem('piwi-demo-tour'));
+        await goto('/');
+        await startTourFromPrompt(page, { profile });
+        await walkTourStops(page, async ({ id, target }) => {
+          if (!target) {
+            console.log(`   ${profile}/${id}: left out, its target is in the demo banner`);
+            return;
+          }
+          await settle();
+          await shoot(`${profile}-${id}`);
+        });
+      }
+    },
+  },
 ];
 
 /** Output basename for a scene, before any `shoot()` label. */
@@ -4821,7 +4946,7 @@ function selectScenes(flags) {
   const badMode = SCENES.filter((s) => s.mode != null && !MODES.includes(s.mode));
   if (badMode.length) {
     throw new Error(
-      `scene(s) with an unknown mode: ${badMode.map((s) => `${s.name} (${s.mode})`).join(', ')} — use ${MODES.join(' or ')}`,
+      `scene(s) with an unknown mode: ${badMode.map((s) => `${s.name} (${s.mode})`).join(', ')} — use one of ${MODES.join(', ')}`,
     );
   }
   const unknown = flags.scenes.filter((w) => !SCENES.some((s) => s.name === w));
@@ -5037,8 +5162,8 @@ async function main() {
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
-  // Web and desktop scenes need differently-configured servers, so each mode
-  // present in the run gets its own; --url drives whatever is already there.
+  // Each mode needs a differently-configured server, so each mode present in
+  // the run gets its own; --url drives whatever is already there.
   const byMode = MODES.map((mode) => [mode, scenes.filter((s) => sceneMode(s) === mode)]).filter(
     ([, group]) => group.length > 0,
   );

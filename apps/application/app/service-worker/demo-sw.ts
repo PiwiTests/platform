@@ -7,7 +7,7 @@
  * ORM.  This eliminates the need for any real server in the static demo build.
  *
  * How it integrates with the app:
- *   1. The `demo-fetch.client.ts` plugin rewrites every `/api/…` call to
+ *   1. `$fetch` prefixes every `/api/…` call with the app's base URL,
  *      `[demoBase]/api/…` (e.g. `/piwi-dashboard/demo/api/projects`),
  *      which falls inside the service worker's registration scope.
  *   2. This service worker intercepts those fetch events, queries the

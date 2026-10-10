@@ -127,6 +127,7 @@ function detailLine(s: FlakeSuspect): string | null {
       title="Suspects"
       help="case.flakiness"
       :subtitle="windowLine || undefined"
+      data-tour="flake-suspects"
     >
       <LoadingState v-if="loading" text="Reading this test’s history…" />
       <ErrorState v-else-if="failed" text="Could not load the suspects." />

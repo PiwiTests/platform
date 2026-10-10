@@ -480,7 +480,7 @@ const cachedTokens = computed<number>(() => pipeline.value.reduce((acc, s) => ac
         </li>
       </ul>
 
-      <div v-if="details?.suggestedFix">
+      <div v-if="details?.suggestedFix" data-tour="diagnosis-fix">
         <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Suggested fix</p>
         <p class="text-sm text-gray-600 dark:text-gray-400">{{ details.suggestedFix.description }}</p>
         <OpenInIdeLink

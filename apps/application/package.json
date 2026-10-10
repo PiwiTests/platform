@@ -65,6 +65,7 @@
     "@vueuse/nuxt": "^14.1.0",
     "busboy": "^1.6.0",
     "date-fns": "^4.1.0",
+    "driver.js": "^1.8.0",
     "drizzle-orm": "^0.45.0",
     "fflate": "^0.8.2",
     "highlight.js": "^11.11.1",

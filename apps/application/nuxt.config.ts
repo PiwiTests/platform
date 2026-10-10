@@ -264,6 +264,10 @@ export default defineNuxtConfig({
       // single-user with auth off, so account/user management is hidden and the
       // local connection details are surfaced.
       desktop: false,
+      // Mounts the guided tour (app.vue): on in the demo build; a dev server
+      // turns it on with NUXT_PUBLIC_DEMO_TOUR=true, as the screenshot
+      // harness's `tour` mode does.
+      demoTour: isDemo,
       oauthProviders: [
         ...(process.env.PIWI_OAUTH_GOOGLE_CLIENT_ID && process.env.PIWI_OAUTH_GOOGLE_CLIENT_SECRET
           ? (['google'] as const)
@@ -445,6 +449,8 @@ export default defineNuxtConfig({
         'drizzle-orm/pg-core',
         'drizzle-orm/sqlite-core',
         'drizzle-orm/sqlite-proxy',
+        // The guided tour's engine, loaded when a tour starts.
+        'driver.js',
         // The languages shared/highlight.ts registers.
         'highlight.js/lib/core',
         'highlight.js/lib/languages/bash',

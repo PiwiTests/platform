@@ -3124,6 +3124,29 @@ const ENTITY_LINKS = [
     created_at: ts('2025-04-25T09:00:00') * 1000,
     updated_at: ts('2025-04-25T09:00:00') * 1000,
   },
+  {
+    // The Jira issue the login 500 (cluster 3) is tracked in, filed from Piwi
+    // through the demo's Jira connection (`app/demo/api/integrations.ts`) and
+    // In Progress, as its triage note says. Its key stays under the DEMO-1xx
+    // keys the demo files, and no connection row backs it: a dev server seeded
+    // from the demo never polls a Jira it cannot reach.
+    id: 4,
+    failure_cluster_id: 3,
+    url: 'https://demo.atlassian.net/browse/DEMO-42',
+    provider: 'jira',
+    key: 'DEMO-42',
+    title: 'Login returns 500 when verifyCredentials finds no user',
+    status_text: 'In Progress',
+    status_color: 'warning',
+    metadata: { statusCategory: 'indeterminate', assignee: 'David Lee' },
+    unfurled_at: null,
+    connection_id: null,
+    external_id: '10042',
+    origin: 'created',
+    created_by: 4,
+    created_at: ts('2025-04-24T12:00:00') * 1000,
+    updated_at: ts('2025-04-25T08:00:00') * 1000,
+  },
 ];
 
 // ── Users, groups & role bindings ───────────────────────────────────────────

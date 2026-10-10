@@ -171,7 +171,7 @@ const costliest = computed(() => data.value?.costliest ?? []);
         help="run.resource-findings"
         data-shot="run-resources-findings"
       >
-        <ul v-if="findings.length > 0" class="divide-y divide-default -my-2">
+        <ul v-if="findings.length > 0" class="divide-y divide-default -my-2" data-tour="run-leaks">
           <li v-for="item in findings" :key="item.key" class="py-2.5 min-w-0">
             <p class="text-sm text-highlighted break-words">
               <span class="font-semibold">{{ item.label }}</span>

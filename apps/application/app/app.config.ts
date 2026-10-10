@@ -31,6 +31,9 @@ export default defineAppConfig({
     },
     dashboardPanel: {
       slots: {
+        // At least as tall as the space under the demo's banner (`--demo-banner-height`,
+        // unset outside the demo), where the dashboard sits.
+        root: 'min-h-[calc(100svh-var(--demo-banner-height,0px))]',
         // Below `sm` the page has no side gutter: cards are full-bleed and their own
         // 12 px padding is the only inset. Vertical padding and the `sm`-and-up
         // default (`p-6`) are the Nuxt UI defaults.

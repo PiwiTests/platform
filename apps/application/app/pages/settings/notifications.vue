@@ -267,6 +267,7 @@ PIWI_SMTP_PASS=secret"
         title="Notification channels"
         :count="channels.length"
         help="notifications.channels"
+        data-tour="notification-channels"
       >
         <template #actions>
           <UButton size="sm" icon="i-lucide-plus" @click="showNewChannel = !showNewChannel"> Add channel </UButton>

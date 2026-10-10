@@ -9,7 +9,7 @@ import type { DemoScenario } from '~/demo/simulator';
 
 const { state, scenarios, start, stop, cancelStaleRuns } = useDemoSimulator();
 
-// Demo DB readiness — flipped by the first successful API call (demo-fetch plugin)
+// Demo DB readiness — flipped once the service worker answers its first query (demo-fetch plugin)
 const demoReady = useState('demoReady', () => false);
 
 const popoverOpen = ref(false);
@@ -27,7 +27,7 @@ function launch(scenario: DemoScenario) {
 </script>
 
 <template>
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-2" data-tour="demo-simulator">
     <template v-if="state.status === 'idle'">
       <UPopover v-model:open="popoverOpen">
         <UButton
