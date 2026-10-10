@@ -2030,7 +2030,9 @@ const SCENES = [
         .catch(() => {});
       // The feature holds more gaps than a docs figure shows: keep the top five.
       await page.addStyleTag({
-        content: '[data-shot="gaps-group-Users"] [data-shot^="gap-"]:nth-child(n+6) { display: none !important; }',
+        content:
+          '[data-shot="gaps-group-Users"] [data-shot^="gap-"]:nth-child(n+6) { display: none !important; }' +
+          ' [data-shot="gaps-group-Users"] [data-shot^="gap-"]:nth-child(5) { border-bottom-width: 0 !important; }',
       });
       await settle();
       await shoot(undefined, { of: '[data-shot="gaps-group-Users"]', pad: 12 });

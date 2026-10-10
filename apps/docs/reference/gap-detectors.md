@@ -71,14 +71,15 @@ route's reach.
 
 A feature groups the routes, pages and controls the tests tagged with it reach. Each recompute also gives it what no
 feature reaches, with a confidence below one: the controls on its pages (0.8), the pages they link to under the same
-first path segment (0.6) and those pages' controls (0.5), and the declared routes sharing the first two path segments
-of a route it reaches (0.6). A gap on such a node sits under the feature, so the map shows what a feature misses, not
-only what its tests touch. A dependency and a page under another path stay ungrouped.
+first path segment (0.6) and those pages' controls (0.5), and the declared routes under the same resource path as a
+route it reaches, `/api/v1/orders` for `GET /api/v1/orders/:id` (0.6). A gap sits under one feature: the one whose
+tests reach its node, else the most confident inference. So the map shows what a feature misses, not only what its
+tests touch. Dependencies, links, and pages or declared routes under other paths stay ungrouped.
 
-With three features or more, a node more than half the tests reach, or more than half the features group, is a
-**hub**, such as the session route every test calls. The feature graph still draws it, but it adds no member, test,
-gap or link to a feature; its gaps sit under *Shared by most features*. The groups are rebuilt on every recompute, so
-a feature that loses its tag leaves the map.
+With three features or more, a node more than half the tests reach, or that more than half the features and three at
+least group, is a **hub**, such as the session route nearly every test calls. The feature graph still draws it, but
+it adds no member, test, gap or link to a feature; its gaps sit under *Shared by most features*. The groups are rebuilt
+on every recompute, so a feature that loses its tag leaves the map.
 
 ## What the graph includes
 

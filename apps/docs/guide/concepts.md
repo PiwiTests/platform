@@ -277,6 +277,13 @@ triage records a covering test for it. Reach is measured from runs, never from i
 why the docs and the dashboard say *observed reach* rather than *coverage*.
 A flaky, quarantined or skipped test's reach does not count as trusted.
 
+### Feature and hub
+
+A **feature** is a product area named by the [`piwi:feature` tag](/reference/test-metadata) on tests. It groups what
+those tests reach, and what they miss nearby: the controls on its pages, the pages they link to, the declared routes
+beside its own. A **hub** is a node most tests reach or most features group, such as a session route; it belongs to
+no one feature, so it links none. See [how features group](/reference/gap-detectors#features).
+
 ### Code reach
 
 The application source files a test executed: those whose functions ran in the page, from Chromium's JavaScript
