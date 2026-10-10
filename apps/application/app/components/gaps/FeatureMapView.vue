@@ -140,7 +140,7 @@ function membersLabel(f: MapFeature): string {
   return `${counted(f.members.routes, 'route')} · ${counted(f.members.pages, 'page')} · ${counted(f.members.controls, 'control')}`;
 }
 
-/** How many of a feature's members its tests do not reach, as `5 inferred`, or ''. */
+/** How many of a feature's members its tests do not reach, as `5 inferred from its pages and routes`, or ''. */
 function inferredLabel(f: MapFeature): string {
   return f.members.inferred > 0 ? `${f.members.inferred} inferred from its pages and routes` : '';
 }

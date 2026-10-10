@@ -471,6 +471,33 @@ describe('feature grouping beyond reach', () => {
     expect(keys.has('GET /api/audit-log')).toBe(false);
   });
 
+  test('two of three features sharing a node stay linked through it', () => {
+    const three = gaps.groupFeatures({
+      featureByTest: new Map([
+        [1, 'Checkout'],
+        [2, 'Cart'],
+        [3, 'Catalog'],
+        [4, 'Catalog'],
+      ]),
+      reachByNode: reach([
+        ['route\x00POST /api/cart', [1, 2]],
+        ['route\x00GET /api/products', [3, 4]],
+      ]),
+      controlsByPage: new Map(),
+      linksByPage: new Map(),
+      declaredRoutes: [],
+    });
+    expect(three.filter((g) => g.key === 'POST /api/cart').map((g) => g.hub)).toEqual([false, false]);
+  });
+
+  test('a route prefix skips api and version segments and drops the query', () => {
+    expect(gaps.routePrefix('GET /api/users/:id')).toBe('/api/users');
+    expect(gaps.routePrefix('GET /api/v1/orders/:id')).toBe('/api/v1/orders');
+    expect(gaps.routePrefix('GET /api/orders?page=<redacted>')).toBe('/api/orders');
+    expect(gaps.routePrefix('GET /health')).toBe('/health');
+    expect(gaps.routePrefix('GET /api')).toBe('/api');
+  });
+
   test('with fewer than three features no node is a hub', () => {
     const two = gaps.groupFeatures({
       featureByTest: new Map([

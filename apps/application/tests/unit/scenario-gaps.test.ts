@@ -610,10 +610,38 @@ describe('computeScenarioGaps', () => {
     await checks(2, 'not-noticed');
 
     await gaps.computeScenarioGaps(db, 1);
-    // A route any test noticed is checked, so it is never a not-noticed gap —
+    // A route a trusted test noticed is checked, so it is never a not-noticed gap —
     // regardless of the order the edges came back from the database.
     const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
     expect(list.find((r) => r.key === 'route:POST /api/orders')).toBeFalsy();
+  });
+
+  test('a flaky test noticing a probe does not check the route', async () => {
+    await seedRun(1);
+    await db
+      .insert(schema.testCases)
+      .values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b', flakyRootCause: 'timing' });
+    await seedReach(1, 'route', 'POST /api/orders', 1);
+    await seedReach(2, 'route', 'POST /api/orders', 1);
+    for (const [testCaseId, outcome] of [
+      [1, 'not-noticed'],
+      [2, 'noticed'],
+    ] as const) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(testCaseId),
+        toKind: 'route',
+        toKey: 'POST /api/orders',
+        kind: 'checks',
+        evidence: { outcome, fault: 'status-500' },
+        lastSeenAt: new Date(++clock),
+      });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
+    expect(list.map((r) => r.key)).toContain('route:POST /api/orders');
   });
 
   test('list_scenario_gaps keeps a success-only gap under a feature filter', async () => {

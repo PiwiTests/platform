@@ -1652,7 +1652,8 @@ export async function computeScenarioGaps(
 
   const checkOutcomes: CheckOutcome[] = [...checksByRoute].map(([routeKey, edges]) => ({
     routeKey,
-    noticed: edges.some((e) => e.outcome === 'noticed'),
+    // A flaky, quarantined or skipped test's notice is no evidence the route is checked.
+    noticed: edges.some((e) => e.outcome === 'noticed' && !untrustedTests.has(Number(e.testKey))),
     notNoticed: edges
       .filter((e) => e.outcome === 'not-noticed')
       .map((e) => {
@@ -1758,14 +1759,19 @@ export async function computeScenarioGaps(
   };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
-  const controlsByPage = new Map<string, Set<string>>();
-  for (const [control, pages] of pagesByControl) {
-    for (const page of pages) controlsByPage.set(page, new Set([...(controlsByPage.get(page) ?? []), control]));
-  }
-  const linksByPage = new Map<string, Set<string>>();
-  for (const [target, sources] of linkSourcesByPage) {
-    for (const source of sources) linksByPage.set(source, new Set([...(linksByPage.get(source) ?? []), target]));
-  }
+  const invert = (byTarget: Map<string, Set<string>>) => {
+    const out = new Map<string, Set<string>>();
+    for (const [target, sources] of byTarget) {
+      for (const source of sources) {
+        let set = out.get(source);
+        if (!set) out.set(source, (set = new Set()));
+        set.add(target);
+      }
+    }
+    return out;
+  };
+  const controlsByPage = invert(pagesByControl);
+  const linksByPage = invert(linkSourcesByPage);
   await syncFeatureNodes(
     db,
     projectId,
@@ -2365,7 +2371,7 @@ export interface FeatureGroup {
   via: 'reach' | 'contains' | 'links' | 'path';
   /** Null for reach; below one when inferred. */
   confidence: number | null;
-  /** Reached by more than half the tests or grouped by more than half the features, with three features or more. */
+  /** With three features or more: reached by more than half the tests, or grouped by more than half the features and three at least. */
   hub: boolean;
 }
 
@@ -2374,10 +2380,16 @@ function pagePrefix(page: string): string {
   return `/${page.split('/').filter(Boolean)[0] ?? ''}`;
 }
 
-/** `/api/users` of `GET /api/users/:id`: the first two path segments of a route. */
-function routePrefix(route: string): string {
-  const path = route.slice(route.indexOf(' ') + 1);
-  return `/${path.split('/').filter(Boolean).slice(0, 2).join('/')}`;
+/**
+ * `/api/users` of `GET /api/users/:id?page=…`: the path up to its first resource
+ * segment, past an `api` and a version segment (`/api/v1/orders`), query aside.
+ */
+export function routePrefix(route: string): string {
+  const path = route.slice(route.indexOf(' ') + 1).split('?')[0]!;
+  const segments = path.split('/').filter(Boolean);
+  let i = 0;
+  while (i < segments.length - 1 && /^(api|v\d+)$/i.test(segments[i]!)) i++;
+  return `/${segments.slice(0, i + 1).join('/')}`;
 }
 
 /**
@@ -2385,11 +2397,11 @@ function routePrefix(route: string): string {
  * tests carrying its tag reach. It also groups, with a confidence below one,
  * what no feature reaches: the controls its pages contain (0.8), the pages its
  * pages link to under the same first path segment (0.6) and their controls
- * (0.5), and the declared routes sharing the first two path segments of a route
- * it reaches (0.6). With three features or more, a node reached by more than
- * half the tests or grouped by more than half the features is a hub: still
- * grouped, but no source of inference, and marked so the map neither links
- * features through it nor counts its tests. Pure.
+ * (0.5), and the declared routes under the same resource path as a route it
+ * reaches ({@link routePrefix}, 0.6). With three features or more, a node
+ * reached by more than half the tests, or grouped by more than half the features
+ * and by three at least, is a hub: still grouped, but no source of inference, and
+ * marked so the map neither links features through it nor counts its tests. Pure.
  */
 export function groupFeatures(input: FeatureGroupingInput): FeatureGroup[] {
   const groups = new Map<string, FeatureGroup>(); // feature\0kind\0key → group
@@ -2405,6 +2417,17 @@ export function groupFeatures(input: FeatureGroupingInput): FeatureGroup[] {
     if (prev && (prev.confidence == null || (confidence != null && prev.confidence >= confidence))) return;
     groups.set(id, { feature, kind, key, via, confidence, hub: false });
   };
+  /** `kind\0key` → the features grouping it, among `of`. */
+  const featuresByNode = (of: Iterable<FeatureGroup>) => {
+    const out = new Map<string, Set<string>>();
+    for (const g of of) {
+      const id = `${g.kind}\x00${g.key}`;
+      let set = out.get(id);
+      if (!set) out.set(id, (set = new Set()));
+      set.add(g.feature);
+    }
+    return out;
+  };
 
   const reachingTests = new Set<number>();
   for (const [nodeKey, tests] of input.reachByNode) {
@@ -2418,22 +2441,24 @@ export function groupFeatures(input: FeatureGroupingInput): FeatureGroup[] {
   }
   const features = new Set([...groups.values()].map((g) => g.feature));
   const hubsApply = features.size >= 3;
+  // Grouped by more than half the features, and by three at least, so two
+  // features sharing a node stay linked through it.
+  const sharedByMost = (count: number) => hubsApply && count >= 3 && count > features.size / 2;
   const reachedHub = (kind: string, key: string) =>
     hubsApply && (input.reachByNode.get(`${kind}\x00${key}`)?.size ?? 0) > reachingTests.size / 2;
   const reachGrouped = new Set([...groups.values()].map((g) => `${g.kind}\x00${g.key}`));
-  const featuresByReachedNode = new Map<string, Set<string>>();
-  for (const g of groups.values()) {
-    const id = `${g.kind}\x00${g.key}`;
-    featuresByReachedNode.set(id, new Set([...(featuresByReachedNode.get(id) ?? []), g.feature]));
-  }
+  const byReach = featuresByNode(groups.values());
   const reachHub = (kind: string, key: string) =>
-    reachedHub(kind, key) ||
-    (hubsApply && (featuresByReachedNode.get(`${kind}\x00${key}`)?.size ?? 0) > features.size / 2);
+    reachedHub(kind, key) || sharedByMost(byReach.get(`${kind}\x00${key}`)?.size ?? 0);
 
-  for (const feature of features) {
-    const own = [...groups.values()].filter(
-      (g) => g.feature === feature && g.via === 'reach' && !reachHub(g.kind, g.key),
-    );
+  const ownByFeature = new Map<string, FeatureGroup[]>();
+  for (const g of groups.values()) {
+    if (reachHub(g.kind, g.key)) continue;
+    let own = ownByFeature.get(g.feature);
+    if (!own) ownByFeature.set(g.feature, (own = []));
+    own.push(g);
+  }
+  for (const [feature, own] of ownByFeature) {
     const pages = own.filter((g) => g.kind === 'page').map((g) => g.key);
     const linkedPages: string[] = [];
     for (const page of pages) {
@@ -2459,19 +2484,39 @@ export function groupFeatures(input: FeatureGroupingInput): FeatureGroup[] {
     }
   }
 
-  const featuresByNode = new Map<string, Set<string>>();
+  const all = featuresByNode(groups.values());
   for (const g of groups.values()) {
-    const id = `${g.kind}\x00${g.key}`;
-    featuresByNode.set(id, new Set([...(featuresByNode.get(id) ?? []), g.feature]));
-  }
-  for (const g of groups.values()) {
-    g.hub =
-      reachedHub(g.kind, g.key) ||
-      (hubsApply && (featuresByNode.get(`${g.kind}\x00${g.key}`)?.size ?? 0) > features.size / 2);
+    g.hub = reachedHub(g.kind, g.key) || sharedByMost(all.get(`${g.kind}\x00${g.key}`)?.size ?? 0);
   }
   return [...groups.values()].sort(
     (a, b) => a.feature.localeCompare(b.feature) || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key),
   );
+}
+
+/**
+ * The one feature each node's gaps sit under, from the `groups` edges into it:
+ * the feature reaching it (no confidence) before one inferring it, the most
+ * confident inference next, ties by name. A node any edge marks a hub belongs to
+ * no one feature. Keyed `kind\0key`; shared by the gap list and the feature map.
+ */
+export function featureOwners(
+  rows: Array<{ feature: string; toKind: string; toKey: string; confidence: number | null; evidence: unknown }>,
+): Map<string, { feature: string; hub: boolean }> {
+  const rank = (confidence: number | null) => confidence ?? 2;
+  const best = new Map<string, { feature: string; confidence: number | null; hub: boolean }>();
+  for (const g of rows) {
+    const id = `${g.toKind}\x00${g.toKey}`;
+    const hub = (g.evidence as { hub?: unknown } | null)?.hub === true;
+    const prev = best.get(id);
+    if (
+      !prev ||
+      rank(g.confidence) > rank(prev.confidence) ||
+      (rank(g.confidence) === rank(prev.confidence) && g.feature < prev.feature)
+    ) {
+      best.set(id, { feature: g.feature, confidence: g.confidence, hub: hub || (prev?.hub ?? false) });
+    } else if (hub) prev.hub = true;
+  }
+  return new Map([...best].map(([id, { feature, hub }]) => [id, { feature, hub }]));
 }
 
 /**
@@ -2903,22 +2948,9 @@ export async function listScenarioGaps(
     .from(graphEdges)
     .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
   if (groupRows.length > 0) {
-    const rank = (confidence: number | null) => confidence ?? 2;
-    const best = new Map<string, { feature: string; confidence: number | null; hub: boolean }>();
-    for (const g of groupRows) {
-      const id = `${g.toKind}\x00${g.toKey}`;
-      const hub = (g.evidence as { hub?: unknown } | null)?.hub === true;
-      const prev = best.get(id);
-      if (
-        !prev ||
-        rank(g.confidence) > rank(prev.confidence) ||
-        (rank(g.confidence) === rank(prev.confidence) && g.feature < prev.feature)
-      ) {
-        best.set(id, { feature: g.feature, confidence: g.confidence, hub: hub || (prev?.hub ?? false) });
-      } else if (hub) prev.hub = true;
-    }
+    const owners = featureOwners(groupRows);
     for (const gap of mapped) {
-      const owner = best.get(`${gap.subject.kind}\x00${gap.subject.key}`);
+      const owner = owners.get(`${gap.subject.kind}\x00${gap.subject.key}`);
       if (!owner) continue;
       if (owner.hub) gap.hub = true;
       else gap.feature = owner.feature;
@@ -3025,8 +3057,10 @@ const SIGNATURE_SUBJECT_KINDS = new Set(['route', 'page', 'control', 'dependency
 
 /**
  * A stable fingerprint of a subject node's canonical incident edges — every
- * `reaches`, `checks`, `contains`, `links`, `groups` … edge into or out of the
- * node, sorted. "Snooze until the node changes" wakes when this fingerprint
+ * `reaches`, `checks`, `contains`, `links` … edge into or out of the node,
+ * sorted, and for a feature its `groups` edges. A `groups` edge into any other
+ * node follows from project-wide grouping (a hub, a feature inferring it), so it
+ * is no change of the node itself. "Snooze until the node changes" wakes when this fingerprint
  * changes (an edge added or removed, a confidence rescored), so a mere
  * re-observation of the unchanged node does not wake it. Returns null when the
  * subject is not a trackable node (a `test:`, `cluster:`, `file:`, `ticket:`,
@@ -3056,6 +3090,7 @@ async function subjectEdgeSignature(db: DrizzleDB, projectId: number, subject: G
       ),
     );
   const parts = rows
+    .filter((r) => r.kind !== 'groups' || subject.kind === 'feature')
     .map((r) => `${r.kind}|${r.fromKind}:${r.fromKey}>${r.toKind}:${r.toKey}|${r.confidence ?? ''}`)
     .sort();
   return `${parts.length}\n${parts.join('\n')}`;

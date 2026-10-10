@@ -478,11 +478,13 @@ describe('getFeatureMap', () => {
     const checkout = map.features[0]!;
     expect(checkout.members).toEqual({ routes: 2, pages: 1, controls: 0, inferred: 0 });
     expect(checkout.tests).toBe(2);
-    expect(checkout.gaps).toEqual({ unhandled: 1, 'blind-spot': 1 });
+    // The shared route's gap counts once, under the feature the list files it under (first by name).
+    expect(checkout.gaps).toEqual({ unhandled: 1 });
     expect(checkout.worstClass).toBe('unhandled');
     const catalog = map.features[1]!;
     expect(catalog.members).toEqual({ routes: 1, pages: 0, controls: 1, inferred: 0 });
     expect(catalog.tests).toBe(1);
+    expect(catalog.gaps).toEqual({ 'blind-spot': 1 });
     expect(catalog.worstClass).toBe('blind-spot');
   });
 
@@ -500,8 +502,8 @@ describe('getFeatureMap', () => {
     await triageGap(db, 1, orders!.id, { verb: 'snooze', snooze: '1-week' });
     const map = await getFeatureMap(db, 1);
     const checkout = map.features.find((f) => f.key === 'Checkout')!;
-    expect(checkout.worstClass).toBe('blind-spot');
-    expect(checkout.gaps).toEqual({ 'blind-spot': 1 });
+    expect(checkout.worstClass).toBeNull();
+    expect(checkout.gaps).toEqual({});
   });
 
   test('an empty project maps to no features', async () => {
