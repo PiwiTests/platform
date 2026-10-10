@@ -37,10 +37,10 @@
   },
   "single-covering-test": {
     "precision": 1,
-    "recall": 0.958,
-    "raised": 23,
-    "expected": 24,
-    "found": 23,
+    "recall": 0.96,
+    "raised": 24,
+    "expected": 25,
+    "found": 24,
     "missed": ["control:button:Confirm"],
     "wrong": []
   },

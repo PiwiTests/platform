@@ -6,9 +6,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient, type Client } from '@libsql/client';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { WEB_DASHBOARD_PROJECT_ID, expectedWebDashboardGaps } from '#shared/demo/demo-test-map.mjs';
+import {
+  WEB_DASHBOARD_PROJECT_ID,
+  WEB_DASHBOARD_UNTRUSTED_TESTS,
+  expectedWebDashboardGaps,
+} from '#shared/demo/demo-test-map.mjs';
 
 const { computeScenarioGaps } = await import('../../shared/handlers/scenario-gaps');
 const { backfillUnindexedProjects } = await import('../../server/utils/locator-usages');
@@ -22,9 +26,11 @@ const { backfillUnindexedProjects } = await import('../../server/utils/locator-u
  * and the control reach and feature groups it writes are the seeded ones.
  *
  * The model also labels its ground truth (`expectedWebDashboardGaps`), and the
- * benchmark scores each detector's precision and recall against it: a change
- * that lowers a score fails until `shared/demo/demo-test-map-benchmark.json`
- * records it.
+ * benchmark scores each detector's precision and recall against it, on a copy of
+ * the seed whose gap ledger is emptied first, so a verdict that keeps a row open
+ * scores nothing. A score that changes fails until
+ * `shared/demo/demo-test-map-benchmark.json` records it, and a lower one is
+ * named.
  *
  * After a change to the model or to a detector, `PIWI_UPDATE_DEMO_TEST_MAP=1`
  * rewrites `shared/demo/demo-test-map-gaps.json` and the benchmark from the
@@ -69,7 +75,7 @@ interface Score {
 const BENCHMARK_FILE = join(rootDir, 'shared/demo/demo-test-map-benchmark.json');
 const ratio = (n: number, d: number) => (d === 0 ? 1 : Math.round((n / d) * 1000) / 1000);
 
-/** Precision and recall per benchmarked detector, from the gaps the ledger holds (every status but closed). */
+/** Precision and recall per benchmarked detector, from the gaps a recompute raised on an empty ledger. */
 function benchmark(rows: GapRow[]): Record<string, Score> {
   const out: Record<string, Score> = {};
   for (const [detector, keys] of Object.entries(expectedWebDashboardGaps()).sort(([a], [b]) => a.localeCompare(b))) {
@@ -90,8 +96,8 @@ function benchmark(rows: GapRow[]): Record<string, Score> {
 }
 
 /** The edges the recompute writes besides gaps: locator reach to controls and links, and feature groups. */
-async function derivedEdges() {
-  const rows = await db
+async function derivedEdges(on = db) {
+  const rows = await on
     .select()
     .from(schema.graphEdges)
     .where(eq(schema.graphEdges.projectId, WEB_DASHBOARD_PROJECT_ID));
@@ -103,6 +109,7 @@ async function derivedEdges() {
     )
     .map((r) => ({
       edge: `${r.fromKind}:${r.fromKey} ${r.kind} ${r.toKind}:${r.toKey}`,
+      origin: r.origin,
       confidence: r.confidence,
       evidence: r.evidence,
     }))
@@ -171,8 +178,20 @@ describe('the web-dashboard Test Map', () => {
   });
 
   test('no detector scores below the benchmark on the ground truth', async () => {
-    await computeScenarioGaps(db as never, WEB_DASHBOARD_PROJECT_ID);
-    const scores = benchmark(await projectGaps());
+    // A copy of the seed with no gap ledger, so only what the detectors raise is scored.
+    const benchClient = createClient({ url: ':memory:' });
+    await benchClient.executeMultiple(readFileSync(join(outDir, 'seed.sql'), 'utf-8'));
+    const benchDb = drizzle(benchClient, { schema });
+    await backfillUnindexedProjects(benchDb as never);
+    await benchDb.delete(schema.scenarioGaps).where(eq(schema.scenarioGaps.projectId, WEB_DASHBOARD_PROJECT_ID));
+    await computeScenarioGaps(benchDb as never, WEB_DASHBOARD_PROJECT_ID);
+    const scores = benchmark(
+      await benchDb
+        .select()
+        .from(schema.scenarioGaps)
+        .where(and(eq(schema.scenarioGaps.projectId, WEB_DASHBOARD_PROJECT_ID), eq(schema.scenarioGaps.kind, 'gap'))),
+    );
+    benchClient.close();
     if (process.env.PIWI_UPDATE_DEMO_TEST_MAP) writeFileSync(BENCHMARK_FILE, `${JSON.stringify(scores, null, 2)}\n`);
     const baseline = JSON.parse(readFileSync(BENCHMARK_FILE, 'utf-8')) as Record<string, Score>;
     const drops = Object.entries(baseline).flatMap(([detector, was]) => {
@@ -183,6 +202,14 @@ describe('the web-dashboard Test Map', () => {
     });
     expect(drops).toEqual([]);
     expect(scores).toEqual(baseline);
+  });
+
+  test('the ground truth calls untrusted exactly the tests the seed makes flaky', async () => {
+    const flaky = await db
+      .select({ title: schema.testCases.title })
+      .from(schema.testCases)
+      .where(and(eq(schema.testCases.projectId, WEB_DASHBOARD_PROJECT_ID), isNotNull(schema.testCases.flakyRootCause)));
+    expect(flaky.map((t) => t.title).sort()).toEqual([...WEB_DASHBOARD_UNTRUSTED_TESTS].sort());
   });
 
   test('recomputing writes the control reach and the feature groups the seed already holds', async () => {

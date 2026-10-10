@@ -180,6 +180,7 @@ const PAGES = {
       ['button', 'Create token'],
       ['combobox', 'Scope'],
       ['button', 'Rotate token'],
+      // The rotation dialog's confirm button.
       ['button', 'Confirm'],
       ['button', 'Revoke'],
     ],
@@ -279,9 +280,10 @@ const WEB_DASHBOARD_JOURNEYS = {
     ],
   },
   'toggles dark mode': {
-    pages: ['/settings/appearance'],
+    pages: ['/settings/organization', '/settings/appearance'],
     requests: [
       ['GET', '/api/session', 200],
+      ['GET', '/api/orgs/current', 200],
       ['GET', '/api/me/preferences', 200],
       ['PUT', '/api/me/preferences', 200],
     ],
@@ -292,14 +294,15 @@ const WEB_DASHBOARD_JOURNEYS = {
  * Each test's steps, as its spec file runs them: a navigation, then each locator
  * call with the page it runs on, as `[kind, locator or path, extra, truth]`. The
  * call site is the spec line that holds the locator, so the steps, the locator
- * index and the Test Map read the same calls. `truth` names the node
- * (`kind:key`) a locator truly targets when the index cannot name it, for the
- * benchmark.
+ * index and the Test Map read the same calls. `truth` labels the control or link
+ * (`kind:key`) a call truly targets, for the benchmark; a call on no control or
+ * link has none. An `arrive` entry is a page a click navigated to: it moves the
+ * steps after it there and reports no step of its own.
  */
 const STEPS = {
   'signs in with SSO redirect': [
     ['goto', '/login'],
-    ['click', "getByRole('button', { name: 'Continue with SSO' })"],
+    ['click', "getByRole('button', { name: 'Continue with SSO' })", null, 'control:button:Continue with SSO'],
   ],
   'shows an error for a revoked account': [
     ['goto', '/login', '/login?sso=revoked'],
@@ -311,14 +314,14 @@ const STEPS = {
   ],
   'invites a user by email': [
     ['goto', '/users'],
-    ['click', "getByRole('button', { name: 'Invite user' })"],
-    ['fill', "getByLabel('Email address')", 'new.admin@example.com'],
-    ['click', "getByRole('button', { name: 'Send invite' })"],
+    ['click', "getByRole('button', { name: 'Invite user' })", null, 'control:button:Invite user'],
+    ['fill', "getByLabel('Email address')", 'new.admin@example.com', 'control:textbox:Email address'],
+    ['click', "getByRole('button', { name: 'Send invite' })", null, 'control:button:Send invite'],
     ['expect', "getByText('Invite sent')", 'toBeVisible'],
   ],
   'filters users by role': [
     ['goto', '/users'],
-    ['select', "getByRole('combobox', { name: 'Role' })", 'admin'],
+    ['select', "getByRole('combobox', { name: 'Role' })", 'admin', 'control:combobox:Role'],
     ['expect', "getByRole('row', { name: /admin/i }).first()", 'toBeVisible'],
   ],
   'renders the revenue chart': [
@@ -327,25 +330,27 @@ const STEPS = {
   ],
   'exports the monthly report as CSV': [
     ['goto', '/reports/monthly'],
-    ['expect', "getByRole('button', { name: 'Export CSV' })", 'toBeVisible'],
-    ['click', "getByRole('button', { name: 'Export CSV' })"],
+    ['expect', "getByRole('button', { name: 'Export CSV' })", 'toBeVisible', 'control:button:Export CSV'],
+    ['click', "getByRole('button', { name: 'Export CSV' })", null, 'control:button:Export CSV'],
   ],
   'updates the organization name': [
     ['goto', '/settings/organization'],
-    ['fill', "getByLabel('Organization name')", 'Acme Corp'],
-    ['click', "getByRole('button', { name: 'Save' })"],
+    ['fill', "getByLabel('Organization name')", 'Acme Corp', 'control:textbox:Organization name'],
+    ['click', "getByRole('button', { name: 'Save' })", null, 'control:button:Save'],
     ['expect', "getByText('Settings saved')", 'toBeVisible'],
   ],
   'rotates the API token': [
     ['goto', '/settings/api'],
-    ['click', "getByRole('button', { name: 'Rotate token' })"],
-    // A test id the locator index cannot name; the benchmark knows it confirms the dialog.
+    ['click', "getByRole('button', { name: 'Rotate token' })", null, 'control:button:Rotate token'],
+    // A test id the locator index cannot name: it confirms the rotation dialog.
     ['click', "getByTestId('confirm-rotate')", null, 'control:button:Confirm'],
     ['expect', "getByText('New token generated')", 'toBeVisible'],
   ],
   'toggles dark mode': [
-    ['goto', '/settings/appearance'],
-    ['click', "getByRole('switch', { name: 'Dark mode' })"],
+    ['goto', '/settings/organization'],
+    ['click', "getByRole('link', { name: 'Appearance' })", null, 'link:link:Appearance'],
+    ['arrive', '/settings/appearance'],
+    ['click', "getByRole('switch', { name: 'Dark mode' })", null, 'control:switch:Dark mode'],
     ['expect', "locator('html')", 'toHaveAttribute'],
   ],
 };
@@ -401,7 +406,12 @@ export function webDashboardStepTitles(title) {
   let page = null;
   let arrival = true;
   const seen = new Map();
-  return steps.map(([kind, target, extra]) => {
+  return steps.flatMap(([kind, target, extra]) => {
+    if (kind === 'arrive') {
+      page = target;
+      arrival = true;
+      return [];
+    }
     if (kind === 'goto') {
       page = target;
       arrival = true;
@@ -561,22 +571,26 @@ const FINDINGS = [
 /** `/settings` of `/settings/api`: the first path segment. */
 const pagePrefix = (page) => `/${page.split('/').filter(Boolean)[0] ?? ''}`;
 
-/** `/api/users` of `GET /api/users/:id`: the first two path segments. */
-const routePrefix = (route) =>
-  `/${route
+/** `/api/users` of `GET /api/users/:id`: the path to its first resource segment, past `api` and a version. */
+function routePrefix(route) {
+  const segments = route
     .slice(route.indexOf(' ') + 1)
+    .split('?')[0]
     .split('/')
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('/')}`;
+    .filter(Boolean);
+  let i = 0;
+  while (i < segments.length - 1 && /^(api|v\d+)$/i.test(segments[i])) i++;
+  return `/${segments.slice(0, i + 1).join('/')}`;
+}
 
 /**
  * The feature groups of the web-dashboard graph, by the recompute's rules: what
  * each feature's tests reach; then, for what no feature reaches, the controls
  * its pages contain (0.8), the pages they link to under the same first segment
- * (0.6) and those pages' controls (0.5), and the declared routes sharing the
- * first two segments of a route it reaches (0.6); hubs (reached by more than
- * half the tests, or grouped by more than half the features) marked.
+ * (0.6) and those pages' controls (0.5), and the declared routes under the same
+ * resource path as a route it reaches (0.6). With three features or more, hubs
+ * are marked: reached by more than half the tests, or grouped by more than half
+ * the features and by three at least.
  */
 function webDashboardFeatureGroups(reachedBy, features) {
   const groups = new Map();
@@ -598,6 +612,7 @@ function webDashboardFeatureGroups(reachedBy, features) {
   }
   const featureSet = new Set([...groups.values()].map((g) => g.feature));
   const hubsApply = featureSet.size >= 3;
+  const sharedByMost = (count) => hubsApply && count >= 3 && count > featureSet.size / 2;
   const reachGrouped = new Set([...groups.values()].map((g) => `${g.kind}\x00${g.key}`));
   const featuresOf = (all) => {
     const out = new Map();
@@ -610,8 +625,7 @@ function webDashboardFeatureGroups(reachedBy, features) {
   const reachedHub = (kind, key) =>
     hubsApply && (reachedBy.get(`${kind}\x00${key}`)?.size ?? 0) > testsReaching.size / 2;
   const byReach = featuresOf(groups.values());
-  const reachHub = (kind, key) =>
-    reachedHub(kind, key) || (hubsApply && (byReach.get(`${kind}\x00${key}`)?.size ?? 0) > featureSet.size / 2);
+  const reachHub = (kind, key) => reachedHub(kind, key) || sharedByMost(byReach.get(`${kind}\x00${key}`)?.size ?? 0);
   const controlsOf = (page) => (PAGES[page]?.controls ?? []).map(([role, name]) => controlKey(role, name));
   const linksOf = (page) => (PAGES[page]?.links ?? []).map(([, target]) => target);
 
@@ -644,8 +658,7 @@ function webDashboardFeatureGroups(reachedBy, features) {
   }
   const all = featuresOf(groups.values());
   for (const g of groups.values()) {
-    g.hub =
-      reachedHub(g.kind, g.key) || (hubsApply && (all.get(`${g.kind}\x00${g.key}`)?.size ?? 0) > featureSet.size / 2);
+    g.hub = reachedHub(g.kind, g.key) || sharedByMost(all.get(`${g.kind}\x00${g.key}`)?.size ?? 0);
   }
   return [...groups.values()];
 }
@@ -653,18 +666,22 @@ function webDashboardFeatureGroups(reachedBy, features) {
 /** The nodes the latest run saw first. */
 const NEW_IN_LATEST = new Set(['page\x00/settings/sso', 'link\x00link:Single sign-on']);
 
-/** Tests the seed makes flaky (`FLAKY_CASES` in the seed generator), so their reach is not trusted. */
-const UNTRUSTED_TESTS = new Set(['toggles dark mode']);
+/**
+ * Tests the seed makes flaky (`FLAKY_CASES` in the seed generator), so their
+ * reach is not trusted; the demo test checks it against the seeded tests.
+ */
+export const WEB_DASHBOARD_UNTRUSTED_TESTS = ['toggles dark mode'];
+const UNTRUSTED_TESTS = new Set(WEB_DASHBOARD_UNTRUSTED_TESTS);
 
 /**
  * The benchmark's ground truth for the web-dashboard project: the gaps each
  * detector should raise, keyed as the detector keys them, from what each test
- * truly exercises (its requests, its pages and every control its steps name, a
- * test id included) and the surface the application has. It parts from what the
- * capture records where a capture cannot see, so a detector reads below one
- * where the capture misleads it. Each definition is the detector's own, applied
- * to the truth, without the thresholds a detector adds to stay quiet on thin
- * evidence.
+ * truly exercises (its requests, its pages and the control or link each step is
+ * labeled with, never what the locator index resolves) and the surface the
+ * application has. It parts from what the capture records where a capture cannot
+ * see, so a detector reads below one where the capture misleads it. Each
+ * definition is the detector's own, applied to the truth, without the thresholds
+ * a detector adds to stay quiet on thin evidence.
  */
 export function expectedWebDashboardGaps() {
   const controls = new Set();
@@ -692,25 +709,20 @@ export function expectedWebDashboardGaps() {
       statuses.set(route, [...(statuses.get(route) ?? []), request[2]]);
     }
     for (const page of journey.pages) exercise(title, 'page', page);
-    for (const [kind, target, , truth] of STEPS[title] ?? []) {
-      if (kind === 'goto') continue;
-      if (truth) {
-        const sep = truth.indexOf(':');
-        exercise(title, truth.slice(0, sep), truth.slice(sep + 1));
-        continue;
-      }
-      const node = locatorNode(target, controls, links);
-      if (node) exercise(title, node.kind, node.key);
+    for (const [, , , truth] of STEPS[title] ?? []) {
+      if (!truth) continue;
+      const sep = truth.indexOf(':');
+      exercise(title, truth.slice(0, sep), truth.slice(sep + 1));
     }
   }
   const exercised = (kind, key) => exercisedBy.has(`${kind}\x00${key}`);
 
   const probedDependencies = new Set(SERVER_PROBES.map((p) => p.dependency));
   const notNoticed = new Set();
-  const noticed = new Set();
+  const noticed = new Set(); // routes a trusted test noticed a probe on
   for (const p of CLIENT_PROBES) {
     if (p.outcome === 'not-noticed') notNoticed.add(p.route);
-    if (p.outcome === 'noticed') noticed.add(p.route);
+    if (p.outcome === 'noticed' && !UNTRUSTED_TESTS.has(p.test)) noticed.add(p.route);
   }
   const dependencies = new Set(Object.values(ROUTES).flatMap((spec) => spec.calls));
 
@@ -794,7 +806,6 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
   const projectId = WEB_DASHBOARD_PROJECT_ID;
   const firstRun = runIds[0];
   const latestRun = runIds[runIds.length - 1];
-  const newInLatest = NEW_IN_LATEST;
 
   const nodes = new Map();
   const edges = new Map();
@@ -807,7 +818,7 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
       key,
       attrs,
       origin,
-      first_seen_run_id: newInLatest.has(id) ? latestRun : firstRun,
+      first_seen_run_id: NEW_IN_LATEST.has(id) ? latestRun : firstRun,
       last_seen_run_id: latestRun,
       last_seen_at: at,
       created_at: at,
@@ -826,7 +837,7 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
       confidence: null,
       origin: 'observed',
       evidence: null,
-      first_seen_run_id: newInLatest.has(`${toKind}\x00${toKey}`) ? latestRun : firstRun,
+      first_seen_run_id: NEW_IN_LATEST.has(`${toKind}\x00${toKey}`) ? latestRun : firstRun,
       last_seen_run_id: latestRun,
       last_seen_at: at,
       created_at: at,
@@ -895,7 +906,7 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
   for (const [title, steps] of Object.entries(STEPS)) {
     const actions = new Map(); // "kind\0key" → { node, action }
     for (const [kind, target] of steps) {
-      const node = kind === 'goto' ? null : locatorNode(target, controls, links);
+      const node = kind === 'goto' || kind === 'arrive' ? null : locatorNode(target, controls, links);
       if (!node) continue;
       const id = `${node.kind}\x00${node.key}`;
       const action = kind === 'expect' ? 'checked' : 'operated';

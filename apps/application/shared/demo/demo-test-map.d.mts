@@ -17,3 +17,5 @@ export declare function webDashboardFinalPage(title: string): string | null;
 export declare function webDashboardStepTitles(title: string): Row[] | null;
 /** The gap keys each detector should raise on the web-dashboard project, from the model's ground truth. */
 export declare function expectedWebDashboardGaps(): Record<string, string[]>;
+/** The web-dashboard tests the seed makes untrusted (flaky). */
+export declare const WEB_DASHBOARD_UNTRUSTED_TESTS: string[];
