@@ -189,6 +189,7 @@ import {
 } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, getFeatureMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
+import { getMapHealth } from '#shared/handlers/map-health';
 import { parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
 import type { AppManifest, ManifestSource } from '#shared/types';
@@ -2500,6 +2501,14 @@ const routes: RouteEntry[] = [
         if (detectors.length > 0) items.push({ projectId: p.id, projectName: p.name, detectors });
       }
       return { items };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/health$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return { items: await getMapHealth(await getDemoDb(), +m[1]!) };
     },
   },
   {

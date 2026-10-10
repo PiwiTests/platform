@@ -54,6 +54,26 @@ function backfillTraceResourceLinks(): void {
 }
 
 /**
+ * Take the query out of the route keys stored with one, once per instance,
+ * without blocking startup; a failure is logged and the next start tries again.
+ */
+function rewriteRouteKeys(target: DB): void {
+  void (async () => {
+    try {
+      const { rewriteQueryRouteKeysOnce } = await import('../utils/graph-route-keys');
+      const rewrite = await rewriteQueryRouteKeysOnce(target as any);
+      if (rewrite && rewrite.nodes + rewrite.edges + rewrite.probes + rewrite.gaps > 0) {
+        console.log(
+          `[Database] Route keys without the query: ${rewrite.nodes} node(s), ${rewrite.edges} edge(s), ${rewrite.probes} probe(s), ${rewrite.gaps} gap(s)`,
+        );
+      }
+    } catch (err) {
+      console.error('[Database] Route-key rewrite failed:', err);
+    }
+  })();
+}
+
+/**
  * Compute the daily rollups of the runs already stored, once per instance,
  * without blocking startup. Recomputing is idempotent, so an interrupted
  * backfill simply runs again at the next start.
@@ -112,6 +132,7 @@ async function openDatabase(): Promise<DB> {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
+          rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
         } catch (error) {
@@ -162,6 +183,7 @@ async function openDatabase(): Promise<DB> {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
+          rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
         } catch (error) {

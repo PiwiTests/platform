@@ -1,5 +1,124 @@
 [
   {
+    "detector": "assertion-light",
+    "class": "false-comfort",
+    "key": "page:/login",
+    "title": "/login is asserted only by visibility",
+    "evidence": [
+      "1 test asserts on this page, only that elements are present — check a value (a text, a count, a field), or schedule a probe."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "assertion-light",
+    "class": "false-comfort",
+    "key": "page:/reports/monthly",
+    "title": "/reports/monthly is asserted only by visibility",
+    "evidence": [
+      "2 tests assert on this page, only that elements are present — check a value (a text, a count, a field), or schedule a probe."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "assertion-light",
+    "class": "false-comfort",
+    "key": "page:/settings/api",
+    "title": "/settings/api is asserted only by visibility",
+    "evidence": [
+      "1 test asserts on this page, only that elements are present — check a value (a text, a count, a field), or schedule a probe."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "assertion-light",
+    "class": "false-comfort",
+    "key": "page:/settings/organization",
+    "title": "/settings/organization is asserted only by visibility",
+    "evidence": [
+      "1 test asserts on this page, only that elements are present — check a value (a text, a count, a field), or schedule a probe."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.04000000000000001,
+    "test": null
+  },
+  {
+    "detector": "catalog-method-no-test-calls",
+    "class": "blind-spot",
+    "key": "catalog:./pages/ApiTokensPage#revokeToken",
+    "title": "apiTokensPage.revokeToken is never called",
+    "evidence": [
+      "./pages/ApiTokensPage · revokeToken · page reached by 1, called by 0 — the cheapest gap, its steps already exist."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "catalog-method-no-test-calls",
+    "class": "blind-spot",
+    "key": "catalog:./pages/UsersPage#deactivateUser",
+    "title": "usersPage.deactivateUser is never called",
+    "evidence": [
+      "./pages/UsersPage · deactivateUser · page reached by 3, called by 0 — the cheapest gap, its steps already exist."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
+    "detector": "catalog-method-no-test-calls",
+    "class": "blind-spot",
+    "key": "catalog:./pages/UsersPage#goToNextPage",
+    "title": "usersPage.goToNextPage is never called",
+    "evidence": [
+      "./pages/UsersPage · goToNextPage · page reached by 3, called by 0 — the cheapest gap, its steps already exist."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.05,
+    "test": null
+  },
+  {
     "detector": "control-nobody-exercises",
     "class": "blind-spot",
     "key": "control:button:Cancel",
@@ -514,6 +633,40 @@
     },
     "score": 0.10059467437463483,
     "test": null
+  },
+  {
+    "detector": "passed-with-errors",
+    "class": "false-comfort",
+    "key": "test:49",
+    "title": "renders the revenue chart passed with errors",
+    "evidence": [
+      "Passed · run #73 · the page logged 1 console error — nothing in the test failed on it; assert the flow ends without errors."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": "renders the revenue chart"
+  },
+  {
+    "detector": "passed-with-errors",
+    "class": "false-comfort",
+    "key": "test:51",
+    "title": "updates the organization name passed with errors",
+    "evidence": [
+      "Passed · run #73 · the backend logged an error on PATCH /api/orgs/current — nothing in the test failed on it; assert the flow ends without errors."
+    ],
+    "factors": {
+      "churn": 0.1,
+      "age": 0.1,
+      "escapeHistory": 0.1,
+      "priority": 0.1
+    },
+    "score": 0.06,
+    "test": "updates the organization name"
   },
   {
     "detector": "reachable-unvisited",

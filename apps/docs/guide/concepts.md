@@ -330,7 +330,8 @@ it, snooze it, dismiss it with a reason, or mark it covered by an existing test.
 How serious a gap is:
 
 - **blind-spot**: nothing reaches it.
-- **false-comfort**: a [probe](#probe) broke it and every test still passed.
+- **false-comfort**: the tests pass without checking it: a [probe](#probe) broke it and every test still passed, the
+  application reported an error during a passing test, or every check on a page is only that elements are there.
 - **fragile**: what reaches it could stop at any time: a single trusted test, a test whose every reached node
   disappeared, or a fix that did not hold.
 
@@ -367,6 +368,14 @@ is a *declared, never hit* gap.
 The controls (role and accessible name) and links the reporter records on each visited page of a passing run, so the
 Test Map knows what a page offers beyond what the tests clicked. Field values are never recorded. Off by default:
 turn it on with `capturePageInventory`.
+
+### Map health
+
+How complete a project's Test Map is, per input: the page inventory, the pages of locator calls, route handlers,
+probes, the declared surface, change history and the function catalog, each against what it could hold, with the
+detectors it wakes. A detector stays silent without its input, so a quiet Gaps tab can mean a map that cannot see; the
+panel under the gap list names the step behind each input that is short. See
+[Scenario gaps & the Test Map](/features/scenario-gaps#map-health).
 
 ### URL pattern
 

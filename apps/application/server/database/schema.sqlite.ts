@@ -735,7 +735,7 @@ export const networkRequests = sqliteTable(
       .references(() => testRuns.id, { onDelete: 'cascade' }),
     method: text('method').notNull(),
     url: text('url'), // Raw URL (query-params stripped by sanitizeUrl)
-    normalizedUrl: text('normalized_url'), // Route pattern for grouping (no ids, no query)
+    normalizedUrl: text('normalized_url'), // Route pattern for grouping: ids collapsed, the query's names kept with their values redacted; a route node's key drops the query
     status: integer('status').notNull(),
     duration: integer('duration'), // Response time in ms
     startTime: integer('start_time'), // Request start, Unix timestamp in ms (null for older captures)
@@ -744,6 +744,7 @@ export const networkRequests = sqliteTable(
     serverLogs: text('server_logs', { mode: 'json' }), // Backend server logs from X-Piwi-Logs header
     serverTraces: text('server_traces', { mode: 'json' }), // Server-side spans from X-Piwi-Trace header
     failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
+    fulfilled: integer('fulfilled', { mode: 'boolean' }), // true when no server sent the response (the test's route handler fulfilled it, or a cache or service worker); null otherwise
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),

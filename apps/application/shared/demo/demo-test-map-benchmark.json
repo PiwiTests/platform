@@ -1,4 +1,22 @@
 {
+  "assertion-light": {
+    "precision": 0.75,
+    "recall": 1,
+    "raised": 4,
+    "expected": 3,
+    "found": 3,
+    "missed": [],
+    "wrong": ["page:/reports/monthly"]
+  },
+  "catalog-method-no-test-calls": {
+    "precision": 1,
+    "recall": 0.75,
+    "raised": 3,
+    "expected": 4,
+    "found": 3,
+    "missed": ["catalog:./helpers/navigation#openSettingsSection"],
+    "wrong": []
+  },
   "control-nobody-exercises": {
     "precision": 1,
     "recall": 0.875,
@@ -23,6 +41,15 @@
     "raised": 3,
     "expected": 3,
     "found": 3,
+    "missed": [],
+    "wrong": []
+  },
+  "passed-with-errors": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 2,
+    "expected": 2,
+    "found": 2,
     "missed": [],
     "wrong": []
   },

@@ -14,7 +14,7 @@
 
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { graphEdges, scenarioGaps, testCases } from '../database/schema';
-import { featureOwners, subjectFromGapKey } from '#shared/handlers/scenario-gaps';
+import { loadGapFeatureOwners, subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import { gapClassSeverity, worstGapClass } from '#shared/gap-classes';
 import type { DrizzleDB } from '#shared/handlers/db';
 
@@ -221,7 +221,7 @@ export interface FeatureMap {
 /**
  * Fold the canonical graph into features, their gap counts and shared-node
  * links. Each open gap counts under the one feature the gap list files it under
- * ({@link featureOwners}). A hub (a `groups` edge marked `hub`) is counted once
+ * ({@link loadGapFeatureOwners}). A hub (a `groups` edge marked `hub`) is counted once
  * under `shared`: it adds no member, test, gap or link to the features grouping
  * it. A feature's tests are those reaching the nodes it groups by reach.
  */
@@ -281,11 +281,16 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
   // Open gaps, each folded onto the one feature the gap list files it under — or
   // onto the feature itself for a gap keyed on the feature node — else onto
   // "ungrouped", or "shared" for a hub.
-  const owners = featureOwners(groupRows);
   const gapRows = await db
     .select({ key: scenarioGaps.key, class: scenarioGaps.class })
     .from(scenarioGaps)
     .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')));
+  const ownerOf = await loadGapFeatureOwners(
+    db,
+    projectId,
+    groupRows,
+    gapRows.map((g) => subjectFromGapKey(g.key)),
+  );
   const ungrouped: Record<string, number> = {};
   const shared: Record<string, number> = {};
   const count = (bucket: Record<string, number>, cls: string) => {
@@ -297,10 +302,7 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
       count(shared, g.class);
       continue;
     }
-    const owner =
-      subject.kind === 'feature' && features.has(subject.key)
-        ? subject.key
-        : owners.get(id(subject.kind, subject.key))?.feature;
+    const owner = subject.kind === 'feature' && features.has(subject.key) ? subject.key : ownerOf(subject)?.feature;
     if (!owner) {
       count(ungrouped, g.class);
       continue;

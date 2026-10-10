@@ -29,8 +29,22 @@ without it.
 | **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold** | fragile | a failure cluster whose fix later regressed | nothing more | `Fixed in a1b2c3d · regressed 6 days later` |
 | **Not noticed** | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
+| **Passed with errors** | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
+| **Assertion-light** | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | `2 tests assert on this page, only that elements are present` |
+| **Catalog method, no test calls** | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
 | **Unprobed dependency** | false-comfort | a dependency a route's handler calls that no probe has failed | server spans | `Called by 4 route(s) · no probe has checked what happens when it fails` |
 | **Not handled** | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | `A server probe made POST /api/orders fail; the application did not handle it` |
+
+*Passed with errors* leaves out a console line from another origin's script and the browser's own *Failed to load
+resource* line. A response no server sent, such as one the test's route handler fulfilled, is no 5xx of the
+application, and a test that fulfills a failing response means to see the page fail, so its console errors do not
+count either.
+*Assertion-light* counts any other matcher (a text, a count, a value, an attribute) as a value check, and so is a read
+of an element the index cannot name, or a visible element found by a text holding a number
+(`getByText('Total: $42.00')`); an `expect` on no locator, such as a downloaded file's name, never reaches the index,
+so a page checked only that way reads as light. A test calls a catalog method when one of its default-branch
+locator uses does what one of the method's steps does, on the element that step names by test id or name, on a page
+its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 
 A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Changed, unreached* is
 covered on [Uncovered changes in pull requests](/features/uncovered-changes). A finding never closes itself; triage it.
@@ -73,8 +87,10 @@ A feature groups the routes, pages and controls the tests tagged with it reach. 
 feature reaches, with a confidence below one: the controls on its pages (0.8), the pages they link to under the same
 first path segment (0.6) and those pages' controls (0.5), and the declared routes under the same resource path as a
 route it reaches, `/api/v1/orders` for `GET /api/v1/orders/:id` (0.6). A gap sits under one feature: the one whose
-tests reach its node, else the most confident inference. So the map shows what a feature misses, not only what its
-tests touch. Dependencies, links, and pages or declared routes under other paths stay ungrouped.
+tests reach its node, else the most confident inference. A gap on a test sits under the test's feature, and one on a
+catalog method under the feature owning most of the pages its URL pattern matches. So the map shows what a feature
+misses, not only what its tests touch. Dependencies, links, and pages or declared routes under other paths stay
+ungrouped.
 
 With three features or more, a node more than half the tests reach, or that more than half the features and three at
 least group, is a **hub**, such as the session route nearly every test calls. The feature graph still draws it, but
@@ -89,6 +105,7 @@ The graph stays proportional to the application's surface, not its data volume:
   project's configured route origins); analytics beacons and CDN assets never become nodes.
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and
   production.
+- **Routes drop the query.** `GET /api/orders?page=2` and `GET /api/orders?status=open` are one node, `GET /api/orders`.
 - **Controls and links are templated.** Dates, ids and numbers in an accessible name become placeholders, and each
   page keeps at most 200 controls and 200 links.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged

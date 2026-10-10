@@ -200,9 +200,10 @@ const PAGES = {
 
 /**
  * Each test's journey: the pages it runs locators on in order, ending on the last,
- * and the requests it makes, as `[method, path, status]`. The seed writes the
- * requests on every execution and the last page as where the execution ended;
- * the test reaches every page of its journey.
+ * and the requests it makes, as `[method, path, status, extra]`, where `extra.logs`
+ * lists the backend log lines a response carries as `[level, category, message]`.
+ * The seed writes the requests on every execution and the last page as where the
+ * execution ended; the test reaches every page of its journey.
  */
 const WEB_DASHBOARD_JOURNEYS = {
   'signs in with SSO redirect': {
@@ -226,7 +227,8 @@ const WEB_DASHBOARD_JOURNEYS = {
     pages: ['/users'],
     requests: [
       ['GET', '/api/session', 200],
-      ['GET', '/api/users', 200],
+      // A query names no route of its own: both calls reach GET /api/users.
+      ['GET', '/api/users?page=2', 200],
       ['GET', '/api/roles', 200],
     ],
   },
@@ -243,7 +245,7 @@ const WEB_DASHBOARD_JOURNEYS = {
     pages: ['/users'],
     requests: [
       ['GET', '/api/session', 200],
-      ['GET', '/api/users', 200],
+      ['GET', '/api/users?role=admin', 200],
       ['GET', '/api/roles', 200],
     ],
   },
@@ -268,7 +270,13 @@ const WEB_DASHBOARD_JOURNEYS = {
     requests: [
       ['GET', '/api/session', 200],
       ['GET', '/api/orgs/current', 200],
-      ['PATCH', '/api/orgs/current', 200],
+      // The save succeeds, but the audit write behind it fails and the backend logs it.
+      [
+        'PATCH',
+        '/api/orgs/current',
+        200,
+        { logs: [['error', 'audit', 'audit event write failed: connection reset by peer']] },
+      ],
     ],
   },
   'rotates the API token': {
@@ -297,7 +305,8 @@ const WEB_DASHBOARD_JOURNEYS = {
  * index and the Test Map read the same calls. `truth` labels the control or link
  * (`kind:key`) a call truly targets, for the benchmark; a call on no control or
  * link has none. An `arrive` entry is a page a click navigated to: it moves the
- * steps after it there and reports no step of its own.
+ * steps after it there and reports no step of its own. A `check` entry is an
+ * `expect` on a value no locator holds, found in the spec by its text.
  */
 const STEPS = {
   'signs in with SSO redirect': [
@@ -332,6 +341,8 @@ const STEPS = {
     ['goto', '/reports/monthly'],
     ['expect', "getByRole('button', { name: 'Export CSV' })", 'toBeVisible', 'control:button:Export CSV'],
     ['click', "getByRole('button', { name: 'Export CSV' })", null, 'control:button:Export CSV'],
+    // A value check on no locator: the index never sees it, so the page reads as visibility-only.
+    ['check', 'suggestedFilename()', 'toBe'],
   ],
   'updates the organization name': [
     ['goto', '/settings/organization'],
@@ -354,6 +365,111 @@ const STEPS = {
     ['expect', "locator('html')", 'toHaveAttribute'],
   ],
 };
+
+/**
+ * The project's function catalog: page-object methods and a helper, with the
+ * steps each drives and the tests that truly call it, for the benchmark. A step
+ * whose target comes from a parameter (`paramSources` with `text`) names no
+ * element. `Users table paginates` checks the row count and never pages, and
+ * the settings helper is never called but names its link by parameter, so the
+ * map cannot tell.
+ */
+const CATALOG = [
+  {
+    receiver: 'usersPage',
+    name: 'filterByRole',
+    module: './pages/UsersPage',
+    urlPattern: '**/users',
+    params: [{ name: 'role', type: 'string' }],
+    steps: [{ action: 'selectOption', target: { role: 'combobox', name: 'Role' } }],
+    paramSources: [{ param: 'role', stepIndex: 0, from: 'value' }],
+    calledBy: ['filters users by role'],
+  },
+  {
+    receiver: 'usersPage',
+    name: 'inviteUser',
+    module: './pages/UsersPage',
+    urlPattern: '**/users',
+    params: [{ name: 'email', type: 'string' }],
+    steps: [
+      { action: 'click', target: { role: 'button', name: 'Invite user' } },
+      { action: 'fill', target: { role: 'textbox', name: 'Email address' } },
+      { action: 'click', target: { role: 'button', name: 'Send invite' } },
+    ],
+    paramSources: [{ param: 'email', stepIndex: 1, from: 'value' }],
+    calledBy: ['invites a user by email'],
+  },
+  {
+    receiver: 'usersPage',
+    name: 'goToNextPage',
+    module: './pages/UsersPage',
+    urlPattern: '**/users',
+    params: [],
+    steps: [{ action: 'click', target: { role: 'button', name: 'Next page' } }],
+    paramSources: [],
+    calledBy: [],
+  },
+  {
+    receiver: 'usersPage',
+    name: 'deactivateUser',
+    module: './pages/UsersPage',
+    urlPattern: '**/users',
+    params: [{ name: 'email', type: 'string' }],
+    steps: [
+      { action: 'fill', target: { role: 'searchbox', name: 'Search users' } },
+      { action: 'click', target: { role: 'button', name: 'Deactivate' } },
+    ],
+    paramSources: [{ param: 'email', stepIndex: 0, from: 'value' }],
+    calledBy: [],
+  },
+  {
+    receiver: 'reportsPage',
+    name: 'exportCsv',
+    module: './pages/ReportsPage',
+    urlPattern: '**/reports/*',
+    params: [],
+    steps: [{ action: 'click', target: { role: 'button', name: 'Export CSV' } }],
+    paramSources: [],
+    calledBy: ['exports the monthly report as CSV'],
+  },
+  {
+    receiver: 'apiTokensPage',
+    name: 'rotateToken',
+    module: './pages/ApiTokensPage',
+    urlPattern: '**/settings/api',
+    params: [],
+    steps: [
+      { action: 'click', target: { role: 'button', name: 'Rotate token' } },
+      { action: 'click', target: { testId: 'confirm-rotate' } },
+    ],
+    paramSources: [],
+    calledBy: ['rotates the API token'],
+  },
+  {
+    receiver: 'apiTokensPage',
+    name: 'revokeToken',
+    module: './pages/ApiTokensPage',
+    urlPattern: '**/settings/api',
+    params: [],
+    steps: [
+      { action: 'click', target: { role: 'button', name: 'Revoke' } },
+      { action: 'click', target: { role: 'button', name: 'Confirm' } },
+    ],
+    paramSources: [],
+    calledBy: [],
+  },
+  {
+    receiver: null,
+    name: 'openSettingsSection',
+    module: './helpers/navigation',
+    kind: 'helper',
+    urlPattern: '**/settings/**',
+    params: [{ name: 'section', type: 'string' }],
+    steps: [{ action: 'click', target: { role: 'link', name: 'Appearance' } }],
+    paramSources: [{ param: 'section', stepIndex: 0, from: 'text' }],
+    calledBy: [],
+  },
+];
 
 /** The spec file each test lives in. */
 const SPEC_FILE = {
@@ -425,6 +541,16 @@ export function webDashboardStepTitles(title) {
     }
     const nth = seen.get(target) ?? 0;
     seen.set(target, nth + 1);
+    if (kind === 'check') {
+      return {
+        title: `Expect "${extra}"`,
+        category: 'assertion',
+        weight: 500,
+        location: callSite(file, title, target, nth),
+        page,
+        arrival,
+      };
+    }
     const step = {
       title:
         kind === 'click'
@@ -745,12 +871,54 @@ export function expectedWebDashboardGaps() {
     'unprobed-dependency': [...dependencies]
       .filter((dep) => !probedDependencies.has(dep))
       .map((dep) => `dependency:${dep}`),
+    'assertion-light': assertionLightTruth(),
+    'catalog-method-no-test-calls': CATALOG.filter(
+      (f) =>
+        f.calledBy.length === 0 &&
+        Object.values(WEB_DASHBOARD_JOURNEYS).some((j) => j.pages.some((page) => globMatches(f.urlPattern, page))),
+    ).map((f) => `catalog:${f.module}#${f.name}`),
+    'passed-with-errors': [...APP_ERRORS_WHILE_PASSING].map((title) => `test:${title}`),
   };
 }
 
-/** A path with numeric ids collapsed, as the route normalizer collapses them. */
+/** Matchers that check an element is there, not what it shows. */
+const PRESENCE_MATCHERS = new Set(['toBeVisible', 'toBeHidden', 'toBeAttached', 'toBeInViewport']);
+
+/** The pages some test asserts on, every one of its checks there only that an element is present. */
+function assertionLightTruth() {
+  const presence = new Set();
+  const value = new Set();
+  for (const steps of Object.values(STEPS)) {
+    let page = null;
+    for (const [kind, target, extra] of steps) {
+      if (kind === 'goto' || kind === 'arrive') page = target;
+      else if (kind === 'check' || (kind === 'expect' && !PRESENCE_MATCHERS.has(extra))) value.add(page);
+      else if (kind === 'expect') presence.add(page);
+    }
+  }
+  return [...presence].filter((page) => !value.has(page)).map((page) => `page:${page}`);
+}
+
+/** A catalog URL pattern against a page path, `**` across segments and `*` within one. */
+function globMatches(pattern, path) {
+  const escaped = pattern
+    .split('**')
+    .map((part) => part.replace(/[.?+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*'))
+    .join('.*');
+  return new RegExp(`^${escaped}$`).test(`http://piwi.invalid${path}`);
+}
+
+/** A path without its query and with numeric ids collapsed, as a route node's key holds it. */
 function routePattern(path) {
-  return path.replace(/\/\d+(?=\/|$)/g, '/:id');
+  return path.split('?')[0].replace(/\/\d+(?=\/|$)/g, '/:id');
+}
+
+/** The path as the network table stores it normalized: the pattern, then the query's names with their values redacted. */
+function normalizedPath(path) {
+  const query = path.split('?')[1];
+  if (!query) return routePattern(path);
+  const names = [...new Set(query.split('&').map((pair) => pair.split('=')[0]))];
+  return `${routePattern(path)}?${names.map((name) => `${name}=%3Credacted%3E`).join('&')}`;
 }
 
 function routeKeyOf([method, path]) {
@@ -1016,7 +1184,62 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
   }
   for (const finding of FINDINGS) gaps.push(gapRow(finding, 'finding', {}));
 
-  return { nodes: [...nodes.values()], edges: [...edges.values()], probes, gaps };
+  const functions = CATALOG.map((f) => ({
+    project_id: projectId,
+    name: f.name,
+    kind: f.kind ?? 'page-object-method',
+    module: f.module,
+    receiver: f.receiver,
+    import_name: f.receiver ? f.module.split('/').pop() : null,
+    params: f.params,
+    returns_page: 0,
+    url_pattern: f.urlPattern,
+    steps: f.steps,
+    param_sources: f.paramSources,
+    source: 'scanned',
+    confidence: 1,
+    created_at: at,
+    updated_at: at,
+  }));
+  return { nodes: [...nodes.values()], edges: [...edges.values()], probes, gaps, functions };
+}
+
+/**
+ * The console lines a passing execution logs, per test. The chart's own script
+ * throws and the chart still renders; a chat widget's script errors on another
+ * origin; the browser repeats a 403 the test meant to get. Only the first is the
+ * application's error.
+ */
+const PASSING_CONSOLE = {
+  'renders the revenue chart': [
+    {
+      type: 'error',
+      text: "TypeError: Cannot read properties of undefined (reading 'forecast')",
+      location: `${WEB_DASHBOARD_ORIGIN}/assets/reports-4f2a.js:1:20480`,
+    },
+  ],
+  'Users table paginates 25 rows per page': [
+    { type: 'error', text: 'widget: session expired', location: 'https://widget.chat-example.io/loader.js:2:311' },
+  ],
+  'shows an error for a revoked account': [
+    {
+      type: 'error',
+      text: 'Failed to load resource: the server responded with a status of 403 ()',
+      location: `${WEB_DASHBOARD_ORIGIN}/api/auth/sso/callback`,
+    },
+  ],
+};
+
+/**
+ * The tests whose passing executions carry an error of the application itself,
+ * for the benchmark: the backend's failed audit write and the chart's own script
+ * error. The chat widget's error and the repeated 403 are not the application's.
+ */
+const APP_ERRORS_WHILE_PASSING = new Set(['updates the organization name', 'renders the revenue chart']);
+
+/** The console lines a passing execution of a test logs, or null for a test that logs none. */
+export function webDashboardPassingConsole(title) {
+  return PASSING_CONSOLE[title] ?? null;
 }
 
 /**
@@ -1028,7 +1251,7 @@ export function buildWebDashboardTestMap({ caseIds, runIds, features, at }) {
 export function webDashboardRequests(title) {
   const journey = WEB_DASHBOARD_JOURNEYS[title];
   if (!journey) return [];
-  return journey.requests.map(([method, path, status], i) => {
+  return journey.requests.map(([method, path, status, extra], i) => {
     const route = `${method} ${routePattern(path)}`;
     const spec = ROUTES[route];
     const duration = 40 + ((i * 37 + path.length * 11) % 160);
@@ -1059,12 +1282,22 @@ export function webDashboardRequests(title) {
     ];
     return {
       method,
-      url: `${WEB_DASHBOARD_ORIGIN}${path}`,
-      normalizedUrl: routePattern(path),
+      url: `${WEB_DASHBOARD_ORIGIN}${path.split('?')[0]}`,
+      normalizedUrl: normalizedPath(path),
       status,
       duration,
       resourceType: 'fetch',
       serverTraces: spans,
+      ...(extra?.logs
+        ? {
+            serverLogs: extra.logs.map(([level, category, message], j) => ({
+              timestamp: j,
+              level,
+              category,
+              message,
+            })),
+          }
+        : {}),
     };
   });
 }

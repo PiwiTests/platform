@@ -6,15 +6,16 @@ inputs it never writes, adds the signals a team already owns elsewhere, gives th
 accuracy, and joins it with the browser extension, which already sees the one thing the map cannot: the whole
 rendered surface of a page.
 
-**Status.** Proposed 2026-10-09. Part 1 items 1 to 4 and 8 to 10 have shipped, and items 5 and 6 in part: page reach
+**Status.** Proposed 2026-10-09. Part 1 items 1 to 4 and 7 to 11 have shipped, and items 5 and 6 in part: page reach
 along the journey (read from the locator pages the reporter already sends, so no new capture), control reach from
 the locator index, *API-only route* retired, nodes only untrusted tests reach raised as fragile, feature grouping
-beyond reach with hubs, surface drift limited to new surface, unhandled server-probe findings, muting in the digest
-and the tab, and churn and escape history for route, handler and dependency gaps. Part 3's labeled benchmark has
-shipped too. The rest is proposed. The findings table and the summary describe the demo as it was proposed; with the
-shipped items its detectors find 86 gaps, 21 of them controls no locator targets, 14 open gaps sit under
-*Ungrouped* instead of 48, and the benchmark scores every detector at precision 1 against labels that part from the
-capture in one place. The evidence comes from the web-dashboard demo project
+beyond reach with hubs, route keys without the query, surface drift limited to new surface, unhandled server-probe
+findings, muting in the digest and the tab, churn and escape history for route, handler and dependency gaps, and the
+*passed with errors*, *assertion-light* and *catalog method, no test calls* detectors. Part 3's labeled benchmark and
+map health panel have shipped too. The rest is proposed. The findings table and the summary describe the demo as it
+was proposed; with the shipped items its detectors find 95 gaps, 21 of them controls no locator targets, 15 open gaps
+sit under *Ungrouped* instead of 48, and the benchmark scores every detector against labels that part from the capture
+in three places. The evidence comes from the web-dashboard demo project
 (`shared/demo/demo-test-map.mjs`), whose gaps are exactly what the live detectors compute from its graph
 (`tests/unit/demo-test-map.test.ts` recomputes them on the seed). New wire fields, attachments and endpoints freeze
 at 1.0 and get an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -100,8 +101,11 @@ capture.
    (finding 7). A run's diff runs from its last green run, so churn counts distinct diff bases, and escape history
    marks the whole diff that ended on the fix; per-commit files would make both exact. Still proposed: page files by convention, and age from the file's first commit, read once from the
    provider and cached.
-7. **Route keys without the query.** The node key drops the query; the parameter names move to `attrs.query`.
-   A migration merges the split nodes and their edges (finding 8).
+7. **Route keys without the query** (shipped). The node key drops the query, so `?page=` and `?role=` reach one
+   node (finding 8). Once per instance, after the migrations, the keys older versions wrote are rewritten: nodes and
+   edges that then share a key merge, probes keep the newer outcome, snooze signatures follow, and the gap ledger
+   keeps every verdict. The parameter names stay in the stored requests rather than in `attrs`, which an upsert
+   replaces whole and a declared route fills with its documented responses.
 8. **Drift on surface only, and not at the first build** (shipped). Drift is a new node no test reaches, as the
    first record defined it: a new node a test already reaches is covered. Feature nodes never drift, the run that
    built the project's graph first (pruned nodes included) raises none, and a link's title names it once
@@ -112,14 +116,20 @@ capture.
 10. **Muting everywhere** (shipped). A muted detector's rows leave the digest as well as the pull-request
     comment, and the Gaps tab lists them last, under *Muted detectors* (finding 11). The Home queue keeps them:
     each is a gap a person accepted.
-11. **Wire the cheap pure detectors.** *Passed with errors* (console errors, backend `Error` logs and background 5xx
-    on passing executions, all stored), *assertion-light* (from `step-analysis.ts`) and *catalog method no test
-    calls* (from `test_functions`) need no new data (finding 12).
+11. **Wire the cheap pure detectors** (shipped). *Passed with errors* reads the console, the backend logs and the
+    5xx of a test's newest passing default-branch execution, leaving out other origins' scripts, the browser's
+    failed-resource line, a response no server sent (the capture fixtures mark it `fulfilled`) and the console
+    errors of a test that fulfilled a failing one. *Assertion-light* reads the matchers
+    the locator index records per page. *Catalog method no test calls* matches a method's steps that name an element
+    against the locator index, since no table records calls; a method whose targets all come from parameters gets
+    no decision (finding 12). A gap on a test sits under its feature, one on a method under the feature owning its
+    pages.
 
 On the demo, items 1, 3, 4 and 8 took the detected gaps from 61 to 54: *API-only* went from 8 rows to 0,
 *reachable, unvisited* lost `/users/invite`, `/login` and `/settings/organization` stopped reading as
-single-covered, and three fragile gaps appeared for the dark-mode test's nodes. Still to come: *control nobody
-exercises* raising the controls none of the ten tests uses, and most of the 25 ungrouped gaps finding a feature.
+single-covered, and three fragile gaps appeared for the dark-mode test's nodes. Items 2 and 5 then raised the
+controls none of the ten tests uses and moved most of the 25 ungrouped gaps under a feature, and item 11 raised two
+passes with errors, four pages checked only for visibility and three catalog methods no test calls.
 
 ## Part 2: new inputs
 
@@ -203,8 +213,10 @@ and its origin (D3).
 Escape lift is the validity measure the first record asked for and never defined: the Google study it cites found
 predictions alone change nothing, so the map has to show that what it flags is where defects land.
 
-**A map health panel** on the Gaps tab lists the completeness numbers with the setup step behind each ("turn on
-the page inventory: wakes three detectors"), the way the setup checklist lists capabilities.
+**A map health panel** (shipped) on the Gaps tab lists the completeness numbers with the setup step behind each:
+reached pages with an inventory, tests whose locator calls name their page, observed routes with a handler, reached
+routes a probe checked, and the declared surface, the recorded diffs and the catalog counted on their own. Nodes with
+an owner join it once CODEOWNERS feeds `owns` edges.
 
 **The benchmark** (shipped) extends `tests/unit/demo-test-map.test.ts`. The model labels its ground truth
 (`expectedWebDashboardGaps`): what each test truly exercises, from a control or link label on each step (never
@@ -213,8 +225,10 @@ detector's definition applied to that truth gives the gaps it should raise. The 
 detector, on a copy of the seed whose gap ledger is emptied first, against `demo-test-map-benchmark.json`. Any score
 that changes fails until the fixture (`PIWI_UPDATE_DEMO_TEST_MAP=1`) records it, and a lower one is named. Before
 Part 1 it would have read a precision of 0 of 8 for *API-only route*, the detector Part 1 retired. Today every
-detector scores precision 1, against labels that part from the capture in one place: a test-id click the index
-cannot name, which costs *control nobody exercises* three of its 24 gaps and *single covering test* one of 25. The
+detector the capture can decide scores precision 1, against labels that part from the capture in three places: a
+test-id click the index cannot name, which costs *control nobody exercises* three of its 24 gaps and *single covering
+test* one of 25; a download check on no locator, which makes *assertion-light* raise one page of four wrongly; and a
+helper that names its link by parameter, which *catalog method no test calls* cannot decide, one of four. The
 flaky dark-mode test shares a page with a trusted test, so the untrusted label changes what *single covering test*
 should raise. More divergences, each a capture the map gets wrong in the field, would make the numbers say more.
 
@@ -261,11 +275,11 @@ Map, and its page keys were made equal to the map's precisely so the two could b
 
 ## Delivery
 
-1. Substrate, without new captures: items 1 to 4 and 8 to 10 of Part 1 (shipped), then 11, with the demo
-   fixture regenerated.
-2. Page files and age for node exposure, query-free route keys and their migration (items 6 and 7), with feature
-   grouping and hubs (item 5, shipped).
-3. The indicators of Part 3 and the map health panel, beside the labeled benchmark (shipped).
+1. Substrate, without new captures: items 1 to 4 and 8 to 11 of Part 1 (shipped), with the demo fixture
+   regenerated.
+2. Page files and age for node exposure (item 6), with query-free route keys and their migration (item 7) and
+   feature grouping and hubs (item 5) shipped.
+3. The indicators of Part 3, beside the labeled benchmark and the map health panel (shipped).
 4. The extension's read slice and gap layer, then *Record a test* (Part 4, items 1 and 2).
 5. The page as a source and the probe by hand (Part 4, items 3 and 4), behind a per-project opt-in.
 6. Inputs of Part 2, cheapest first: OpenAPI tags, router manifests, GraphQL operations, then the integrations.

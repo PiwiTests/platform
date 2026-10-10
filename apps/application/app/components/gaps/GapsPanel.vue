@@ -6,7 +6,8 @@
  * covered-by. A status filter switches between the open queue and the accepted
  * (or every) gap, so the Home inbox can link straight to the accepted ones.
  * Above the list sits the feature map — the project graph folded per feature —
- * and any feature or gap node opens in the feature-graph view under it.
+ * and any feature or gap node opens in the feature-graph view under it. Under
+ * the list, map health counts the inputs the map has and the steps it lacks.
  * Self-contained: fetches its own data with watch + $fetch so it fires only when
  * the tab mounts.
  */
@@ -63,6 +64,7 @@ const recomputing = ref(false);
 const graphSeed = ref<string | null>(null);
 const mutedDetectors = ref<string[]>([]);
 const mapView = ref<{ reload: () => Promise<void> } | null>(null);
+const healthView = ref<{ reload: () => Promise<void> } | null>(null);
 const graphCard = ref<HTMLElement | null>(null);
 
 /** Open a node in the graph view and bring the view into sight. */
@@ -245,7 +247,7 @@ async function recompute() {
       method: 'POST',
     });
     await load();
-    await mapView.value?.reload();
+    await Promise.all([mapView.value?.reload(), healthView.value?.reload()]);
     toast.add({ title: 'Gaps recomputed', color: 'success' });
   } catch {
     toast.add({ title: 'Recompute failed', color: 'error' });
@@ -400,6 +402,14 @@ const emptyText = computed(() =>
         Showing the top {{ PAGE_LIMIT }} gaps by exposure — narrow with a status filter or on a feature to see the rest.
       </p>
     </template>
+
+    <SectionCard
+      data-shot="map-health-card"
+      title="Map health"
+      subtitle="What the map can see: an input it lacks keeps the detectors that read it silent"
+    >
+      <MapHealthView ref="healthView" :project-id="projectId" />
+    </SectionCard>
 
     <UModal v-model:open="coveredOpen" :title="coveredDismiss ? 'Covered elsewhere' : 'Covered by a test'">
       <template #body>

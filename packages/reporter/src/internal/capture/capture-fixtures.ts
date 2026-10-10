@@ -1560,6 +1560,13 @@ function instrumentPage(page: Page): void {
         if (failure) entry.failure = failure;
 
         if (response) {
+          // No server answered: the test's own route handler fulfilled the request,
+          // or a cache or a service worker served it. Playwright then names neither
+          // a request start nor a server address.
+          if (timing.requestStart < 0 && typeof response.serverAddr === 'function') {
+            if ((await response.serverAddr().catch(() => undefined)) === null) entry.fulfilled = true;
+          }
+
           const headers = response.headers();
           // Response content type (without charset/boundary params) — relevant
           // per-request metadata for distinguishing API/JSON vs document/HTML calls.

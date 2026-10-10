@@ -35,6 +35,16 @@ describe('server-probe settings and gating', () => {
     expect(serverProbeAllowed(disabled, 'GET /api/cart', 'status')).toBe(false);
   });
 
+  test('a route allow-listed with its query matches its route', () => {
+    const s = resolveServerProbeSettings({
+      enabled: true,
+      faults: ['status'],
+      routes: ['GET /api/users?page=%3Credacted%3E', 'GET /api/users?role=%3Credacted%3E'],
+    });
+    expect(s.routes).toEqual(['GET /api/users']);
+    expect(serverProbeAllowed(s, 'GET /api/users', 'status')).toBe(true);
+  });
+
   test('dependency faults on state-changing routes need the extra opt-in', () => {
     expect(isStateChangingRoute('POST /api/orders')).toBe(true);
     expect(isStateChangingRoute('GET /api/orders')).toBe(false);

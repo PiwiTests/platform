@@ -35,7 +35,7 @@ evidence. Each gap names its detector and its **[class](/guide/concepts#gap-clas
 | Class | Meaning | Example |
 |---|---|---|
 | **blind-spot** | nothing reaches it | `Observed 412 times over the last 30 runs, always 200` |
-| **false-comfort** | a [probe](/features/probes) broke it and every test still passed | `Tests pass when POST /api/orders breaks` |
+| **false-comfort** | the tests pass without checking it: a [probe](/features/probes) broke it, or the app logged an error, and they still passed | `Tests pass when POST /api/orders breaks` |
 | **fragile** | what reaches it could stop at any time | `Only checkout › coupon reaches this` |
 
 [Server probes](/features/probes#server-probes) add **findings** in two more classes, **unhandled** and **degraded**:
@@ -59,8 +59,7 @@ The tab opens on the **feature map**: one circle per feature (from the
 [`piwi:feature` tag](/reference/test-metadata)), sized by the routes, pages and controls it groups, colored by its
 worst open gap, and linked to the features it shares nodes with. A feature also groups what its tests miss nearby,
 such as the controls on its pages, and a **hub** most tests reach links no features
-([how features group](/reference/gap-detectors#features)). The ranked list beside it carries every feature, however
-many.
+([how features group](/reference/gap-detectors#features)).
 
 <figure>
   <img src="/screenshots/scenario-gaps-feature-map.png" alt="Feature map: four feature circles colored by worst gap, beside their counts">
@@ -68,9 +67,8 @@ many.
 </figure>
 
 A feature, or a gap's node, opens in the **feature graph**: the node in the middle, what leads into it on the left,
-what it leads to on the right, nodes colored by class and edges by kind. The picture shows the most severe few of each
-kind; the **neighbors** list under it has every neighbor, with its relation, worst gap and reaching tests. Click a
-node to recenter on it. Agents walk the same graph with the
+what it leads to on the right, nodes colored by class and edges by kind. The **neighbors** list under it has every
+neighbor; click a node to recenter on it. Agents walk the same graph with the
 [`get_feature_graph`](/reference/mcp-tools#get_feature_graph) MCP tool.
 
 <figure>
@@ -93,13 +91,11 @@ Every gap takes the same four verbs as an inbox item:
 - **Dismiss** with a reason: *not worth testing*, *covered elsewhere* (which records the covering test as reaching the
   node), or *wrong*.
 - **Covered by** names the test that covers it and closes the gap. A gap closed this way stays closed when its
-  detector raises it again. The covering test is recorded as reaching the node, but a test recorded by hand does not
-  count as observed reach of a control, so it never switches on *control nobody exercises* for the project.
+  detector raises it again, and the covering test is recorded as reaching the node.
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
 the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A
 closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
-The map is recomputed after every run and nightly.
 
 <figure>
   <img src="/diagrams/scenario-gaps-loop.svg" alt="Sources feed the Test Map, detectors, ranking and delivery; triage flows back">
@@ -112,10 +108,8 @@ rows leave the pull-request comment and the Gaps digest, its gaps sort last in t
 
 The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)
-to your channels. Agents list and draft gaps with
-[`list_scenario_gaps`](/reference/mcp-tools#list_scenario_gaps) and
-[`draft_scenario`](/reference/mcp-tools#draft_scenario), give a verdict with
-[`triage_gap`](/reference/mcp-tools#triage_gap), and the
+to your channels. Agents list, draft and triage gaps with the
+[MCP tools](/reference/mcp-tools#list_scenario_gaps), and the
 [write-the-missing-test](/features/agent-skills) skill drives the loop.
 
 ## What feeds the map
@@ -145,12 +139,20 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
   on a recompute and records each route's documented response codes, so a *success only* gap can name the error codes a
   route documents but never returned under test.
 
+### Map health
+
+Under the gap list, **map health** counts each input against what it could hold and names the detectors it wakes;
+an input that is short shows the step that fills it, so a quiet tab is not mistaken for a covered application.
+
+<figure>
+  <img src="/screenshots/scenario-gaps-map-health.png" alt="Map health: seven inputs of a Test Map, probes short at 7 of 16 routes">
+  <figcaption>Six inputs complete; probes reach 7 of 16 routes, with the step that adds the rest.</figcaption>
+</figure>
+
 ## What this is not
 
-- **Not coverage.** Every surface says *observed reach*.
 - **Not a test generator.** A gap proposes a scenario; the assertion is yours.
 - **Not a gate.** Uncovered changes can only warn; see [the gate flag](/features/uncovered-changes#the-gate-flag).
-- **Not a percentage.** Counts per class, ranked by exposure.
 
 The Test Map and its server probes are optional: [decline](/operate/capabilities#declining-a-capability) either per
 project or for the instance, and these surfaces disappear.

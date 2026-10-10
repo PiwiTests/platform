@@ -672,6 +672,8 @@ export interface NetworkRequest {
   serverTraces?: ServerSpanEntry[];
   /** Why the request failed without a response (`net::ERR_CONNECTION_RESET`); null or absent when it finished. */
   failure?: string | null;
+  /** True when no server sent the response: the test's route handler fulfilled it, or a cache or service worker. */
+  fulfilled?: boolean | null;
 }
 
 /** One frame of the trace-derived full call stack (innermost first). */

@@ -498,6 +498,7 @@ export async function getTestRunCase(
     serverLogs: nr.serverLogs,
     serverTraces: nr.serverTraces,
     failure: nr.failure ?? null,
+    fulfilled: nr.fulfilled ?? null,
   }));
 
   // Cause ↔ effect for did-not-run cascades, both scoped to this run:

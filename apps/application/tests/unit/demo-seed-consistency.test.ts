@@ -16,6 +16,7 @@ import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
 import { DEMO_EXAMPLES, type DemoExampleExpect } from '#shared/demo/demo-examples.mjs';
+import { WEB_DASHBOARD_PROJECT_ID, webDashboardRequests } from '#shared/demo/demo-test-map.mjs';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
@@ -504,18 +505,24 @@ describe('evidence rules', () => {
     expect(rows[0]!.n).toBe(0);
   });
 
-  test('server logs only appear on requests the story actually declares as failing', () => {
+  test('server logs only appear on requests a story declares as failing, or the Test Map model logs on purpose', () => {
     const rows = q(`
-      select nr.id, nr.test_runs_case_id, nr.method, nr.url, nr.server_logs, trc.failure_cluster_id
+      select nr.id, nr.test_runs_case_id, nr.method, nr.url, nr.server_logs, trc.failure_cluster_id,
+        tc.title, tc.project_id
       from network_requests nr join test_runs_cases trc on trc.id = nr.test_runs_case_id
+        join test_cases tc on tc.id = trc.test_case_id
       where nr.server_logs is not null
     `);
     const storyByCluster = new Map(FAILURE_STORIES.map((s) => [s.clusterId, s]));
     for (const r of rows) {
       const story = r.failure_cluster_id ? storyByCluster.get(r.failure_cluster_id as number) : null;
       const declared = story?.evidence.failingNetwork ?? [];
+      // A web-dashboard journey's request carrying a backend log feeds *passed with errors*.
+      const modeled =
+        r.project_id === WEB_DASHBOARD_PROJECT_ID &&
+        webDashboardRequests(r.title as string).some((m) => m.serverLogs && m.method === r.method && m.url === r.url);
       expect(
-        declared.some((d) => d.method === r.method && d.url === r.url),
+        modeled || declared.some((d) => d.method === r.method && d.url === r.url),
         `network request ${r.method} ${r.url} (trc ${r.test_runs_case_id}) has server_logs but isn't a declared failing request`,
       ).toBe(true);
     }
