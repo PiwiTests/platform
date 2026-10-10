@@ -2972,6 +2972,84 @@ export function featureOwners(
   return new Map([...best].map(([id, { feature, hub }]) => [id, { feature, hub }]));
 }
 
+/** The feature a gap sits under, and whether its node is a hub that belongs to no one feature. */
+export type GapFeatureOwner = { feature: string; hub: boolean };
+
+/**
+ * The one feature each gap sits under, by its subject: a node's from its
+ * `groups` edges ({@link featureOwners}); a test's from its `piwi:feature` tag,
+ * when that feature is on the map; a catalog method's from the feature owning
+ * most of the pages its URL pattern matches, ties by name. Shared by the gap
+ * list and the feature map, so a gap counts under one feature on both.
+ */
+export async function loadGapFeatureOwners(
+  db: DrizzleDB,
+  projectId: number,
+  rows: Array<{ feature: string; toKind: string; toKey: string; confidence: number | null; evidence: unknown }>,
+  subjects: GapSubject[],
+): Promise<(subject: GapSubject) => GapFeatureOwner | undefined> {
+  const owners = featureOwners(rows);
+  const mapped = new Set(rows.map((r) => r.feature));
+
+  const testIds = [...new Set(subjects.filter((s) => s.kind === 'test').map((s) => Number(s.key)))].filter(
+    Number.isFinite,
+  );
+  const featureByTest = new Map<string, string>();
+  for (let i = 0; i < testIds.length; i += 200) {
+    const tests = await db
+      .select({ id: testCases.id, feature: testCases.feature })
+      .from(testCases)
+      .where(and(eq(testCases.projectId, projectId), inArray(testCases.id, testIds.slice(i, i + 200))));
+    for (const t of tests) {
+      const feature = t.feature?.trim();
+      if (feature && mapped.has(feature)) featureByTest.set(String(t.id), feature);
+    }
+  }
+
+  const featureByMethod = new Map<string, string>();
+  if (subjects.some((s) => s.kind === 'catalog')) {
+    const entries = await db
+      .select({ module: testFunctions.module, name: testFunctions.name, urlPattern: testFunctions.urlPattern })
+      .from(testFunctions)
+      .where(eq(testFunctions.projectId, projectId));
+    const pages = await db
+      .select({ key: graphNodes.key, attrs: graphNodes.attrs })
+      .from(graphNodes)
+      .where(
+        and(
+          eq(graphNodes.projectId, projectId),
+          eq(graphNodes.kind, 'page'),
+          isNull(graphNodes.branch),
+          isNull(graphNodes.prunedAt),
+        ),
+      );
+    for (const entry of entries) {
+      const tally = new Map<string, number>();
+      for (const page of pages) {
+        const owner = owners.get(`page\x00${page.key}`);
+        if (!owner || owner.hub) continue;
+        const url = (page.attrs as { url?: unknown } | null)?.url;
+        if (!urlMatches(entry.urlPattern, typeof url === 'string' && url ? url : pageKeyUrl(page.key))) continue;
+        tally.set(owner.feature, (tally.get(owner.feature) ?? 0) + 1);
+      }
+      const [best] = [...tally].sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
+      if (best) featureByMethod.set(`${entry.module}#${entry.name}`, best[0]);
+    }
+  }
+
+  return (subject) => {
+    if (subject.kind === 'test') {
+      const feature = featureByTest.get(subject.key);
+      return feature ? { feature, hub: false } : undefined;
+    }
+    if (subject.kind === 'catalog') {
+      const feature = featureByMethod.get(subject.key);
+      return feature ? { feature, hub: false } : undefined;
+    }
+    return owners.get(`${subject.kind}\x00${subject.key}`);
+  };
+}
+
 /**
  * Build `feature` nodes and `groups` edges from the `piwi:feature` tag on tests
  * and what the graph infers from it ({@link groupFeatures}). An inferred edge has
@@ -3401,9 +3479,14 @@ export async function listScenarioGaps(
     .from(graphEdges)
     .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
   if (groupRows.length > 0) {
-    const owners = featureOwners(groupRows);
+    const ownerOf = await loadGapFeatureOwners(
+      db,
+      projectId,
+      groupRows,
+      mapped.map((g) => g.subject),
+    );
     for (const gap of mapped) {
-      const owner = owners.get(`${gap.subject.kind}\x00${gap.subject.key}`);
+      const owner = ownerOf(gap.subject);
       if (!owner) continue;
       if (owner.hub) gap.hub = true;
       else gap.feature = owner.feature;

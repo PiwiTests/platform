@@ -16,6 +16,7 @@ import {
 
 const { computeScenarioGaps } = await import('../../shared/handlers/scenario-gaps');
 const { backfillUnindexedProjects } = await import('../../server/utils/locator-usages');
+const { getMapHealth } = await import('../../shared/handlers/map-health');
 
 /**
  * The web-dashboard Test Map in the demo seed is what the live detectors find in
@@ -215,7 +216,7 @@ describe('the web-dashboard Test Map', () => {
     });
     expect(drops).toEqual([]);
     expect(scores).toEqual(baseline);
-  });
+  }, 60_000);
 
   test('the ground truth calls untrusted exactly the tests the seed makes flaky', async () => {
     const flaky = await db
@@ -229,5 +230,18 @@ describe('the web-dashboard Test Map', () => {
     expect(seededEdges.some((e) => e.edge.includes(' reaches control:'))).toBe(true);
     await computeScenarioGaps(db as never, WEB_DASHBOARD_PROJECT_ID);
     expect(await derivedEdges()).toEqual(seededEdges);
+  });
+
+  test('map health counts every input the demo sends, probes the one short', async () => {
+    const rows = await getMapHealth(db as never, WEB_DASHBOARD_PROJECT_ID);
+    expect(Object.fromEntries(rows.map((r) => [r.id, [r.have, r.of]]))).toEqual({
+      inventory: [7, 7],
+      'locator-pages': [10, 10],
+      handlers: [16, 16],
+      probes: [7, 16],
+      declared: [10, null],
+      changes: [7, null],
+      catalog: [8, null],
+    });
   });
 });

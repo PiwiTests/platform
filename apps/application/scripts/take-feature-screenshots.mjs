@@ -2099,6 +2099,23 @@ const SCENES = [
     },
   },
   {
+    name: 'scenario-gaps-map-health',
+    description:
+      'Map health on the Gaps tab: each input of the web-dashboard Test Map against what it could hold, and the step behind the one short',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5?tab=gaps',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="map-health-probes"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="map-health-card"]', pad: 12 });
+    },
+  },
+  {
     name: 'scenario-gaps-graph',
     description: 'Feature graph around a page one test reaches: what leads to it, what it contains, links to and loads',
     tags: ['docs'],

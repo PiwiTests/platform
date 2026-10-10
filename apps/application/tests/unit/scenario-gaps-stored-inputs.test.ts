@@ -323,7 +323,9 @@ describe('computeScenarioGaps — passed with errors', () => {
 describe('computeScenarioGaps — assertion-light and the function catalog', () => {
   test('raise a page tests check only for presence and a catalog method no test calls, and close them once covered', async () => {
     await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
-    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'users.spec.ts', title: 'lists users' });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'users.spec.ts', title: 'lists users', feature: 'Users' });
     await db.insert(schema.graphNodes).values({
       projectId: 1,
       kind: 'page',
@@ -377,6 +379,33 @@ describe('computeScenarioGaps — assertion-light and the function catalog', () 
     expect(
       (await gaps.listScenarioGaps(db, 1, { detector: 'catalog-method-no-test-calls' })).map((g) => g.title).sort(),
     ).toEqual(['usersPage.goToNextPage is never called', 'usersPage.inviteUser is never called']);
+
+    // A gap on a catalog method sits under the feature owning its page, one on a test under the test's feature.
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'GET /api/users', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests: [{ method: 'GET', path: '/api/users', status: 200, logs: [{ level: 'error', message: 'x' }] }],
+    });
+    await gaps.computeScenarioGaps(db, 1);
+    const listed = await gaps.listScenarioGaps(db, 1, {});
+    expect(
+      listed
+        .filter((g) => g.detector === 'catalog-method-no-test-calls' || g.detector === 'passed-with-errors')
+        .map((g) => [g.detector, g.feature]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['catalog-method-no-test-calls', 'Users'],
+        ['catalog-method-no-test-calls', 'Users'],
+        ['passed-with-errors', 'Users'],
+      ]),
+    );
+    const { getFeatureMap } = await import('../../server/utils/feature-graph');
+    const map = await getFeatureMap(db as never, 1);
+    expect(map.ungrouped.gaps).toEqual({});
 
     await db
       .insert(schema.locatorUsages)
