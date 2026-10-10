@@ -25,7 +25,7 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   pull-request comment, and MCP tools that hand an agent a draft; client probes mutate responses at the Playwright
   route boundary to catch false comfort, and server probes (experimental, off by default) inject a fault inside the
   server. Optional — decline the Test Map per project or instance-wide and its surfaces disappear.
-  [proposals/scenario-gaps.md](proposals/scenario-gaps.md); see
+  [adr/scenario-gaps.md](adr/scenario-gaps.md); see
   [scenario gaps](https://piwitests.dev/features/scenario-gaps).
 - **Issue tracking with Jira** — file a Jira issue from a failure or a failure cluster with the evidence and the fix
   plan already in the body, keep it linked as the known issue, and let Piwi keep it honest: a background sync task and
@@ -150,11 +150,12 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
   checked against, so a link never opens the wrong test when the demo data changes. The screenshot scenes and the
   demo runtime check read the same registry. Design record in [proposals/demo-examples.md](proposals/demo-examples.md).
 
-- **Scenario gaps** — the tests that are missing, from one model of what the application exposes, what the suite
-  touches, what the suite would actually notice (probe runs that mutate responses at the Playwright route boundary)
-  and what is worth caring about (usage, churn, age, escape history). Delivered first as a per-ticket section in the
-  pull-request comment and as MCP tools that hand an agent a draft, then as a warn-only gate policy and a Gaps tab.
-  Design record in [proposals/scenario-gaps.md](proposals/scenario-gaps.md).
+- **The Test Map, measured** — page reach along each test's journey, control reach from the locator index and
+  click-to-request edges, so the detectors stop flagging what the suite does exercise; features that group the
+  surface their tests miss; exposure for every gap; indicators of how well the suite covers the application and of
+  how far the map itself can be trusted, with a labeled benchmark; and the extension's Tested elements overlay
+  showing the map's gaps on the live page, recording the missing test, and, with consent, adding the surface a
+  person sees. Design record in [proposals/test-map-accuracy.md](proposals/test-map-accuracy.md).
 - **Issue trackers, the rest** — tickets for flaky tests and whole runs, investigation and run reports published to
   Confluence with in-place page updates, and the next trackers on the same provider layer: GitHub Issues and GitLab
   Issues on the SCM token, Jira Data Center, Linear. The rest of step 4 and steps 5–6 of

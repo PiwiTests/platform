@@ -11,6 +11,7 @@ delete process.env.PIWI_DATABASE_URL;
 const {
   collectRunGraphReaches,
   collectPageInventories,
+  ingestChangesEdges,
   ingestRunGraph,
   pruneChangesEdges,
   pruneStaleBranchGraphRows,
@@ -366,6 +367,53 @@ describe('probe runs never feed the canonical graph', () => {
   });
 });
 
+describe('rebuildProjectGraph reads the pages a test ran locators on', () => {
+  test('a stored locator-pages payload adds reaches to the pages the test passed through', async () => {
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(1),
+      metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://app.test' } }] } },
+    });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'users.spec.ts', title: 'invites' });
+    const content = JSON.stringify([
+      {
+        location: '/repo/users.spec.ts:4:3',
+        locator: "getByRole('button', { name: 'Invite user' })",
+        origin: 'https://app.test',
+        page: '/users',
+        arrival: false,
+      },
+      {
+        location: '/repo/users.spec.ts:5:3',
+        locator: "getByLabel('Email address')",
+        origin: 'https://app.test',
+        page: '/users/invite',
+        arrival: true,
+      },
+    ]);
+    const [payload] = await db
+      .insert(schema.casePayloads)
+      .values({ projectId: 1, hash: 'h1', content, size: content.length })
+      .returning({ id: schema.casePayloads.id });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: 1,
+      testCaseId: 1,
+      status: 'passed',
+      pageState: { url: 'https://app.test/users' },
+      locatorPagesPayloadId: payload!.id,
+    });
+
+    await rebuildProjectGraph(db, 1);
+    const reached = await db
+      .select({ key: schema.graphEdges.toKey })
+      .from(schema.graphEdges)
+      .where(and(eq(schema.graphEdges.kind, 'reaches'), eq(schema.graphEdges.toKind, 'page')));
+    expect(reached.map((e) => e.key).sort()).toEqual(['/users', '/users/invite']);
+  });
+});
+
 describe('last_seen never moves backwards', () => {
   test('an older run re-ingested does not lower last_seen_run_id', async () => {
     const reach = [{ testCaseId: 5, routes: [{ method: 'GET', normalizedUrl: '/x', status: 200 }], pages: [] }];
@@ -513,9 +561,58 @@ describe('collectRunGraphReaches', () => {
     expect(reaches[0]!.routes).toHaveLength(2);
     expect(reaches[0]!.pages).toEqual(['https://app.test/checkout?x=1']);
   });
+
+  test('a test also reaches every own-origin page it ran a locator call on, by its key', () => {
+    const reaches = collectRunGraphReaches(
+      [
+        {
+          testCaseId: 7,
+          pageState: { url: 'https://app.test/users' },
+          locatorPages: [
+            { origin: 'https://app.test', page: '/users/invite' },
+            { origin: 'https://app.test', page: '/users' },
+            { origin: 'https://sso.vendor.test', page: '/authorize' },
+          ],
+        },
+      ],
+      [{ items: [] }],
+      { origins: new Set(['https://app.test']) },
+    );
+    expect(reaches[0]!.pages).toEqual(['https://app.test/users']);
+    expect(reaches[0]!.visitedPages).toEqual(['/users/invite', '/users']);
+  });
+
+  test('locator pages need a known origin: a host-less key could be a third-party page', () => {
+    const reaches = collectRunGraphReaches(
+      [
+        {
+          testCaseId: 7,
+          pageState: null,
+          locatorPages: [{ origin: 'https://sso.vendor.test', page: '/login' }],
+        },
+      ],
+      [{ items: [] }],
+    );
+    expect(reaches[0]!.visitedPages).toEqual([]);
+  });
 });
 
 describe('ingestRunGraph', () => {
+  test('a page reached only by its key keeps the real URL another test ended on', async () => {
+    await ingestRunGraph(db, 1, 1, [
+      { testCaseId: 5, routes: [], pages: ['https://app.test/orders/42'] },
+      { testCaseId: 6, routes: [], pages: [], visitedPages: ['/orders/:id'] },
+    ]);
+    await ingestRunGraph(db, 1, 2, [{ testCaseId: 6, routes: [], pages: [], visitedPages: ['/orders/:id'] }]);
+    const [node] = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, '/orders/:id'));
+    expect(node!.attrs).toEqual({ url: 'https://app.test/orders/42' });
+    const reached = await db
+      .select({ from: schema.graphEdges.fromKey })
+      .from(schema.graphEdges)
+      .where(and(eq(schema.graphEdges.kind, 'reaches'), eq(schema.graphEdges.toKey, '/orders/:id')));
+    expect(reached.map((e) => e.from).sort()).toEqual(['5', '6']);
+  });
+
   test('upserts route and page nodes and reaches edges, and bumps last-seen on re-ingest', async () => {
     const reach = [
       {
@@ -613,5 +710,23 @@ describe('collectPageInventories', () => {
       origins,
     );
     expect(pages.find((p) => p.pageKey === '/orders')?.loadsRouteKeys).toEqual([]);
+  });
+});
+
+describe('ingestChangesEdges', () => {
+  test('a commit edge names the base of its diff, a ticket edge carries none', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await ingestChangesEdges(db as never, 1, 1, 'abc1234', ['PIWI-7'], ['server/api/orders.post.ts'], {
+      baseSha: 'fed4321',
+    });
+    const rows = await db.select().from(schema.graphEdges).where(eq(schema.graphEdges.kind, 'changes'));
+    expect(
+      rows
+        .map((r) => ({ from: `${r.fromKind}:${r.fromKey}`, evidence: r.evidence }))
+        .sort((a, b) => a.from.localeCompare(b.from)),
+    ).toEqual([
+      { from: 'commit:abc1234', evidence: { base: 'fed4321' } },
+      { from: 'ticket:PIWI-7', evidence: null },
+    ]);
   });
 });

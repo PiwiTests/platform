@@ -24,6 +24,7 @@ export interface DemoExampleExpect {
     | 'flaked-again';
   resources?: 'leaky';
   incident?: true;
+  gaps?: { detectors: string[] };
 }
 
 export interface DemoExample {

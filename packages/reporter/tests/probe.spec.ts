@@ -163,6 +163,18 @@ describe('classifyProbeHandled (server-fault resilience)', () => {
     expect(classifyProbeHandled({ consoleErrors: 1, dialogs: 0, backendError: false })).toBe('degraded');
     expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 1, backendError: false })).toBe('degraded');
     expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 0, backendError: true })).toBe('degraded');
+    expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 0, backendError: false, blankPage: true })).toBe(
+      'degraded',
+    );
+  });
+
+  it('is unhandled on an uncaught page error, or a backend error that left the page blank', () => {
+    expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 0, backendError: false, pageErrors: 1 })).toBe(
+      'unhandled',
+    );
+    expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 0, backendError: true, blankPage: true })).toBe(
+      'unhandled',
+    );
   });
 });
 

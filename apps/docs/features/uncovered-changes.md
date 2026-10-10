@@ -13,6 +13,10 @@ proves nothing about the change. When a run finishes, Piwi joins the files its c
 [observably reach](/guide/concepts#reach) them, and names the changed files nothing reaches. Each one is a
 *changed, unreached* [scenario gap](/features/scenario-gaps), with a draft scenario to start from.
 
+<figure>
+  <img src="/diagrams/uncovered-changes.svg" alt="A pull-request run's changed files are joined to the tests that reach them; each is reached, a changed-unreached gap, or without evidence; the gaps go to the pull request">
+</figure>
+
 ## What counts as reached
 
 A changed file counts as reached when a test that ran recently touches it:

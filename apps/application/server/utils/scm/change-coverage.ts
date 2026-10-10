@@ -346,7 +346,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     headSha,
     tickets,
     changedFiles.map((f) => f.filePath),
-    { branch: branchTag },
+    { branch: branchTag, baseSha },
   ).catch(() => {});
 
   // When the SCM flow can see the pull request has closed or merged, drop this
