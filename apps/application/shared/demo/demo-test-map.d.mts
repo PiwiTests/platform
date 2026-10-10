@@ -11,9 +11,11 @@ export declare function buildWebDashboardTestMap(input: {
   runIds: number[];
   features: Map<string, string | null>;
   at: number;
-}): { nodes: Row[]; edges: Row[]; probes: Row[]; gaps: Row[] };
+}): { nodes: Row[]; edges: Row[]; probes: Row[]; gaps: Row[]; functions: Row[] };
 export declare function webDashboardRequests(title: string): Row[];
 export declare function webDashboardFinalPage(title: string): string | null;
+/** The console lines a passing execution of a test logs, or null for a test that logs none. */
+export declare function webDashboardPassingConsole(title: string): Row[] | null;
 export declare function webDashboardStepTitles(title: string): Row[] | null;
 /** The gap keys each detector should raise on the web-dashboard project, from the model's ground truth. */
 export declare function expectedWebDashboardGaps(): Record<string, string[]>;
