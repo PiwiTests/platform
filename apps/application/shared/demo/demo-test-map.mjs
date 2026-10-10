@@ -227,7 +227,8 @@ const WEB_DASHBOARD_JOURNEYS = {
     pages: ['/users'],
     requests: [
       ['GET', '/api/session', 200],
-      ['GET', '/api/users', 200],
+      // A query names no route of its own: both calls reach GET /api/users.
+      ['GET', '/api/users?page=2', 200],
       ['GET', '/api/roles', 200],
     ],
   },
@@ -244,7 +245,7 @@ const WEB_DASHBOARD_JOURNEYS = {
     pages: ['/users'],
     requests: [
       ['GET', '/api/session', 200],
-      ['GET', '/api/users', 200],
+      ['GET', '/api/users?role=admin', 200],
       ['GET', '/api/roles', 200],
     ],
   },
@@ -907,9 +908,17 @@ function globMatches(pattern, path) {
   return new RegExp(`^${escaped}$`).test(`http://piwi.invalid${path}`);
 }
 
-/** A path with numeric ids collapsed, as the route normalizer collapses them. */
+/** A path without its query and with numeric ids collapsed, as a route node's key holds it. */
 function routePattern(path) {
-  return path.replace(/\/\d+(?=\/|$)/g, '/:id');
+  return path.split('?')[0].replace(/\/\d+(?=\/|$)/g, '/:id');
+}
+
+/** The path as the network table stores it normalized: the pattern, then the query's names with their values redacted. */
+function normalizedPath(path) {
+  const query = path.split('?')[1];
+  if (!query) return routePattern(path);
+  const names = [...new Set(query.split('&').map((pair) => pair.split('=')[0]))];
+  return `${routePattern(path)}?${names.map((name) => `${name}=%3Credacted%3E`).join('&')}`;
 }
 
 function routeKeyOf([method, path]) {
@@ -1273,8 +1282,8 @@ export function webDashboardRequests(title) {
     ];
     return {
       method,
-      url: `${WEB_DASHBOARD_ORIGIN}${path}`,
-      normalizedUrl: routePattern(path),
+      url: `${WEB_DASHBOARD_ORIGIN}${path.split('?')[0]}`,
+      normalizedUrl: normalizedPath(path),
       status,
       duration,
       resourceType: 'fetch',

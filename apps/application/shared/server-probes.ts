@@ -62,7 +62,10 @@ export function resolveServerProbeSettings(raw: unknown): ServerProbeSettings {
   const faults = Array.isArray(obj.faults)
     ? obj.faults.filter((f): f is ServerProbeFault => isServerProbeFault(f))
     : [];
-  const routes = Array.isArray(obj.routes) ? obj.routes.filter((r): r is string => typeof r === 'string' && !!r) : [];
+  // A route allow-listed before route keys dropped the query matches its route without it.
+  const routes = Array.isArray(obj.routes)
+    ? obj.routes.filter((r): r is string => typeof r === 'string' && !!r).map((r) => r.split('?')[0]!)
+    : [];
   return {
     enabled: obj.enabled === true,
     faults: [...new Set(faults)],

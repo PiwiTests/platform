@@ -59,10 +59,17 @@ export type GraphOrigin =
 
 /**
  * A route node's key is `METHOD /normalized/pattern`, matching how the comment
- * examples and the PR section refer to endpoints (`POST /api/orders`).
+ * examples and the PR section refer to endpoints (`POST /api/orders`). The query
+ * is not part of it: a call with `?page=` and one with `?role=` reach one node.
  */
 export function routeNodeKey(method: string, normalizedUrl: string): string {
-  return `${method.toUpperCase()} ${normalizedUrl}`;
+  return routeKeyWithoutQuery(`${method.toUpperCase()} ${normalizedUrl}`);
+}
+
+/** A route key without its query: `GET /api/users?page=%3Credacted%3E` is `GET /api/users`. */
+export function routeKeyWithoutQuery(key: string): string {
+  const q = key.indexOf('?');
+  return q === -1 ? key : key.slice(0, q);
 }
 
 /** Split a route key back into its method and pattern. */

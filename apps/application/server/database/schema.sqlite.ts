@@ -735,7 +735,7 @@ export const networkRequests = sqliteTable(
       .references(() => testRuns.id, { onDelete: 'cascade' }),
     method: text('method').notNull(),
     url: text('url'), // Raw URL (query-params stripped by sanitizeUrl)
-    normalizedUrl: text('normalized_url'), // Route pattern for grouping (no ids, no query)
+    normalizedUrl: text('normalized_url'), // Route pattern for grouping: ids collapsed, the query's names kept with their values redacted; a route node's key drops the query
     status: integer('status').notNull(),
     duration: integer('duration'), // Response time in ms
     startTime: integer('start_time'), // Request start, Unix timestamp in ms (null for older captures)

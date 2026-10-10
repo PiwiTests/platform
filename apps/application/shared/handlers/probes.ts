@@ -21,6 +21,7 @@ import {
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { routeKeyWithoutQuery } from '../graph';
 import { eligibleExecutionSql, eligibleRunSql } from '../run-eligibility';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
 import { resolveProjectStates } from './capabilities';
@@ -670,6 +671,8 @@ export async function recordProbeResults(
     .from(projects)
     .where(eq(projects.id, projectId));
   const settings = resolveServerProbeSettings(project?.serverProbes);
+  // A plan an older server built may still name a route with its query.
+  results = results.map((r) => ({ ...r, routeKey: routeKeyWithoutQuery(r.routeKey) }));
   results = results.filter((r) => {
     if (!ownTestIds.has(r.testCaseId)) return false;
     if (r.level === 'server' && !serverProbeAllowed(settings, r.routeKey, r.fault as ServerProbeFault)) return false;

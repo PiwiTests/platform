@@ -49,6 +49,7 @@ import {
   fileRouteTarget,
   isOwnOriginRequest,
   originsFromDocumentRequests,
+  parseRouteNodeKey,
   projectRouteOrigins,
   routeNodeKey,
   runBaseUrls,
@@ -1500,10 +1501,10 @@ async function loadRouteStats(
 
   for (const r of rows) {
     if (!r.url) continue;
-    const method = r.method.toUpperCase();
-    const key = `${method} ${r.url}`;
+    const key = routeNodeKey(r.method, r.url);
     if (!routeNodeKeys.has(key)) continue;
-    const entry = stats.get(key) ?? { key, method, pattern: r.url, count: 0, statuses: [], priority: null };
+    const { method, pattern } = parseRouteNodeKey(key);
+    const entry = stats.get(key) ?? { key, method, pattern, count: 0, statuses: [], priority: null };
     entry.count += Number(r.c);
     entry.statuses.push(r.status);
     stats.set(key, entry);
