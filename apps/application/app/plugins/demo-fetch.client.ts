@@ -3,25 +3,23 @@ import { DEFAULT_DEMO_USER_ID, DEMO_USER_COOKIE, DEMO_USER_STORAGE_KEY } from '~
 /**
  * Demo-mode fetch plugin.
  *
- * In demo mode the app is served from a sub-path (e.g. /piwi-dashboard/demo/).
- * API calls made by Nuxt components use bare paths like `/api/projects`, but
- * the service worker's scope is limited to that sub-path.
+ * In demo mode the app is served from a sub-path (e.g. /piwi-dashboard/demo/),
+ * and `$fetch` prefixes every `/api/…` call with it (the app's `baseURL`), so
+ * the request falls inside the service worker's scope and `demo-sw.ts`
+ * answers it.
  *
- * This plugin rewrites every `/api/…` call to `[demoBase]/api/…` so the
- * request URL falls inside the service worker's scope and gets intercepted
- * by `demo-sw.ts`.
- *
- * First-load timing: when there is no SW controller yet (first ever visit)
- * we block every `$fetch` call behind `swReady` and wait for `controllerchange`.
- * Once the SW installs, activates, and calls `clients.claim()`, that event fires
- * and we unblock all pending requests — the SW is now the controller and its
- * fetch listener is active, so every rewritten API call is intercepted correctly.
+ * First-load timing: when there is no SW controller yet (first ever visit),
+ * every request to `[demoBase]/api/` waits behind `swReady` for
+ * `controllerchange`. The wait sits on `window.fetch`, which `$fetch` and
+ * `useFetch` (ofetch) call for every request: until the SW installs, activates
+ * and calls `clients.claim()`, the static host would answer an API request with
+ * the app's HTML shell.
  *
  * The page is not reloaded on `controllerchange`: in Firefox, after a
  * programmatic reload `navigator.serviceWorker.controller` can still be null
  * when the plugin runs again, and the page would wait for a second
- * `controllerchange` that never arrives. Because every `$fetch` call already
- * awaits `swReady`, no request can escape to the real server before the SW is
+ * `controllerchange` that never arrives. Because every API request already
+ * awaits `swReady`, none can escape to the static host before the SW is
  * active.
  */
 export default defineNuxtPlugin(() => {
@@ -77,15 +75,15 @@ export default defineNuxtPlugin(() => {
   }
 
   // ── Wait for service worker to claim this page ───────────────────────
-  // Without this, rewritten /api/ calls hit the real server → 404.
+  // Before it does, an /api/ request reaches the static host, which answers with the app's HTML shell.
   const swReady =
     !import.meta.client || !('serviceWorker' in navigator) || navigator.serviceWorker.controller
       ? Promise.resolve()
       : new Promise<void>((resolve) => {
           // Once the SW installs, activates, and calls clients.claim(), the
-          // controllerchange event fires.  At that point the SW's fetch listener
-          // is live and every rewritten /api/ call will be intercepted, so we
-          // can safely unblock all pending $fetch calls.
+          // controllerchange event fires. At that point the SW's fetch listener
+          // is live and every /api/ request will be intercepted, so the pending
+          // requests can go.
           navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true });
           // Safety net: give up waiting after 30 s if the SW never takes control
           // (blocked by browser settings, install failure, etc.) so the loading
@@ -93,86 +91,28 @@ export default defineNuxtPlugin(() => {
           setTimeout(resolve, 30_000);
         });
 
-  const originalFetch = globalThis.$fetch as (request: unknown, options?: unknown) => Promise<unknown>;
-
-  function rewritePath(request: unknown): unknown {
-    if (typeof request === 'string' && request.startsWith('/api/')) {
-      return base + request;
-    }
-    return request;
-  }
-
-  // Tag every demo API call with the currently selected "act as" identity so
-  // the service worker can apply that user's project affectations (scope).
-  function withDemoUser(options: unknown): unknown {
-    const id = localStorage.getItem(DEMO_USER_STORAGE_KEY) || String(DEFAULT_DEMO_USER_ID);
-    const o = (options ?? {}) as { headers?: unknown };
-    if (o.headers instanceof Headers) {
-      o.headers.set('x-demo-user-id', id);
-    } else {
-      o.headers = { ...((o.headers as Record<string, string>) || {}), 'x-demo-user-id': id };
-    }
-    return o;
-  }
-
-  let initCalled = false;
-
-  // Helper: mark the demo as ready on the first resolved API call, regardless
-  // of whether it succeeded or threw (so the loading screen doesn't lock).
-  function markReady(): void {
-    if (!initCalled) {
-      initCalled = true;
-      demoReady.value = true;
-    }
-  }
-
-  // Drive the loading overlay from the service worker, not from an intercepted
-  // app request. The app's own data fetching does not always flow through the
-  // patched globalThis.$fetch below (Nuxt resolves `$fetch` with its own base
-  // URL), so waiting for one of those calls to reach `markReady` could leave the
-  // overlay up forever. Once the worker controls the page it can serve the
-  // in-browser API, so run one query to load the database (WASM + seed) and then
-  // clear the overlay. A native `fetch` to the scoped path is used so it goes
-  // through the worker without Nuxt's base URL being applied twice.
-  void swReady.then(async () => {
-    try {
-      await fetch(`${base}/api/projects/menu`);
-    } catch {
-      // A failed probe still means the worker took control; clear the overlay
-      // rather than leaving it up on a transient error.
-    } finally {
-      markReady();
-    }
-  });
-
-  // @ts-expect-error monkey-patching $fetch for demo mode
-  globalThis.$fetch = async (request: unknown, options?: unknown) => {
-    await swReady;
-    try {
-      return await originalFetch(rewritePath(request), withDemoUser(options));
-    } finally {
-      markReady();
-    }
+  // Every request to the in-browser API waits until the worker controls the
+  // page. ofetch, behind `$fetch` and `useFetch`, calls `window.fetch` for each
+  // request, so the wait applies to all of them.
+  const apiPrefix = `${base}/api/`;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (new URL(url, window.location.href).pathname.startsWith(apiPrefix)) await swReady;
+    return nativeFetch(input, init);
   };
 
-  // Copy over $fetch properties so useFetch internals still work.
-  Object.assign(globalThis.$fetch, originalFetch);
-
-  // Also patch $fetch.raw so useFetch internals that call the raw variant
-  // still have their paths rewritten into the SW's scope.
-  const originalRaw = (originalFetch as unknown as Record<string, unknown>).raw as
-    | ((request: unknown, options?: unknown) => Promise<unknown>)
-    | undefined;
-  if (typeof originalRaw === 'function') {
-    // @ts-expect-error monkey-patching $fetch.raw for demo mode
-    globalThis.$fetch.raw = async (request: unknown, options?: unknown) => {
-      await swReady;
-      try {
-        return await originalRaw(rewritePath(request), withDemoUser(options));
-      } finally {
-        markReady();
-      }
-    };
-    Object.assign(globalThis.$fetch.raw, originalRaw);
-  }
+  // Drive the loading overlay from the service worker: once it controls the
+  // page it can serve the in-browser API, so run one query to load the database
+  // (WASM + seed) and then clear the overlay, whether the query succeeded or
+  // threw (a failed probe still means the worker took control).
+  void swReady.then(async () => {
+    try {
+      await nativeFetch(`${apiPrefix}projects/menu`);
+    } catch {
+      // The overlay clears below either way.
+    } finally {
+      demoReady.value = true;
+    }
+  });
 });
