@@ -1,10 +1,10 @@
 name: Performance
 
-# Measures the dashboard's heaviest pages (the projects list, every tab of a project, the test-run page) on the pull
-# request's build and on its base commit's, against the same dataset in PostgreSQL, and posts the comparison as one
-# comment on the pull request, updated on every push: render and load times, the SQL each request runs, and every
-# regression past its threshold. The suite is apps/application/scripts/perf. A regression is reported, not enforced:
-# the job fails only when the suite itself cannot run.
+# Measures the dashboard's heaviest pages (the projects list, every tab of a project, the test-run page, a failed
+# execution's page with a large trace) on the pull request's build and on its base commit's, against the same dataset
+# in PostgreSQL, and posts the comparison as one comment on the pull request, updated on every push: render and load
+# times, the SQL each request runs, and every regression past its threshold. The suite is apps/application/scripts/perf.
+# A regression is reported, not enforced: the job fails only when the suite itself cannot run.
 on:
   workflow_call:
 

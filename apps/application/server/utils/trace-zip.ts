@@ -147,18 +147,49 @@ export function parseZipDirectory(data: Buffer): ZipEntryMeta[] {
   return metas;
 }
 
+/** The compressed bytes of one entry, checked against the archive's length. */
+function compressedBytes(data: Buffer, meta: ZipEntryMeta): Buffer {
+  if (meta.dataStart + meta.compressedSize > data.length) {
+    throw new Error(`Truncated data for "${meta.name}"`);
+  }
+  if (meta.method !== 0 && meta.method !== 8) {
+    throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`);
+  }
+  return data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize);
+}
+
 /**
  * Decompress a single ZIP entry identified by its central-directory metadata.
  * Uses async decompression so it does not block the event loop.
  */
 export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise<Buffer> {
-  if (meta.dataStart + meta.compressedSize > data.length) {
-    throw new Error(`Truncated data for "${meta.name}"`);
-  }
-  const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize);
+  const compressed = compressedBytes(data, meta);
   if (meta.method === 0) return Buffer.from(compressed);
-  if (meta.method === 8) return inflateRawAsync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
-  throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`);
+  return inflateRawAsync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
+}
+
+/**
+ * Decompress a single ZIP entry on the calling thread, for a reader that must
+ * answer synchronously (the aria reader the snapshot view builds from), with
+ * its own cap on the output. {@link decompressEntry} is the default.
+ */
+export function decompressEntrySync(data: Buffer, meta: ZipEntryMeta, maxBytes: number): Buffer {
+  const compressed = compressedBytes(data, meta);
+  if (meta.method === 0) return Buffer.from(compressed);
+  return inflateRawSync(compressed, { maxOutputLength: Math.min(maxBytes, MAX_ENTRY_BYTES) });
+}
+
+/** Decompress text entries, in the order given, skipping one that is corrupt or uses an unknown method. */
+export async function decompressTextEntries(data: Buffer, metas: ZipEntryMeta[]): Promise<string[]> {
+  const texts: string[] = [];
+  for (const meta of metas) {
+    try {
+      texts.push((await decompressEntry(data, meta)).toString('utf8'));
+    } catch {
+      // Skip a corrupt entry rather than fail the whole archive.
+    }
+  }
+  return texts;
 }
 
 /**

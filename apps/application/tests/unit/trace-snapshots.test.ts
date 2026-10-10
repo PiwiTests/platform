@@ -4,10 +4,14 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // In-memory storage so the whole trace-snapshot path (ZIP read → parse → entry
 // read → aria conversion) runs without disk. `vi.hoisted` shares the map.
-const { storageFiles } = vi.hoisted(() => ({ storageFiles: new Map<string, Buffer>() }));
+const { storageFiles, storageReads } = vi.hoisted(() => ({
+  storageFiles: new Map<string, Buffer>(),
+  storageReads: [] as string[],
+}));
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
     readFile: async (path: string) => {
+      storageReads.push(path);
       const bytes = storageFiles.get(path);
       if (!bytes) throw new Error(`ENOENT: ${path}`);
       return bytes;
@@ -19,6 +23,9 @@ import {
   getTraceSnapshotsFromBlob,
   getTraceSnapshotResourceFromBlob,
   getTraceFallbackAriaTextFromBlob,
+  getTraceNetworkFromBlob,
+  getTraceNetworkBodyFromBlob,
+  loadTraceEvidenceStreams,
 } from '~~/server/utils/trace-evidence';
 import { buildZip } from '~~/server/utils/trace-zip';
 
@@ -55,6 +62,7 @@ const BLOB = 'project-1/blobs/snap.zip';
 
 beforeEach(() => {
   storageFiles.clear();
+  storageReads.length = 0;
   storageFiles.set(BLOB, buildSnapshotTrace());
 });
 
@@ -114,6 +122,99 @@ describe('getTraceSnapshotResourceFromBlob', () => {
   test('returns null for a phase that was not captured or an unknown callId', async () => {
     expect(await getTraceSnapshotResourceFromBlob(BLOB, 'c1', 'screen', 'after')).toBeNull();
     expect(await getTraceSnapshotResourceFromBlob(BLOB, 'ghost', 'aria', 'before')).toBeNull();
+  });
+});
+
+// The views of one failed execution read the same trace at once; a
+// content-addressed blob is read from storage once and shared.
+describe('shared trace loads', () => {
+  const hashed = (n: number) => `project-1/blobs/${String(n).repeat(64).slice(0, 64)}.zip`;
+  const blobReads = (path: string) => storageReads.filter((p) => p === path).length;
+
+  test('concurrent views of a content-addressed blob read it once', async () => {
+    const path = hashed(1);
+    storageFiles.set(path, buildSnapshotTrace());
+
+    const [snapshots, png, aria, network] = await Promise.all([
+      getTraceSnapshotsFromBlob(path),
+      getTraceSnapshotResourceFromBlob(path, 'c1', 'screen', 'before'),
+      getTraceSnapshotResourceFromBlob(path, 'c2', 'aria', 'after'),
+      getTraceNetworkFromBlob(path),
+    ]);
+    expect(snapshots.failingCallId).toBe('c2');
+    expect([...png!.bytes.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    expect(aria!.bytes.toString('utf8')).toBe(ariaAfter);
+    expect(network.status).not.toBe('no-trace');
+
+    // A later view reuses the loaded trace and still reads its snapshots.
+    const later = await getTraceSnapshotResourceFromBlob(path, 'c2', 'aria', 'before');
+    expect(later!.bytes.toString('utf8')).toBe(ariaBefore);
+    expect(blobReads(path)).toBe(1);
+  });
+
+  test('a failed read is not kept: the next view reads storage again', async () => {
+    const path = hashed(2);
+    expect((await getTraceSnapshotsFromBlob(path)).status).toBe('no-trace');
+
+    storageFiles.set(path, buildSnapshotTrace());
+    expect((await getTraceSnapshotsFromBlob(path)).status).toBe('ok');
+    expect(blobReads(path)).toBe(2);
+  });
+
+  test('a hash in capitals names a content-addressed blob too', async () => {
+    const path = `project-1/blobs/${'AB'.repeat(32)}.zip`;
+    storageFiles.set(path, buildSnapshotTrace());
+    await getTraceSnapshotsFromBlob(path);
+    await getTraceNetworkFromBlob(path);
+    expect(blobReads(path)).toBe(1);
+  });
+
+  test('ingestion reads the trace afresh and leaves nothing for the views', async () => {
+    const path = hashed(3);
+    storageFiles.set(path, buildSnapshotTrace());
+
+    expect((await loadTraceEvidenceStreams(path))?.parsed?.failingAction?.callId).toBe('c2');
+    expect(await getTraceFallbackAriaTextFromBlob(path)).toBe(['- dialog "Pay"', '  - button "Confirm"'].join('\n'));
+    expect(blobReads(path)).toBe(2);
+
+    await getTraceSnapshotsFromBlob(path);
+    await getTraceSnapshotsFromBlob(path);
+    expect(blobReads(path)).toBe(3);
+  });
+
+  test('a manifest that could not be read is read again by the next view', async () => {
+    const path = hashed(4);
+    const response = { status: 200, content: { _sha1: 'abc', mimeType: 'application/json' } };
+    const network = {
+      type: 'resource-snapshot',
+      snapshot: { request: { method: 'GET', url: 'http://shop/api' }, response },
+    };
+    storageFiles.set(
+      path,
+      buildZip([
+        {
+          name: 'trace.trace',
+          data: Buffer.from(JSON.stringify({ type: 'before', callId: 'x', startTime: 1 }), 'utf8'),
+        },
+        { name: 'trace.network', data: Buffer.from(JSON.stringify(network), 'utf8') },
+      ]),
+    );
+    // The pool stores the body under its extension; only the manifest names that spelling.
+    storageFiles.set('project-1/trace-resources/abc.json', Buffer.from('{"ok":true}', 'utf8'));
+
+    expect((await getTraceNetworkBodyFromBlob(path, 'abc')).status).toBe('not-found');
+    storageFiles.set(
+      path.replace(/\.zip$/, '.manifest.json'),
+      Buffer.from(JSON.stringify({ resources: ['abc.json'] })),
+    );
+    expect((await getTraceNetworkBodyFromBlob(path, 'abc')).status).not.toBe('not-found');
+    expect(blobReads(path)).toBe(1);
+  });
+
+  test('a path that is not content-addressed is read for every view', async () => {
+    await getTraceSnapshotsFromBlob(BLOB);
+    await getTraceSnapshotsFromBlob(BLOB);
+    expect(blobReads(BLOB)).toBe(2);
   });
 });
 

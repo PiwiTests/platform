@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Performance regression suite for the dashboard's heaviest pages: the
- * projects list, every tab of a project, and the test-run page.
+ * projects list, every tab of a project, the test-run page, and a failed
+ * execution's page with a large trace.
  *
  * Each target is a production build (`.output`). The first one migrates a
  * fresh database and the dataset is written into it (`lib/dataset.mjs`), then
@@ -24,7 +25,7 @@
  *
  * PostgreSQL needs pg_stat_statements loaded at startup (see lib/pg.mjs).
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { cpus } from 'node:os';
 import { createRequire } from 'node:module';
@@ -32,9 +33,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-import { datasetBatches, DATASET_VERSION } from './lib/dataset.mjs';
+import { datasetBatches, DATASET_VERSION, MAIN_PROJECT } from './lib/dataset.mjs';
 import { openPostgresWriter, openSqliteWriter, writeDataset } from './lib/seed-writer.mjs';
 import { createAdmin, signIn, startServer, waitForIdle } from './lib/targets.mjs';
+import { importPerfTrace } from './lib/trace.mjs';
 import {
   activeStatements,
   connectAdmin,
@@ -120,11 +122,14 @@ const inTurn = (round) => (round % 2 === 0 ? targets : [...targets].reverse());
 
 let pg = null;
 const pgDatabase = (name) => `piwi_perf_${name.replace(/-/g, '_')}`;
+/** Where the seed's server runs and keeps its storage, one per dialect like the seed itself. */
+const seedServerDir = () => join(workDir, `seed-server-${dialect}`);
 
 /**
  * Migrate a fresh database with the first target's build, create the
- * administrator, write the dataset, and let that build's startup work (rollup
- * backfill, re-clustering) run once on it — the state every copy starts from.
+ * administrator, write the dataset, let that build's startup work (rollup
+ * backfill, re-clustering) run once on it, and upload the suite's trace — the
+ * state every copy starts from, database and storage alike.
  */
 async function prepareSeed() {
   const reference = targets[0];
@@ -157,7 +162,8 @@ async function prepareSeed() {
     await recreateDatabase(pg.sql, pgDatabase('seed'));
   }
   const port = await freePort();
-  const seedWork = join(workDir, 'seed-server');
+  const seedWork = seedServerDir();
+  rmSync(join(seedWork, 'storage'), { recursive: true, force: true });
   let server = await startServer({
     name: `${reference.name} (seed)`,
     outputDir: reference.outputDir,
@@ -188,17 +194,60 @@ async function prepareSeed() {
     workDir: seedWork,
     log,
   });
+  const idle = () =>
+    waitForIdle(server, { activeStatements: pg ? () => activeStatements(pg.sql, pgDatabase('seed')) : null, log });
   try {
-    await waitForIdle(server, {
-      activeStatements: pg ? () => activeStatements(pg.sql, pgDatabase('seed')) : null,
-      log,
-    });
+    await idle();
+    const traceRunId = await importPerfTrace(server, MAIN_PROJECT.name, manifest.trace);
+    manifest.executionId = await importedExecutionId(seedDb, traceRunId);
+    log(`  trace uploaded to execution #${manifest.executionId}`);
+    await idle();
   } finally {
     await server.stop();
   }
+  if (dialect === 'sqlite') await checkpointSqlite(seedDb.path);
   writeFileSync(keyPath, JSON.stringify({ key: seedKey, manifest, createdAt: new Date().toISOString() }, null, 2));
   log(`  seed ready in ${Math.round((Date.now() - started) / 1000)} s`);
   return manifest;
+}
+
+/**
+ * Fold the writes a stopped server left in SQLite's write-ahead log into the
+ * database file, which is all `copySeed` copies.
+ */
+async function checkpointSqlite(path) {
+  const { createClient } = await import('@libsql/client');
+  const client = createClient({ url: `file:${path}` });
+  try {
+    await client.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+  } finally {
+    client.close();
+  }
+}
+
+/** The execution the trace import created in run `runId`. */
+async function importedExecutionId(seedDb, runId) {
+  const query = 'SELECT id FROM test_runs_cases WHERE test_run_id = $1 ORDER BY id LIMIT 1';
+  let rows;
+  if (seedDb.path) {
+    const { createClient } = await import('@libsql/client');
+    const client = createClient({ url: `file:${seedDb.path}` });
+    try {
+      ({ rows } = await client.execute({ sql: query.replace('$1', '?'), args: [runId] }));
+    } finally {
+      client.close();
+    }
+  } else {
+    const { default: postgres } = await import('postgres');
+    const sql = postgres(seedDb.url, { max: 1, onnotice: () => {} });
+    try {
+      rows = await sql.unsafe(query, [runId]);
+    } finally {
+      await sql.end();
+    }
+  }
+  if (!rows[0]) throw new Error(`the trace import's run #${runId} holds no execution`);
+  return Number(rows[0].id);
 }
 
 function buildStamp(outputDir) {
@@ -209,8 +258,11 @@ function buildStamp(outputDir) {
   }
 }
 
-/** Give each target its own copy of the seed. */
+/** Give each target its own copy of the seed: its database and its stored files. */
 async function copySeed(target) {
+  const storage = join(workDir, target.name, 'storage');
+  rmSync(storage, { recursive: true, force: true });
+  cpSync(join(seedServerDir(), 'storage'), storage, { recursive: true });
   if (dialect === 'sqlite') {
     const dir = join(workDir, target.name);
     rmSync(join(dir, 'db'), { recursive: true, force: true });
