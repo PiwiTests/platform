@@ -109,7 +109,7 @@ export const ES_COPY = {
         },
         issue: {
           title: 'Los fallos se convierten en tickets',
-          body: '**Create issue** crea una incidencia de Jira con el plan de corrección del grupo de fallos como descripción, y **Link an issue** vincula una que ya existe. Su clave y su estado acompañan luego al fallo: en esta página, en sus ejecuciones y en la bandeja de entrada.',
+          body: 'Este fallo de inicio de sesión tiene su incidencia en DEMO-42, creada desde Piwi con el plan de corrección del grupo de fallos como descripción y ahora en «In Progress». Su clave y su estado acompañan al fallo: en esta página, en sus ejecuciones y en la bandeja de entrada. Un grupo sin ticket ofrece **Create issue** y **Link an issue**.',
         },
         personas: {
           title: 'Míralo como lo ve tu equipo',

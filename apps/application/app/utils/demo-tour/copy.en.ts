@@ -110,7 +110,7 @@ export const EN_COPY = {
         },
         issue: {
           title: 'Failures become tickets',
-          body: '**Create issue** files a Jira issue with the cluster’s fix plan as its body, and **Link an issue** attaches one that exists. Its key and status then follow the failure: on this page, on its executions and in the inbox.',
+          body: 'This login failure is tracked in DEMO-42, filed from Piwi with the cluster’s fix plan as its description and now In Progress. The key and status follow the failure: on this page, on its executions and in the inbox. A cluster with no ticket offers **Create issue** and **Link an issue**.',
         },
         personas: {
           title: 'See it as your team does',

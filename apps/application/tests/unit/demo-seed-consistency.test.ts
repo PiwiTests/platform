@@ -917,6 +917,7 @@ const EXPECT_KEYS = new Set([
   'run',
   'diagnosis',
   'fixLanded',
+  'issue',
   'lab',
   'resources',
   'incident',
@@ -1011,6 +1012,19 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     expect(want.cluster, `${label}: fixLanded needs a cluster`).toBeTruthy();
     const [row] = q(`select fix_landed_at from failure_clusters where id = ${want.cluster!.id}`);
     expect(row?.fix_landed_at, `${label}: the fix landed`).not.toBeNull();
+  }
+  if (want.issue) {
+    expect(want.cluster, `${label}: issue needs a cluster`).toBeTruthy();
+    // The newest tracker link wins, as clusterKnownIssues reads it.
+    const [row] = q(`
+      select key, provider, status_text from entity_links
+      where failure_cluster_id = ${want.cluster!.id} and key is not null
+        and (provider = 'jira' or connection_id is not null)
+      order by id desc limit 1
+    `);
+    expect(row?.key, `${label}: cluster ${want.cluster!.id}'s tracked issue`).toBe(want.issue.key);
+    expect(row?.provider, `${label}: ${want.issue.key} is a Jira issue`).toBe('jira');
+    expect(row?.status_text, `${label}: ${want.issue.key}'s status`).toBe(want.issue.status);
   }
   if (want.lab) {
     expect(want.testCase, `${label}: lab needs a test case`).toBeTruthy();

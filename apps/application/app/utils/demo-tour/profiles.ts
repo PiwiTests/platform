@@ -154,8 +154,8 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
       },
       {
         id: 'issue',
-        route: '/failure-clusters/2',
-        expect: { cluster: { id: 2, story: 'checkout-email-renamed' } },
+        route: '/failure-clusters/3',
+        expect: { cluster: { id: 3, story: 'auth-login-500' }, issue: { key: 'DEMO-42', status: 'In Progress' } },
         target: 'issue-line',
         side: 'bottom',
         align: 'start',

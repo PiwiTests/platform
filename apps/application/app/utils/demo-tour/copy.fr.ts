@@ -110,7 +110,7 @@ export const FR_COPY = {
         },
         issue: {
           title: 'Des échecs aux tickets',
-          body: '**Create issue** crée un ticket Jira avec le plan de correction du groupe d’échecs comme description, et **Link an issue** y rattache un ticket existant. Sa clé et son statut suivent ensuite l’échec : sur cette page, sur ses exécutions et dans la boîte de réception.',
+          body: 'Cet échec de connexion est suivi dans DEMO-42, créé depuis Piwi avec le plan de correction du groupe d’échecs comme description, et désormais « In Progress ». Sa clé et son statut suivent l’échec : sur cette page, sur ses exécutions et dans la boîte de réception. Un groupe sans ticket propose **Create issue** et **Link an issue**.',
         },
         personas: {
           title: 'Voyez-le comme votre équipe',

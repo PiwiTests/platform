@@ -12,6 +12,7 @@ export interface DemoExampleExpect {
   run?: { id: number; project: string };
   diagnosis?: 'with-patch' | 'none';
   fixLanded?: true;
+  issue?: { key: string; status: string };
   lab?:
     | 'untested'
     | 'not-reproduced'

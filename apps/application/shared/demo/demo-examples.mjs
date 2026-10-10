@@ -20,6 +20,8 @@
  * - `diagnosis: 'with-patch' | 'none'`: the cluster has a completed stored AI
  *   diagnosis with a suggested patch, or no stored diagnosis at all.
  * - `fixLanded: true`: the cluster's fix has landed.
+ * - `issue: { key, status }`: the cluster is tracked in the Jira issue with that
+ *   key, in that status: its newest tracker link, the one its pages show.
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
  * - `resources: 'leaky'`: the run's resource report names at least one leak.
  * - `incident: true`: the run is flagged as an environment incident.
@@ -44,6 +46,15 @@ export const DEMO_EXAMPLES = [
       'A stored diagnosis traces the 50 user rows (51 with the header) to the API’s default page size and suggests a patch; the fix has since landed.',
     route: '/failure-clusters/10',
     expect: { cluster: { id: 10, story: 'users-table-page-size' }, diagnosis: 'with-patch', fixLanded: true },
+  },
+  {
+    id: 'issue-tracked-cluster',
+    doc: 'features/issue-tracking',
+    title: 'API Integration › POST /auth/login returns 200 with valid credentials',
+    shows:
+      'The login 500 is tracked in DEMO-42, filed from Piwi and In Progress in Jira; its key follows the failure to its executions and the inbox.',
+    route: '/failure-clusters/3',
+    expect: { cluster: { id: 3, story: 'auth-login-500' }, issue: { key: 'DEMO-42', status: 'In Progress' } },
   },
   {
     id: 'ai-diagnosis-simulated',

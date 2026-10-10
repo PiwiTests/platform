@@ -109,7 +109,7 @@ export const DE_COPY = {
         },
         issue: {
           title: 'Aus Fehlschlägen werden Tickets',
-          body: '**Create issue** legt ein Jira-Ticket mit dem Fix-Plan des Fehlerclusters als Beschreibung an, **Link an issue** verknüpft ein vorhandenes. Schlüssel und Status begleiten dann den Fehler: auf dieser Seite, bei seinen Ausführungen und in der Inbox.',
+          body: 'Dieser Login-Fehler wird in DEMO-42 verfolgt, aus Piwi angelegt mit dem Fix-Plan des Fehlerclusters als Beschreibung und inzwischen „In Progress“. Schlüssel und Status begleiten den Fehler: auf dieser Seite, bei seinen Ausführungen und in der Inbox. Ein Cluster ohne Ticket bietet **Create issue** und **Link an issue**.',
         },
         personas: {
           title: 'So, wie Ihr Team es sieht',
