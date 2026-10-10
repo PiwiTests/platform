@@ -48,6 +48,7 @@ const items = computed<DropdownMenuItem[][]>(() =>
       color="warning"
       variant="soft"
       size="xs"
+      data-tour="demo-personas"
       icon="i-lucide-user-round-cog"
       trailing-icon="i-lucide-chevrons-up-down"
       :label="`Acting as: ${current?.name}`"

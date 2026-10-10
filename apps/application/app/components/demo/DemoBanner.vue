@@ -25,10 +25,11 @@ if (config.public.demoMode) {
     <div ref="banner" class="demo-banner">
       <div class="demo-banner-inner">
         <span>
-          ⚠️ <strong>Demo mode</strong> — sample data running entirely in your browser.
+          ⚠️ <strong>Demo mode</strong> — sample data running in your browser.
           <a href="https://github.com/piwitests/platform" target="_blank" class="underline">Deploy your own instance</a>
           for live data.
         </span>
+        <LazyDemoTourButton v-if="config.public.demoTour" />
         <DemoUserSwitcher />
         <DemoSimulator />
         <DemoResetButton />

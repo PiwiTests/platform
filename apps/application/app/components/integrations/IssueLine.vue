@@ -83,7 +83,7 @@ const failureSentence = computed(() => {
 </script>
 
 <template>
-  <div data-shot="issue-line" class="space-y-1">
+  <div data-shot="issue-line" data-tour="issue-line" class="space-y-1">
     <template v-if="form === 'tracked' && knownIssue">
       <p>
         <slot name="lead" />

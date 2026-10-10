@@ -46,5 +46,7 @@ if (!config.public.demoMode) {
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+
+    <LazyDemoTour v-if="config.public.demoTour" />
   </UApp>
 </template>

@@ -12,19 +12,32 @@ const toast = useToast();
 const { data: list, refresh } = await useDashboardList();
 const myDefault = useCookie<string | null>(MY_DEFAULT_DASHBOARD_COOKIE, { default: () => null });
 
+interface DashboardGroup {
+  label: string;
+  hint?: string;
+  items: DashboardSummary[];
+}
+
+/** The built-in dashboards, then the saved ones by group; an empty group is left out. */
 const groups = computed(() => {
   const items = list.value?.items ?? [];
-  return [
-    { label: 'Built-in', items: items.filter((d) => d.kind === 'builtin') },
-    { label: 'Shared', items: items.filter((d) => d.kind === 'saved' && d.visibility === 'shared' && !d.unused) },
-    { label: 'Personal', items: items.filter((d) => d.kind === 'saved' && d.visibility === 'private') },
-    {
-      label: 'Unused',
-      hint: 'Shared dashboards nobody opened for 90 days.',
-      items: items.filter((d) => d.kind === 'saved' && d.unused),
-    },
-  ].filter((g) => g.items.length > 0);
+  const listed = (all: DashboardGroup[]) => all.filter((g) => g.items.length > 0);
+  return {
+    builtIn: listed([{ label: 'Built-in', items: items.filter((d) => d.kind === 'builtin') }]),
+    saved: listed([
+      { label: 'Shared', items: items.filter((d) => d.kind === 'saved' && d.visibility === 'shared' && !d.unused) },
+      { label: 'Personal', items: items.filter((d) => d.kind === 'saved' && d.visibility === 'private') },
+      {
+        label: 'Unused',
+        hint: 'Shared dashboards nobody opened for 90 days.',
+        items: items.filter((d) => d.kind === 'saved' && d.unused),
+      },
+    ]),
+  };
 });
+
+/** One group's list, the same for the built-in and the saved dashboards. */
+const [DefineGroup, ReuseGroup] = createReusableTemplate<{ group: DashboardGroup }>();
 
 function facts(d: DashboardSummary): string {
   const parts: string[] = [];
@@ -221,41 +234,48 @@ function rowMenu(d: DashboardSummary) {
           />
         </SectionCard>
 
-        <section v-for="group in groups" :key="group.label" class="space-y-1">
-          <h2 class="text-xs font-medium text-muted">{{ group.label }}</h2>
-          <p v-if="group.hint" class="text-xs text-muted">{{ group.hint }}</p>
-          <ul class="divide-y divide-default" :data-testid="`dashboards-${group.label.toLowerCase()}`">
-            <li
-              v-for="d in group.items"
-              :key="d.id"
-              class="py-3 flex items-start gap-2"
-              :data-testid="`dashboard-row-${d.id}`"
-            >
-              <div class="min-w-0 flex-1 space-y-0.5">
-                <NuxtLink
-                  :to="`/analytics/d/${d.id}`"
-                  class="text-sm font-medium text-highlighted break-words underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                >
-                  {{ d.name }}
-                </NuxtLink>
-                <p v-if="d.description" class="text-xs text-muted break-words">{{ d.description }}</p>
-                <p class="text-xs text-muted">
-                  {{ facts(d) }}
-                  <ClientOnly v-if="d.lastViewedAt"> · opened {{ formatRelativeTime(d.lastViewedAt) }}</ClientOnly>
-                </p>
-              </div>
-              <UDropdownMenu :items="rowMenu(d)" :content="{ align: 'end' }">
-                <UButton
-                  size="sm"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-ellipsis"
-                  :aria-label="`Actions: ${d.name}`"
-                />
-              </UDropdownMenu>
-            </li>
-          </ul>
-        </section>
+        <DefineGroup v-slot="{ group }">
+          <section class="space-y-1">
+            <h2 class="text-xs font-medium text-muted">{{ group.label }}</h2>
+            <p v-if="group.hint" class="text-xs text-muted">{{ group.hint }}</p>
+            <ul class="divide-y divide-default" :data-testid="`dashboards-${group.label.toLowerCase()}`">
+              <li
+                v-for="d in group.items"
+                :key="d.id"
+                class="py-3 flex items-start gap-2"
+                :data-testid="`dashboard-row-${d.id}`"
+              >
+                <div class="min-w-0 flex-1 space-y-0.5">
+                  <NuxtLink
+                    :to="`/analytics/d/${d.id}`"
+                    class="text-sm font-medium text-highlighted break-words underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                  >
+                    {{ d.name }}
+                  </NuxtLink>
+                  <p v-if="d.description" class="text-xs text-muted break-words">{{ d.description }}</p>
+                  <p class="text-xs text-muted">
+                    {{ facts(d) }}
+                    <ClientOnly v-if="d.lastViewedAt"> · opened {{ formatRelativeTime(d.lastViewedAt) }}</ClientOnly>
+                  </p>
+                </div>
+                <UDropdownMenu :items="rowMenu(d)" :content="{ align: 'end' }">
+                  <UButton
+                    size="sm"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-ellipsis"
+                    :aria-label="`Actions: ${d.name}`"
+                  />
+                </UDropdownMenu>
+              </li>
+            </ul>
+          </section>
+        </DefineGroup>
+        <ReuseGroup v-for="group in groups.builtIn" :key="group.label" :group="group" />
+        <!-- The dashboards people saved, which the demo's guided tour points at -->
+        <div v-if="groups.saved.length > 0" class="space-y-6" data-tour="team-dashboards">
+          <ReuseGroup v-for="group in groups.saved" :key="group.label" :group="group" />
+        </div>
       </div>
 
       <UModal v-model:open="newOpen" title="New dashboard">

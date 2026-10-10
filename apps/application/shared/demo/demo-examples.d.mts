@@ -6,6 +6,7 @@
 /** What the generated seed must hold for an example's route to show what it promises. */
 export interface DemoExampleExpect {
   testCase?: { id: number; title: string };
+  execution?: { id: number; title: string };
   project?: { id: number; name: string };
   cluster?: { id: number; story: string };
   run?: { id: number; project: string };

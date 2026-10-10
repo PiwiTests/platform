@@ -28,7 +28,12 @@ const NuxtLink = resolveComponent('NuxtLink');
 </script>
 
 <template>
-  <section data-shot="analytics-headline" :aria-label="title ?? 'Headline numbers'" class="space-y-1">
+  <section
+    data-shot="analytics-headline"
+    data-tour="analytics-headline"
+    :aria-label="title ?? 'Headline numbers'"
+    class="space-y-1"
+  >
     <div class="flex items-center gap-1">
       <h3 class="text-xs font-medium text-muted">{{ title ?? 'Headline numbers' }}</h3>
       <HelpHint topic="analytics.stats" />

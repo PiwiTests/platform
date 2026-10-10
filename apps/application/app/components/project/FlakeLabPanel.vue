@@ -75,6 +75,7 @@ function stateLine(t: FlakeLabTest): string {
         v-else-if="lab"
         class="rounded-lg border border-default divide-y divide-default"
         data-testid="flake-lab-tests"
+        data-tour="flake-lab-tests"
       >
         <li
           v-for="t in lab.tests"

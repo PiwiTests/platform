@@ -30,8 +30,9 @@ export interface TourStop {
    */
   target?: string;
   /**
-   * The `data-tour` attribute value of a folded section holding the target: its
-   * `aria-expanded="false"` button is clicked before the stop shows.
+   * The `data-tour` attribute value of the element that holds the target folded:
+   * the first `aria-expanded="false"` button in it, or the element itself when it
+   * is that button, is clicked before the stop shows.
    */
   unfold?: string;
   /** Where the popover sits against the target from `sm` up; below it, the popover goes where it fits. */

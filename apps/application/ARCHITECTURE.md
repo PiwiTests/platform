@@ -214,7 +214,7 @@ Domain subfolders, all auto-imported **without a folder prefix** (`pathPrefix: f
 | `bug-reports/`                                                          | Bug report detail (Piwi Picker): the reported steps, the evidence, the generated spec                                                                                                                                           |
 | `gaps/`                                                                 | Test Map: the feature graph and map views, the node inspector, the scenario gaps panel                                                                                                                                          |
 | `notifications/`, `reports/`                                            | Notification channels and subscription scope; quality reports: the schedule form and list, previews, snapshots                                                                                                                  |
-| `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner/simulator                                                                                                            |
+| `home/`, `layout/`, `settings/`, `apps/desktop/`, `apps/docs/`, `demo/` | Home filters; app shell/nav; settings surfaces; desktop-only cards; in-app API reference; demo-only banner, simulator and guided tour                                                                                           |
 
 Shared building blocks worth knowing before writing new markup (`AGENTS.md` makes reuse a rule):
 
@@ -273,8 +273,8 @@ execution's failure timeline under one key for its Timeline and Network tabs), f
 (`useFoldedState`, `useFoldableSummary`, `useTreeViewCookie`), settings derivation (`useSettingsNav`,
 `useSettingsEnvState`), analytics scope, the run page's retry command (`useRunRetryCommand` — one failing set and one
 shared mode for every copy button on the page), IDE preferences (`useOpenInIde`), desktop detection (`useIsDesktop`,
-`useTauri`), demo helpers, and small utilities (`useCopy` / `useCopyRich` — use these instead of hand-rolling
-`navigator.clipboard`, `useAiStatus`, `useChartTooltip`).
+`useTauri`), demo helpers (`useDemoTour`, the guided tour's state and its driver.js run), and small utilities
+(`useCopy` / `useCopyRich` — use these instead of hand-rolling `navigator.clipboard`, `useAiStatus`, `useChartTooltip`).
 
 `app/utils/` holds pure helpers: `index.ts` (`formatDuration`, `splitDuration`, `getStatusColor`, `getFileApiPath`,
 `formatRelativeTime`, `createSortHeader`, `formatBytes`, `errorMessage`, patch/commit helpers, cluster colour maps),
@@ -293,14 +293,19 @@ auto-heal verify commands add) and `locator-edit.ts` (`buildLocatorEdit` — rew
 source line) now live in `shared/` so the server and demo share them (the fix plan builds the same verify command and
 edits); thin `app/utils/` re-export shims keep them auto-imported. Locator-line edits become a git-applyable unified
 diff via `shared/heal-edit.ts` (`buildHealEdit` / `buildUnifiedLineDiff`), and `shared/callsite-location.ts`
-(`parseCallsiteLocation`) parses a captured `file:line:col` (drive-letter-safe).
+(`parseCallsiteLocation`) parses a captured `file:line:col` (drive-letter-safe). `app/utils/demo-tour/` holds the
+demo's guided tour as data: the tours (`TOUR_PROFILES`), their words (one `copy.<code>.ts` per language, registered in
+`TOUR_COPY`), the tour languages, the `**bold**` markup and the prompt's stored state.
 
 ## Demo SPA
 
 `PIWI_DEMO_MODE=true` builds a client-only SPA: a PWA service worker (`app/service-worker/demo-sw.ts`) intercepts
 `/api/` and serves it from in-browser sql.js (WASM SQLite) through Drizzle, persisted in IndexedDB. `app/demo/api/router.ts`
 dispatches to per-domain handlers that mirror the server; `app/demo/db.client.ts` is shared by SW and main thread.
-Live updates use a BroadcastChannel instead of SSE. Rules and invariants: see `AGENTS.md`.
+Live updates use a BroadcastChannel instead of SSE. The demo build also mounts the guided tour (`public.demoTour`):
+`DemoTour` in `app.vue` asks a first-time visitor's role and walks that role's seeded screens with a driver.js popover
+on a `data-tour` element of each, driven by `useDemoTour`; the tours are `TOUR_PROFILES` and their words one
+`copy.<code>.ts` per language, both in `app/utils/demo-tour/`. Rules and invariants: see `AGENTS.md`.
 
 ## Key features
 

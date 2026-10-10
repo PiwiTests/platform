@@ -176,6 +176,7 @@ const legend = computed(() => {
           :viewBox="`0 0 ${SIZE} ${SIZE}`"
           class="block w-full h-auto max-w-[600px] mx-auto overflow-visible"
           role="img"
+          data-tour="feature-map"
         >
           <title>Feature map</title>
           <g>

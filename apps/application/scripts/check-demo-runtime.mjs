@@ -103,6 +103,171 @@ async function waitForServiceWorker(page) {
   return false;
 }
 
+// ── The guided tour ────────────────────────────────────────────────────────
+// The demo build switches the tour on. Everything below reads the tour as it
+// renders (the popover's data attributes), never the registry it is built from.
+
+/** A tour's popover once its stop is fully shown: cutout on the target, popover in place. */
+const TOUR_SETTLED = '.driver-popover.piwi-tour[data-tour-settled]';
+/** The prompt opens 1.5 s after the demo is ready; this long after the page shows its data, it would be open. */
+const PROMPT_DELAY_MS = 3000;
+const WIDE = { width: 1280, height: 860 };
+const PHONE = { width: 390, height: 844 };
+
+/** What this browser stored about the prompt (`snoozed`, `dismissed`, `started`), or null. */
+function storedTourDecision(page) {
+  return page.evaluate(() => {
+    try {
+      return JSON.parse(localStorage.getItem('piwi-demo-tour') ?? '{}').decision ?? null;
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** Waits for the home page's data, then as long as the prompt takes to open by itself; true when it opened. */
+async function promptOpensBySelf(page) {
+  await page.locator('[data-cluster-row]').first().waitFor({ timeout: 60000 });
+  await page.waitForTimeout(PROMPT_DELAY_MS);
+  return page.getByTestId('tour-prompt').isVisible();
+}
+
+/** Opens the prompt from the banner, picks `language` when given, and starts the `profile` tour. */
+async function startTour(page, profile, language) {
+  await page.getByTestId('tour-launch').click();
+  await page.getByTestId('tour-prompt').waitFor({ timeout: 10000 });
+  if (language) {
+    await page.getByTestId('tour-language').click();
+    await page.getByRole('option', { name: language }).click();
+  }
+  await page.getByTestId(`tour-profile-${profile}`).click();
+}
+
+/**
+ * Walks the tour that is starting with Next until Done. Each stop must show
+ * its target highlighted and in view (a stop shown centered fails: every stop
+ * has a target), a title, progress one further, the popover in `lang`, and
+ * with `inViewport`, the popover entirely on screen. Then Done must end it.
+ */
+async function walkTour(page, profile, { lang = 'en', inViewport = false } = {}) {
+  let shown = 0;
+  let total = 0;
+  let last = null;
+  // A tour has at most 7 stops; the bound only stops a broken one from looping.
+  for (let step = 0; step < 10; step++) {
+    const popover = page.locator(last ? `${TOUR_SETTLED}:not([data-tour-stop="${last}"])` : TOUR_SETTLED);
+    await popover.waitFor({ timeout: 60000 });
+    const stop = await popover.evaluate((node) => {
+      const target = node.dataset.tourTarget ?? '';
+      const element = target ? document.querySelector(`.driver-active-element[data-tour="${target}"]`) : null;
+      const box = element?.getBoundingClientRect();
+      const own = node.getBoundingClientRect();
+      return {
+        id: node.dataset.tourStop ?? '',
+        profile: node.dataset.tourProfile ?? '',
+        target,
+        lang: node.lang,
+        title: node.querySelector('.driver-popover-title')?.textContent?.trim() ?? '',
+        progress: node.querySelector('.driver-popover-progress-text')?.textContent?.trim() ?? '',
+        highlighted: Boolean(
+          box && box.width > 0 && box.height > 0 && box.bottom > 0 && box.top < innerHeight && box.left < innerWidth,
+        ),
+        onScreen: own.left >= 0 && own.top >= 0 && own.right <= innerWidth && own.bottom <= innerHeight,
+        last: Boolean(node.querySelector('.driver-popover-done-btn')),
+      };
+    });
+    const [current, of] = (stop.progress.match(/\d+/g) ?? []).map(Number);
+    total ||= of;
+    const problems = [];
+    if (stop.profile !== profile) problems.push(`the ${stop.profile} tour's popover`);
+    if (!stop.target) problems.push('shown centered, with no target');
+    else if (!stop.highlighted) problems.push(`"${stop.target}" is not highlighted in view`);
+    if (!stop.title) problems.push('no title');
+    if (current !== shown + 1 || of !== total) problems.push(`progress "${stop.progress}"`);
+    if (stop.lang !== lang) problems.push(`lang "${stop.lang}"`);
+    if (inViewport && !stop.onScreen) problems.push('the popover leaves the viewport');
+    check(
+      problems.length === 0,
+      `${profile} tour ${stop.progress}: ${stop.id} → ${stop.target || '(centered)'}`,
+      problems.join('; '),
+    );
+    shown = current;
+    last = stop.id;
+    if (stop.last || shown >= total) break;
+    await popover.locator('.driver-popover-next-btn').click();
+  }
+  await page.locator('.driver-popover-done-btn').click();
+  await page
+    .locator('.driver-popover')
+    .waitFor({ state: 'detached', timeout: 10000 })
+    .catch(() => {});
+  const ended = await page.evaluate(
+    () => !document.querySelector('.driver-popover') && !document.body.classList.contains('driver-active'),
+  );
+  check(
+    ended && shown === total,
+    `the ${profile} tour ends on Done after its ${total} stops`,
+    shown !== total ? `${shown} shown` : ended ? '' : 'the popover is still up',
+  );
+}
+
+/**
+ * The prompt on a first visit, Later and × each keeping it away on a reload,
+ * the banner's Guided tour button reopening it, then every role's tour from
+ * that button: one in French, one at phone width. `watch` attaches the
+ * checks every page of the demo gets (escaped API calls, page errors).
+ */
+async function checkGuidedTour(browser, watch) {
+  const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
+  const page = await context.newPage();
+  watch(page);
+  try {
+    await page.goto(`${ORIGIN}${BASE}`, { waitUntil: 'domcontentloaded' });
+    const prompt = page.getByTestId('tour-prompt');
+    await prompt.waitFor({ timeout: 60000 }).catch(() => {});
+    const roles = await prompt.locator('[data-testid^="tour-profile-"]').count();
+    check(roles === 4, 'a first visit gets the guided tour prompt, listing 4 roles', `${roles} roles`);
+
+    await page.getByTestId('tour-later').click();
+    await prompt.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    check((await storedTourDecision(page)) === 'snoozed', 'Later closes the prompt and asks again later');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    check(!(await promptOpensBySelf(page)), 'after Later, a reload does not open the prompt');
+
+    await page.getByTestId('tour-launch').click();
+    check(
+      await prompt.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ),
+      'the banner’s Guided tour button reopens the prompt',
+    );
+    await page.getByTestId('tour-dismiss').click();
+    await prompt.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    check((await storedTourDecision(page)) === 'dismissed', '× closes the prompt for good');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    check(!(await promptOpensBySelf(page)), 'after ×, a reload does not open the prompt');
+
+    await startTour(page, 'developer');
+    await walkTour(page, 'developer');
+
+    await page.setViewportSize(PHONE);
+    await startTour(page, 'qa');
+    await walkTour(page, 'qa', { inViewport: true });
+    await page.setViewportSize(WIDE);
+
+    await startTour(page, 'product');
+    await walkTour(page, 'product');
+
+    await startTour(page, 'platform', 'Français');
+    await walkTour(page, 'platform', { lang: 'fr' });
+  } catch (error) {
+    check(false, 'the guided tour checks completed', String(error).split('\n')[0].slice(0, 160));
+  } finally {
+    await context.close();
+  }
+}
+
 async function main() {
   if (!existsSync(ROOT)) {
     console.error(`No build at ${ROOT}. Run "npm run app:generate:demo" first.`);
@@ -131,15 +296,17 @@ async function main() {
   const page = await context.newPage();
 
   const pageErrors = [];
-  page.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 200)));
-
   // A root-relative /api/ URL escapes the service worker's scope and hits the
   // static host instead, so it can never be answered by the in-browser API.
   const escapedApiUrls = new Set();
-  page.on('request', (r) => {
-    const url = r.url();
-    if (url.startsWith(`${ORIGIN}/api/`)) escapedApiUrls.add(url.slice(ORIGIN.length));
-  });
+  const watch = (p) => {
+    p.on('pageerror', (e) => pageErrors.push(String(e).slice(0, 200)));
+    p.on('request', (r) => {
+      const url = r.url();
+      if (url.startsWith(`${ORIGIN}/api/`)) escapedApiUrls.add(url.slice(ORIGIN.length));
+    });
+  };
+  watch(page);
 
   try {
     await page.goto(`${ORIGIN}${BASE}`, { waitUntil: 'domcontentloaded' });
@@ -324,6 +491,8 @@ async function main() {
       'the project’s Flake Lab tab lists its experiments',
     );
 
+    await checkGuidedTour(browser, watch);
+
     check(
       escapedApiUrls.size === 0,
       'every API request stays inside the demo base path',
@@ -345,7 +514,7 @@ async function main() {
     process.exit(1);
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix and the Flake Lab tab all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab and every guided tour all work.',
   );
 }
 

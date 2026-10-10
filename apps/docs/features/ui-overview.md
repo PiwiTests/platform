@@ -141,10 +141,13 @@ instance's own OpenAPI reference.
 
 ## Live demo
 
-The [live demo](https://piwitests.dev/demo/) runs entirely in your browser and adds two controls. **Simulate a test
+The [live demo](https://piwitests.dev/demo/) runs entirely in your browser and adds three controls. **Simulate a test
 run** replays a reporter's stream, so you can watch a run arrive. **Acting as** switches between seeded identities to
 show how [roles](/operate/project-access) change what each one sees and can do, including changes made on
-the [permission grid](/operate/project-access#permission-grid).
+the [permission grid](/operate/project-access#permission-grid). **Guided tour** asks what you do (**Developer**,
+**QA engineer**, **Product owner** or **DevOps / platform**) and walks you through the screens that role uses most,
+pointing at one element on each with a link to the page of these docs that explains it. The tour is in English,
+French, Spanish and German; the dashboard stays in English.
 
 ## Related
 

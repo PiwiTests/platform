@@ -141,7 +141,7 @@ async function decide(id: SetupCapabilityId, decision: 'declined' | null) {
 
         <UCard data-shot="setup-ladder">
           <template #header>
-            <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center justify-between gap-3" data-tour="setup-ladder">
               <div class="flex items-center gap-3">
                 <div class="p-2 bg-primary/10 rounded-lg shrink-0">
                   <UIcon name="i-lucide-list-checks" class="size-5 text-primary" />

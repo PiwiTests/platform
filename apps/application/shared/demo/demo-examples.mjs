@@ -8,12 +8,15 @@
  * `expect` says what the generated seed must hold for its route to show what
  * `shows` promises; `tests/unit/demo-seed-consistency.test.ts` checks every one
  * against the seed, so a seed change that moves an id fails there, naming the
- * example. The vocabulary is closed:
+ * example. The demo's guided tour states what its stops open in the same
+ * vocabulary (`app/utils/demo-tour/profiles.ts`), checked the same way. The
+ * vocabulary is closed:
  *
- * - `testCase: { id, title }`, `project: { id, name }`, `cluster: { id, story }`,
- *   `run: { id, project }`: the entity the route opens (its id is the one in the
- *   route), by id and by what identifies it in the seed (a test title, a
- *   project name, a failure story key, the run's project name).
+ * - `testCase: { id, title }`, `execution: { id, title }`, `project: { id, name }`,
+ *   `cluster: { id, story }`, `run: { id, project }`: the entity the route opens
+ *   (its id is the one in the route), by id and by what identifies it in the
+ *   seed (a test title, the title of the execution's test, a project name, a
+ *   failure story key, the run's project name).
  * - `diagnosis: 'with-patch' | 'none'`: the cluster has a completed stored AI
  *   diagnosis with a suggested patch, or no stored diagnosis at all.
  * - `fixLanded: true`: the cluster's fix has landed.

@@ -220,6 +220,9 @@ other `curl` examples may stay bash-only. `.env` file contents are not shell com
 
 - Update the affected doc **in the same commit** as the code change.
 - User-facing docs live in `apps/docs/` (VitePress → GitHub Pages); `README.md` is the landing page.
+- The live demo's **guided tour** is maintained like the docs and the demo: a change to a screen a tour stop shows
+  updates the stop, and its copy in every tour language, **in the same commit**. Rules: the Guided tour section of
+  [`apps/application/AGENTS.md`](apps/application/AGENTS.md#guided-tour).
 - API reference is **generated** — never hand-write endpoint docs. See [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md).
 - The one-click deploy manifests (`render.yaml`, `fly.toml`, `railway.json`, `deploy/**`) are **generated and
   committed** — Render and Fly read them from the repository. Edit
