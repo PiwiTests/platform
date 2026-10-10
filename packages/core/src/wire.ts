@@ -156,6 +156,11 @@ export interface WireNetworkRequest {
   serverTraces?: unknown;
   /** Why the request failed, as Playwright reports it (`net::ERR_CONNECTION_RESET`); absent when it finished. */
   failure?: string;
+  /**
+   * True when no server sent the response: the test's own route handler fulfilled it (`route.fulfill`), or a cache
+   * or a service worker served it. Absent for a response a server sent.
+   */
+  fulfilled?: boolean;
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────

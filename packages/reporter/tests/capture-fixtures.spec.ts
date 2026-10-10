@@ -1319,14 +1319,20 @@ describe('network capture (requestfinished, requestfailed)', () => {
     responseEnd?: number;
     status?: number;
     errorText?: string;
+    /** A response no server sent: no request start, no server address. */
+    fulfilled?: boolean;
   }) => ({
     url: () => opts.url,
     method: () => opts.method ?? 'GET',
     resourceType: () => opts.resourceType ?? 'fetch',
-    timing: () => ({ startTime, requestStart: 5, responseEnd: opts.responseEnd ?? -1 }),
+    timing: () => ({ startTime, requestStart: opts.fulfilled ? -1 : 5, responseEnd: opts.responseEnd ?? -1 }),
     response: async () =>
       opts.status != null
-        ? { status: () => opts.status, headers: () => ({ 'content-type': 'application/json' }) }
+        ? {
+            status: () => opts.status,
+            headers: () => ({ 'content-type': 'application/json' }),
+            serverAddr: async () => (opts.fulfilled ? null : { ipAddress: '127.0.0.1', port: 443 }),
+          }
         : null,
     failure: () => (opts.errorText ? { errorText: opts.errorText } : null),
   });
@@ -1363,6 +1369,21 @@ describe('network capture (requestfinished, requestfailed)', () => {
     expect(finished).not.toHaveProperty('failure');
     const failed = requests!.find((r) => r.url === 'https://shop.test/api/orders')!;
     expect(failed).toMatchObject({ method: 'POST', status: 0, failure: 'net::ERR_CONNECTION_REFUSED' });
+  });
+
+  it('marks a response no server sent, the one a test fulfills itself', async () => {
+    const requests = await runNetwork((emit) => {
+      emit('requestfinished', fakeRequest({ url: 'https://shop.test/api/real', responseEnd: 40, status: 500 }));
+      emit(
+        'requestfinished',
+        fakeRequest({ url: 'https://shop.test/api/mocked', responseEnd: 40, status: 500, fulfilled: true }),
+      );
+    });
+    expect(requests!.find((r) => r.url === 'https://shop.test/api/real')).not.toHaveProperty('fulfilled');
+    expect(requests!.find((r) => r.url === 'https://shop.test/api/mocked')).toMatchObject({
+      status: 500,
+      fulfilled: true,
+    });
   });
 
   it('skips requests the page cancelled itself, in every browser', async () => {
