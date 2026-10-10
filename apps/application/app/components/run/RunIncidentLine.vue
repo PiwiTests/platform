@@ -62,6 +62,7 @@ async function setIncident(incident: boolean): Promise<void> {
     v-if="variant === 'line' && incident"
     class="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3"
     data-shot="run-incident"
+    data-tour="run-incident"
   >
     <div class="min-w-0 flex-1 space-y-0.5">
       <p class="text-sm font-semibold text-highlighted">Environment incident · not counted</p>

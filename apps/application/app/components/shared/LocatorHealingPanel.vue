@@ -465,135 +465,141 @@ defineExpose({
       </UButton>
     </div>
 
-    <!-- Failing locator -->
-    <div v-if="healing?.failingLocator" class="bg-elevated rounded p-2 mb-3 border border-red-200 dark:border-red-800">
-      <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-x-circle" class="size-4 text-red-500 shrink-0" />
-        <LocatorCode :locator="failingLocatorText" truncate class="text-xs flex-1 min-w-0" />
-        <UButton
-          size="xs"
-          variant="ghost"
-          color="neutral"
-          :icon="copiedKey === 'failing' ? 'i-lucide-check' : 'i-lucide-copy'"
-          :title="copiedKey === 'failing' ? 'Copied!' : 'Copy'"
-          @click="copyLocator(failingLocatorText, 'failing')"
-        />
-      </div>
-      <!-- AI-step intent: the natural-language prompt this locator was compiled from -->
-      <div v-if="failingIntent" class="flex items-center gap-2 mt-1.5 pl-6">
-        <UIcon name="i-lucide-wand-sparkles" class="size-3.5 text-primary shrink-0" />
-        <span class="text-xs text-gray-500">
-          Compiled from prompt
-          <span class="font-medium text-gray-700 dark:text-gray-300">“{{ failingIntent.template }}”</span>
-          <template v-if="failingIntent.kind === 'run'"> (a <code class="text-xs">piwiRun</code> flow step)</template>
-        </span>
-      </div>
-    </div>
-
-    <!-- The stored accessible name is gone from the failing page — name-based
-         alternatives below probably broke together with the failing locator -->
-    <UAlert
-      v-if="healing?.priorNameMayBeStale"
-      class="mb-3"
-      color="warning"
-      icon="i-lucide-alert-triangle"
-      variant="subtle"
-      title="The element's name looks changed"
-    >
-      <template #description>
-        <p>
-          The captured accessible name no longer appears on the failing page, so name-based alternatives (and the
-          failing locator itself) probably no longer match. Prefer the structural options, or the failing-page
-          candidates below.
-        </p>
-        <UButton
-          v-if="hasPageDiff"
-          class="mt-1.5 -ml-1.5"
-          variant="link"
-          color="warning"
-          size="xs"
-          icon="i-lucide-file-diff"
-          label="See it in the page diff"
-          @click="emit('show-page-diff')"
-        />
-      </template>
-    </UAlert>
-
-    <!-- Recommended fix — the hero action, above the full menu. Keeps the
-         original locator style where it's stable enough, and offers the exact
-         one-line edit for the failing test. -->
-    <div v-if="recommended" class="rounded-lg border border-primary/40 bg-primary/5 p-3 max-sm:p-2 mb-3 space-y-2">
-      <div class="flex items-center gap-2 min-w-0">
-        <UIcon name="i-lucide-star" class="size-4 text-primary shrink-0" />
-        <p class="text-xs font-medium text-primary shrink-0">Recommended fix</p>
-        <span v-if="recommendationSourceLabel" class="text-[11px] text-gray-500 truncate min-w-0">
-          · {{ recommendationSourceLabel }}
-        </span>
-        <span class="flex-1" />
-        <UBadge size="xs" color="primary" variant="subtle" class="font-mono tabular-nums shrink-0">
-          {{ recommended.score }}
-        </UBadge>
-      </div>
-
-      <!-- Ready-to-apply one-line edit, when the failing source line is known -->
+    <!-- The failing locator and the fix for it, which the demo's guided tour points at -->
+    <div v-if="healing?.failingLocator || healing?.priorNameMayBeStale || recommended" data-tour="locator-fix">
+      <!-- Failing locator -->
       <div
-        v-if="suggestedEdit"
-        data-copies="copy-git-apply copy-locator"
-        class="rounded border border-default overflow-hidden bg-default"
+        v-if="healing?.failingLocator"
+        class="bg-elevated rounded p-2 mb-3 border border-red-200 dark:border-red-800"
       >
-        <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />
+        <div class="flex items-center gap-2">
+          <UIcon name="i-lucide-x-circle" class="size-4 text-red-500 shrink-0" />
+          <LocatorCode :locator="failingLocatorText" truncate class="text-xs flex-1 min-w-0" />
+          <UButton
+            size="xs"
+            variant="ghost"
+            color="neutral"
+            :icon="copiedKey === 'failing' ? 'i-lucide-check' : 'i-lucide-copy'"
+            :title="copiedKey === 'failing' ? 'Copied!' : 'Copy'"
+            @click="copyLocator(failingLocatorText, 'failing')"
+          />
+        </div>
+        <!-- AI-step intent: the natural-language prompt this locator was compiled from -->
+        <div v-if="failingIntent" class="flex items-center gap-2 mt-1.5 pl-6">
+          <UIcon name="i-lucide-wand-sparkles" class="size-3.5 text-primary shrink-0" />
+          <span class="text-xs text-gray-500">
+            Compiled from prompt
+            <span class="font-medium text-gray-700 dark:text-gray-300">“{{ failingIntent.template }}”</span>
+            <template v-if="failingIntent.kind === 'run'"> (a <code class="text-xs">piwiRun</code> flow step)</template>
+          </span>
+        </div>
       </div>
-      <template v-else>
-        <LocatorCode :locator="recommended.locator" truncate class="text-sm" />
-        <!-- Only the changed args, when the fix keeps the method family -->
-        <p v-if="argChanges.length" class="text-xs flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          <template v-for="(c, i) in argChanges" :key="i">
-            <span class="font-mono text-gray-500">{{ c.key }}:</span>
-            <span v-if="c.from" class="font-mono text-red-500 line-through">{{ c.from }}</span>
-            <span v-else class="text-gray-400">—</span>
-            <UIcon name="i-lucide-arrow-right" class="size-3 text-gray-400" />
-            <span v-if="c.to" class="font-mono text-green-600 dark:text-green-400">{{ c.to }}</span>
-            <span v-else class="text-gray-400">removed</span>
-          </template>
+
+      <!-- The stored accessible name is gone from the failing page — name-based
+           alternatives below probably broke together with the failing locator -->
+      <UAlert
+        v-if="healing?.priorNameMayBeStale"
+        class="mb-3"
+        color="warning"
+        icon="i-lucide-alert-triangle"
+        variant="subtle"
+        title="The element's name looks changed"
+      >
+        <template #description>
+          <p>
+            The captured accessible name no longer appears on the failing page, so name-based alternatives (and the
+            failing locator itself) probably no longer match. Prefer the structural options, or the failing-page
+            candidates below.
+          </p>
+          <UButton
+            v-if="hasPageDiff"
+            class="mt-1.5 -ml-1.5"
+            variant="link"
+            color="warning"
+            size="xs"
+            icon="i-lucide-file-diff"
+            label="See it in the page diff"
+            @click="emit('show-page-diff')"
+          />
+        </template>
+      </UAlert>
+
+      <!-- Recommended fix — the hero action, above the full menu. Keeps the
+           original locator style where it's stable enough, and offers the exact
+           one-line edit for the failing test. -->
+      <div v-if="recommended" class="rounded-lg border border-primary/40 bg-primary/5 p-3 max-sm:p-2 mb-3 space-y-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <UIcon name="i-lucide-star" class="size-4 text-primary shrink-0" />
+          <p class="text-xs font-medium text-primary shrink-0">Recommended fix</p>
+          <span v-if="recommendationSourceLabel" class="text-[11px] text-gray-500 truncate min-w-0">
+            · {{ recommendationSourceLabel }}
+          </span>
+          <span class="flex-1" />
+          <UBadge size="xs" color="primary" variant="subtle" class="font-mono tabular-nums shrink-0">
+            {{ recommended.score }}
+          </UBadge>
+        </div>
+
+        <!-- Ready-to-apply one-line edit, when the failing source line is known -->
+        <div
+          v-if="suggestedEdit"
+          data-copies="copy-git-apply copy-locator"
+          class="rounded border border-default overflow-hidden bg-default"
+        >
+          <DiffPatch :patch="suggestedEdit.patch" :file="healing?.location" />
+        </div>
+        <template v-else>
+          <LocatorCode :locator="recommended.locator" truncate class="text-sm" />
+          <!-- Only the changed args, when the fix keeps the method family -->
+          <p v-if="argChanges.length" class="text-xs flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <template v-for="(c, i) in argChanges" :key="i">
+              <span class="font-mono text-gray-500">{{ c.key }}:</span>
+              <span v-if="c.from" class="font-mono text-red-500 line-through">{{ c.from }}</span>
+              <span v-else class="text-gray-400">—</span>
+              <UIcon name="i-lucide-arrow-right" class="size-3 text-gray-400" />
+              <span v-if="c.to" class="font-mono text-green-600 dark:text-green-400">{{ c.to }}</span>
+              <span v-else class="text-gray-400">removed</span>
+            </template>
+          </p>
+        </template>
+
+        <p v-if="recommendationNote" class="text-xs text-gray-500">{{ recommendationNote }}</p>
+        <p v-if="appliesToNote" class="text-xs text-primary/90 flex items-center gap-1">
+          <UIcon name="i-lucide-layers" class="size-3 shrink-0" />{{ appliesToNote }}
         </p>
-      </template>
 
-      <p v-if="recommendationNote" class="text-xs text-gray-500">{{ recommendationNote }}</p>
-      <p v-if="appliesToNote" class="text-xs text-primary/90 flex items-center gap-1">
-        <UIcon name="i-lucide-layers" class="size-3 shrink-0" />{{ appliesToNote }}
-      </p>
-
-      <div class="flex items-center gap-2">
-        <UButton
-          size="xs"
-          color="primary"
-          variant="solid"
-          :trailing-icon="copiedKey === 'top' ? 'i-lucide-check' : 'i-lucide-copy'"
-          @click="copyLocator(recommended.locator, 'top')"
-        >
-          Copy locator
-        </UButton>
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="outline"
-          :icon="copiedKey === 'fix-prompt' ? 'i-lucide-check' : 'i-lucide-sparkles'"
-          title="Copy an instruction an AI coding agent can apply directly to the test"
-          @click="copyFixPrompt"
-        >
-          Copy fix prompt
-        </UButton>
-        <UButton
-          v-if="healing?.edit?.unifiedDiff"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          :icon="copiedKey === 'git-apply' ? 'i-lucide-check' : 'i-lucide-copy'"
-          title="Copy a git apply patch that rewrites the failing locator line"
-          @click="copyGitApply"
-        >
-          Copy patch
-        </UButton>
+        <div class="flex items-center gap-2">
+          <UButton
+            size="xs"
+            color="primary"
+            variant="solid"
+            :trailing-icon="copiedKey === 'top' ? 'i-lucide-check' : 'i-lucide-copy'"
+            @click="copyLocator(recommended.locator, 'top')"
+          >
+            Copy locator
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            :icon="copiedKey === 'fix-prompt' ? 'i-lucide-check' : 'i-lucide-sparkles'"
+            title="Copy an instruction an AI coding agent can apply directly to the test"
+            @click="copyFixPrompt"
+          >
+            Copy fix prompt
+          </UButton>
+          <UButton
+            v-if="healing?.edit?.unifiedDiff"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            :icon="copiedKey === 'git-apply' ? 'i-lucide-check' : 'i-lucide-copy'"
+            title="Copy a git apply patch that rewrites the failing locator line"
+            @click="copyGitApply"
+          >
+            Copy patch
+          </UButton>
+        </div>
       </div>
     </div>
 

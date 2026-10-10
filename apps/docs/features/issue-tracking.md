@@ -73,9 +73,9 @@ Both status policies act on a **move** of the ticket, so a cluster a person reop
 
 Every comment is written in the [ticket's language](#language), for the [runs that
 write](./issue-automation#the-runs-that-write); [Issue automation](./issue-automation) adds diagnosis comments and
-description updates. A Jira admin can also register an optional
-[inbound webhook](/operate/integrations#registering-the-inbound-webhook) so a close or reopen reflects immediately; it
-can only refresh a link, never create or transition. The failure inbox gains a **Needs ticket** queue — open clusters on
+description updates. A Jira admin can register an optional
+[inbound webhook](/operate/integrations#registering-the-inbound-webhook) so a close or reopen shows at once; it only
+refreshes a link. The failure inbox gains a **Needs ticket** queue — open clusters on
 the default branch, older than the binding's age (default 2 days), with no issue.
 
 ## The project binding
@@ -83,8 +83,7 @@ the default branch, older than the binding's age (default 2 days), with no issue
 A Project admin or an administrator binds the project under **Project → Settings → Issue tracker**: the connection, Jira project and issue
 type, default labels and assignee, the [ticket language](#language), what a ticket carries, the policies above, and
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
-labels. The create-issue draft picks the first matching route, so a team's failures reach that team's destination.
-Rules that file issues on their own: [Issue automation](./issue-automation).
+labels. The create-issue draft picks the first matching route.
 
 <div class="doc-screenshot">
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
@@ -129,7 +128,7 @@ binding names a Jira project and issue type.
 
 A ticket's language follows its **destination**: the **project binding**'s language, else the **connection**'s default
 (a French Atlassian site can default every ticket to French), else **English**. The create modal offers a per-issue *Language* select and the `create_issue` MCP tool takes a
-`locale`. **English and French ship today.**
+`locale`. **English and French ship.**
 
 Only the copy **Piwi authors** is translated: headings, fact labels, policy comments, dates and counts. Your data
 (test titles, errors, locators, paths, commands, the patch) is **never** translated. The model's
@@ -144,3 +143,12 @@ prose follows the separate [AI response-language setting](/features/ai-diagnosis
 - The dashboard's deterministic sentences (headline, story, clue, state line) are **English templates**, so they
   stay English even in a French ticket.
 - Attachments honor the [export size budget](/features/offline-export); the trace is never attached.
+
+## Try it in the demo
+
+<DemoExamples />
+
+## Related
+
+- [Issue automation](./issue-automation): tickets filed by rule
+- [Failure clusters & the inbox](./failure-clusters): what a ticket tracks

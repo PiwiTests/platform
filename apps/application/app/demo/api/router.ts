@@ -1,8 +1,8 @@
 /**
  * Client-side API router for demo mode.
  *
- * Maps inbound `$fetch` calls (intercepted by demo-fetch.client.ts) to the
- * corresponding in-browser handler functions.  URL matching uses simple
+ * Maps the API requests the demo service worker intercepts (`demo-sw.ts`) to
+ * the corresponding in-browser handler functions.  URL matching uses simple
  * RegExp patterns – the same routes the Nuxt server exposes.
  */
 

@@ -118,6 +118,7 @@ const schedulesSubtitle = computed(() => {
           v-if="canSchedule"
           icon="i-lucide-calendar-clock"
           title="Report schedules"
+          data-tour="report-schedules"
           :count="schedules.items.length || undefined"
           :subtitle="schedulesSubtitle"
           help="reports.schedule"

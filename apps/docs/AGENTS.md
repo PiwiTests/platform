@@ -208,7 +208,8 @@ exists for the long-tail searches that never contain the word "Piwi", so:
 - a page is over the word budget of its type;
 - a hand-written page names a Piwi endpoint in prose, states an MCP tool count, uses changelog wording ("since
   version", "now supports") or announces planned work;
-- a notification event, a clue rule, a registered shortcut or a CLI flag is missing from its reference page;
+- a notification event, a clue rule, a registered shortcut or a CLI flag is missing from its reference page, or a
+  guided tour role or language from the _Live demo_ section of `features/ui-overview.md`;
 - a recipe is not linked from a feature page and a help topic;
 - a demo example's page does not render `<DemoExamples />` in its "Try it in the demo" section before `## Related`,
   a page renders the component with no example, or a page links a demo screen by hand.

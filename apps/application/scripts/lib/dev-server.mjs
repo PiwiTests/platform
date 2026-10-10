@@ -156,24 +156,38 @@ export async function waitForPortFree(base, timeoutMs = 30_000) {
 }
 
 /**
- * Boot a dev server in `mode`; returns { base, stop }. The desktop UI is enabled
- * for `desktop` only — the sidebar's back/forward pair exists in the Tauri shell
- * alone, and would misrepresent the web app in a full-viewport capture. `env`
- * is added to the server's environment; when it names its own database
- * (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns) the dev database is left
- * alone, otherwise a missing one is created and seeded first.
+ * What each mode adds to a booted server's environment, and how the boot names
+ * it. `web` is the dashboard as a browser serves it. `tour` is the same with
+ * the demo's guided tour switched on (`runtimeConfig.public.demoTour`). `desktop`
+ * enables the desktop UI, which only that mode may: the sidebar's back/forward
+ * pair exists in the Tauri shell alone, and would misrepresent the web app in a
+ * full-viewport capture.
+ */
+const SERVER_MODES = {
+  web: { env: {}, label: '' },
+  tour: { env: { NUXT_PUBLIC_DEMO_TOUR: 'true' }, label: ' (guided tour enabled)' },
+  desktop: { env: { NUXT_PUBLIC_DESKTOP: 'true' }, label: ' (desktop UI enabled)' },
+};
+
+/**
+ * Boot a dev server in `mode` (`web`, `tour` or `desktop`, see `SERVER_MODES`);
+ * returns { base, stop }. `env` is added to the server's environment; when it
+ * names its own database (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns)
+ * the dev database is left alone, otherwise a missing one is created and
+ * seeded first.
  *
  * It refuses a port something already listens on: `nuxt dev` would quietly bind
  * another port, and the health check would then pass against the server that
  * was already there, so the run would drive that server's code and data.
  */
 export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} } = {}) {
+  const serverMode = SERVER_MODES[mode];
+  if (!serverMode) throw new Error(`unknown server mode "${mode}" — use ${Object.keys(SERVER_MODES).join(', ')}`);
   if (await portInUse(port)) throw new Error(`port ${port} is already in use; stop the server on it first`);
   if (!env.PIWI_DATABASE_PATH) ensureDevDb();
-  const desktop = mode === 'desktop';
   const child = spawn('npx', ['nuxt', 'dev', '--port', String(port)], {
     cwd: APP_DIR,
-    env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...(desktop ? { NUXT_PUBLIC_DESKTOP: 'true' } : {}), ...env },
+    env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...serverMode.env, ...env },
     stdio: 'ignore',
     // Detached puts nuxt in its own process group so stop() can kill the whole
     // tree; on Windows npx needs a shell and group-kill is unsupported anyway.
@@ -199,7 +213,7 @@ export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} 
     process.exit(130);
   });
   const base = `http://localhost:${port}`;
-  console.error(`Starting dev server at ${base}${desktop ? ' (desktop UI enabled)' : ''}…`);
+  console.error(`Starting dev server at ${base}${serverMode.label}…`);
   try {
     await waitForHealth(base);
   } catch (err) {

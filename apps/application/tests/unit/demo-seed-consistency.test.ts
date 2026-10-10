@@ -15,11 +15,12 @@ import { extractStepLocatorUse, renderLocatorChain, tryParseLocatorChain } from 
 import { computeDemoFingerprint } from '#shared/demo/demo-fingerprint.mjs';
 import { firstRetryPassAfter, markingExperiments } from '#shared/handlers/flake-verified';
 import { flakeLabTestState } from '#shared/flake-lab';
-import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
+import { DEMO_EXAMPLES, type DemoExampleExpect } from '#shared/demo/demo-examples.mjs';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
 import { runBaseUrls } from '#shared/graph';
+import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 
 // Root of the Nuxt app (tests/unit/ -> ../..).
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -905,109 +906,169 @@ describe('flake lab experiments', () => {
   });
 });
 
-// Every docs page's demo example opens the entity it names, in the state its
-// sentence promises (the `expect` vocabulary of `shared/demo/demo-examples.mjs`).
-describe('demo examples hold in the seed', () => {
-  const EXPECT_KEYS = new Set([
-    'testCase',
-    'project',
-    'cluster',
-    'run',
-    'diagnosis',
-    'fixLanded',
-    'lab',
-    'resources',
-    'incident',
-  ]);
-  const ROUTE_ENTITIES = [
-    { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
-    { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
-    { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
-    { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
-  ] as const;
+// Every docs page's demo example and every stop of the demo's guided tour opens
+// the entity it names, in the state its sentence promises (the `expect`
+// vocabulary of `shared/demo/demo-examples.mjs`).
+const EXPECT_KEYS = new Set([
+  'testCase',
+  'execution',
+  'project',
+  'cluster',
+  'run',
+  'diagnosis',
+  'fixLanded',
+  'issue',
+  'lab',
+  'resources',
+  'incident',
+]);
+const ROUTE_ENTITIES = [
+  { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
+  { pattern: /^\/test-run-cases\/(\d+)(?:[?#]|$)/, key: 'execution' },
+  { pattern: /^\/projects\/(\d+)(?:[?#]|$)/, key: 'project' },
+  { pattern: /^\/failure-clusters\/(\d+)(?:[?#]|$)/, key: 'cluster' },
+  { pattern: /^\/test-runs\/(\d+)(?:[?#]|$)/, key: 'run' },
+] as const;
 
+/** The seeded entity a demo route opens, by its `expect` key and the id in the route; null when it opens none. */
+function routeEntity(route: string): { key: (typeof ROUTE_ENTITIES)[number]['key']; id: number } | null {
+  for (const { pattern, key } of ROUTE_ENTITIES) {
+    const match = pattern.exec(route);
+    if (match) return { key, id: Number(match[1]) };
+  }
+  return null;
+}
+
+/**
+ * Checks `want` against the seed: the entity `route` opens is the one it names,
+ * and every state it promises holds. `label` names the example or the stop.
+ */
+function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect): void {
+  expect(
+    Object.keys(want).filter((k) => !EXPECT_KEYS.has(k)),
+    `${label}: expect keys outside the vocabulary`,
+  ).toEqual([]);
+
+  const opened = routeEntity(route);
+  if (opened) {
+    expect(want[opened.key]?.id, `${label}: the route opens the ${opened.key} it expects`).toBe(opened.id);
+  }
+
+  if (want.testCase) {
+    const [row] = q(`select title from test_cases where id = ${want.testCase.id}`);
+    expect(row?.title, `${label}: test case ${want.testCase.id}`).toBe(want.testCase.title);
+  }
+  if (want.execution) {
+    const [row] = q(`
+      select tc.title from test_runs_cases trc join test_cases tc on tc.id = trc.test_case_id
+      where trc.id = ${want.execution.id}
+    `);
+    expect(row?.title, `${label}: execution ${want.execution.id}'s test`).toBe(want.execution.title);
+  }
+  if (want.project) {
+    const [row] = q(`select name from projects where id = ${want.project.id}`);
+    expect(row?.name, `${label}: project ${want.project.id}`).toBe(want.project.name);
+  }
+  if (want.run) {
+    const [row] = q(
+      `select p.name from test_runs r join projects p on p.id = r.project_id where r.id = ${want.run.id}`,
+    );
+    expect(row?.name, `${label}: run ${want.run.id}'s project`).toBe(want.run.project);
+  }
+  if (want.resources) {
+    expect(want.run, `${label}: resources needs a run`).toBeTruthy();
+    const parts = q(`select report from test_run_resource_reports where run_id = ${want.run!.id}`).map(
+      (row) => JSON.parse(String(row.report)) as { counts: { leaked: number } },
+    );
+    const leaks = parts.reduce((sum, part) => sum + part.counts.leaked, 0);
+    expect(leaks, `${label}: the run's report names a leak`).toBeGreaterThan(0);
+  }
+  if (want.incident) {
+    expect(want.run, `${label}: incident needs a run`).toBeTruthy();
+    const [row] = q(
+      `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
+    );
+    expect(row?.rule, `${label}: the run is flagged as an incident`).toBeTruthy();
+  }
+  if (want.cluster) {
+    expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${label}: cluster exists`).toHaveLength(
+      1,
+    );
+    const story = FAILURE_STORIES.find((s) => s.clusterId === want.cluster!.id);
+    expect(story?.key, `${label}: cluster ${want.cluster.id}'s story`).toBe(want.cluster.story);
+  }
+  if (want.diagnosis) {
+    expect(want.cluster, `${label}: diagnosis needs a cluster`).toBeTruthy();
+    const [{ stored, withPatch }] = q(`
+      select count(*) as stored,
+        sum(case when status = 'completed' and json_extract(details, '$.suggestedFix.patch') is not null then 1 else 0 end) as withPatch
+      from failure_diagnoses where cluster_id = ${want.cluster!.id}
+    `) as Array<{ stored: number; withPatch: number | null }>;
+    if (want.diagnosis === 'with-patch')
+      expect(Number(withPatch), `${label}: a stored diagnosis with a patch`).toBeGreaterThan(0);
+    else expect(Number(stored), `${label}: no stored diagnosis`).toBe(0);
+  }
+  if (want.fixLanded) {
+    expect(want.cluster, `${label}: fixLanded needs a cluster`).toBeTruthy();
+    const [row] = q(`select fix_landed_at from failure_clusters where id = ${want.cluster!.id}`);
+    expect(row?.fix_landed_at, `${label}: the fix landed`).not.toBeNull();
+  }
+  if (want.issue) {
+    expect(want.cluster, `${label}: issue needs a cluster`).toBeTruthy();
+    // The newest tracker link wins, as clusterKnownIssues reads it.
+    const [row] = q(`
+      select key, provider, status_text from entity_links
+      where failure_cluster_id = ${want.cluster!.id} and key is not null
+        and (provider = 'jira' or connection_id is not null)
+      order by id desc limit 1
+    `);
+    expect(row?.key, `${label}: cluster ${want.cluster!.id}'s tracked issue`).toBe(want.issue.key);
+    expect(row?.provider, `${label}: ${want.issue.key} is a Jira issue`).toBe('jira');
+    expect(row?.status_text, `${label}: ${want.issue.key}'s status`).toBe(want.issue.status);
+  }
+  if (want.lab) {
+    expect(want.testCase, `${label}: lab needs a test case`).toBeTruthy();
+    const testCaseId = want.testCase!.id;
+    const experiments = seededExperiments(testCaseId);
+    const mark = markingExperiments(experiments).get(testCaseId);
+    const fix = mark
+      ? { flakedAgainAt: firstRetryPassAfter(seededExecutions(testCaseId), mark.finishedAt) ? 'yes' : null }
+      : null;
+    expect(flakeLabTestState(experiments, fix), `${label}: the test's lab state`).toBe(want.lab);
+  }
+}
+
+describe('demo examples hold in the seed', () => {
   test('ids are unique', () => {
     const ids = DEMO_EXAMPLES.map((e) => e.id);
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
   });
 
   test.each(DEMO_EXAMPLES.map((e) => [e.id, e] as const))('%s', (id, example) => {
-    const want = example.expect;
     expect(
-      Object.keys(want).filter((k) => !EXPECT_KEYS.has(k)),
-      `${id}: expect keys outside the vocabulary`,
-    ).toEqual([]);
+      routeEntity(example.route),
+      `${id}: route ${example.route} opens a test case, an execution, a project, a cluster or a run`,
+    ).toBeTruthy();
+    expectHoldsInSeed(id, example.route, example.expect);
+  });
+});
 
-    const opened = ROUTE_ENTITIES.map((r) => ({ key: r.key, match: r.pattern.exec(example.route) })).find(
-      (r) => r.match,
-    );
-    expect(opened, `${id}: route ${example.route} opens a test case, a project, a cluster or a run`).toBeTruthy();
-    expect(want[opened!.key]?.id, `${id}: the route opens the ${opened!.key} it expects`).toBe(
-      Number(opened!.match![1]),
-    );
+// A stop whose route opens a seeded entity names it, and the seed holds what it
+// expects; a stop on a page that shows no single entity (Home, Analytics,
+// Setup…) expects nothing.
+describe('guided tour stops hold in the seed', () => {
+  const routed = TOUR_PROFILES.flatMap((profile) =>
+    profile.stops.flatMap((stop) => (stop.route ? [[`${profile.id}/${stop.id}`, stop.route, stop] as const] : [])),
+  );
 
-    if (want.testCase) {
-      const [row] = q(`select title from test_cases where id = ${want.testCase.id}`);
-      expect(row?.title, `${id}: test case ${want.testCase.id}`).toBe(want.testCase.title);
+  test.each(routed)('%s', (name, route, stop) => {
+    const opened = routeEntity(route);
+    if (!opened) {
+      expect(stop.expect, `${name}: ${route} opens no seeded entity, so the stop expects nothing`).toBeUndefined();
+      return;
     }
-    if (want.project) {
-      const [row] = q(`select name from projects where id = ${want.project.id}`);
-      expect(row?.name, `${id}: project ${want.project.id}`).toBe(want.project.name);
-    }
-    if (want.run) {
-      const [row] = q(
-        `select p.name from test_runs r join projects p on p.id = r.project_id where r.id = ${want.run.id}`,
-      );
-      expect(row?.name, `${id}: run ${want.run.id}'s project`).toBe(want.run.project);
-    }
-    if (want.resources) {
-      expect(want.run, `${id}: resources needs a run`).toBeTruthy();
-      const parts = q(`select report from test_run_resource_reports where run_id = ${want.run!.id}`).map(
-        (row) => JSON.parse(String(row.report)) as { counts: { leaked: number } },
-      );
-      const leaks = parts.reduce((sum, part) => sum + part.counts.leaked, 0);
-      expect(leaks, `${id}: the run's report names a leak`).toBeGreaterThan(0);
-    }
-    if (want.incident) {
-      expect(want.run, `${id}: incident needs a run`).toBeTruthy();
-      const [row] = q(
-        `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
-      );
-      expect(row?.rule, `${id}: the run is flagged as an incident`).toBeTruthy();
-    }
-    if (want.cluster) {
-      expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${id}: cluster exists`).toHaveLength(
-        1,
-      );
-      const story = FAILURE_STORIES.find((s) => s.clusterId === want.cluster!.id);
-      expect(story?.key, `${id}: cluster ${want.cluster.id}'s story`).toBe(want.cluster.story);
-    }
-    if (want.diagnosis) {
-      expect(want.cluster, `${id}: diagnosis needs a cluster`).toBeTruthy();
-      const [{ stored, withPatch }] = q(`
-        select count(*) as stored,
-          sum(case when status = 'completed' and json_extract(details, '$.suggestedFix.patch') is not null then 1 else 0 end) as withPatch
-        from failure_diagnoses where cluster_id = ${want.cluster!.id}
-      `) as Array<{ stored: number; withPatch: number | null }>;
-      if (want.diagnosis === 'with-patch')
-        expect(Number(withPatch), `${id}: a stored diagnosis with a patch`).toBeGreaterThan(0);
-      else expect(Number(stored), `${id}: no stored diagnosis`).toBe(0);
-    }
-    if (want.fixLanded) {
-      expect(want.cluster, `${id}: fixLanded needs a cluster`).toBeTruthy();
-      const [row] = q(`select fix_landed_at from failure_clusters where id = ${want.cluster!.id}`);
-      expect(row?.fix_landed_at, `${id}: the fix landed`).not.toBeNull();
-    }
-    if (want.lab) {
-      expect(want.testCase, `${id}: lab needs a test case`).toBeTruthy();
-      const testCaseId = want.testCase!.id;
-      const experiments = seededExperiments(testCaseId);
-      const mark = markingExperiments(experiments).get(testCaseId);
-      const fix = mark
-        ? { flakedAgainAt: firstRetryPassAfter(seededExecutions(testCaseId), mark.finishedAt) ? 'yes' : null }
-        : null;
-      expect(flakeLabTestState(experiments, fix), `${id}: the test's lab state`).toBe(want.lab);
-    }
+    expect(stop.expect, `${name}: ${route} opens a seeded ${opened.key}, so the stop names it`).toBeDefined();
+    expectHoldsInSeed(name, route, stop.expect!);
   });
 });
 

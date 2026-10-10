@@ -507,7 +507,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
     class="rounded-lg border border-default bg-default max-sm:rounded-none max-sm:border-x-0"
   >
     <!-- Header: the section title, its help, the trace, and the content-level tab strip -->
-    <div class="p-3 sm:px-4 sm:py-3 border-b border-default">
+    <div class="p-3 sm:px-4 sm:py-3 border-b border-default" data-tour="evidence">
       <div class="flex items-center gap-2 mb-2.5">
         <UIcon name="i-lucide-microscope" class="size-5 shrink-0" :class="CARD_ICON_CLASS" data-card-icon />
         <h2 class="text-lg font-medium">Evidence</h2>

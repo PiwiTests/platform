@@ -441,7 +441,7 @@ function onResourceLeave(): void {
 </script>
 
 <template>
-  <div v-if="timelineData.length > 0" class="relative select-none" data-shot="run-timeline">
+  <div v-if="timelineData.length > 0" class="relative select-none" data-shot="run-timeline" data-tour="run-timeline">
     <TimelineHeader
       :worker-count="workerRows.length"
       :shard-total="shardTotal"

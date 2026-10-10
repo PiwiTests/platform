@@ -30,6 +30,13 @@ const props = defineProps<{
 
 // A 4px edge in the status color, on every width (the phone layout drops the side borders).
 const edgeStyle = computed(() => (props.edge ? { borderLeftWidth: '4px', borderLeftColor: props.edge } : undefined));
+
+// The explanation and action lines lead, under the headline; the context lines follow.
+const CONTEXT_START = SITUATION_ROWS.findIndex((r) => r.slot === 'cluster');
+const LEAD_ROWS = SITUATION_ROWS.slice(0, CONTEXT_START);
+const CONTEXT_ROWS = SITUATION_ROWS.slice(CONTEXT_START);
+/** Both lists of lines: one narrow label column, one content column. */
+const LINES_CLASS = 'mt-4 grid grid-cols-1 gap-y-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-x-4';
 </script>
 
 <template>
@@ -38,24 +45,34 @@ const edgeStyle = computed(() => (props.edge ? { borderLeftWidth: '4px', borderL
     class="rounded-lg border border-default bg-default p-3 sm:p-4 max-sm:rounded-none max-sm:border-x-0"
     :style="edgeStyle"
   >
-    <!-- Identity kicker, with the block's one help hint and any actions -->
-    <div v-if="$slots.identity || $slots.actions || help" class="flex items-start justify-between gap-2">
-      <div class="min-w-0 flex-1 text-sm text-muted"><slot name="identity" /></div>
-      <div v-if="$slots.actions || help" class="flex items-center gap-1.5 shrink-0">
-        <slot name="actions" />
-        <HelpHint v-if="help" :topic="help" />
+    <!-- What broke, why and what to do: the part the demo's guided tour points at -->
+    <div data-tour="situation">
+      <!-- Identity kicker, with the block's one help hint and any actions -->
+      <div v-if="$slots.identity || $slots.actions || help" class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1 text-sm text-muted"><slot name="identity" /></div>
+        <div v-if="$slots.actions || help" class="flex items-center gap-1.5 shrink-0">
+          <slot name="actions" />
+          <HelpHint v-if="help" :topic="help" />
+        </div>
       </div>
+
+      <!-- The headline — the page's h1 -->
+      <div v-if="$slots.headline" class="mt-1.5"><slot name="headline" /></div>
+
+      <!-- The labelled lines that explain and act -->
+      <dl v-if="LEAD_ROWS.some((r) => $slots[r.slot])" :class="LINES_CLASS">
+        <template v-for="row in LEAD_ROWS" :key="row.slot">
+          <template v-if="$slots[row.slot]">
+            <dt class="text-sm font-semibold text-highlighted leading-relaxed max-sm:-mb-3">{{ row.label }}</dt>
+            <dd class="min-w-0 text-sm text-highlighted leading-relaxed"><slot :name="row.slot" /></dd>
+          </template>
+        </template>
+      </dl>
     </div>
 
-    <!-- The headline — the page's h1 -->
-    <div v-if="$slots.headline" class="mt-1.5"><slot name="headline" /></div>
-
-    <!-- The labelled lines: one narrow label column, one content column -->
-    <dl
-      v-if="SITUATION_ROWS.some((r) => $slots[r.slot])"
-      class="mt-4 grid grid-cols-1 gap-y-4 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-x-4"
-    >
-      <template v-for="row in SITUATION_ROWS" :key="row.slot">
+    <!-- The labelled lines that give the context, in the same two columns -->
+    <dl v-if="CONTEXT_ROWS.some((r) => $slots[r.slot])" :class="LINES_CLASS">
+      <template v-for="row in CONTEXT_ROWS" :key="row.slot">
         <template v-if="$slots[row.slot]">
           <dt class="text-sm font-semibold text-highlighted leading-relaxed max-sm:-mb-3">{{ row.label }}</dt>
           <dd class="min-w-0 text-sm text-highlighted leading-relaxed"><slot :name="row.slot" /></dd>

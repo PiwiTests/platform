@@ -396,7 +396,7 @@ function statusBorderClass(status: string): string {
               <span>Showing failing projects only</span>
               <UButton size="xs" variant="ghost" icon="i-lucide-x" @click="healthFilter = 'all'">Clear</UButton>
             </div>
-            <ProjectTrendTable v-if="hasProjects" :projects="healthProjects" />
+            <ProjectTrendTable v-if="hasProjects" :projects="healthProjects" data-tour="project-health" />
           </div>
 
           <!-- Recent activity -->

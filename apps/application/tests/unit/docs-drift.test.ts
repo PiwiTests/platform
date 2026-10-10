@@ -8,6 +8,9 @@ import { NOTIFICATION_EVENTS, REPORT_READY_EVENT } from '#shared/notification-ev
 import { FEATURE_NEED_DOCS, PIWI_FEATURE_GROUPS } from '#shared/piwi-features';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { HELP_TOPICS } from '~/utils/help-content';
+import { TOUR_COPY } from '~/utils/demo-tour/copy';
+import { TOUR_LANGUAGE_INFO, TOUR_LANGUAGES } from '~/utils/demo-tour/languages';
+import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { LOCATOR_STABILITY_RULES } from '#shared/locator-stability';
 import { TEST_SEARCH_FIELD_DEFS } from '#shared/test-search';
 import { DEMO_EXAMPLES } from '#shared/demo/demo-examples.mjs';
@@ -458,6 +461,25 @@ describe('hand-written reference pages match the code', () => {
     expect(section, `apps/docs/reference/cli.md has no section headed ${heading}`).not.toBe('');
     const missing = flags.filter((flag) => !new RegExp(`${flag}(?![a-z\\d-])`).test(section));
     expect(missing, `apps/docs/reference/cli.md, section ${heading}, does not list these flags`).toEqual([]);
+  });
+
+  // The UI overview's Live demo paragraph names the guided tour's roles and
+  // languages, as the tour registry and its English copy spell them.
+  test('every guided tour role and language is in the Live demo section of the UI overview', () => {
+    const page = 'apps/docs/features/ui-overview.md';
+    // Prose wraps, so a label split across two source lines still counts.
+    const section = sectionOf(page, 'Live demo').replace(/\s+/g, ' ');
+    expect(section, `${page} has no section headed Live demo`).not.toBe('');
+    for (const { id } of TOUR_PROFILES) {
+      const label = TOUR_COPY.en.profiles[id].label;
+      expect(section, `${page}, section Live demo, does not name the guided tour role "${label}"`).toContain(label);
+    }
+    for (const code of TOUR_LANGUAGES) {
+      const { englishName } = TOUR_LANGUAGE_INFO[code];
+      expect(section, `${page}, section Live demo, does not name the guided tour language ${englishName}`).toContain(
+        englishName,
+      );
+    }
   });
 });
 

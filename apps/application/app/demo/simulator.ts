@@ -11,9 +11,9 @@
  * features (test case history, timing vs average, regression context,
  * recurring failure clusters) light up with the pre-seeded data.
  *
- * All calls go through `$fetch`, which demo-fetch.client.ts rewrites into the
- * service worker's scope — the same path a real reporter's HTTP calls take
- * through the real server.
+ * All calls go through `$fetch`, whose base URL puts them in the service
+ * worker's scope — the same path a real reporter's HTTP calls take through the
+ * real server.
  */
 
 import {

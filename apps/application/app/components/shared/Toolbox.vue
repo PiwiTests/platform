@@ -120,7 +120,7 @@ defineExpose({ openSection, scrollToSection });
     :help="help"
     data-shot="fix"
   >
-    <div ref="rootEl" class="divide-y divide-default">
+    <div ref="rootEl" class="divide-y divide-default" data-tour="more-ways-to-fix">
       <section v-for="s in active" :key="s.key" class="first:pt-0 last:pb-0" :data-shot="`fix-${s.key}`">
         <div class="flex items-center justify-between gap-2 py-3">
           <button

@@ -228,6 +228,7 @@ function flakyBadges(test: FlakyTest) {
         v-for="test in filteredTests"
         :key="test.testCaseId"
         :href="`/test-cases/${test.testCaseId}`"
+        data-tour="flaky-test-row"
         :title="test.title"
         status="flaky"
         :file-path="test.filePath"

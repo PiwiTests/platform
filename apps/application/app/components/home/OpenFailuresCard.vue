@@ -727,6 +727,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         role="button"
         tabindex="0"
         :data-cluster-row="cluster.id"
+        data-tour="failure-inbox-row"
         :aria-current="index === selectedIndex ? 'true' : undefined"
         class="group flex flex-col gap-2 py-3 px-2 -mx-2 rounded-md cursor-pointer sm:flex-row sm:items-center sm:gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/60"
         :class="[

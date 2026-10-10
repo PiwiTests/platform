@@ -1294,7 +1294,7 @@ const moreMenuItems = computed(() => {
 
           <UCard data-shot="slowest-tests">
             <template #header>
-              <h2 class="text-xl font-semibold inline-flex items-center gap-1">
+              <h2 class="text-xl font-semibold inline-flex items-center gap-1" data-tour="slowest-tests">
                 Slowest tests <HelpHint topic="project.slowest-tests" />
               </h2>
               <p class="text-sm text-gray-600 mt-1">Top 20 slowest tests across recent runs</p>
