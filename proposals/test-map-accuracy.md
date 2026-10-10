@@ -6,14 +6,15 @@ inputs it never writes, adds the signals a team already owns elsewhere, gives th
 accuracy, and joins it with the browser extension, which already sees the one thing the map cannot: the whole
 rendered surface of a page.
 
-**Status.** Proposed 2026-10-09. Part 1 items 1 to 5 and 8 to 10 have shipped, and item 6 in part: page reach
+**Status.** Proposed 2026-10-09. Part 1 items 1 to 4 and 8 to 10 have shipped, and items 5 and 6 in part: page reach
 along the journey (read from the locator pages the reporter already sends, so no new capture), control reach from
 the locator index, *API-only route* retired, nodes only untrusted tests reach raised as fragile, feature grouping
 beyond reach with hubs, surface drift limited to new surface, unhandled server-probe findings, muting in the digest
 and the tab, and churn and escape history for route, handler and dependency gaps. Part 3's labeled benchmark has
 shipped too. The rest is proposed. The findings table and the summary describe the demo as it was proposed; with the
 shipped items its detectors find 86 gaps, 21 of them controls no locator targets, 14 open gaps sit under
-*Ungrouped* instead of 48, and the benchmark scores every detector at precision 1. The evidence comes from the web-dashboard demo project
+*Ungrouped* instead of 48, and the benchmark scores every detector at precision 1 against labels that part from the
+capture in one place. The evidence comes from the web-dashboard demo project
 (`shared/demo/demo-test-map.mjs`), whose gaps are exactly what the live detectors compute from its graph
 (`tests/unit/demo-test-map.test.ts` recomputes them on the seed). New wire fields, attachments and endpoints freeze
 at 1.0 and get an entry in [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -85,12 +86,13 @@ capture.
 4. **Untrusted-only nodes** (shipped). A node with no trusted test and at least one untrusted one is a fragile
    *single covering test* gap, *No trusted test reaches …*, naming each test and whether it is flaky,
    quarantined or skipped (finding 4).
-5. **Feature grouping beyond reach, and hubs** (shipped). For what no feature reaches, a feature also groups, with
-   origin `inferred` and a confidence below one: the controls its pages contain (0.8), the pages they link to under
-   the same first path segment (0.6) and those pages' controls (0.5), and declared routes sharing the first two path
-   segments of a route it reaches (0.6). With three features or more, a node reached by more than half the tests, or
-   grouped by more than half the features, is a hub (`evidence.hub`): drawn, but adding no member, test, gap or link
-   to a feature, its gaps listed under *Shared by most features* (findings 5 and 6). The groups are rebuilt on every
+5. **Feature grouping beyond reach, and hubs** (shipped in part). For what no feature reaches, a feature also
+   groups, with origin `inferred` and a confidence below one: the controls its pages contain (0.8), the pages they
+   link to under the same first path segment (0.6) and those pages' controls (0.5), and declared routes under the
+   same resource path as a route it reaches, past `api` and a version segment (0.6). With three features or more, a
+   node reached by more than half the tests, or grouped by more than half the features and three at least, is a hub
+   (`evidence.hub`): drawn, but adding no member, test, gap or link to a feature, its gaps listed under *Shared by
+   most features* (findings 5 and 6). A gap counts under one feature, in the list and on the map alike. The groups are rebuilt on every
    recompute. Still proposed: OpenAPI tags, which the parser does not keep, and grouping dependencies.
 6. **Exposure for node gaps** (churn and escape history shipped). A gap on a route, a handler or a dependency
    takes churn and escape history from the handler files behind it (`handled-by`), counted from the `changes`
@@ -205,13 +207,16 @@ predictions alone change nothing, so the map has to show that what it flags is w
 the page inventory: wakes three detectors"), the way the setup checklist lists capabilities.
 
 **The benchmark** (shipped) extends `tests/unit/demo-test-map.test.ts`. The model labels its ground truth
-(`expectedWebDashboardGaps`): what each test truly exercises, a test id the locator index cannot name included,
-and the surface the application has; each detector's definition applied to that truth gives the gaps it should
-raise. The test scores precision and recall per detector against `demo-test-map-benchmark.json`, and a change that
-lowers a number fails until the fixture (`PIWI_UPDATE_DEMO_TEST_MAP=1`) and the labels say why. Before Part 1 it
-would have read a precision of 0 of 8 for *API-only route*, the detector Part 1 retired. Today every detector
-scores precision 1; the test-id click costs *control nobody exercises* three of its 24 gaps and *single covering
-test* one of 24, since a control on a page where a test operated an unnamed element is not raised.
+(`expectedWebDashboardGaps`): what each test truly exercises, from a control or link label on each step (never
+what the locator index resolves), the tests the seed makes flaky, and the surface the application has; each
+detector's definition applied to that truth gives the gaps it should raise. The test scores precision and recall per
+detector, on a copy of the seed whose gap ledger is emptied first, against `demo-test-map-benchmark.json`. Any score
+that changes fails until the fixture (`PIWI_UPDATE_DEMO_TEST_MAP=1`) records it, and a lower one is named. Before
+Part 1 it would have read a precision of 0 of 8 for *API-only route*, the detector Part 1 retired. Today every
+detector scores precision 1, against labels that part from the capture in one place: a test-id click the index
+cannot name, which costs *control nobody exercises* three of its 24 gaps and *single covering test* one of 25. The
+flaky dark-mode test shares a page with a trusted test, so the untrusted label changes what *single covering test*
+should raise. More divergences, each a capture the map gets wrong in the field, would make the numbers say more.
 
 ## Part 4: the extension
 
