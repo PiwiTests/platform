@@ -1,5 +1,5 @@
-import { parseZipDirectory, decompressEntry } from './trace-zip';
-import { loadTraceEvidenceStreams } from './trace-evidence';
+import { parseZipDirectory, decompressTextEntries } from './trace-zip';
+import { loadStoredTraceEvents } from './trace-evidence';
 import { actionHolds, parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import { getAppSetting, setAppSetting } from './app-settings';
 import type { ContextLimits } from '#shared/ai-context-limits';
@@ -108,17 +108,8 @@ export async function parseTraceEvents(zipData: Buffer): Promise<ParsedTraceData
     const traceMetas = parseZipDirectory(zipData)
       .filter((m) => m.name.endsWith('.trace'))
       .sort((a, b) => traceFileRank(a.name) - traceFileRank(b.name));
-    const traceTexts: string[] = [];
-    for (const meta of traceMetas) {
-      try {
-        traceTexts.push((await decompressEntry(zipData, meta)).toString('utf8'));
-      } catch {
-        // Unknown compression or corrupt entry — skip rather than crash
-      }
-    }
-    if (traceTexts.length === 0) return null;
-
-    return parseTraceTexts(traceTexts);
+    const traceTexts = await decompressTextEntries(zipData, traceMetas);
+    return traceTexts.length > 0 ? parseTraceTexts(traceTexts) : null;
   } catch {
     return null;
   }
@@ -243,5 +234,9 @@ export function formatFailingActionSection(
  * sharing the load with the other views of the same trace.
  */
 export async function loadAndParseTrace(blobPath: string): Promise<ParsedTraceData | null> {
-  return (await loadTraceEvidenceStreams(blobPath))?.parsed ?? null;
+  try {
+    return (await loadStoredTraceEvents(blobPath))?.parsed ?? null;
+  } catch {
+    return null;
+  }
 }

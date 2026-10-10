@@ -24,6 +24,8 @@ import {
   getTraceSnapshotResourceFromBlob,
   getTraceFallbackAriaTextFromBlob,
   getTraceNetworkFromBlob,
+  getTraceNetworkBodyFromBlob,
+  loadTraceEvidenceStreams,
 } from '~~/server/utils/trace-evidence';
 import { buildZip } from '~~/server/utils/trace-zip';
 
@@ -157,6 +159,56 @@ describe('shared trace loads', () => {
     storageFiles.set(path, buildSnapshotTrace());
     expect((await getTraceSnapshotsFromBlob(path)).status).toBe('ok');
     expect(blobReads(path)).toBe(2);
+  });
+
+  test('a hash in capitals names a content-addressed blob too', async () => {
+    const path = `project-1/blobs/${'AB'.repeat(32)}.zip`;
+    storageFiles.set(path, buildSnapshotTrace());
+    await getTraceSnapshotsFromBlob(path);
+    await getTraceNetworkFromBlob(path);
+    expect(blobReads(path)).toBe(1);
+  });
+
+  test('ingestion reads the trace afresh and leaves nothing for the views', async () => {
+    const path = hashed(3);
+    storageFiles.set(path, buildSnapshotTrace());
+
+    expect((await loadTraceEvidenceStreams(path))?.parsed?.failingAction?.callId).toBe('c2');
+    expect(await getTraceFallbackAriaTextFromBlob(path)).toBe(['- dialog "Pay"', '  - button "Confirm"'].join('\n'));
+    expect(blobReads(path)).toBe(2);
+
+    await getTraceSnapshotsFromBlob(path);
+    await getTraceSnapshotsFromBlob(path);
+    expect(blobReads(path)).toBe(3);
+  });
+
+  test('a manifest that could not be read is read again by the next view', async () => {
+    const path = hashed(4);
+    const response = { status: 200, content: { _sha1: 'abc', mimeType: 'application/json' } };
+    const network = {
+      type: 'resource-snapshot',
+      snapshot: { request: { method: 'GET', url: 'http://shop/api' }, response },
+    };
+    storageFiles.set(
+      path,
+      buildZip([
+        {
+          name: 'trace.trace',
+          data: Buffer.from(JSON.stringify({ type: 'before', callId: 'x', startTime: 1 }), 'utf8'),
+        },
+        { name: 'trace.network', data: Buffer.from(JSON.stringify(network), 'utf8') },
+      ]),
+    );
+    // The pool stores the body under its extension; only the manifest names that spelling.
+    storageFiles.set('project-1/trace-resources/abc.json', Buffer.from('{"ok":true}', 'utf8'));
+
+    expect((await getTraceNetworkBodyFromBlob(path, 'abc')).status).toBe('not-found');
+    storageFiles.set(
+      path.replace(/\.zip$/, '.manifest.json'),
+      Buffer.from(JSON.stringify({ resources: ['abc.json'] })),
+    );
+    expect((await getTraceNetworkBodyFromBlob(path, 'abc')).status).not.toBe('not-found');
+    expect(blobReads(path)).toBe(1);
   });
 
   test('a path that is not content-addressed is read for every view', async () => {

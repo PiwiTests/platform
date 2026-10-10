@@ -8,9 +8,9 @@
  * directly.
  */
 import { getStorage } from '../storage';
-import { loadTraceDomStreams } from './trace-evidence';
+import { loadStoredTraceEvents } from './trace-evidence';
 import { decodeResource } from './resource-compression';
-import { parseResourceSnapshots, type TraceResource } from './trace-events';
+import type { TraceResource } from './trace-events';
 import {
   DOM_SNAPSHOT_CAP_CHARS,
   extractDomSnapshot,
@@ -157,12 +157,10 @@ async function inlineImages(html: string, frameUrl: string | undefined, assets: 
  */
 async function inlineTraceAssets(
   blobPath: string,
-  networkTexts: string[],
+  urlToRes: Map<string, TraceResource>,
   result: DomSnapshotResult,
 ): Promise<DomSnapshotResult> {
   if (result.status !== 'ok' || !result.html) return result;
-
-  const urlToRes = parseResourceSnapshots(networkTexts);
   if (urlToRes.size === 0) return result;
 
   // Resources live in a project-scoped shared pool; the id is in the blob path
@@ -214,14 +212,14 @@ export async function getTraceDomSnapshot(
   capChars: number,
   options: TraceDomSnapshotOptions = {},
 ): Promise<DomSnapshotResult> {
-  const streams = await loadTraceDomStreams(blobPath);
-  if (!streams) return { status: 'no-trace' };
+  const events = await loadStoredTraceEvents(blobPath);
+  if (!events) return { status: 'no-trace' };
 
   // The rendered page views keep the page's inline images; text consumers get them masked.
-  const result = extractDomSnapshot(streams.parsed, capChars, { keepInlineImages: options.inlineStyles }, options.at);
+  const result = extractDomSnapshot(events.parsed, capChars, { keepInlineImages: options.inlineStyles }, options.at);
   if (!options.inlineStyles) return result;
   try {
-    return await inlineTraceAssets(blobPath, streams.networkTexts, result);
+    return await inlineTraceAssets(blobPath, events.resourcesByUrl, result);
   } catch {
     // Inlining is best-effort decoration — never fail the snapshot over it.
     return result;

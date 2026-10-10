@@ -122,6 +122,8 @@ const inTurn = (round) => (round % 2 === 0 ? targets : [...targets].reverse());
 
 let pg = null;
 const pgDatabase = (name) => `piwi_perf_${name.replace(/-/g, '_')}`;
+/** Where the seed's server runs and keeps its storage, one per dialect like the seed itself. */
+const seedServerDir = () => join(workDir, `seed-server-${dialect}`);
 
 /**
  * Migrate a fresh database with the first target's build, create the
@@ -160,7 +162,7 @@ async function prepareSeed() {
     await recreateDatabase(pg.sql, pgDatabase('seed'));
   }
   const port = await freePort();
-  const seedWork = join(workDir, 'seed-server');
+  const seedWork = seedServerDir();
   rmSync(join(seedWork, 'storage'), { recursive: true, force: true });
   let server = await startServer({
     name: `${reference.name} (seed)`,
@@ -260,7 +262,7 @@ function buildStamp(outputDir) {
 async function copySeed(target) {
   const storage = join(workDir, target.name, 'storage');
   rmSync(storage, { recursive: true, force: true });
-  cpSync(join(workDir, 'seed-server', 'storage'), storage, { recursive: true });
+  cpSync(join(seedServerDir(), 'storage'), storage, { recursive: true });
   if (dialect === 'sqlite') {
     const dir = join(workDir, target.name);
     rmSync(join(dir, 'db'), { recursive: true, force: true });
