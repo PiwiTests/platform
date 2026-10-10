@@ -1,0 +1,74 @@
+{
+  "control-nobody-exercises": {
+    "precision": 1,
+    "recall": 0.875,
+    "raised": 21,
+    "expected": 24,
+    "found": 21,
+    "missed": ["control:button:Create token", "control:button:Revoke", "control:combobox:Scope"],
+    "wrong": []
+  },
+  "declared-never-hit": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 10,
+    "expected": 10,
+    "found": 10,
+    "missed": [],
+    "wrong": []
+  },
+  "not-noticed": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 3,
+    "expected": 3,
+    "found": 3,
+    "missed": [],
+    "wrong": []
+  },
+  "reachable-unvisited": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 9,
+    "expected": 9,
+    "found": 9,
+    "missed": [],
+    "wrong": []
+  },
+  "single-covering-test": {
+    "precision": 1,
+    "recall": 0.96,
+    "raised": 24,
+    "expected": 25,
+    "found": 24,
+    "missed": ["control:button:Confirm"],
+    "wrong": []
+  },
+  "success-only": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 15,
+    "expected": 15,
+    "found": 15,
+    "missed": [],
+    "wrong": []
+  },
+  "surface-drift": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 2,
+    "expected": 2,
+    "found": 2,
+    "missed": [],
+    "wrong": []
+  },
+  "unprobed-dependency": {
+    "precision": 1,
+    "recall": 1,
+    "raised": 3,
+    "expected": 3,
+    "found": 3,
+    "missed": [],
+    "wrong": []
+  }
+}

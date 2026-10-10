@@ -535,13 +535,16 @@ function sceneMode(scene) {
  *   - the remaining gallery images come from the live-demo capture described in
  *     `apps/docs/AGENTS.md` ("Marketing screenshots");
  *   - `demo-live-run-poster.png` is written by `record-demo-video.mjs`, with
- *     the video it stands in for.
+ *     the video it stands in for;
+ *   - `tested-elements-overlay.png` is the browser extension's overlay, written
+ *     by its `tests/e2e/docs-screenshots.spec.ts` with `PIWI_DOCS_SHOTS=1`.
  */
 const EXTERNAL_DOCS_IMAGES = new Set([
   'demo-live-run-poster.png',
   'failure-clusters-tab.png',
   'flaky-tests.png',
   'projects.png',
+  'tested-elements-overlay.png',
 ]);
 
 /** The steps of the coupon report the repro-request scene shows. */
@@ -1888,55 +1891,6 @@ const SCENES = [
     },
   },
   {
-    name: 'scenario-gaps-tab',
-    description: 'Gaps tab: gaps and findings grouped by feature, ranked, with class, factors and inbox verbs',
-    route: '/projects/1?tab=gaps',
-    viewport: { width: 1280, height: 1500 },
-    async run({ page, shoot, settle }) {
-      await page
-        .locator('[data-shot="gaps-panel"]')
-        .waitFor({ timeout: 15000 })
-        .catch(() => {});
-      await settle();
-      await shoot(undefined, { of: '[data-shot="gaps-panel"]', pad: 12 });
-    },
-  },
-  {
-    name: 'scenario-gaps-feature-map',
-    description:
-      'Feature map: the project graph folded per feature, colored by worst gap, linked where features share nodes',
-    route: '/projects/1?tab=gaps',
-    viewport: { width: 1280, height: 1100 },
-    async run({ page, shoot, settle }) {
-      await page
-        .locator('[data-shot="feature-map"] svg')
-        .waitFor({ timeout: 15000 })
-        .catch(() => {});
-      await settle();
-      await shoot(undefined, { of: '[data-shot="feature-map"]', pad: 12 });
-    },
-  },
-  {
-    name: 'scenario-gaps-graph',
-    description: 'Feature-graph view: the ego picture around a gap node over the inspector list of its neighbors',
-    route: '/projects/1?tab=gaps',
-    viewport: { width: 1280, height: 1100 },
-    async run({ page, shoot, settle }) {
-      await page
-        .locator('[data-shot="gaps-panel"]')
-        .waitFor({ timeout: 15000 })
-        .catch(() => {});
-      // Open the graph from the first gap's "view in the graph" button.
-      await page.locator('[data-shot^="gap-"]').first().getByRole('button', { name: 'View', exact: false }).click();
-      await page
-        .locator('[data-shot="feature-graph"] svg')
-        .waitFor({ timeout: 15000 })
-        .catch(() => {});
-      await settle();
-      await shoot(undefined, { of: '[data-shot="feature-graph"]', pad: 12 });
-    },
-  },
-  {
     name: 'scenario-gaps-home-inbox',
     description: 'Home: the accepted-but-unwritten scenario-gaps inbox queue',
     route: '/',
@@ -2104,6 +2058,71 @@ const SCENES = [
   })),
 
   // ── Docs illustrations (committed) ────────────────────────────────────────
+  {
+    name: 'scenario-gaps-feature-map',
+    description:
+      'Feature map of the web-dashboard project: one circle per feature, colored by its worst open gap, linked where features share nodes',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5?tab=gaps',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="feature-map"] svg')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: '[data-shot="feature-map"]', pad: 12 });
+    },
+  },
+  {
+    name: 'scenario-gaps-tab',
+    description:
+      'Gaps tab: the Users feature of the web-dashboard project, its top five gaps ranked with class, evidence and verbs',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5?tab=gaps',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="gaps-group-Users"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      // The feature holds more gaps than a docs figure shows: keep the top five.
+      await page.addStyleTag({
+        content:
+          '[data-shot="gaps-group-Users"] [data-shot^="gap-"]:nth-child(n+6) { display: none !important; }' +
+          ' [data-shot="gaps-group-Users"] [data-shot^="gap-"]:nth-child(5) { border-bottom-width: 0 !important; }',
+      });
+      await settle();
+      await shoot(undefined, { of: '[data-shot="gaps-group-Users"]', pad: 12 });
+    },
+  },
+  {
+    name: 'scenario-gaps-graph',
+    description: 'Feature graph around a page one test reaches: what leads to it, what it contains, links to and loads',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/projects/5?tab=gaps',
+    viewport: { width: 1280, height: 1800 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="gaps-panel"]')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await page
+        .locator('[data-shot^="gap-"]')
+        .filter({ hasText: 'Only one test reaches page /settings/api' })
+        .getByRole('button', { name: 'View', exact: false })
+        .click();
+      await page
+        .locator('[data-shot="feature-graph"] svg')
+        .waitFor({ timeout: 15000 })
+        .catch(() => {});
+      await settle();
+      await shoot(undefined, { of: ['[data-shot="feature-graph-seed"]', '[data-shot="feature-graph-picture"]'] });
+    },
+  },
   {
     name: 'environment-incident',
     description:

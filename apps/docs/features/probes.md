@@ -13,6 +13,10 @@ many passing tests would not. A **[probe](/guide/concepts#probe)** replays a pas
 behind one request and records whether the test noticed. A route that stays green under a fault becomes a
 **not noticed** gap: the most dangerous class, because the suite says everything is fine.
 
+<figure>
+  <img src="/diagrams/probes-two-levels.svg" alt="Client probes rewrite a response in the browser; server probes sign a fault the backend instrumentation applies inside the server; both record whether the test noticed">
+</figure>
+
 ## Client probes
 
 `piwi probe` runs the probe plan the dashboard computes for a project:
@@ -67,7 +71,7 @@ Once a probe on that route is noticed, the gap closes itself.
 
 **Experimental.** Server probes are off by default. The rule for when to turn them on (client probes reporting
 *not noticed* on one probed pair in ten) has not been measured yet. The design is in the
-[scenario gaps proposal](https://github.com/PiwiTests/platform/blob/main/proposals/scenario-gaps.md#level-two--server-probes-m3-on-an-entry-condition).
+[scenario gaps design record](https://github.com/PiwiTests/platform/blob/main/adr/scenario-gaps.md#level-two--server-probes-m3-on-an-entry-condition).
 
 A client probe rewrites the response in the browser, so the server never runs its error path. A server probe signs a
 fault onto one request (`X-Piwi-Probe`, an HMAC signature made with `PIWI_PROBE_SECRET`), and the
@@ -76,9 +80,10 @@ a delay, a mutated response or a failed dependency call. The instrumentation rep
 it did not honor records as *inconclusive*, never as a pass.
 
 Two signals come back: whether the test noticed, as with a client probe, and whether the application coped. An
-uncaught exception, or a backend error with a blank page, is an **unhandled** finding; a console error, a dialog, a
-blank page or a backend error alone is **degraded**. Findings rank by severity and reach, and the *unprobed
-dependency* detector names the dependencies no probe has failed yet.
+uncaught page error once the fault applied, or a blank page (no accessible content when the test ends) after a backend
+error, makes an **unhandled** finding. A console error, a dialog, a backend error or a blank page alone makes a
+**degraded** one. A fault the server never applied makes no finding. Findings rank by severity and reach, and the
+*unprobed dependency* detector names the dependencies no probe has failed yet.
 
 It needs:
 
@@ -91,6 +96,10 @@ It needs:
   `PATCH`, `DELETE`) stay off unless you allow them.
 
 With server probes on, half of the budget goes to server faults.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

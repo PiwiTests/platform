@@ -8,7 +8,24 @@
  * from recent history, and the word used is *observed reach*, never coverage.
  */
 
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  max,
+  min,
+  ne,
+  not,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { z } from 'zod';
 import {
   failureClusters,
@@ -22,9 +39,21 @@ import {
   testRuns,
   testRunsCases,
   bugReports,
+  locatorSnapshots,
+  locatorUsages,
 } from '../../server/database/schema';
-import { fileRouteTarget, filePageTarget, routeKeyMatchesTarget, pageKeyMatchesTarget } from '../graph';
+import {
+  controlNodeKey,
+  fileRouteTarget,
+  filePageTarget,
+  linkNodeKey,
+  routeKeyMatchesTarget,
+  pageKeyMatchesTarget,
+  templateAccessibleName,
+} from '../graph';
+import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
 import { notLabRun } from './probes';
+import { RETIRED_DETECTORS } from './detector-precision';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -295,28 +324,55 @@ export function detectDeclaredNeverHit(nodes: DeclaredNode[], windowRuns = HISTO
   return gaps;
 }
 
+/** Why a test's reach is not trusted. */
+export type UntrustedReason = 'flaky' | 'quarantined' | 'skipped' | 'did-not-run';
+
+/** How an untrusted test is named in evidence. */
+const UNTRUSTED_LABEL: Record<UntrustedReason | 'untrusted', string> = {
+  flaky: 'flaky',
+  quarantined: 'quarantined',
+  skipped: 'skipped',
+  'did-not-run': 'did not run',
+  untrusted: 'untrusted',
+};
+
+/** The untrusted tests an evidence line names; the rest are counted. */
+const UNTRUSTED_NAMED = 3;
+
 /** A node's reach — which test cases observably exercise it. */
 export interface NodeReach {
   nodeKind: string;
   nodeKey: string;
   /**
    * Distinct test cases reaching this node, each with its display title.
-   * `trusted` is false for a flaky, quarantined or currently-skipped test;
-   * absent counts as trusted, so pure callers need not set it.
+   * `trusted` is false for a flaky, quarantined or currently-skipped test, and
+   * `untrustedReason` says which; absent counts as trusted, so pure callers need
+   * not set it.
    */
-  tests: Array<{ testCaseId: number; title: string; priority?: string | null; trusted?: boolean }>;
+  tests: Array<{
+    testCaseId: number;
+    title: string;
+    priority?: string | null;
+    trusted?: boolean;
+    untrustedReason?: UntrustedReason;
+  }>;
 }
 
 /**
- * Single covering test — a node reached by exactly one *trusted* test. Fragile:
- * one flaky test away from no coverage at all. Flaky, quarantined and skipped
- * tests are not trusted reach, so a node they alone reach still counts as
- * single-covered — and a trusted test plus a flaky one is single, not double.
+ * Single covering test — a node reached by exactly one *trusted* test, or by
+ * tests none of which is trusted. Fragile: one flaky test away from no coverage
+ * at all. Flaky, quarantined and skipped tests are not trusted reach, so a
+ * trusted test plus a flaky one is single, not double, and a node only untrusted
+ * tests reach is named with the reason each is not trusted.
  */
 export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
     const trustedTests = node.tests.filter((t) => t.trusted !== false);
+    if (trustedTests.length === 0 && node.tests.length > 0) {
+      gaps.push(untrustedOnlyGap(node));
+      continue;
+    }
     if (trustedTests.length !== 1) continue;
     const only = trustedTests[0]!;
     gaps.push({
@@ -324,7 +380,7 @@ export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
       kind: 'gap',
       class: 'fragile',
       key: `${node.nodeKind}:${node.nodeKey}`,
-      title: `Only one test reaches ${node.nodeKind} ${node.nodeKey}`,
+      title: `Only one test reaches ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)}`,
       evidence: [`Only ${only.title} reaches this — observed reach. A second scenario would make it resilient.`],
       confidence: 0.5,
       testCaseId: only.testCaseId,
@@ -332,6 +388,36 @@ export function detectSingleCoveringTest(nodes: NodeReach[]): DetectedGap[] {
     });
   }
   return gaps;
+}
+
+/** The gap for a node only untrusted tests reach, naming each test and why it is not trusted. */
+function untrustedOnlyGap(node: NodeReach): DetectedGap {
+  // Highest priority first, then by title and id, so the evidence and the draft's
+  // starting test are the same on every recompute.
+  const tests = [...node.tests].sort(
+    (a, b) =>
+      priorityFactor(b.priority) - priorityFactor(a.priority) ||
+      a.title.localeCompare(b.title) ||
+      a.testCaseId - b.testCaseId,
+  );
+  const named = tests
+    .slice(0, UNTRUSTED_NAMED)
+    .map((t) => `${t.title} (${UNTRUSTED_LABEL[t.untrustedReason ?? 'untrusted']})`);
+  if (tests.length > UNTRUSTED_NAMED) named.push(`${tests.length - UNTRUSTED_NAMED} more`);
+  const list = named.length === 1 ? named[0]! : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+  return {
+    detector: 'single-covering-test',
+    kind: 'gap',
+    class: 'fragile',
+    key: `${node.nodeKind}:${node.nodeKey}`,
+    title: `No trusted test reaches ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)}`,
+    evidence: [
+      `Only ${list} ${tests.length === 1 ? 'reaches' : 'reach'} this — observed reach. A trusted scenario would make it resilient.`,
+    ],
+    confidence: 0.6,
+    testCaseId: tests[0]!.testCaseId,
+    priority: tests[0]!.priority ?? null,
+  };
 }
 
 /** A node with its first- and last-seen runs and reach count. */
@@ -344,23 +430,38 @@ export interface NodeDrift {
 }
 
 /**
- * Surface drift — a node first seen in the latest run. New surface the suite may
- * not yet exercise deliberately; the reach count is stated honestly.
+ * A node's name in a gap title. Link keys carry their own `link:` prefix, which
+ * the title's kind word already says.
  */
-export function detectSurfaceDrift(nodes: NodeDrift[], latestRunId: number | null): DetectedGap[] {
-  if (latestRunId == null) return [];
+function nodeLabel(kind: string, key: string): string {
+  return key.startsWith(`${kind}:`) ? key.slice(kind.length + 1) : key;
+}
+
+/**
+ * Surface drift — a node first seen in the latest run that no test reaches: new
+ * surface the suite does not exercise yet. A new node a test already reaches is
+ * covered, not drift. Features are derived from test tags, not surface, so they
+ * never drift; and the run that built the project's graph first
+ * (`firstGraphRunId`) has nothing to compare with, so every node it saw is the
+ * baseline, not drift.
+ */
+export function detectSurfaceDrift(
+  nodes: NodeDrift[],
+  latestRunId: number | null,
+  firstGraphRunId: number | null = null,
+): DetectedGap[] {
+  if (latestRunId == null || latestRunId === firstGraphRunId) return [];
   const gaps: DetectedGap[] = [];
   for (const node of nodes) {
     if (node.firstSeenRunId !== latestRunId) continue;
+    if (node.nodeKind === 'feature' || node.reachCount > 0) continue;
     gaps.push({
       detector: 'surface-drift',
       kind: 'gap',
       class: 'blind-spot',
       key: `${node.nodeKind}:${node.nodeKey}`,
-      title: `New ${node.nodeKind} ${node.nodeKey} — confirm it is tested`,
-      evidence: [
-        `Appeared in run #${latestRunId}, reached by ${node.reachCount} test${node.reachCount === 1 ? '' : 's'} so far — observed reach.`,
-      ],
+      title: `New ${node.nodeKind} ${nodeLabel(node.nodeKind, node.nodeKey)} — confirm it is tested`,
+      evidence: [`Appeared in run #${latestRunId}; no test reaches it yet — observed reach.`],
       confidence: 0.4,
       priority: node.priority ?? null,
     });
@@ -429,6 +530,8 @@ export interface ControlReach {
   reachCount: number;
   /** Of those, the tests recorded only by hand (a covered-by), not observed. */
   manualReachCount?: number;
+  /** Tests that operated an element the locator index could not name on a page holding it. */
+  unresolvedTests?: number;
 }
 
 /**
@@ -437,6 +540,8 @@ export interface ControlReach {
  * control reach: with no observed test→control edge anywhere, every inventoried
  * control would flag, so the detector stays silent until reach exists to
  * compare against. A covering test recorded by hand does not count as observed.
+ * A control on a page where a test operated an element the locator index could
+ * not name is not raised: that locator may have targeted it.
  */
 export function detectControlNobodyExercises(controls: ControlReach[]): DetectedGap[] {
   if (!controls.some((c) => c.reachCount - (c.manualReachCount ?? 0) > 0)) return [];
@@ -444,6 +549,7 @@ export function detectControlNobodyExercises(controls: ControlReach[]): Detected
   for (const c of controls) {
     if (c.reachCount > 0) continue;
     if (c.pageCount === 0) continue;
+    if ((c.unresolvedTests ?? 0) > 0) continue;
     gaps.push({
       detector: 'control-nobody-exercises',
       kind: 'gap',
@@ -482,37 +588,6 @@ export function detectReachableUnvisited(pages: PageLinkReach[]): DetectedGap[] 
         `Linked from ${p.linkedFrom} page${p.linkedFrom === 1 ? '' : 's'} · never navigated to — observed reach.`,
       ],
       confidence: clamp01(0.4 + Math.min(0.4, p.linkedFrom / 10)),
-    });
-  }
-  return gaps;
-}
-
-/** A route node, whether a test reaches it, and whether a control/page drives it. */
-export interface RouteEntryReach {
-  key: string;
-  reached: boolean;
-  hasTrigger: boolean;
-  hasLoad: boolean;
-}
-
-/**
- * API-only route — a route the suite reaches only through request fixtures: no
- * control triggers it and no page loads it. Blind spot (or headless by design).
- */
-export function detectApiOnlyRoute(routes: RouteEntryReach[]): DetectedGap[] {
-  const gaps: DetectedGap[] = [];
-  for (const r of routes) {
-    if (!r.reached || r.hasTrigger || r.hasLoad) continue;
-    gaps.push({
-      detector: 'api-only-route',
-      kind: 'gap',
-      class: 'blind-spot',
-      key: `route:${r.key}`,
-      title: `${r.key} is reached only by request fixtures`,
-      evidence: [
-        `No control triggers it and no page loads it — an API-level scenario, or nothing if headless by design.`,
-      ],
-      confidence: 0.35,
     });
   }
   return gaps;
@@ -1189,8 +1264,14 @@ async function latestExecutionStatus(db: DrizzleDB, ids: number[]): Promise<Map<
  * was skipped or did-not-run. Such a test is a fragile single cover, never a
  * second trusted one, so single-covering-test discounts it.
  */
-async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: number[]): Promise<Set<number>> {
-  const untrusted = new Set<number>();
+async function loadUntrustedTests(
+  db: DrizzleDB,
+  projectId: number,
+  ids: number[],
+): Promise<Map<number, UntrustedReason>> {
+  // Later reasons win: a test that did not run says more than a quarantine, and a
+  // quarantine more than a flaky classification.
+  const untrusted = new Map<number, UntrustedReason>();
   if (ids.length === 0) return untrusted;
   for (let i = 0; i < ids.length; i += 200) {
     const slice = ids.slice(i, i + 200);
@@ -1200,7 +1281,7 @@ async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: numbe
       .where(
         and(eq(testCases.projectId, projectId), inArray(testCases.id, slice), isNotNull(testCases.flakyRootCause)),
       );
-    for (const r of flaky) untrusted.add(r.id);
+    for (const r of flaky) untrusted.set(r.id, 'flaky');
     const quarantined = await db
       .select({ id: quarantinedTests.testCaseId })
       .from(quarantinedTests)
@@ -1211,12 +1292,35 @@ async function loadUntrustedTestIds(db: DrizzleDB, projectId: number, ids: numbe
           isNull(quarantinedTests.releasedAt),
         ),
       );
-    for (const r of quarantined) untrusted.add(r.id);
+    for (const r of quarantined) untrusted.set(r.id, 'quarantined');
   }
   for (const [id, status] of await latestExecutionStatus(db, ids)) {
-    if (status === 'skipped' || status === 'didnotrun' || status === 'didnot-run') untrusted.add(id);
+    if (status === 'skipped') untrusted.set(id, 'skipped');
+    else if (status === 'didnotrun' || status === 'didnot-run') untrusted.set(id, 'did-not-run');
   }
   return untrusted;
+}
+
+/**
+ * The run that first built the project's graph: the earliest first-seen run of
+ * its observed, canonical surface, pruned nodes included, so a later sweep does
+ * not move it. Features (written by the recompute), declared nodes (stamped on
+ * ingest) and code-reach files are not observed surface.
+ */
+async function loadFirstGraphRunId(db: DrizzleDB, projectId: number): Promise<number | null> {
+  const [row] = await db
+    .select({ first: min(graphNodes.firstSeenRunId) })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        isNull(graphNodes.branch),
+        ne(graphNodes.kind, 'feature'),
+        notInArray(graphNodes.origin, ['manifest', 'openapi']),
+        not(and(eq(graphNodes.kind, 'file'), eq(graphNodes.origin, 'coverage'))!),
+      ),
+    );
+  return row?.first ?? null;
 }
 
 /**
@@ -1293,6 +1397,10 @@ export async function computeScenarioGaps(
   const nodeBranchScope = isNull(graphNodes.branch);
   const edgeBranchScope = isNull(graphEdges.branch);
 
+  // The controls and links the tests' locators target, from the locator index,
+  // and the pages where a test operated an element the index could not name.
+  const unresolvedByPage = await syncControlReach(db, projectId);
+
   // Reach edges → which test cases reach which nodes. Code reach's `coverage`
   // edges and `file` nodes (every file a test executed) stay out of the node
   // detectors: they are no surface of their own to drift or to be covered once.
@@ -1333,7 +1441,7 @@ export async function computeScenarioGaps(
   }
 
   const meta = await loadTestMeta(db, [...testIds]);
-  const untrustedTests = await loadUntrustedTestIds(db, projectId, [...testIds]);
+  const untrustedTests = await loadUntrustedTests(db, projectId, [...testIds]);
 
   // Node first-seen for surface drift. Pruned (soft-deleted) nodes are excluded
   // so vanished surface neither reaches detectors nor re-flags as drift.
@@ -1413,6 +1521,7 @@ export async function computeScenarioGaps(
         title: meta.get(id)?.title ?? `test ${id}`,
         priority: meta.get(id)?.priority ?? null,
         trusted: !untrustedTests.has(id),
+        untrustedReason: untrustedTests.get(id),
       })),
     });
     // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
@@ -1430,7 +1539,7 @@ export async function computeScenarioGaps(
   }
 
   // Breadth edges the graph detectors read: contains (page → control), links
-  // (page → page), triggers/loads (into a route) and checks (probe outcomes).
+  // (page → page), checks (probe outcomes), handled-by and calls.
   const breadthEdges = await db
     .select({
       kind: graphEdges.kind,
@@ -1444,15 +1553,13 @@ export async function computeScenarioGaps(
     .where(
       and(
         eq(graphEdges.projectId, projectId),
-        inArray(graphEdges.kind, ['contains', 'links', 'triggers', 'loads', 'checks', 'calls', 'handled-by']),
+        inArray(graphEdges.kind, ['contains', 'links', 'checks', 'calls', 'handled-by']),
         edgeBranchScope,
       ),
     );
 
   const pagesByControl = new Map<string, Set<string>>(); // control key → containing pages
   const linkSourcesByPage = new Map<string, Set<string>>(); // target page → source pages
-  const triggeredRoutes = new Set<string>();
-  const loadedRoutes = new Set<string>();
   // Every checks edge per route, kept per probing test so opposite outcomes on
   // one route are reduced deterministically rather than overwriting each other.
   const checksByRoute = new Map<string, Array<{ testKey: string; outcome: string; fault: string | null }>>();
@@ -1468,10 +1575,6 @@ export async function computeScenarioGaps(
       const set = linkSourcesByPage.get(e.toKey) ?? new Set<string>();
       set.add(e.fromKey);
       linkSourcesByPage.set(e.toKey, set);
-    } else if (e.kind === 'triggers' && e.toKind === 'route') {
-      triggeredRoutes.add(e.toKey);
-    } else if (e.kind === 'loads' && e.toKind === 'route') {
-      loadedRoutes.add(e.toKey);
     } else if (e.kind === 'handled-by' && e.fromKind === 'route' && e.toKind === 'handler') {
       const set = routesByHandler.get(e.toKey) ?? new Set<string>();
       set.add(e.fromKey);
@@ -1516,9 +1619,17 @@ export async function computeScenarioGaps(
     nodeSeenRecently.set(`${node.kind}\x00${node.key}`, recentSet.has(node.lastSeenRunId ?? -1));
   }
 
+  // Tests that operated an unnamed element on a page holding the control: any
+  // of them may have exercised it.
+  const unresolvedTestsByControl = new Map<string, Set<number>>();
+  for (const [control, pages] of pagesByControl) {
+    const tests = new Set<number>();
+    for (const page of pages) for (const id of unresolvedByPage.get(page) ?? []) tests.add(id);
+    if (tests.size > 0) unresolvedTestsByControl.set(control, tests);
+  }
+
   const controlReach: ControlReach[] = [];
   const pageLinkReach: PageLinkReach[] = [];
-  const routeEntryReach: RouteEntryReach[] = [];
   for (const node of nodeRows) {
     const nodeKey = `${node.kind}\x00${node.key}`;
     const reachCount = reachByNode.get(nodeKey)?.size ?? 0;
@@ -1528,6 +1639,7 @@ export async function computeScenarioGaps(
         pageCount: pagesByControl.get(node.key)?.size ?? 0,
         reachCount,
         manualReachCount: manualReachByNode.get(nodeKey)?.size ?? 0,
+        unresolvedTests: unresolvedTestsByControl.get(node.key)?.size ?? 0,
       });
     } else if (node.kind === 'page') {
       pageLinkReach.push({
@@ -1535,19 +1647,13 @@ export async function computeScenarioGaps(
         reached: reachCount > 0,
         linkedFrom: linkSourcesByPage.get(node.key)?.size ?? 0,
       });
-    } else if (node.kind === 'route') {
-      routeEntryReach.push({
-        key: node.key,
-        reached: reachCount > 0,
-        hasTrigger: triggeredRoutes.has(node.key),
-        hasLoad: loadedRoutes.has(node.key),
-      });
     }
   }
 
   const checkOutcomes: CheckOutcome[] = [...checksByRoute].map(([routeKey, edges]) => ({
     routeKey,
-    noticed: edges.some((e) => e.outcome === 'noticed'),
+    // A flaky, quarantined or skipped test's notice is no evidence the route is checked.
+    noticed: edges.some((e) => e.outcome === 'noticed' && !untrustedTests.has(Number(e.testKey))),
     notNoticed: edges
       .filter((e) => e.outcome === 'not-noticed')
       .map((e) => {
@@ -1609,11 +1715,17 @@ export async function computeScenarioGaps(
   const detected = [
     ...detectReportedBugEscapes(openReports),
     ...detectSuccessOnly([...routeStats.values()]),
-    ...detectSingleCoveringTest(nodeReach),
-    ...detectSurfaceDrift(nodeDrift, latestRunId),
+    ...detectSingleCoveringTest(
+      // A control another test may have operated through an unnamed locator is not known to be single-covered.
+      nodeReach.filter(
+        (n) =>
+          n.nodeKind !== 'control' ||
+          [...(unresolvedTestsByControl.get(n.nodeKey) ?? [])].every((id) => n.tests.some((t) => t.testCaseId === id)),
+      ),
+    ),
+    ...detectSurfaceDrift(nodeDrift, latestRunId, await loadFirstGraphRunId(db, projectId)),
     ...detectControlNobodyExercises(controlReach),
     ...detectReachableUnvisited(pageLinkReach),
-    ...detectApiOnlyRoute(routeEntryReach),
     ...detectNotNoticed(checkOutcomes),
     ...detectOrphanTest(testReachRecency),
     ...detectFixDidNotHold(regressedClusters),
@@ -1621,10 +1733,58 @@ export async function computeScenarioGaps(
     ...detectUnprobedDependency(dependencyProbeStatus),
   ];
 
-  const exposure = options.exposure ?? {};
+  // A gap on a route, a handler or a dependency is exposed through the handler
+  // files behind it, ranked by the commits the default branch recorded on them.
+  const handlerFilesOf = (subject: GapSubject): string[] => {
+    if (subject.kind === 'handler') return [subject.key];
+    if (subject.kind === 'route') {
+      return [...routesByHandler].filter(([, routes]) => routes.has(subject.key)).map(([handler]) => handler);
+    }
+    if (subject.kind === 'dependency') {
+      return [...dependenciesByHandler].filter(([, deps]) => deps.has(subject.key)).map(([handler]) => handler);
+    }
+    return [];
+  };
+  for (const gap of detected) {
+    if (gap.files?.length) continue;
+    const files = handlerFilesOf(subjectFromGapKey(gap.key));
+    if (files.length > 0) gap.files = files;
+  }
+  const handlerFiles = [...new Set(detected.flatMap((g) => g.files ?? []))];
+  const exposure: ExposureInputs = {
+    files: new Map([
+      ...(await loadRecordedFileExposure(db, projectId, handlerFiles)),
+      ...(options.exposure?.files ?? []),
+    ]),
+  };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
-  await syncFeatureNodes(db, projectId, reachByNode, latestRunId);
+  const invert = (byTarget: Map<string, Set<string>>) => {
+    const out = new Map<string, Set<string>>();
+    for (const [target, sources] of byTarget) {
+      for (const source of sources) {
+        let set = out.get(source);
+        if (!set) out.set(source, (set = new Set()));
+        set.add(target);
+      }
+    }
+    return out;
+  };
+  const controlsByPage = invert(pagesByControl);
+  const linksByPage = invert(linkSourcesByPage);
+  await syncFeatureNodes(
+    db,
+    projectId,
+    {
+      reachByNode,
+      controlsByPage,
+      linksByPage,
+      declaredRoutes: nodeRows
+        .filter((n) => n.kind === 'route' && (n.origin === 'manifest' || n.origin === 'openapi'))
+        .map((n) => n.key),
+    },
+    latestRunId,
+  );
 
   const upserted = await upsertScenarioGaps(db, projectId, scored, { runId: latestRunId });
   const closed = await closeMissingGaps(
@@ -1636,7 +1796,6 @@ export async function computeScenarioGaps(
       'surface-drift',
       'control-nobody-exercises',
       'reachable-unvisited',
-      'api-only-route',
       'not-noticed',
       'orphan-test',
       'fix-did-not-hold',
@@ -1649,26 +1808,733 @@ export async function computeScenarioGaps(
     closeStatuses,
   );
   const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, reachByNode, closeStatuses);
-  return { upserted, closed: closed + closedChanged };
+  const closedRetired = await closeRetiredDetectorGaps(db, projectId);
+  return { upserted, closed: closed + closedChanged + closedRetired };
 }
 
 /**
- * Build `feature` nodes and `groups` edges from the `piwi:feature` tag on tests:
- * a feature groups the route and page nodes the tests carrying that tag reach.
- * Features from the function catalog and URL clustering are lower-trust sources
- * added later; the tag is the first. Canonical rows only — features are
- * project-level. Upsert semantics, so a feature that loses its tag simply stops
- * being refreshed.
+ * Close the open, snoozed and accepted rows of retired detectors. No run closed
+ * them, so `closed_by_run_id` stays empty; a dismissed row keeps its verdict.
+ */
+async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promise<number> {
+  const now = new Date();
+  const closed = await db
+    .update(scenarioGaps)
+    .set({ status: 'closed', closedAt: now, closedByRunId: null, updatedAt: now })
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        inArray(scenarioGaps.detector, RETIRED_DETECTORS),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+      ),
+    )
+    .returning({ id: scenarioGaps.id });
+  return closed.length;
+}
+
+// ── Exposure from recorded changes ───────────────────────────────────────────
+
+/** True when two repo paths name one file: equal, or one a path suffix of the other (a monorepo prefix). */
+function samePathOrSuffix(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+/** True when two commit ids name one commit, a short id matching its full one. */
+function sameCommit(a: string, b: string): boolean {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  return x.length >= 7 && y.length >= 7 && (x.startsWith(y) || y.startsWith(x));
+}
+
+/**
+ * Churn and escape history of `files` from what the graph recorded: the
+ * default branch's `changes` edges (kept for ninety days), each a run's diff
+ * from its baseline to its head commit. Churn counts the distinct diffs that
+ * touched a file, a diff being its base, so the runs of a red streak, each
+ * diffed again from the same green run, count once. A file is escaped when a
+ * diff that touched it ends on a failure cluster's fixing commit: the diff that
+ * landed the fix, which holds every change since the last green run. A file
+ * matches its recorded path exactly or, failing that, the one recorded path it
+ * is a suffix of; a key two recorded paths end with names neither. Age needs
+ * the file's history from the source control provider, so it is left out.
+ */
+async function loadRecordedFileExposure(
+  db: DrizzleDB,
+  projectId: number,
+  files: string[],
+): Promise<Map<string, FileExposure>> {
+  const out = new Map<string, FileExposure>();
+  if (files.length === 0) return out;
+  const changes = await db
+    .select({ commit: graphEdges.fromKey, file: graphEdges.toKey, evidence: graphEdges.evidence })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'changes'),
+        eq(graphEdges.fromKind, 'commit'),
+        eq(graphEdges.toKind, 'file'),
+        isNull(graphEdges.branch),
+      ),
+    );
+  if (changes.length === 0) return out;
+  const byPath = new Map<string, { diffs: Set<string>; heads: Set<string> }>();
+  for (const c of changes) {
+    const base = (c.evidence as { base?: unknown } | null)?.base;
+    const entry = byPath.get(c.file) ?? { diffs: new Set<string>(), heads: new Set<string>() };
+    entry.diffs.add(typeof base === 'string' && base ? `base:${base}` : `head:${c.commit}`);
+    entry.heads.add(c.commit);
+    byPath.set(c.file, entry);
+  }
+  const fixCommits = (
+    await db
+      .select({ fixCommit: failureClusters.fixCommit })
+      .from(failureClusters)
+      .where(and(eq(failureClusters.projectId, projectId), isNotNull(failureClusters.fixCommit)))
+  )
+    .map((c) => c.fixCommit!)
+    .filter(Boolean);
+
+  const paths = [...byPath.keys()];
+  for (const file of files) {
+    const matches = byPath.has(file) ? [file] : paths.filter((path) => samePathOrSuffix(path, file));
+    if (matches.length !== 1) continue;
+    const entry = byPath.get(matches[0]!)!;
+    out.set(file, {
+      churn: entry.diffs.size,
+      escaped: [...entry.heads].some((commit) => fixCommits.some((fix) => sameCommit(commit, fix))),
+    });
+  }
+  return out;
+}
+
+// ── Control reach from the locator index ─────────────────────────────────────
+
+/** Roles a label, a placeholder or a title names. */
+const LABELED_ROLES = new Set([
+  'textbox',
+  'searchbox',
+  'combobox',
+  'listbox',
+  'checkbox',
+  'radio',
+  'switch',
+  'spinbutton',
+  'slider',
+]);
+
+/** The graph node a locator names: a control or link by role and name, or only a name. */
+export type LocatorNodeTarget =
+  | { by: 'role'; kind: 'control' | 'link'; key: string; role: string; name: string; exact: boolean }
+  | { by: 'name'; name: string; exact: boolean };
+
+function stringArg(arg: LocatorArg | undefined): string | null {
+  return arg?.type === 'string' && arg.value.trim() ? arg.value : null;
+}
+
+function exactOption(arg: LocatorArg | undefined): boolean {
+  if (arg?.type !== 'object') return false;
+  const exact = arg.entries.find(([k]) => k === 'exact')?.[1];
+  return exact?.type === 'boolean' && exact.value;
+}
+
+/**
+ * The node the last locating call of a chain names. `getByRole` with a string
+ * name keys a control (`role:name`) or, for a link, a link node; a label,
+ * placeholder or title names a control without its role. `exact` is the call's
+ * own option. A regex name, a test id or a CSS selector names nothing here.
+ */
+export function locatorNodeTarget(locator: string): LocatorNodeTarget | null {
+  const calls = tryParseLocatorChain(locator)?.calls.filter((c) => LOCATING_METHODS.has(c.method)) ?? [];
+  const call = calls[calls.length - 1];
+  if (!call) return null;
+  if (call.method === 'getByRole') {
+    const role = stringArg(call.args[0]);
+    const options = call.args[1]?.type === 'object' ? call.args[1].entries : [];
+    const name = stringArg(options.find(([k]) => k === 'name')?.[1]);
+    if (!role || !name) return null;
+    const exact = exactOption(call.args[1]);
+    return role === 'link'
+      ? { by: 'role', kind: 'link', key: linkNodeKey(name), role, name, exact }
+      : { by: 'role', kind: 'control', key: controlNodeKey(role, name), role: role.toLowerCase(), name, exact };
+  }
+  if (call.method === 'getByLabel' || call.method === 'getByPlaceholder' || call.method === 'getByTitle') {
+    const name = stringArg(call.args[0]);
+    return name ? { by: 'name', name, exact: exactOption(call.args[1]) } : null;
+  }
+  return null;
+}
+
+/** One locator use of a test, with the ranked alternatives its call site's snapshot recorded. */
+export interface LocatorReachUse {
+  testCaseId: number;
+  /** The last locating call of the chain (`getByLabel('Email')`). */
+  target: string;
+  /** `click`, `fill`, `expect.toBeVisible`, … */
+  action: string;
+  /** The page key the call ran on, '' when unknown. */
+  page?: string;
+  /** Alternative locators for the same element, best first. */
+  alternatives?: string[];
+  /** When the index last saw the use, and in which run. */
+  lastSeenAt?: Date;
+  lastSeenRunId?: number | null;
+}
+
+/** A test's reach to a control or link, and whether it acted on the element or only read or asserted on it. */
+export interface LocatorControlReach {
+  testCaseId: number;
+  kind: 'control' | 'link';
+  key: string;
+  action: 'operated' | 'checked';
+  /** 1 for a role and name in the test's own chain, lower when inferred. */
+  confidence: number;
+  /** The newest use behind it, when the uses say. */
+  lastSeenAt?: Date;
+  lastSeenRunId?: number | null;
+}
+
+/** The reach a set of locator uses resolves to, and the interactions that name no known node. */
+export interface ResolvedControlReach {
+  reach: LocatorControlReach[];
+  /** Uses that operated an element the graph has no node for, or that several nodes could be. */
+  unresolved: LocatorReachUse[];
+}
+
+/** The one key whose templated name holds `name`, case-insensitively, as Playwright matches a name by default. */
+function uniqueNameMatch(keys: string[], name: string): string | null {
+  const needle = templateAccessibleName(name).toLowerCase();
+  const hits = keys.filter((key) =>
+    key
+      .slice(key.indexOf(':') + 1)
+      .toLowerCase()
+      .includes(needle),
+  );
+  return hits.length === 1 ? hits[0]! : null;
+}
+
+/**
+ * Resolve locator uses to the control and link nodes of the graph. A use maps
+ * through, in order: its own `getByRole` and name (confidence 1); the first
+ * role-and-name alternative its snapshot recorded (0.9); the one node of its
+ * role whose name holds the locator's name, as Playwright matches a name without
+ * `exact` (0.8); a label, placeholder or title that exactly one labeled control
+ * carries (0.8), or holds (0.7). A use that maps to no known node reaches
+ * nothing, so no edge points at a node the inventory never saw; an interaction
+ * among those is listed as unresolved.
+ */
+export function resolveControlReach(
+  uses: LocatorReachUse[],
+  nodes: { controls: ReadonlySet<string>; links: ReadonlySet<string> },
+): ResolvedControlReach {
+  const known = (kind: 'control' | 'link', key: string) => (kind === 'control' ? nodes.controls : nodes.links).has(key);
+  const byRole = new Map<string, string[]>(); // role (or `link`) → node keys
+  for (const key of nodes.controls) {
+    const role = key.slice(0, key.indexOf(':'));
+    byRole.set(role, [...(byRole.get(role) ?? []), key]);
+  }
+  byRole.set('link', [...nodes.links]);
+  const labeled = [...nodes.controls].filter((key) => LABELED_ROLES.has(key.slice(0, key.indexOf(':'))));
+  const byName = new Map<string, string[]>();
+  for (const key of labeled) {
+    const name = key.slice(key.indexOf(':') + 1);
+    byName.set(name, [...(byName.get(name) ?? []), key]);
+  }
+
+  const out = new Map<string, LocatorControlReach>();
+  const unresolved: LocatorReachUse[] = [];
+  for (const use of uses) {
+    let hit: { kind: 'control' | 'link'; key: string; confidence: number } | null = null;
+    const own = locatorNodeTarget(use.target);
+    if (own?.by === 'role' && known(own.kind, own.key)) hit = { kind: own.kind, key: own.key, confidence: 1 };
+    for (const alt of hit ? [] : (use.alternatives ?? [])) {
+      const target = locatorNodeTarget(alt);
+      if (target?.by === 'role' && known(target.kind, target.key)) {
+        hit = { kind: target.kind, key: target.key, confidence: 0.9 };
+        break;
+      }
+    }
+    if (!hit && own?.by === 'role' && !own.exact) {
+      const key = uniqueNameMatch(byRole.get(own.kind === 'link' ? 'link' : own.role) ?? [], own.name);
+      if (key) hit = { kind: own.kind, key, confidence: 0.8 };
+    }
+    if (!hit && own?.by === 'name') {
+      const exact = byName.get(templateAccessibleName(own.name)) ?? [];
+      if (exact.length === 1) hit = { kind: 'control', key: exact[0]!, confidence: 0.8 };
+      else if (exact.length === 0 && !own.exact) {
+        const key = uniqueNameMatch(labeled, own.name);
+        if (key) hit = { kind: 'control', key, confidence: 0.7 };
+      }
+    }
+    const action = isInteractionAction(use.action) ? 'operated' : 'checked';
+    if (!hit) {
+      if (action === 'operated') unresolved.push(use);
+      continue;
+    }
+
+    const id = `${use.testCaseId}\x00${hit.kind}\x00${hit.key}`;
+    const prev = out.get(id);
+    const newer = use.lastSeenAt && (!prev?.lastSeenAt || use.lastSeenAt > prev.lastSeenAt);
+    out.set(id, {
+      testCaseId: use.testCaseId,
+      kind: hit.kind,
+      key: hit.key,
+      action: prev?.action === 'operated' || action === 'operated' ? 'operated' : 'checked',
+      confidence: Math.max(prev?.confidence ?? 0, hit.confidence),
+      ...(newer
+        ? { lastSeenAt: use.lastSeenAt, lastSeenRunId: use.lastSeenRunId ?? null }
+        : prev?.lastSeenAt
+          ? { lastSeenAt: prev.lastSeenAt, lastSeenRunId: prev.lastSeenRunId ?? null }
+          : {}),
+    });
+  }
+  return { reach: [...out.values()], unresolved };
+}
+
+/** `[file, line]` of a `file:line:col` or `file:line` location, slashes normalized. */
+function fileAndLine(location: string): [string, string] {
+  const loc = location.replace(/\\/g, '/');
+  const m = /^(.*):(\d+):\d+$/.exec(loc) ?? /^(.*):(\d+)$/.exec(loc);
+  return m ? [m[1]!, m[2]!] : [loc, ''];
+}
+
+/**
+ * True when a snapshot's captured location is on the line of the use's
+ * project-relative call site. The stack a snapshot reads and a step's location
+ * can differ by column, and the snapshot's path can be absolute.
+ */
+function sameCallLine(location: string, callSite: string): boolean {
+  const [fileA, lineA] = fileAndLine(location);
+  const [fileB, lineB] = fileAndLine(callSite);
+  if (!lineA || lineA !== lineB) return false;
+  return fileA === fileB || fileA.endsWith(`/${fileB}`) || fileB.endsWith(`/${fileA}`);
+}
+
+/**
+ * True when a snapshot recorded the use's own locating call: the same method
+ * and, when both have one, the same first string argument. A helper's line is
+ * shared by every locator passed through it, so the line alone names no call.
+ */
+function sameUsedCall(snapshot: { usedMethod: string; usedArgs: unknown }, target: string): boolean {
+  const call = tryParseLocatorChain(target)
+    ?.calls.filter((c) => LOCATING_METHODS.has(c.method))
+    .at(-1);
+  if (!call || call.method !== snapshot.usedMethod) return false;
+  const own = stringArg(call.args[0]);
+  let args: unknown = snapshot.usedArgs;
+  try {
+    if (typeof args === 'string') args = JSON.parse(args);
+  } catch {
+    return false;
+  }
+  const first = Array.isArray(args) && typeof args[0] === 'string' ? args[0] : null;
+  return own == null || first == null || own === first;
+}
+
+/** How long a locator use keeps a test's reach to a control: as long as the graph keeps a reaches edge unseen. */
+const LOCATOR_REACH_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+
+/**
+ * Write a `reaches` edge from each test to the controls and links its locators
+ * target on the default branch, from the locator index and its snapshots. Only
+ * nodes the page inventory recorded can be reached, each edge says whether the
+ * test acted on the element or only asserted on it, and it carries when the
+ * index last saw the use, so a use that stops being seen ages out like any
+ * reach. A locator edge the index does not back is removed; a covered-by edge
+ * from triage is left as it is. Returns, per page, the tests that operated an
+ * element there that the index could not name.
+ */
+async function syncControlReach(
+  db: DrizzleDB,
+  projectId: number,
+  now: Date = new Date(),
+): Promise<Map<string, Set<number>>> {
+  const nodeRows = await db
+    .select({ kind: graphNodes.kind, key: graphNodes.key })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        isNull(graphNodes.branch),
+        isNull(graphNodes.prunedAt),
+        inArray(graphNodes.kind, ['control', 'link']),
+      ),
+    );
+  const nodes = {
+    controls: new Set(nodeRows.filter((n) => n.kind === 'control').map((n) => n.key)),
+    links: new Set(nodeRows.filter((n) => n.kind === 'link').map((n) => n.key)),
+  };
+
+  const useRows =
+    nodeRows.length === 0
+      ? []
+      : await db
+          .select({
+            testCaseId: locatorUsages.testCaseId,
+            target: locatorUsages.target,
+            action: locatorUsages.action,
+            callSite: locatorUsages.callSite,
+            page: locatorUsages.page,
+            lastSeenAt: max(locatorUsages.lastSeenAt),
+            lastSeenRunId: max(locatorUsages.lastSeenRunId),
+          })
+          .from(locatorUsages)
+          .where(
+            and(
+              eq(locatorUsages.projectId, projectId),
+              eq(locatorUsages.branch, ''),
+              gte(locatorUsages.lastSeenAt, new Date(now.getTime() - LOCATOR_REACH_MAX_AGE_MS)),
+            ),
+          )
+          .groupBy(
+            locatorUsages.testCaseId,
+            locatorUsages.target,
+            locatorUsages.action,
+            locatorUsages.callSite,
+            locatorUsages.page,
+          );
+
+  // Snapshot alternatives only for the tests with a use their own chain does not name.
+  const needsAlternatives = [
+    ...new Set(
+      useRows
+        .filter((u) => {
+          const own = locatorNodeTarget(u.target);
+          return !(own?.by === 'role' && (own.kind === 'control' ? nodes.controls : nodes.links).has(own.key));
+        })
+        .map((u) => u.testCaseId),
+    ),
+  ];
+  const snapshotsByTest = new Map<
+    number,
+    Array<{ location: string; usedMethod: string; usedArgs: unknown; alternatives: string[] }>
+  >();
+  for (let i = 0; i < needsAlternatives.length; i += 500) {
+    const rows = await db
+      .select({
+        testCaseId: locatorSnapshots.testCaseId,
+        location: locatorSnapshots.location,
+        usedMethod: locatorSnapshots.usedMethod,
+        usedArgs: locatorSnapshots.usedArgs,
+        alternatives: locatorSnapshots.alternatives,
+      })
+      .from(locatorSnapshots)
+      .where(inArray(locatorSnapshots.testCaseId, needsAlternatives.slice(i, i + 500)));
+    for (const r of rows) {
+      if (!r.location) continue;
+      let alternatives: string[] = [];
+      try {
+        const parsed = typeof r.alternatives === 'string' ? JSON.parse(r.alternatives) : r.alternatives;
+        if (Array.isArray(parsed)) {
+          alternatives = parsed
+            .map((a) => (a && typeof a === 'object' ? (a as { locator?: unknown }).locator : null))
+            .filter((l): l is string => typeof l === 'string');
+        }
+      } catch {
+        // A malformed snapshot offers no alternative.
+      }
+      const list = snapshotsByTest.get(r.testCaseId) ?? [];
+      list.push({ location: r.location, usedMethod: r.usedMethod, usedArgs: r.usedArgs, alternatives });
+      snapshotsByTest.set(r.testCaseId, list);
+    }
+  }
+
+  const uses = useRows.map((u) => ({
+    testCaseId: u.testCaseId,
+    target: u.target,
+    action: u.action,
+    page: u.page,
+    lastSeenAt: u.lastSeenAt ? new Date(u.lastSeenAt) : now,
+    lastSeenRunId: u.lastSeenRunId ?? null,
+    alternatives: u.callSite
+      ? snapshotsByTest
+          .get(u.testCaseId)
+          ?.find((snap) => sameCallLine(snap.location, u.callSite) && sameUsedCall(snap, u.target))?.alternatives
+      : undefined,
+  }));
+  const { reach, unresolved } = resolveControlReach(uses, nodes);
+
+  const existing = await db
+    .select({
+      id: graphEdges.id,
+      fromKey: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      origin: graphEdges.origin,
+      confidence: graphEdges.confidence,
+      evidence: graphEdges.evidence,
+      lastSeenAt: graphEdges.lastSeenAt,
+    })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'reaches'),
+        eq(graphEdges.fromKind, 'test'),
+        inArray(graphEdges.toKind, ['control', 'link']),
+        isNull(graphEdges.branch),
+      ),
+    );
+  const isLocatorEdge = (e: (typeof existing)[number]) =>
+    e.origin === 'observed' && (e.evidence as { via?: unknown } | null)?.via === 'locator';
+  const existingById = new Map(existing.map((e) => [`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`, e]));
+  const current = new Set(reach.map((r) => `${r.testCaseId}\x00${r.kind}\x00${r.key}`));
+  const stale = existing
+    .filter((e) => isLocatorEdge(e) && !current.has(`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`))
+    .map((e) => e.id);
+  for (let i = 0; i < stale.length; i += 100) {
+    await db.delete(graphEdges).where(inArray(graphEdges.id, stale.slice(i, i + 100)));
+  }
+
+  const values = reach
+    .filter((r) => {
+      const prev = existingById.get(`${r.testCaseId}\x00${r.kind}\x00${r.key}`);
+      if (!prev) return true;
+      if (!isLocatorEdge(prev)) return false;
+      return (
+        prev.confidence !== r.confidence ||
+        (prev.evidence as { action?: unknown } | null)?.action !== r.action ||
+        new Date(prev.lastSeenAt).getTime() !== (r.lastSeenAt ?? now).getTime()
+      );
+    })
+    .map((r) => ({
+      projectId,
+      fromKind: 'test',
+      fromKey: String(r.testCaseId),
+      toKind: r.kind,
+      toKey: r.key,
+      kind: 'reaches',
+      branch: null,
+      confidence: r.confidence,
+      origin: 'observed',
+      evidence: { via: 'locator', action: r.action } as any,
+      firstSeenRunId: r.lastSeenRunId ?? null,
+      lastSeenRunId: r.lastSeenRunId ?? null,
+      lastSeenAt: r.lastSeenAt ?? now,
+    }));
+  for (let i = 0; i < values.length; i += 100) {
+    await db
+      .insert(graphEdges)
+      .values(values.slice(i, i + 100))
+      .onConflictDoUpdate({
+        target: [
+          graphEdges.projectId,
+          graphEdges.fromKind,
+          graphEdges.fromKey,
+          graphEdges.kind,
+          graphEdges.toKind,
+          graphEdges.toKey,
+        ],
+        targetWhere: isNull(graphEdges.branch),
+        set: {
+          confidence: sql`excluded.confidence`,
+          evidence: sql`excluded.evidence`,
+          lastSeenRunId: sql`excluded.last_seen_run_id`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+        },
+        setWhere: ne(graphEdges.origin, 'manual'),
+      });
+  }
+
+  const unresolvedByPage = new Map<string, Set<number>>();
+  for (const u of unresolved) {
+    if (!u.page) continue;
+    const tests = unresolvedByPage.get(u.page) ?? new Set<number>();
+    tests.add(u.testCaseId);
+    unresolvedByPage.set(u.page, tests);
+  }
+  return unresolvedByPage;
+}
+
+// ── Features ─────────────────────────────────────────────────────────────────
+
+/** What a feature groups beyond its tests' reach is inferred from: the page inventory and the declared surface. */
+export interface FeatureGroupingInput {
+  /** The `piwi:feature` tag per test. */
+  featureByTest: ReadonlyMap<number, string>;
+  /** `kind\0key` → the tests reaching the node. */
+  reachByNode: ReadonlyMap<string, ReadonlySet<number>>;
+  /** Page → the controls it contains. */
+  controlsByPage: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Page → the pages it links to. */
+  linksByPage: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The route keys a manifest or OpenAPI document declares. */
+  declaredRoutes: readonly string[];
+}
+
+/** One `groups` edge: a feature and a node it groups, how, and whether the node is a hub. */
+export interface FeatureGroup {
+  feature: string;
+  kind: 'route' | 'page' | 'control';
+  key: string;
+  /** `reach`: a test carrying the feature reaches it; otherwise inferred from what the feature's nodes hold. */
+  via: 'reach' | 'contains' | 'links' | 'path';
+  /** Null for reach; below one when inferred. */
+  confidence: number | null;
+  /** With three features or more: reached by more than half the tests, or grouped by more than half the features and three at least. */
+  hub: boolean;
+}
+
+/** `/settings` of `/settings/api`: the first path segment, which a page's siblings share. */
+function pagePrefix(page: string): string {
+  return `/${page.split('/').filter(Boolean)[0] ?? ''}`;
+}
+
+/**
+ * `/api/users` of `GET /api/users/:id?page=…`: the path up to its first resource
+ * segment, past an `api` and a version segment (`/api/v1/orders`), query aside.
+ */
+export function routePrefix(route: string): string {
+  const path = route.slice(route.indexOf(' ') + 1).split('?')[0]!;
+  const segments = path.split('/').filter(Boolean);
+  let i = 0;
+  while (i < segments.length - 1 && /^(api|v\d+)$/i.test(segments[i]!)) i++;
+  return `/${segments.slice(0, i + 1).join('/')}`;
+}
+
+/**
+ * What each feature groups. A feature groups the routes, pages and controls the
+ * tests carrying its tag reach. It also groups, with a confidence below one,
+ * what no feature reaches: the controls its pages contain (0.8), the pages its
+ * pages link to under the same first path segment (0.6) and their controls
+ * (0.5), and the declared routes under the same resource path as a route it
+ * reaches ({@link routePrefix}, 0.6). With three features or more, a node
+ * reached by more than half the tests, or grouped by more than half the features
+ * and by three at least, is a hub: still grouped, but no source of inference, and
+ * marked so the map neither links features through it nor counts its tests. Pure.
+ */
+export function groupFeatures(input: FeatureGroupingInput): FeatureGroup[] {
+  const groups = new Map<string, FeatureGroup>(); // feature\0kind\0key → group
+  const add = (
+    feature: string,
+    kind: FeatureGroup['kind'],
+    key: string,
+    via: FeatureGroup['via'],
+    confidence: number | null,
+  ) => {
+    const id = `${feature}\x00${kind}\x00${key}`;
+    const prev = groups.get(id);
+    if (prev && (prev.confidence == null || (confidence != null && prev.confidence >= confidence))) return;
+    groups.set(id, { feature, kind, key, via, confidence, hub: false });
+  };
+  /** `kind\0key` → the features grouping it, among `of`. */
+  const featuresByNode = (of: Iterable<FeatureGroup>) => {
+    const out = new Map<string, Set<string>>();
+    for (const g of of) {
+      const id = `${g.kind}\x00${g.key}`;
+      let set = out.get(id);
+      if (!set) out.set(id, (set = new Set()));
+      set.add(g.feature);
+    }
+    return out;
+  };
+
+  const reachingTests = new Set<number>();
+  for (const [nodeKey, tests] of input.reachByNode) {
+    const kind = nodeKey.slice(0, nodeKey.indexOf('\x00'));
+    if (kind !== 'route' && kind !== 'page' && kind !== 'control') continue;
+    for (const testId of tests) {
+      reachingTests.add(testId);
+      const feature = input.featureByTest.get(testId);
+      if (feature) add(feature, kind, nodeKey.slice(kind.length + 1), 'reach', null);
+    }
+  }
+  const features = new Set([...groups.values()].map((g) => g.feature));
+  const hubsApply = features.size >= 3;
+  // Grouped by more than half the features, and by three at least, so two
+  // features sharing a node stay linked through it.
+  const sharedByMost = (count: number) => hubsApply && count >= 3 && count > features.size / 2;
+  const reachedHub = (kind: string, key: string) =>
+    hubsApply && (input.reachByNode.get(`${kind}\x00${key}`)?.size ?? 0) > reachingTests.size / 2;
+  const reachGrouped = new Set([...groups.values()].map((g) => `${g.kind}\x00${g.key}`));
+  const byReach = featuresByNode(groups.values());
+  const reachHub = (kind: string, key: string) =>
+    reachedHub(kind, key) || sharedByMost(byReach.get(`${kind}\x00${key}`)?.size ?? 0);
+
+  const ownByFeature = new Map<string, FeatureGroup[]>();
+  for (const g of groups.values()) {
+    if (reachHub(g.kind, g.key)) continue;
+    let own = ownByFeature.get(g.feature);
+    if (!own) ownByFeature.set(g.feature, (own = []));
+    own.push(g);
+  }
+  for (const [feature, own] of ownByFeature) {
+    const pages = own.filter((g) => g.kind === 'page').map((g) => g.key);
+    const linkedPages: string[] = [];
+    for (const page of pages) {
+      for (const control of input.controlsByPage.get(page) ?? []) {
+        if (!reachGrouped.has(`control\x00${control}`)) add(feature, 'control', control, 'contains', 0.8);
+      }
+      for (const target of input.linksByPage.get(page) ?? []) {
+        if (target === page || pagePrefix(target) !== pagePrefix(page)) continue;
+        if (reachGrouped.has(`page\x00${target}`)) continue;
+        add(feature, 'page', target, 'links', 0.6);
+        linkedPages.push(target);
+      }
+    }
+    for (const page of linkedPages) {
+      for (const control of input.controlsByPage.get(page) ?? []) {
+        if (!reachGrouped.has(`control\x00${control}`)) add(feature, 'control', control, 'contains', 0.5);
+      }
+    }
+    const prefixes = new Set(own.filter((g) => g.kind === 'route').map((g) => routePrefix(g.key)));
+    for (const route of input.declaredRoutes) {
+      if (!reachGrouped.has(`route\x00${route}`) && prefixes.has(routePrefix(route)))
+        add(feature, 'route', route, 'path', 0.6);
+    }
+  }
+
+  const all = featuresByNode(groups.values());
+  for (const g of groups.values()) {
+    g.hub = reachedHub(g.kind, g.key) || sharedByMost(all.get(`${g.kind}\x00${g.key}`)?.size ?? 0);
+  }
+  return [...groups.values()].sort(
+    (a, b) => a.feature.localeCompare(b.feature) || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key),
+  );
+}
+
+/**
+ * The one feature each node's gaps sit under, from the `groups` edges into it:
+ * the feature reaching it (no confidence) before one inferring it, the most
+ * confident inference next, ties by name. A node any edge marks a hub belongs to
+ * no one feature. Keyed `kind\0key`; shared by the gap list and the feature map.
+ */
+export function featureOwners(
+  rows: Array<{ feature: string; toKind: string; toKey: string; confidence: number | null; evidence: unknown }>,
+): Map<string, { feature: string; hub: boolean }> {
+  const rank = (confidence: number | null) => confidence ?? 2;
+  const best = new Map<string, { feature: string; confidence: number | null; hub: boolean }>();
+  for (const g of rows) {
+    const id = `${g.toKind}\x00${g.toKey}`;
+    const hub = (g.evidence as { hub?: unknown } | null)?.hub === true;
+    const prev = best.get(id);
+    if (
+      !prev ||
+      rank(g.confidence) > rank(prev.confidence) ||
+      (rank(g.confidence) === rank(prev.confidence) && g.feature < prev.feature)
+    ) {
+      best.set(id, { feature: g.feature, confidence: g.confidence, hub: hub || (prev?.hub ?? false) });
+    } else if (hub) prev.hub = true;
+  }
+  return new Map([...best].map(([id, { feature, hub }]) => [id, { feature, hub }]));
+}
+
+/**
+ * Build `feature` nodes and `groups` edges from the `piwi:feature` tag on tests
+ * and what the graph infers from it ({@link groupFeatures}). An inferred edge has
+ * origin `inferred` and evidence naming how (`via`); a hub's edges carry
+ * `hub: true`. Canonical rows only — features are project-level. The groups are
+ * rebuilt whole: an edge the grouping no longer yields is removed, so a feature
+ * that loses its tag leaves the map.
  */
 async function syncFeatureNodes(
   db: DrizzleDB,
   projectId: number,
-  reachByNode: Map<string, Set<number>>,
+  shape: Omit<FeatureGroupingInput, 'featureByTest'>,
   runId: number | null,
 ): Promise<void> {
   const testIds = new Set<number>();
-  for (const ids of reachByNode.values()) for (const id of ids) testIds.add(id);
-  if (testIds.size === 0) return;
+  for (const ids of shape.reachByNode.values()) for (const id of ids) testIds.add(id);
 
   const featureByTest = new Map<number, string>();
   const ids = [...testIds];
@@ -1679,26 +2545,28 @@ async function syncFeatureNodes(
       .where(inArray(testCases.id, ids.slice(i, i + 200)));
     for (const r of rows) if (r.feature?.trim()) featureByTest.set(r.id, r.feature.trim());
   }
-  if (featureByTest.size === 0) return;
+  const groups = featureByTest.size === 0 ? [] : groupFeatures({ ...shape, featureByTest });
 
-  // feature → set of "kind\x00key" nodes its tests reach.
-  const groups = new Map<string, Set<string>>();
-  for (const [nodeKey, testSet] of reachByNode) {
-    const sep = nodeKey.indexOf('\x00');
-    const kind = nodeKey.slice(0, sep);
-    if (kind !== 'route' && kind !== 'page' && kind !== 'control') continue;
-    for (const testId of testSet) {
-      const feature = featureByTest.get(testId);
-      if (!feature) continue;
-      const set = groups.get(feature) ?? new Set<string>();
-      set.add(nodeKey);
-      groups.set(feature, set);
-    }
+  const wanted = new Set(groups.map((g) => `${g.feature}\x00${g.kind}\x00${g.key}`));
+  const existing = await db
+    .select({ id: graphEdges.id, fromKey: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'groups'),
+        eq(graphEdges.fromKind, 'feature'),
+        isNull(graphEdges.branch),
+      ),
+    );
+  const stale = existing.filter((e) => !wanted.has(`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`)).map((e) => e.id);
+  for (let i = 0; i < stale.length; i += 100) {
+    await db.delete(graphEdges).where(inArray(graphEdges.id, stale.slice(i, i + 100)));
   }
-  if (groups.size === 0) return;
+  if (groups.length === 0) return;
 
   const now = new Date();
-  for (const [feature, nodeKeys] of groups) {
+  for (const feature of new Set(groups.map((g) => g.feature))) {
     await db
       .insert(graphNodes)
       .values({
@@ -1721,42 +2589,49 @@ async function syncFeatureNodes(
           prunedAt: sql`null`,
         },
       });
+  }
 
-    const edgeValues = [...nodeKeys].map((nodeKey) => {
-      const sep = nodeKey.indexOf('\x00');
-      return {
-        projectId,
-        fromKind: 'feature',
-        fromKey: feature,
-        toKind: nodeKey.slice(0, sep),
-        toKey: nodeKey.slice(sep + 1),
-        kind: 'groups',
-        branch: null,
-        confidence: null,
-        origin: 'observed',
-        evidence: null as any,
-        firstSeenRunId: runId,
-        lastSeenRunId: runId,
-        lastSeenAt: now,
-      };
-    });
-    for (let i = 0; i < edgeValues.length; i += 100) {
-      await db
-        .insert(graphEdges)
-        .values(edgeValues.slice(i, i + 100))
-        .onConflictDoUpdate({
-          target: [
-            graphEdges.projectId,
-            graphEdges.fromKind,
-            graphEdges.fromKey,
-            graphEdges.kind,
-            graphEdges.toKind,
-            graphEdges.toKey,
-          ],
-          targetWhere: isNull(graphEdges.branch),
-          set: { lastSeenRunId: sql`excluded.last_seen_run_id`, lastSeenAt: sql`excluded.last_seen_at` },
-        });
-    }
+  const edgeValues = groups.map((g) => {
+    const evidence =
+      g.via === 'reach' ? (g.hub ? { hub: true } : null) : { via: g.via, ...(g.hub ? { hub: true } : {}) };
+    return {
+      projectId,
+      fromKind: 'feature',
+      fromKey: g.feature,
+      toKind: g.kind,
+      toKey: g.key,
+      kind: 'groups',
+      branch: null,
+      confidence: g.confidence,
+      origin: g.via === 'reach' ? 'observed' : 'inferred',
+      evidence: evidence as any,
+      firstSeenRunId: runId,
+      lastSeenRunId: runId,
+      lastSeenAt: now,
+    };
+  });
+  for (let i = 0; i < edgeValues.length; i += 100) {
+    await db
+      .insert(graphEdges)
+      .values(edgeValues.slice(i, i + 100))
+      .onConflictDoUpdate({
+        target: [
+          graphEdges.projectId,
+          graphEdges.fromKind,
+          graphEdges.fromKey,
+          graphEdges.kind,
+          graphEdges.toKind,
+          graphEdges.toKey,
+        ],
+        targetWhere: isNull(graphEdges.branch),
+        set: {
+          confidence: sql`excluded.confidence`,
+          origin: sql`excluded.origin`,
+          evidence: sql`excluded.evidence`,
+          lastSeenRunId: sql`excluded.last_seen_run_id`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+        },
+      });
   }
 }
 
@@ -1973,8 +2848,13 @@ export interface ScenarioGapRow {
   testCaseId: number | null;
   testRunId: number | null;
   projectId: number;
-  /** The feature (from a `groups` edge) the gap's subject belongs to, or null. */
+  /**
+   * The feature (from a `groups` edge) the gap's subject belongs to, or null:
+   * one whose tests reach it before one that only infers it. Null for a hub.
+   */
   feature: string | null;
+  /** The subject is a hub: most tests reach it, or most features group it. */
+  hub?: boolean;
   snoozedUntil: number | null;
   acceptedAt: number | null;
   createdAt: number;
@@ -2054,16 +2934,26 @@ export async function listScenarioGaps(
 
   const mapped = rows.map(mapGapRow);
 
-  // Resolve each gap's feature from the `groups` edges (feature → node), canonical.
+  // Resolve each gap's feature from the `groups` edges (feature → node), canonical:
+  // the feature reaching the node, else the one inferring it with the most
+  // confidence, ties by name. A hub belongs to no one feature.
   const groupRows = await db
-    .select({ feature: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+    .select({
+      feature: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      confidence: graphEdges.confidence,
+      evidence: graphEdges.evidence,
+    })
     .from(graphEdges)
     .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
   if (groupRows.length > 0) {
-    const featureByNode = new Map<string, string>();
-    for (const g of groupRows) featureByNode.set(`${g.toKind}\x00${g.toKey}`, g.feature);
+    const owners = featureOwners(groupRows);
     for (const gap of mapped) {
-      gap.feature = featureByNode.get(`${gap.subject.kind}\x00${gap.subject.key}`) ?? null;
+      const owner = owners.get(`${gap.subject.kind}\x00${gap.subject.key}`);
+      if (!owner) continue;
+      if (owner.hub) gap.hub = true;
+      else gap.feature = owner.feature;
     }
   }
 
@@ -2167,8 +3057,10 @@ const SIGNATURE_SUBJECT_KINDS = new Set(['route', 'page', 'control', 'dependency
 
 /**
  * A stable fingerprint of a subject node's canonical incident edges — every
- * `reaches`, `checks`, `contains`, `links`, `groups` … edge into or out of the
- * node, sorted. "Snooze until the node changes" wakes when this fingerprint
+ * `reaches`, `checks`, `contains`, `links` … edge into or out of the node,
+ * sorted, and for a feature its `groups` edges. A `groups` edge into any other
+ * node follows from project-wide grouping (a hub, a feature inferring it), so it
+ * is no change of the node itself. "Snooze until the node changes" wakes when this fingerprint
  * changes (an edge added or removed, a confidence rescored), so a mere
  * re-observation of the unchanged node does not wake it. Returns null when the
  * subject is not a trackable node (a `test:`, `cluster:`, `file:`, `ticket:`,
@@ -2198,6 +3090,7 @@ async function subjectEdgeSignature(db: DrizzleDB, projectId: number, subject: G
       ),
     );
   const parts = rows
+    .filter((r) => r.kind !== 'groups' || subject.kind === 'feature')
     .map((r) => `${r.kind}|${r.fromKind}:${r.fromKey}>${r.toKind}:${r.toKey}|${r.confidence ?? ''}`)
     .sort();
   return `${parts.length}\n${parts.join('\n')}`;

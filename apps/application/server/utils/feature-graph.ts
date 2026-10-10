@@ -14,7 +14,7 @@
 
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { graphEdges, scenarioGaps, testCases } from '../database/schema';
-import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
+import { featureOwners, subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import { gapClassSeverity, worstGapClass } from '#shared/gap-classes';
 import type { DrizzleDB } from '#shared/handlers/db';
 
@@ -192,9 +192,9 @@ export async function getFeatureGraph(
 export interface FeatureMapFeature {
   /** The feature's name — its node key. */
   key: string;
-  /** How many nodes the feature groups, per kind. */
-  members: { routes: number; pages: number; controls: number };
-  /** Distinct tests reaching any node the feature groups. */
+  /** How many nodes the feature groups, per kind, hubs aside; `inferred` of them its tests do not reach. */
+  members: { routes: number; pages: number; controls: number; inferred: number };
+  /** Distinct tests reaching any node the feature groups, hubs aside. */
   tests: number;
   /** Open gaps on the feature's nodes (and on the feature node itself), by class. */
   gaps: Record<string, number>;
@@ -214,12 +214,27 @@ export interface FeatureMap {
   links: FeatureMapLink[];
   /** Open gaps whose subject no feature groups, by class. */
   ungrouped: { gaps: Record<string, number>; worstClass: string | null };
+  /** The hubs (nodes most tests reach or most features group), and the open gaps on them, by class. */
+  shared: { nodes: number; gaps: Record<string, number>; worstClass: string | null };
 }
 
-/** Fold the canonical graph into features, their gap counts and shared-node links. */
+/**
+ * Fold the canonical graph into features, their gap counts and shared-node
+ * links. Each open gap counts under the one feature the gap list files it under
+ * ({@link featureOwners}). A hub (a `groups` edge marked `hub`) is counted once
+ * under `shared`: it adds no member, test, gap or link to the features grouping
+ * it. A feature's tests are those reaching the nodes it groups by reach.
+ */
 export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<FeatureMap> {
   const groupRows = await db
-    .select({ feature: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+    .select({
+      feature: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      origin: graphEdges.origin,
+      confidence: graphEdges.confidence,
+      evidence: graphEdges.evidence,
+    })
     .from(graphEdges)
     .where(
       and(
@@ -232,51 +247,71 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
 
   const features = new Map<string, FeatureMapFeature>();
   const featuresByNode = new Map<string, Set<string>>();
+  const hubs = new Set<string>();
   const feature = (key: string): FeatureMapFeature => {
     let f = features.get(key);
     if (!f) {
-      f = { key, members: { routes: 0, pages: 0, controls: 0 }, tests: 0, gaps: {}, worstClass: null };
+      f = { key, members: { routes: 0, pages: 0, controls: 0, inferred: 0 }, tests: 0, gaps: {}, worstClass: null };
       features.set(key, f);
     }
     return f;
   };
+  const reachedByFeature = new Map<string, Set<string>>(); // node → features grouping it by reach
   for (const row of groupRows) {
+    const nid = id(row.toKind, row.toKey);
+    if ((row.evidence as { hub?: unknown } | null)?.hub === true) {
+      hubs.add(nid);
+      continue;
+    }
     const f = feature(row.feature);
+    if (row.origin !== 'inferred') {
+      let set = reachedByFeature.get(nid);
+      if (!set) reachedByFeature.set(nid, (set = new Set()));
+      set.add(row.feature);
+    }
     if (row.toKind === 'route') f.members.routes++;
     else if (row.toKind === 'page') f.members.pages++;
     else if (row.toKind === 'control') f.members.controls++;
-    const nid = id(row.toKind, row.toKey);
+    if (row.origin === 'inferred') f.members.inferred++;
     const set = featuresByNode.get(nid) ?? new Set<string>();
     set.add(row.feature);
     featuresByNode.set(nid, set);
   }
 
-  // Open gaps, folded onto the features grouping their subject — or onto the
-  // feature itself for a gap keyed on the feature node — else onto "ungrouped".
+  // Open gaps, each folded onto the one feature the gap list files it under — or
+  // onto the feature itself for a gap keyed on the feature node — else onto
+  // "ungrouped", or "shared" for a hub.
+  const owners = featureOwners(groupRows);
   const gapRows = await db
     .select({ key: scenarioGaps.key, class: scenarioGaps.class })
     .from(scenarioGaps)
     .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')));
   const ungrouped: Record<string, number> = {};
+  const shared: Record<string, number> = {};
   const count = (bucket: Record<string, number>, cls: string) => {
     bucket[cls] = (bucket[cls] ?? 0) + 1;
   };
   for (const g of gapRows) {
     const subject = subjectFromGapKey(g.key);
-    const owners =
+    if (hubs.has(id(subject.kind, subject.key))) {
+      count(shared, g.class);
+      continue;
+    }
+    const owner =
       subject.kind === 'feature' && features.has(subject.key)
-        ? new Set([subject.key])
-        : featuresByNode.get(id(subject.kind, subject.key));
-    if (!owners || owners.size === 0) {
+        ? subject.key
+        : owners.get(id(subject.kind, subject.key))?.feature;
+    if (!owner) {
       count(ungrouped, g.class);
       continue;
     }
-    for (const owner of owners) count(feature(owner).gaps, g.class);
+    count(feature(owner).gaps, g.class);
   }
   for (const f of features.values()) f.worstClass = worstGapClass(Object.keys(f.gaps));
 
-  // Distinct tests per feature, from the canonical `reaches` edges onto its nodes.
-  if (featuresByNode.size > 0) {
+  // Distinct tests per feature, from the canonical `reaches` edges onto the nodes
+  // it groups by reach.
+  if (reachedByFeature.size > 0) {
     const reachRows = await db
       .select({ test: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
       .from(graphEdges)
@@ -290,9 +325,9 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
       );
     const testsByFeature = new Map<string, Set<string>>();
     for (const r of reachRows) {
-      const owners = featuresByNode.get(id(r.toKind, r.toKey));
-      if (!owners) continue;
-      for (const owner of owners) {
+      const grouping = reachedByFeature.get(id(r.toKind, r.toKey));
+      if (!grouping) continue;
+      for (const owner of grouping) {
         const set = testsByFeature.get(owner) ?? new Set<string>();
         set.add(r.test);
         testsByFeature.set(owner, set);
@@ -328,6 +363,7 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
     features: ranked,
     links: [...links.values()].sort((a, b) => b.weight - a.weight),
     ungrouped: { gaps: ungrouped, worstClass: worstGapClass(Object.keys(ungrouped)) },
+    shared: { nodes: hubs.size, gaps: shared, worstClass: worstGapClass(Object.keys(shared)) },
   };
 }
 

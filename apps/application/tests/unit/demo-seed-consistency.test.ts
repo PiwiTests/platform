@@ -921,6 +921,7 @@ const EXPECT_KEYS = new Set([
   'lab',
   'resources',
   'incident',
+  'gaps',
 ]);
 const ROUTE_ENTITIES = [
   { pattern: /^\/test-cases\/(\d+)(?:[?#]|$)/, key: 'testCase' },
@@ -989,6 +990,15 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
     );
     expect(row?.rule, `${label}: the run is flagged as an incident`).toBeTruthy();
+  }
+  if (want.gaps) {
+    expect(want.project, `${label}: gaps needs a project`).toBeTruthy();
+    for (const detector of want.gaps.detectors) {
+      const open = q(
+        `select id from scenario_gaps where project_id = ${want.project!.id} and status = 'open' and detector = '${detector}'`,
+      );
+      expect(open.length, `${label}: an open ${detector} gap`).toBeGreaterThan(0);
+    }
   }
   if (want.cluster) {
     expect(q(`select id from failure_clusters where id = ${want.cluster.id}`), `${label}: cluster exists`).toHaveLength(

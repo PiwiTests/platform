@@ -25,6 +25,11 @@ page is sent to your instance: the index comes down, the matching happens in the
 - **Blue boxes** are elements tests only assert on (`toBeVisible`, `toHaveText`, …).
 - **Dashed amber boxes** are visible buttons, links and fields that no test reaches.
 
+<figure>
+  <img src="/screenshots/tested-elements-overlay.png" alt="A shop page under the Tested elements overlay: green and blue boxes with test counts on the search field, filters and Add to cart buttons, dashed amber boxes on the favorite buttons, the newsletter form and the footer links, and the side panel counting 14 tested and 20 untested elements">
+  <figcaption>Fourteen elements reached by eight tests, twenty reached by none: the newsletter form, the favorite buttons, the footer links.</figcaption>
+</figure>
+
 Each box carries the number of tests that reach it; **Heatmap** shades the boxes by that number
 instead. A dotted border means every locator reaching the element matches several elements on
 this page: the test may use it on another page, or in a state where only one of them exists.

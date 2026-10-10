@@ -30,6 +30,7 @@ interface Gap {
   score: number | null;
   status: string;
   feature: string | null;
+  hub?: boolean;
   testCaseId: number | null;
 }
 
@@ -102,18 +103,32 @@ watch([() => props.projectId, statusFilter], load, { immediate: true });
 /** True once a full page came back — the server capped the list, so some are hidden. */
 const capped = computed(() => gaps.value.length >= PAGE_LIMIT);
 
-/** Gaps grouped by feature, features ordered by their top gap's score. */
+/** The group a muted detector's gaps sit in, after every feature. */
+const MUTED_GROUP = 'Muted detectors';
+/** The group the gaps on a hub sit in: a node most tests reach or most features group. */
+const SHARED_GROUP = 'Shared by most features';
+
+/**
+ * Gaps grouped by feature, features ordered by their top gap's score. The gaps
+ * on a hub sit in their own group, and those of a muted detector leave their
+ * feature for one last group.
+ */
 const grouped = computed(() => {
+  const muted = new Set(mutedDetectors.value);
   const map = new Map<string, Gap[]>();
   for (const g of gaps.value) {
-    const key = g.feature ?? 'Ungrouped';
+    const key = muted.has(g.detector) ? MUTED_GROUP : g.hub ? SHARED_GROUP : (g.feature ?? 'Ungrouped');
     const arr = map.get(key) ?? [];
     arr.push(g);
     map.set(key, arr);
   }
   return [...map.entries()]
     .map(([feature, items]) => ({ feature, items: items.sort((a, b) => (b.score ?? 0) - (a.score ?? 0)) }))
-    .sort((a, b) => (b.items[0]?.score ?? 0) - (a.items[0]?.score ?? 0));
+    .sort(
+      (a, b) =>
+        Number(a.feature === MUTED_GROUP) - Number(b.feature === MUTED_GROUP) ||
+        (b.items[0]?.score ?? 0) - (a.items[0]?.score ?? 0),
+    );
 });
 
 const CLASS_COLOR: Record<string, string> = {
@@ -253,6 +268,7 @@ const emptyText = computed(() =>
       <p class="text-sm text-highlighted leading-relaxed">
         Proposed tests that do not exist yet, ranked by exposure. Every line is observed reach, never instrumented
         coverage.
+        <HelpHint topic="project.gaps" />
       </p>
       <div class="flex items-center gap-2 shrink-0">
         <USelect
@@ -275,7 +291,8 @@ const emptyText = computed(() =>
     </div>
 
     <p v-if="mutedDetectors.length > 0" class="text-xs text-muted">
-      Muted on this project (below 60% precision over 20+ verdicts, dropped from the PR comment):
+      Muted on this project (below 60% precision over 20+ verdicts; their gaps are listed last and left out of the PR
+      comment and the gaps digest):
       <span class="font-mono">{{ mutedDetectors.join(', ') }}</span>
     </p>
 
@@ -311,7 +328,12 @@ const emptyText = computed(() =>
     <EmptyState v-else-if="gaps.length === 0" icon="i-lucide-radar" :text="emptyText" />
 
     <template v-else>
-      <SectionCard v-for="group in grouped" :key="group.feature" :title="group.feature">
+      <SectionCard
+        v-for="group in grouped"
+        :key="group.feature"
+        :title="group.feature"
+        :data-shot="`gaps-group-${group.feature}`"
+      >
         <div class="divide-y divide-default">
           <div v-for="gap in group.items" :key="gap.id" class="py-3 space-y-2" :data-shot="`gap-${gap.id}`">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">

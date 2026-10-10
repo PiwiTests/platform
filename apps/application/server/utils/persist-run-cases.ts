@@ -57,6 +57,7 @@ import { eligibleExecutionSql, isEligibleRun } from '#shared/run-eligibility';
 import { runFacts, upsertLocatorUsages, type LocatorUsageCase } from './locator-usages';
 import { buildCodeReachGraph, sanitizeCodeReach, upsertCodeReach, type CodeReachCase } from './code-reach';
 import { sanitizeLocatorPages } from './locator-pages';
+import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
@@ -438,6 +439,8 @@ export async function persistRunCases(
     locatorPages: string | null;
     codeReach: string | null;
   }> = [];
+  // The pages each row ran locator calls on, which the feature graph reads as reach.
+  const rowLocatorPages: Array<LocatorPageUse[] | null> = [];
   const networkRequestBuilders: NetworkRequestBuilder[] = [];
   const rowFingerprints: Array<ErrorFingerprint | null> = [];
   // What the caps left out of each row, recorded on the run for the rows stored.
@@ -543,6 +546,7 @@ export async function persistRunCases(
     const source = capText(c.testSource, limits.testSourceChars);
     const frames = capSourceFrames(c.testSourceFrames, limits);
     const inventory = c.pageInventory != null ? JSON.stringify(c.pageInventory) : null;
+    rowLocatorPages.push(locatorPages);
     rowPayloads.push({
       aria,
       ariaJson,
@@ -737,7 +741,11 @@ export async function persistRunCases(
         projectId,
         testRunId,
         collectRunGraphReaches(
-          runCasesRows.map((row) => ({ testCaseId: row.testCaseId, pageState: row.pageState })),
+          runCasesRows.map((row, k) => ({
+            testCaseId: row.testCaseId,
+            pageState: row.pageState,
+            locatorPages: rowLocatorPages[k],
+          })),
           networkRequestBuilders,
           { origins },
         ),

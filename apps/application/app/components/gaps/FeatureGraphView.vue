@@ -218,11 +218,16 @@ const spokes = computed(() => {
   const s = layout.value.seed;
   const seedMidY = s.y + SEED_H / 2;
   const kindByNode = new Map<string, string>();
+  // An edge below full confidence (a feature inferring a node from its pages) draws dashed.
+  const inferredNodes = new Set<string>();
   for (const e of g.edges) {
     const fromSeed = e.fromKind === g.seed.kind && e.fromKey === g.seed.key;
     const toSeed = e.toKind === g.seed.kind && e.toKey === g.seed.key;
-    if (fromSeed && !toSeed) kindByNode.set(nodeId(e.toKind, e.toKey), e.kind);
-    if (toSeed && !fromSeed) kindByNode.set(nodeId(e.fromKind, e.fromKey), e.kind);
+    const other =
+      fromSeed && !toSeed ? nodeId(e.toKind, e.toKey) : toSeed && !fromSeed ? nodeId(e.fromKind, e.fromKey) : null;
+    if (!other) continue;
+    kindByNode.set(other, e.kind);
+    if (e.kind === 'groups' && e.confidence != null && e.confidence < 1) inferredNodes.add(other);
   }
   return [...layout.value.positions].map(([id, p]) => {
     const x1 = p.side === 'in' ? s.x : s.x + SEED_W;
@@ -232,6 +237,7 @@ const spokes = computed(() => {
     return {
       id,
       kind: kindByNode.get(id) ?? '',
+      inferred: inferredNodes.has(id),
       d: `M ${x1} ${seedMidY} C ${mx} ${seedMidY}, ${mx} ${y2}, ${x2} ${y2}`,
     };
   });
@@ -277,7 +283,7 @@ function select(node: { kind: string; key: string }) {
     <LoadingState v-else-if="loading && !graph" />
     <EmptyState v-else-if="!graph || !seed" icon="i-lucide-radar" text="No graph for this node" />
     <template v-else>
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2" data-shot="feature-graph-seed">
         <span class="text-sm font-mono text-highlighted">{{ seed.kind }}:{{ seed.key }}</span>
         <UBadge v-if="seed.class" :color="gapClassBadgeColor(seed.class)" variant="subtle" size="sm">{{
           seed.class
@@ -290,7 +296,7 @@ function select(node: { kind: string; key: string }) {
         >
       </div>
 
-      <div v-if="neighbors.length > 0" ref="scroller" class="overflow-x-auto">
+      <div v-if="neighbors.length > 0" ref="scroller" class="overflow-x-auto" data-shot="feature-graph-picture">
         <svg
           :width="layout.width"
           :height="layout.height"
@@ -306,9 +312,10 @@ function select(node: { kind: string; key: string }) {
               fill="none"
               :class="graphEdgeStroke(s.kind)"
               :stroke-width="hovered === s.id ? 2.5 : 1.5"
+              :stroke-dasharray="s.inferred ? '4 3' : undefined"
               :opacity="hovered && hovered !== s.id ? 0.15 : 0.7"
             >
-              <title>{{ s.kind }}</title>
+              <title>{{ s.inferred ? `${s.kind} (inferred)` : s.kind }}</title>
             </path>
           </g>
           <!-- Kind headers and overflow markers. -->

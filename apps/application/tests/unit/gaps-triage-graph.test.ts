@@ -476,13 +476,15 @@ describe('getFeatureMap', () => {
     const map = await getFeatureMap(db, 1);
     expect(map.features.map((f) => f.key)).toEqual(['Checkout', 'Catalog']);
     const checkout = map.features[0]!;
-    expect(checkout.members).toEqual({ routes: 2, pages: 1, controls: 0 });
+    expect(checkout.members).toEqual({ routes: 2, pages: 1, controls: 0, inferred: 0 });
     expect(checkout.tests).toBe(2);
-    expect(checkout.gaps).toEqual({ unhandled: 1, 'blind-spot': 1 });
+    // The shared route's gap counts once, under the feature the list files it under (first by name).
+    expect(checkout.gaps).toEqual({ unhandled: 1 });
     expect(checkout.worstClass).toBe('unhandled');
     const catalog = map.features[1]!;
-    expect(catalog.members).toEqual({ routes: 1, pages: 0, controls: 1 });
+    expect(catalog.members).toEqual({ routes: 1, pages: 0, controls: 1, inferred: 0 });
     expect(catalog.tests).toBe(1);
+    expect(catalog.gaps).toEqual({ 'blind-spot': 1 });
     expect(catalog.worstClass).toBe('blind-spot');
   });
 
@@ -500,8 +502,8 @@ describe('getFeatureMap', () => {
     await triageGap(db, 1, orders!.id, { verb: 'snooze', snooze: '1-week' });
     const map = await getFeatureMap(db, 1);
     const checkout = map.features.find((f) => f.key === 'Checkout')!;
-    expect(checkout.worstClass).toBe('blind-spot');
-    expect(checkout.gaps).toEqual({ 'blind-spot': 1 });
+    expect(checkout.worstClass).toBeNull();
+    expect(checkout.gaps).toEqual({});
   });
 
   test('an empty project maps to no features', async () => {
@@ -510,6 +512,33 @@ describe('getFeatureMap', () => {
       features: [],
       links: [],
       ungrouped: { gaps: {}, worstClass: null },
+      shared: { nodes: 0, gaps: {}, worstClass: null },
     });
+  });
+
+  test('a hub adds no member, test, gap or link to the features grouping it, and counts under shared', async () => {
+    await db
+      .update(schema.graphEdges)
+      .set({ evidence: { hub: true } })
+      .where(and(eq(schema.graphEdges.kind, 'groups'), eq(schema.graphEdges.toKey, 'GET /api/cart')));
+    const map = await getFeatureMap(db, 1);
+    const checkout = map.features.find((f) => f.key === 'Checkout')!;
+    expect(checkout.members).toEqual({ routes: 1, pages: 1, controls: 0, inferred: 0 });
+    expect(checkout.gaps).toEqual({ unhandled: 1 });
+    expect(map.links).toEqual([]);
+    expect(map.shared).toEqual({ nodes: 1, gaps: { 'blind-spot': 1 }, worstClass: 'blind-spot' });
+    const listed = await listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(listed.map((g) => ({ feature: g.feature, hub: g.hub }))).toEqual([{ feature: null, hub: true }]);
+  });
+
+  test('a gap sits under the feature reaching its node before one that only infers it', async () => {
+    await db.insert(schema.graphEdges).values({
+      ...edge('feature', 'Accounts', 'route', 'POST /api/orders', 'groups'),
+      origin: 'inferred' as never,
+      confidence: 0.6,
+      evidence: { via: 'path' },
+    });
+    const listed = await listScenarioGaps(db, 1, { kind: 'finding' });
+    expect(listed.map((g) => g.feature)).toEqual(['Checkout']);
   });
 });

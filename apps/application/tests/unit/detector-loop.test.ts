@@ -142,6 +142,19 @@ describe('selectWeeklyDigest', () => {
   test('renders a Markdown body', () => {
     expect(renderDigest(selectWeeklyDigest(gaps, 50, 5))).toContain('New scenario gaps this week');
   });
+
+  test('leaves out the gaps of a detector muted on their project', () => {
+    const detected = [
+      { ...gaps[0]!, detector: 'success-only' },
+      { ...gaps[1]!, detector: 'surface-drift' },
+      { ...gaps[3]!, detector: 'surface-drift' },
+    ];
+    const digest = selectWeeklyDigest(detected, 50, 5, new Map([[1, new Set(['surface-drift'])]]));
+    expect(digest.map((p) => [p.projectName, p.gaps.map((g) => g.id)])).toEqual([
+      ['A', [1]],
+      ['B', [4]],
+    ]);
+  });
 });
 
 describe('loadDetectorPrecision (DB)', () => {

@@ -400,6 +400,11 @@ export const HELP_TOPICS = {
     text: 'Every test on the flaky ranking of the last runs, and every test the lab has run, with where it stands: not tested, not reproduced, reproduced and waiting for a fix, or fixed. The command is the one it needs next: `piwi flake` reproduces a flake, `piwi flake verify` proves a fix under the condition that reproduced it.',
     doc: 'features/flake-lab',
   },
+  'project.gaps': {
+    title: 'Scenario gaps',
+    text: 'Tests that do not exist yet, from the Test Map: what the application exposes against what the suite observably reaches and would notice breaking. A blind spot is something no test reaches, false comfort a route a probe broke without any test failing, fragile a node one test holds up. Ranked by exposure, counted per class, never a percentage.',
+    doc: 'features/scenario-gaps',
+  },
   'project.quarantine': {
     title: 'Quarantine',
     text: 'A quarantined test still runs and still reports — it is only excluded from the CI gate’s verdict. Passing runs accumulate as a streak, so a test that recovers is flagged ready to release instead of staying quarantined forever.',

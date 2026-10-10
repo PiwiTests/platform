@@ -2903,24 +2903,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       limit: feature ? 200 : limit,
     });
 
-    // Feature filter: keep gaps whose subject node is grouped under the feature.
-    if (feature) {
-      const grouped = await db
-        .select({ toKind: graphEdges.toKind, toKey: graphEdges.toKey })
-        .from(graphEdges)
-        .where(
-          and(
-            eq(graphEdges.projectId, projectId),
-            eq(graphEdges.kind, 'groups'),
-            eq(graphEdges.fromKind, 'feature'),
-            eq(graphEdges.fromKey, feature),
-          ),
-        );
-      const groupedKeys = new Set(grouped.map((g) => `${g.toKind}:${g.toKey}`));
-      // Match on the gap's typed subject, not its raw dedupe key: a success-only
-      // gap keys on a bare route key, so comparing the key directly drops it.
-      gaps = gaps.filter((g) => groupedKeys.has(`${g.subject.kind}:${g.subject.key}`)).slice(0, limit);
-    }
+    // Feature filter: the gaps the list files under the feature (a hub's gaps
+    // belong to no one feature).
+    if (feature) gaps = gaps.filter((g) => g.feature === feature).slice(0, limit);
 
     return {
       items: gaps.map((g) =>

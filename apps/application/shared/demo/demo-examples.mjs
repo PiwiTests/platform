@@ -25,6 +25,8 @@
  * - `lab`: the test's Flake Lab state (`#shared/flake-lab`'s `FlakeLabTestState`).
  * - `resources: 'leaky'`: the run's resource report names at least one leak.
  * - `incident: true`: the run is flagged as an environment incident.
+ * - `gaps: { detectors }`: the project has an open scenario gap (or finding)
+ *   from each named detector.
  */
 
 /** @type {readonly import('./demo-examples.d.mts').DemoExample[]} */
@@ -107,6 +109,27 @@ export const DEMO_EXAMPLES = [
       'Above the worker rows, the machine’s CPU and the run’s memory climb with the pages its login fixture leaves open; hover them for the values at each moment.',
     route: '/test-runs/62?tab=workers',
     expect: { run: { id: 62, project: 'web-dashboard' }, resources: 'leaky' },
+  },
+  {
+    id: 'test-map-web-dashboard',
+    doc: 'features/scenario-gaps',
+    title: 'Web Dashboard › Gaps',
+    shows:
+      'Ten tests against a whole admin console: routes never seen failing, pages linked and never visited, declared routes nothing requests, and the team’s verdicts on them.',
+    route: '/projects/5?tab=gaps',
+    expect: {
+      project: { id: 5, name: 'web-dashboard' },
+      gaps: { detectors: ['success-only', 'reachable-unvisited', 'declared-never-hit', 'single-covering-test'] },
+    },
+  },
+  {
+    id: 'probes-not-noticed',
+    doc: 'features/probes',
+    title: 'Web Dashboard › Gaps',
+    shows:
+      'Client probes the tests did not notice (an empty revenue response, a failed invitation, a stale organization name), an invite form that degraded when sendgrid failed, and a revenue page that threw when clickhouse failed.',
+    route: '/projects/5?tab=gaps',
+    expect: { project: { id: 5, name: 'web-dashboard' }, gaps: { detectors: ['not-noticed', 'not-handled'] } },
   },
 ];
 

@@ -9,9 +9,18 @@
  * gaps and the manual reaches edges a covered-by wrote.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, notInArray } from 'drizzle-orm';
 import { scenarioGaps } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+
+/**
+ * Detectors the recompute does not run. Their rows stay in the ledger with the
+ * verdicts people gave, but they have no precision to report: nothing they would
+ * raise is left to mute. `api-only-route` claimed a route was reached only by
+ * request fixtures, which no observed route can be, since network capture records
+ * only the page's own requests.
+ */
+export const RETIRED_DETECTORS = ['api-only-route'];
 
 /** A detector mutes itself below this precision, once it has enough verdicts. */
 export const MUTE_PRECISION_THRESHOLD = 0.6;
@@ -78,7 +87,7 @@ export async function loadDetectorPrecision(db: DrizzleDB, projectId: number): P
       coveredAt: scenarioGaps.coveredAt,
     })
     .from(scenarioGaps)
-    .where(eq(scenarioGaps.projectId, projectId));
+    .where(and(eq(scenarioGaps.projectId, projectId), notInArray(scenarioGaps.detector, RETIRED_DETECTORS)));
 
   const verdicts: DetectorVerdict[] = [];
   for (const r of rows) {

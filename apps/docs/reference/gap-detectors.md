@@ -20,13 +20,12 @@ without it.
 |---|---|---|---|---|
 | **Success only** | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | nothing more | `Observed 412 times over the last 30 runs, always 200` |
 | **Declared, never hit** | blind-spot | a route or page the application declares that no test reaches | a [declared surface](/features/scenario-gaps#declared-surface) | `Declared in OpenAPI · 0 tests in 30 runs · documents 200, 404` |
-| **Surface drift** | blind-spot | a route or page first seen in the latest run | nothing more | `Appeared in run #830, reached by 1 test(s) so far` |
-| **Control nobody exercises** | blind-spot | a control on a page that no test reaches | the page inventory | `On 12 page(s) · no locator targets it` |
+| **Surface drift** | blind-spot | a route, page, control, link, handler or dependency first seen in the latest run that no test reaches; never a feature, and nothing in the run that built the graph first | nothing more | `Appeared in run #830; no test reaches it yet` |
+| **Control nobody exercises** | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | `On 12 page(s) · no locator targets it` |
 | **Reachable, unvisited** | blind-spot | a page other pages link to that no test navigates to | the page inventory | `Linked from 7 page(s) · never navigated to` |
-| **API-only route** | blind-spot | a reached route no page loads | the page inventory; without it, every reached route qualifies | `No control triggers it and no page loads it` |
 | **Escaped defect** | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Changed, unreached** | blind-spot | a changed file no test reaches, at pull-request time | an SCM token | `+41 −3 · no test in run #812 · 0 in 30 runs` |
-| **Single covering test** | fragile | a node exactly one trusted test reaches | nothing more | `Only checkout › coupon reaches this` |
+| **Single covering test** | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
 | **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold** | fragile | a failure cluster whose fix later regressed | nothing more | `Fixed in a1b2c3d · regressed 6 days later` |
 | **Not noticed** | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
@@ -36,8 +35,16 @@ without it.
 A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Changed, unreached* is
 covered on [Uncovered changes in pull requests](/features/uncovered-changes). A finding never closes itself; triage it.
 
-A test reaches a control only through triage (*covered by* or *covered elsewhere*): runs record reach to routes and
-pages. So *Control nobody exercises* reports a control only once some control on the project has a covering test.
+Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
+call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
+[locator index](/features/locator-usage), for uses seen in the last 180 days. A test reaches a control when one of its
+locators names it by role and name, when an alternative captured for that locator does, or when the name matches as
+Playwright matches it without `exact` (a case-insensitive part of exactly one name of that role). A label,
+placeholder or title reaches the one input-like control (textbox, combobox, checkbox, radio, switch, …) carrying that
+name. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control nobody exercises* stays silent until a
+locator reaches some control on the project. A test that clicks or fills an element no node matches, through a test
+id or a CSS selector, might have used any control on that page, so neither *Control nobody exercises* nor *Single
+covering test* raises those controls.
 
 ## Exposure
 
@@ -52,8 +59,27 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 | **Priority** | the highest [`piwi:priority`](/reference/test-metadata#ownership-metadata-piwi-annotations) of the tests reaching the node: critical 1, high 0.7, medium 0.4, low 0.2 | critical |
 
 Churn, age and escape history come from the [source control](/guide/source-control) connection and apply to the
-files a pull request changed; the other detectors rank by priority and confidence. A finding ranks by its severity
-(1 for unhandled, 0.5 for degraded) times the route's reach.
+files a pull request changed. A gap on a route, a handler or a dependency draws churn and escape history from the
+handler files behind it, read from the diffs default-branch runs recorded over the last 90 days. Each run diffs from
+its last green run, so churn counts distinct diffs, and the runs of a red streak count once. Escape history marks the
+files in the diff that ended on a fixing commit, which holds every change since the last green run. Age needs each
+file's history, so it stays at 0.1 there. The other detectors
+rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
+route's reach.
+
+## Features
+
+A feature groups the routes, pages and controls the tests tagged with it reach. Each recompute also gives it what no
+feature reaches, with a confidence below one: the controls on its pages (0.8), the pages they link to under the same
+first path segment (0.6) and those pages' controls (0.5), and the declared routes under the same resource path as a
+route it reaches, `/api/v1/orders` for `GET /api/v1/orders/:id` (0.6). A gap sits under one feature: the one whose
+tests reach its node, else the most confident inference. So the map shows what a feature misses, not only what its
+tests touch. Dependencies, links, and pages or declared routes under other paths stay ungrouped.
+
+With three features or more, a node more than half the tests reach, or that more than half the features and three at
+least group, is a **hub**, such as the session route nearly every test calls. The feature graph still draws it, but
+it adds no member, test, gap or link to a feature; its gaps sit under *Shared by most features*. The groups are rebuilt
+on every recompute, so a feature that loses its tag leaves the map.
 
 ## What the graph includes
 

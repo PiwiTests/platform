@@ -647,6 +647,10 @@ const GAP_TITLES: Record<string, Array<[pattern: RegExp, write: (...parts: strin
       new RegExp(`^Only one test reaches ${KIND} (.+)$`),
       (kind, key) => `Un seul test atteint ${feminine(kind) ? 'la' : 'le'} ${noun(kind)} ${key}`,
     ],
+    [
+      new RegExp(`^No trusted test reaches ${KIND} (.+)$`),
+      (kind, key) => `Aucun test fiable n’atteint ${feminine(kind) ? 'la' : 'le'} ${noun(kind)} ${key}`,
+    ],
   ],
   'surface-drift': [
     [

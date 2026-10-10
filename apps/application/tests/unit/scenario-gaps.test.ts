@@ -79,18 +79,52 @@ describe('detectSingleCoveringTest', () => {
 describe('detectSurfaceDrift', () => {
   test('flags a node first seen in the latest run', () => {
     const [gap] = gaps.detectSurfaceDrift(
-      [{ nodeKind: 'page', nodeKey: '/billing/plans', firstSeenRunId: 830, reachCount: 1 }],
+      [{ nodeKind: 'page', nodeKey: '/billing/plans', firstSeenRunId: 830, reachCount: 0 }],
       830,
     );
     expect(gap!.detector).toBe('surface-drift');
-    expect(gap!.evidence[0]).toContain('run #830');
-    expect(gap!.evidence[0]).toContain('observed reach');
+    expect(gap!.evidence[0]).toBe('Appeared in run #830; no test reaches it yet — observed reach.');
+  });
+
+  test('a new node a test already reaches is covered, not drift', () => {
+    expect(
+      gaps.detectSurfaceDrift(
+        [{ nodeKind: 'page', nodeKey: '/users/invite', firstSeenRunId: 830, reachCount: 1 }],
+        830,
+      ),
+    ).toEqual([]);
   });
 
   test('ignores an older node', () => {
     expect(
       gaps.detectSurfaceDrift([{ nodeKind: 'page', nodeKey: '/x', firstSeenRunId: 800, reachCount: 3 }], 830),
     ).toEqual([]);
+  });
+
+  test('a feature is derived from tags, never new surface', () => {
+    expect(
+      gaps.detectSurfaceDrift([{ nodeKind: 'feature', nodeKey: 'Checkout', firstSeenRunId: 830, reachCount: 0 }], 830),
+    ).toEqual([]);
+  });
+
+  test('the run that built the graph first is the baseline, not drift', () => {
+    const nodes = [
+      { nodeKind: 'page', nodeKey: '/checkout', firstSeenRunId: 830, reachCount: 0 },
+      { nodeKind: 'route', nodeKey: 'POST /api/orders', firstSeenRunId: 830, reachCount: 0 },
+    ];
+    expect(gaps.detectSurfaceDrift(nodes, 830, 830)).toEqual([]);
+    expect(gaps.detectSurfaceDrift(nodes, 830, 812)).toHaveLength(2);
+  });
+
+  test('names a link by its accessible name, without its key prefix', () => {
+    const [gap] = gaps.detectSurfaceDrift(
+      [{ nodeKind: 'link', nodeKey: 'link:Single sign-on', firstSeenRunId: 830, reachCount: 0 }],
+      830,
+      812,
+    );
+    expect(gap!.title).toBe('New link Single sign-on — confirm it is tested');
+    expect(gap!.key).toBe('link:link:Single sign-on');
+    expect(gaps.subjectFromGapKey(gap!.key)).toEqual({ kind: 'link', key: 'link:Single sign-on' });
   });
 });
 
@@ -576,15 +610,45 @@ describe('computeScenarioGaps', () => {
     await checks(2, 'not-noticed');
 
     await gaps.computeScenarioGaps(db, 1);
-    // A route any test noticed is checked, so it is never a not-noticed gap —
+    // A route a trusted test noticed is checked, so it is never a not-noticed gap —
     // regardless of the order the edges came back from the database.
     const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
     expect(list.find((r) => r.key === 'route:POST /api/orders')).toBeFalsy();
   });
 
+  test('a flaky test noticing a probe does not check the route', async () => {
+    await seedRun(1);
+    await db
+      .insert(schema.testCases)
+      .values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b', flakyRootCause: 'timing' });
+    await seedReach(1, 'route', 'POST /api/orders', 1);
+    await seedReach(2, 'route', 'POST /api/orders', 1);
+    for (const [testCaseId, outcome] of [
+      [1, 'not-noticed'],
+      [2, 'noticed'],
+    ] as const) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(testCaseId),
+        toKind: 'route',
+        toKey: 'POST /api/orders',
+        kind: 'checks',
+        evidence: { outcome, fault: 'status-500' },
+        lastSeenAt: new Date(++clock),
+      });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
+    expect(list.map((r) => r.key)).toContain('route:POST /api/orders');
+  });
+
   test('list_scenario_gaps keeps a success-only gap under a feature filter', async () => {
     await seedRun(1);
-    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x', feature: 'Orders' });
     const [exec] = await db
       .insert(schema.testRunsCases)
       .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
@@ -606,14 +670,14 @@ describe('computeScenarioGaps', () => {
         status: 200,
       });
     }
-    // A feature groups that route.
+    // A test tagged with the feature reaches that route, so the feature groups it.
     await db.insert(schema.graphEdges).values({
       projectId: 1,
-      fromKind: 'feature',
-      fromKey: 'Orders',
+      fromKind: 'test',
+      fromKey: '2',
       toKind: 'route',
       toKey: 'GET /api/orders',
-      kind: 'groups',
+      kind: 'reaches',
       lastSeenAt: new Date(++clock),
     });
 

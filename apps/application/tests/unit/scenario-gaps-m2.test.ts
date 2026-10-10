@@ -3,7 +3,6 @@ import {
   renderScenarioDraft,
   detectControlNobodyExercises,
   detectReachableUnvisited,
-  detectApiOnlyRoute,
   detectNotNoticed,
   detectOrphanTest,
   detectFixDidNotHold,
@@ -17,6 +16,7 @@ import {
   detectNewControl,
   detectLocatorBreakAhead,
 } from '../../shared/handlers/scenario-gaps';
+import * as gaps from '../../shared/handlers/scenario-gaps';
 
 describe('detectControlNobodyExercises', () => {
   test('flags a control on pages that no test targets', () => {
@@ -52,17 +52,6 @@ describe('detectReachableUnvisited', () => {
     ]);
     expect(gaps.map((g) => g.key)).toEqual(['page:/billing']);
     expect(gaps[0]!.evidence[0]).toContain('7 pages');
-  });
-});
-
-describe('detectApiOnlyRoute', () => {
-  test('flags a reached route with no trigger and no load', () => {
-    const gaps = detectApiOnlyRoute([
-      { key: 'POST /api/exports', reached: true, hasTrigger: false, hasLoad: false },
-      { key: 'POST /api/orders', reached: true, hasTrigger: true, hasLoad: false },
-      { key: 'GET /api/unused', reached: false, hasTrigger: false, hasLoad: false },
-    ]);
-    expect(gaps.map((g) => g.key)).toEqual(['route:POST /api/exports']);
   });
 });
 
@@ -324,5 +313,202 @@ describe('renderScenarioDraft', () => {
       evidence: [],
     });
     expect(draft.text).toContain('No reached path to this gap');
+  });
+});
+
+describe('control reach from the locator index', () => {
+  const nodes = {
+    controls: new Set(['button:Save', 'textbox:Email', 'combobox:Role', 'textbox:Name', 'checkbox:Name']),
+    links: new Set(['link:Users']),
+  };
+
+  test('a role and name maps to its control or link', () => {
+    expect(gaps.locatorNodeTarget("getByRole('button', { name: 'Save' })")).toEqual({
+      by: 'role',
+      kind: 'control',
+      key: 'button:Save',
+      role: 'button',
+      name: 'Save',
+      exact: false,
+    });
+    expect(gaps.locatorNodeTarget("getByRole('navigation').getByRole('link', { name: 'Users' })")).toEqual({
+      by: 'role',
+      kind: 'link',
+      key: 'link:Users',
+      role: 'link',
+      name: 'Users',
+      exact: false,
+    });
+    expect(gaps.locatorNodeTarget("getByRole('button', { name: 'Save', exact: true })")).toMatchObject({
+      exact: true,
+    });
+    expect(gaps.locatorNodeTarget("getByLabel('Email')")).toEqual({ by: 'name', name: 'Email', exact: false });
+    expect(gaps.locatorNodeTarget("getByRole('button', { name: /Cart, \\d+ items?/ })")).toBeNull();
+    expect(gaps.locatorNodeTarget("getByTestId('submit')")).toBeNull();
+  });
+
+  test('a use reaches a known node through its own chain, its snapshot, or a unique label', () => {
+    const { reach, unresolved } = gaps.resolveControlReach(
+      [
+        { testCaseId: 1, target: "getByRole('button', { name: 'Save' })", action: 'click' },
+        { testCaseId: 1, target: "getByRole('button', { name: 'Save' })", action: 'expect.toBeEnabled' },
+        { testCaseId: 2, target: "getByRole('link', { name: 'Users' })", action: 'expect.toBeVisible' },
+        {
+          testCaseId: 3,
+          target: "getByTestId('save')",
+          action: 'click',
+          alternatives: ["getByTestId('save')", "getByRole('button', { name: 'Save' })"],
+        },
+        { testCaseId: 4, target: "getByLabel('Email')", action: 'fill' },
+        // Two labeled controls share the name, so the label names neither.
+        { testCaseId: 5, target: "getByLabel('Name')", action: 'fill' },
+        // A control the inventory never recorded reaches nothing.
+        { testCaseId: 6, target: "getByRole('button', { name: 'Delete' })", action: 'click' },
+        // An assertion on an unnamed element is not an interaction.
+        { testCaseId: 7, target: "getByText('Saved')", action: 'expect.toBeVisible' },
+      ],
+      nodes,
+    );
+    expect(reach.sort((a, b) => a.testCaseId - b.testCaseId)).toEqual([
+      { testCaseId: 1, kind: 'control', key: 'button:Save', action: 'operated', confidence: 1 },
+      { testCaseId: 2, kind: 'link', key: 'link:Users', action: 'checked', confidence: 1 },
+      { testCaseId: 3, kind: 'control', key: 'button:Save', action: 'operated', confidence: 0.9 },
+      { testCaseId: 4, kind: 'control', key: 'textbox:Email', action: 'operated', confidence: 0.8 },
+    ]);
+    expect(unresolved.map((u) => u.testCaseId)).toEqual([5, 6]);
+  });
+
+  test('a name without exact matches as Playwright does: the one node of the role whose name holds it', () => {
+    const named = {
+      controls: new Set(['button:Save changes', 'button:Cancel', 'textbox:Work email', 'textbox:Email address']),
+      links: new Set(['link:All users']),
+    };
+    const { reach, unresolved } = gaps.resolveControlReach(
+      [
+        { testCaseId: 1, target: "getByRole('button', { name: 'save' })", action: 'click' },
+        { testCaseId: 2, target: "getByRole('button', { name: 'Save', exact: true })", action: 'click' },
+        { testCaseId: 3, target: "getByRole('link', { name: 'users' })", action: 'click' },
+        { testCaseId: 4, target: "getByLabel('Work')", action: 'fill' },
+        // Both textboxes hold "email", so the label names neither.
+        { testCaseId: 5, target: "getByLabel('email')", action: 'fill' },
+      ],
+      named,
+    );
+    expect(reach.sort((a, b) => a.testCaseId - b.testCaseId)).toEqual([
+      { testCaseId: 1, kind: 'control', key: 'button:Save changes', action: 'operated', confidence: 0.8 },
+      { testCaseId: 3, kind: 'link', key: 'link:All users', action: 'operated', confidence: 0.8 },
+      { testCaseId: 4, kind: 'control', key: 'textbox:Work email', action: 'operated', confidence: 0.7 },
+    ]);
+    expect(unresolved.map((u) => u.testCaseId)).toEqual([2, 5]);
+  });
+
+  test('a control on a page where a test operated an unnamed element is not raised', () => {
+    const raised = gaps.detectControlNobodyExercises([
+      { key: 'button:Save', pageCount: 1, reachCount: 1 },
+      { key: 'button:Delete', pageCount: 1, reachCount: 0, unresolvedTests: 1 },
+      { key: 'button:Archive', pageCount: 1, reachCount: 0 },
+    ]);
+    expect(raised.map((g) => g.key)).toEqual(['control:button:Archive']);
+  });
+});
+
+describe('feature grouping beyond reach', () => {
+  const reach = (entries: Array<[string, number[]]>) => new Map(entries.map(([k, ids]) => [k, new Set(ids)]));
+  const groups = gaps.groupFeatures({
+    featureByTest: new Map([
+      [1, 'Settings'],
+      [2, 'Settings'],
+      [3, 'Users'],
+      [4, 'Reports'],
+    ]),
+    reachByNode: reach([
+      ['route\x00GET /api/session', [1, 2, 3, 4]],
+      ['route\x00GET /api/tokens', [1]],
+      ['page\x00/settings/api', [1]],
+      ['page\x00/settings/organization', [2]],
+      ['page\x00/users', [3]],
+      ['page\x00/reports', [4]],
+      ['control\x00button:Rotate token', [1]],
+    ]),
+    controlsByPage: new Map([
+      ['/settings/api', new Set(['button:Rotate token', 'button:Revoke', 'searchbox:Search'])],
+      ['/users', new Set(['button:Invite', 'searchbox:Search'])],
+      ['/reports', new Set(['searchbox:Search'])],
+      ['/settings/security', new Set(['button:Enable 2FA'])],
+    ]),
+    linksByPage: new Map([['/settings/api', new Set(['/settings/security', '/billing'])]]),
+    declaredRoutes: ['DELETE /api/tokens/:id', 'GET /api/audit-log'],
+  });
+  const of = (feature: string) =>
+    groups
+      .filter((g) => g.feature === feature)
+      .map((g) => `${g.kind}:${g.key} ${g.via}${g.confidence == null ? '' : ` ${g.confidence}`}${g.hub ? ' hub' : ''}`);
+
+  test('a feature groups what its pages contain and link to under its prefix, and the declared routes beside its own', () => {
+    expect(of('Settings')).toEqual([
+      'control:button:Enable 2FA contains 0.5',
+      'control:button:Revoke contains 0.8',
+      'control:button:Rotate token reach',
+      'control:searchbox:Search contains 0.8 hub',
+      'page:/settings/api reach',
+      'page:/settings/organization reach',
+      'page:/settings/security links 0.6',
+      'route:DELETE /api/tokens/:id path 0.6',
+      'route:GET /api/session reach hub',
+      'route:GET /api/tokens reach',
+    ]);
+    expect(of('Users')).toEqual([
+      'control:button:Invite contains 0.8',
+      'control:searchbox:Search contains 0.8 hub',
+      'page:/users reach',
+      'route:GET /api/session reach hub',
+    ]);
+  });
+
+  test('a page under another prefix and a declared route beside no feature stay ungrouped', () => {
+    const keys = new Set(groups.map((g) => g.key));
+    expect(keys.has('/billing')).toBe(false);
+    expect(keys.has('GET /api/audit-log')).toBe(false);
+  });
+
+  test('two of three features sharing a node stay linked through it', () => {
+    const three = gaps.groupFeatures({
+      featureByTest: new Map([
+        [1, 'Checkout'],
+        [2, 'Cart'],
+        [3, 'Catalog'],
+        [4, 'Catalog'],
+      ]),
+      reachByNode: reach([
+        ['route\x00POST /api/cart', [1, 2]],
+        ['route\x00GET /api/products', [3, 4]],
+      ]),
+      controlsByPage: new Map(),
+      linksByPage: new Map(),
+      declaredRoutes: [],
+    });
+    expect(three.filter((g) => g.key === 'POST /api/cart').map((g) => g.hub)).toEqual([false, false]);
+  });
+
+  test('a route prefix skips api and version segments and drops the query', () => {
+    expect(gaps.routePrefix('GET /api/users/:id')).toBe('/api/users');
+    expect(gaps.routePrefix('GET /api/v1/orders/:id')).toBe('/api/v1/orders');
+    expect(gaps.routePrefix('GET /api/orders?page=<redacted>')).toBe('/api/orders');
+    expect(gaps.routePrefix('GET /health')).toBe('/health');
+    expect(gaps.routePrefix('GET /api')).toBe('/api');
+  });
+
+  test('with fewer than three features no node is a hub', () => {
+    const two = gaps.groupFeatures({
+      featureByTest: new Map([
+        [1, 'A'],
+        [2, 'B'],
+      ]),
+      reachByNode: reach([['route\x00GET /api/session', [1, 2]]]),
+      controlsByPage: new Map(),
+      linksByPage: new Map(),
+      declaredRoutes: [],
+    });
+    expect(two.every((g) => !g.hub)).toBe(true);
   });
 });
