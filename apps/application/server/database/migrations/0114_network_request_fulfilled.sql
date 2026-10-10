@@ -1,0 +1,1 @@
+ALTER TABLE `network_requests` ADD `fulfilled` integer;

@@ -37,4 +37,13 @@ describe('failed requests on ingest', () => {
     const [item] = buildNetworkRequestItems([fast(1)]);
     expect(item!.failure).toBeNull();
   });
+
+  test('a response no server sent is stored as fulfilled, and anything else as unknown', () => {
+    const items = buildNetworkRequestItems([
+      { ...fast(1), status: 503, fulfilled: true },
+      { ...fast(2), fulfilled: 'yes' },
+      fast(3),
+    ]);
+    expect(items.map((i) => i.fulfilled)).toEqual([true, null, null]);
+  });
 });

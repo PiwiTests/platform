@@ -799,6 +799,13 @@
       "when": 1791472424956,
       "tag": "0113_oauth_mcp_authorization",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "6",
+      "when": 1791618921238,
+      "tag": "0114_network_request_fulfilled",
+      "breakpoints": true
     }
   ]
 }

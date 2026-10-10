@@ -1515,9 +1515,6 @@ async function loadRouteStats(
 /** Server log levels that report an error. */
 const ERROR_LOG_LEVELS = new Set(['error', 'critical', 'fatal']);
 
-/** Titles of the steps by which a test routes its own requests, and so may fulfill the 5xx it means to see. */
-const ROUTE_STEP_TITLE = /^(Route requests|Fulfill request|(page|context|browserContext)\.route\b|route\.fulfill\b)/;
-
 /** The browser's own console line for a failed response, which only repeats its status. */
 const RESOURCE_ERROR_TEXT = /^Failed to load resource\b/;
 
@@ -1556,9 +1553,10 @@ export function passedWithErrorsDetail(e: PassedExecutionErrors): string | null 
  * passed while the application reported an error: a 5xx from one of the
  * graph's routes, a backend log at error level on one of its responses, or a
  * console error from the page. A console line from another origin's script and
- * the browser's own failed-resource line are not the application's errors, and
- * a test that routes its own requests may fulfill a 5xx on purpose, so its 5xx
- * responses are not counted.
+ * the browser's own failed-resource line are not the application's errors. A
+ * response no server sent (the test's route handler fulfilled it) is no 5xx of
+ * the application, and a test that fulfilled a failing one meant to see the page
+ * fail, so its console errors are not counted either.
  */
 async function loadPassedWithErrors(
   db: DrizzleDB,
@@ -1658,7 +1656,7 @@ async function loadPassedWithErrors(
     );
   };
 
-  const routeSteps = new Set<number>();
+  const mocksFailure = new Set<number>();
   for (let i = 0; i < ids.length; i += 200) {
     const slice = ids.slice(i, i + 200);
     const consoleRows = await db
@@ -1688,6 +1686,7 @@ async function loadPassedWithErrors(
         url: networkRequests.normalizedUrl,
         status: networkRequests.status,
         serverLogs: networkRequests.serverLogs,
+        fulfilled: networkRequests.fulfilled,
       })
       .from(networkRequests)
       .where(
@@ -1697,35 +1696,21 @@ async function loadPassedWithErrors(
         ),
       );
     for (const r of requestRows) {
+      if (r.fulfilled && r.status >= 500) mocksFailure.add(r.caseId);
       if (!r.url) continue;
       const route = routeNodeKey(r.method, r.url);
       if (!routeNodeKeys.has(route)) continue;
       const entry = byExecution.get(r.caseId)!;
-      if (r.status >= 500) {
-        entry.errors.serverErrors.push({ route, status: r.status });
-        routeSteps.add(r.caseId);
-      }
+      if (r.status >= 500 && !r.fulfilled) entry.errors.serverErrors.push({ route, status: r.status });
       const logged = parseJsonArray(r.serverLogs).some((log) =>
         ERROR_LOG_LEVELS.has(String((log as { level?: unknown } | null)?.level ?? '').toLowerCase()),
       );
       if (logged) entry.errors.backendErrors.push(route);
     }
   }
-  // Only an execution with a 5xx needs its steps, to see whether it routed its own requests.
-  const withServerErrors = [...routeSteps];
-  for (let i = 0; i < withServerErrors.length; i += 100) {
-    const rows = await db
-      .select({ id: testRunsCases.id, steps: testRunsCases.steps })
-      .from(testRunsCases)
-      .where(inArray(testRunsCases.id, withServerErrors.slice(i, i + 100)));
-    for (const row of rows) {
-      const routes = parseJsonArray(row.steps).some((step) => {
-        const title = (step as { title?: unknown } | null)?.title;
-        return typeof title === 'string' && ROUTE_STEP_TITLE.test(title);
-      });
-      if (routes) byExecution.get(row.id)!.errors.serverErrors = [];
-    }
-  }
+  // A test that fulfilled a failing response itself meant to see the page fail:
+  // the console errors that follow are its own doing. Its backend logs stand.
+  for (const id of mocksFailure) byExecution.get(id)!.errors.consoleErrors = 0;
 
   // One execution per test: a test that passed on several browsers reports its first with errors.
   const out = new Map<number, PassedExecutionErrors>();

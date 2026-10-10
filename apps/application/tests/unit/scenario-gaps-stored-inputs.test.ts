@@ -176,15 +176,20 @@ beforeEach(async () => {
 const ORIGIN = 'https://app.test';
 const metadata = { htmlReport: { projects: [{ use: { baseURL: ORIGIN } }] } };
 
-/** One execution with its console lines, its requests and its steps. */
+/** One execution with its console lines and its requests. */
 async function execution(opts: {
   id: number;
   runId: number;
   testCaseId: number;
   status?: string;
   console?: Array<{ type: string; text: string; location: string | null }>;
-  requests?: Array<{ method: string; path: string; status: number; logs?: Array<{ level: string; message: string }> }>;
-  steps?: Array<{ title: string }>;
+  requests?: Array<{
+    method: string;
+    path: string;
+    status: number;
+    logs?: Array<{ level: string; message: string }>;
+    fulfilled?: boolean;
+  }>;
 }) {
   await db.insert(schema.testRunsCases).values({
     id: opts.id,
@@ -192,7 +197,6 @@ async function execution(opts: {
     testCaseId: opts.testCaseId,
     status: opts.status ?? 'passed',
     consoleLogs: (opts.console ?? []).map((c) => ({ ...c, timestamp: 0 })) as never,
-    steps: (opts.steps ?? []) as never,
   });
   for (const r of opts.requests ?? []) {
     await db.insert(schema.networkRequests).values({
@@ -203,6 +207,7 @@ async function execution(opts: {
       normalizedUrl: r.path,
       status: r.status,
       serverLogs: r.logs ? (r.logs.map((l) => ({ ...l, timestamp: 0, category: 'app' })) as never) : null,
+      fulfilled: r.fulfilled ?? null,
     });
   }
 }
@@ -258,7 +263,14 @@ describe('computeScenarioGaps — passed with errors', () => {
       console: [{ type: 'error', text: 'Failed to load resource: 403', location: `${ORIGIN}/api/orgs` }],
     });
     const fiveHundred = [{ method: 'GET', path: '/api/report', status: 500 }];
-    await execution({ id: 5, runId: 1, testCaseId: 5, requests: fiveHundred, steps: [{ title: 'Route requests' }] });
+    // The test fulfilled a 503 itself: its 5xx and the console error it causes are its own doing.
+    await execution({
+      id: 5,
+      runId: 1,
+      testCaseId: 5,
+      requests: [{ method: 'GET', path: '/api/report', status: 503, fulfilled: true }],
+      console: [{ type: 'error', text: 'Failed to load the report', location: `${ORIGIN}/assets/app.js:9:1` }],
+    });
     await execution({ id: 6, runId: 1, testCaseId: 6, requests: fiveHundred });
     await execution({ id: 7, runId: 2, testCaseId: 7, requests: backendError });
     await execution({ id: 8, runId: 1, testCaseId: 8, requests: backendError });

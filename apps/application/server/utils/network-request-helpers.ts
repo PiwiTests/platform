@@ -25,6 +25,8 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
   serverTraces: unknown;
   /** Why the request failed (Playwright's error text); null when it finished. */
   failure: string | null;
+  /** True when no server sent the response (the test's route handler fulfilled it); null otherwise. */
+  fulfilled: boolean | null;
 }> {
   const rawReqs = requests as Array<Record<string, unknown>> | null | undefined;
 
@@ -52,6 +54,7 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
     serverLogs: (req.serverLogs as unknown) ?? null,
     serverTraces: (req.serverTraces as unknown) ?? null,
     failure: typeof req.failure === 'string' && req.failure ? req.failure.slice(0, MAX_FAILURE_LENGTH) : null,
+    fulfilled: req.fulfilled === true ? true : null,
   }));
 }
 

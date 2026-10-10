@@ -423,6 +423,16 @@ function rowAccent(r: DecoratedRequest): string {
             {{ req.status || '—' }}
           </UBadge>
 
+          <UBadge
+            v-if="req.fulfilled"
+            color="neutral"
+            variant="outline"
+            size="xs"
+            class="shrink-0"
+            title="No server sent this response: the test's route handler fulfilled it, or a cache or a service worker served it"
+          >
+            fulfilled
+          </UBadge>
           <code class="truncate text-xs flex-1 min-w-0" :title="req.url">{{ req.path }}</code>
           <code
             v-if="req.failure"

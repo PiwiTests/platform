@@ -760,6 +760,7 @@ export const networkRequests = pgTable(
     serverLogs: jsonb('server_logs'),
     serverTraces: jsonb('server_traces'),
     failure: text('failure'), // Why the request failed (Playwright's error text, e.g. net::ERR_CONNECTION_RESET); null when it finished
+    fulfilled: boolean('fulfilled'), // true when no server sent the response (the test's route handler fulfilled it, or a cache or service worker); null otherwise
   },
   (t) => ({
     runIdx: index('idx_nr_run').on(t.testRunId),
