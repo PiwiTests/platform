@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto';
 
 /** Bump when the shape of the data changes, so a cached seed is rebuilt. */
-export const DATASET_VERSION = 1;
+export const DATASET_VERSION = 2;
 
 /**
  * Sizes. `large` matches the instance of the issue that started the suite
@@ -420,15 +420,19 @@ export function* datasetBatches({ scale = 'large', now = new Date() } = {}) {
 
     const runIdByIndex = Array.from({ length: runs }, (_, r) => ids.run + r + 1);
     let newestFailingRun = null;
+    let newestFailingTest = null;
     for (let r = 0; r < runs; r++) {
-      for (const { outcome, attempts } of planRun(r)) {
+      for (const { test: t, outcome, attempts } of planRun(r)) {
         for (const attempt of attempts) {
           if (typeof attempt === 'string') continue;
           attempt.occurrences++;
           attempt.firstSeen ??= runIdByIndex[r];
           attempt.lastSeen = runIdByIndex[r];
         }
-        if (outcome === 'failed') newestFailingRun = runIdByIndex[r];
+        if (outcome === 'failed') {
+          newestFailingRun = runIdByIndex[r];
+          newestFailingTest = t;
+        }
       }
     }
     for (const c of clusters) {
@@ -617,6 +621,15 @@ export function* datasetBatches({ scale = 'large', now = new Date() } = {}) {
     if (project.main) {
       // The newest run with a failure: the run page opens on its failure views.
       manifest.runId = newestFailingRun ?? runIdByIndex[runs - 1];
+      // The test the suite's trace is recorded for (`lib/trace.mjs`), dated an
+      // hour before the history so its import is the test's oldest execution.
+      const t = newestFailingTest ?? tests.find((x) => x.kind === 'normal');
+      manifest.trace = {
+        title: `${t.filePath}:${t.line} › ${t.describe} › ${t.title}`,
+        filePath: t.filePath,
+        line: t.line,
+        wallTime: firstStart - 3_600_000,
+      };
       for (let k = 0; k < 8; k++) {
         const r = Math.floor(((k + 0.5) / 8) * runs);
         push('markers', {

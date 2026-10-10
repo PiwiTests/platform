@@ -2,15 +2,15 @@
  * Failure-time DOM snapshot resolution over stored traces. The pure rendering
  * (`renderSnapshotHtml`/`extractDomSnapshot`) lives in the node-free
  * `dom-snapshot-render.ts` so the browser demo can reuse it; this module wires
- * it to node-only trace loading (storage + zlib via `trace-parser.ts`). No
+ * it to node-only trace loading (storage + zlib via `trace-evidence.ts`). No
  * re-exports: Nitro auto-imports every server/utils export, and duplicates
  * would shadow each other — import the pure API from `dom-snapshot-render.ts`
  * directly.
  */
 import { getStorage } from '../storage';
-import { parseZip, type ZipEntry } from './trace-zip';
+import { loadStoredTraceEvents } from './trace-evidence';
 import { decodeResource } from './resource-compression';
-import { parseTraceTexts, parseResourceSnapshots, traceFileRank, type TraceResource } from './trace-events';
+import type { TraceResource } from './trace-events';
 import {
   DOM_SNAPSHOT_CAP_CHARS,
   extractDomSnapshot,
@@ -157,13 +157,10 @@ async function inlineImages(html: string, frameUrl: string | undefined, assets: 
  */
 async function inlineTraceAssets(
   blobPath: string,
-  entries: ZipEntry[],
+  urlToRes: Map<string, TraceResource>,
   result: DomSnapshotResult,
 ): Promise<DomSnapshotResult> {
   if (result.status !== 'ok' || !result.html) return result;
-
-  const networkTexts = entries.filter((e) => e.name.endsWith('.network')).map((e) => e.data.toString('utf8'));
-  const urlToRes = parseResourceSnapshots(networkTexts);
   if (urlToRes.size === 0) return result;
 
   // Resources live in a project-scoped shared pool; the id is in the blob path
@@ -215,29 +212,14 @@ export async function getTraceDomSnapshot(
   capChars: number,
   options: TraceDomSnapshotOptions = {},
 ): Promise<DomSnapshotResult> {
-  let entries: ZipEntry[];
-  try {
-    const data = await getStorage().readFile(blobPath);
-    entries = await parseZip(data);
-  } catch {
-    return { status: 'no-trace' };
-  }
-  const traceTexts = entries
-    .filter((e) => e.name.endsWith('.trace'))
-    .sort((a, b) => traceFileRank(a.name) - traceFileRank(b.name))
-    .map((e) => e.data.toString('utf8'));
-  if (traceTexts.length === 0) return { status: 'no-trace' };
+  const events = await loadStoredTraceEvents(blobPath);
+  if (!events) return { status: 'no-trace' };
 
   // The rendered page views keep the page's inline images; text consumers get them masked.
-  const result = extractDomSnapshot(
-    parseTraceTexts(traceTexts),
-    capChars,
-    { keepInlineImages: options.inlineStyles },
-    options.at,
-  );
+  const result = extractDomSnapshot(events.parsed, capChars, { keepInlineImages: options.inlineStyles }, options.at);
   if (!options.inlineStyles) return result;
   try {
-    return await inlineTraceAssets(blobPath, entries, result);
+    return await inlineTraceAssets(blobPath, events.resourcesByUrl, result);
   } catch {
     // Inlining is best-effort decoration — never fail the snapshot over it.
     return result;

@@ -1,11 +1,12 @@
 /**
  * The pages the suite opens: the projects list, every tab of a project (and
- * the Failures tab's three segments), and the test-run page's tabs. Each opens
- * the dataset's large project or its newest failing run.
+ * the Failures tab's three segments), the test-run page's tabs, and a failed
+ * execution's page with a large trace. Each opens the dataset's large project,
+ * its newest failing run, or the execution the suite's trace was uploaded to.
  */
 
-/** @param {{ projectId: number, runId: number }} manifest */
-export function pageScenarios({ projectId, runId }) {
+/** @param {{ projectId: number, runId: number, executionId: number }} manifest */
+export function pageScenarios({ projectId, runId, executionId }) {
   const project = (tab) => `/projects/${projectId}${tab ? `?tab=${tab}` : ''}`;
   const run = (tab) => `/test-runs/${runId}${tab ? `?tab=${tab}` : ''}`;
   return [
@@ -22,15 +23,18 @@ export function pageScenarios({ projectId, runId }) {
     { id: 'run-tests', label: 'Test run › Tests', path: run() },
     { id: 'run-changes', label: 'Test run › Changes', path: run('changes') },
     { id: 'run-timeline', label: 'Test run › Timeline', path: run('workers') },
+    { id: 'execution-trace', label: 'Failed test with a trace', path: `/test-run-cases/${executionId}` },
   ];
 }
 
 /**
  * API calls measured on their own besides the ones the pages make in the
  * browser: the ones a page makes while it renders on the server, which the
- * browser never sees.
+ * browser never sees, and the trace views a failed execution's evidence tabs
+ * open on demand.
  */
-export function knownApiPaths({ projectId, runId }) {
+export function knownApiPaths({ projectId, runId, executionId }) {
+  const execution = (view) => `/api/test-run-cases/${executionId}/${view}`;
   return [
     '/api/auth/me',
     '/api/capabilities',
@@ -40,6 +44,12 @@ export function knownApiPaths({ projectId, runId }) {
     `/api/projects/${projectId}`,
     `/api/projects/${projectId}/markers`,
     `/api/test-runs/${runId}`,
+    `/api/test-run-cases/${executionId}`,
+    execution('timeline'),
+    execution('trace-snapshots'),
+    execution('trace-stacks'),
+    execution('trace-network'),
+    execution('dom-snapshot'),
   ];
 }
 
