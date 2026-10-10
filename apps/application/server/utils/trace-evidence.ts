@@ -9,7 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { files } from '../database/schema';
 import { getStorage } from '../storage';
 import { ariaJsonToText } from '#shared/aria-json';
-import { parseZip, parseZipDirectory, decompressEntry, type ZipEntry } from './trace-zip';
+import { parseZipDirectory, decompressEntry, decompressEntrySync, type ZipEntryMeta } from './trace-zip';
 import { decodeResource } from './resource-compression';
 import { pageActionOf, parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
 import {
@@ -50,32 +50,69 @@ interface TraceBundle {
   parsed: ParsedTraceData | null;
   stacks: TraceStacksIndex | null;
   network: TraceResourceSnapshot[];
+  /** The raw `.network` texts, for the DOM snapshot's URL → stored body map. */
+  networkTexts: string[];
   readResource: TraceResourceReader;
   /** Bytes of an `aria/*` or `screenshots/*` snapshot entry, or null when absent. */
   readSnapshot: (file: string) => Buffer | null;
+  /** About how much memory the bundle holds: its parsed streams and the entries it keeps compressed. */
+  retainedBytes: number;
+  /** The snapshot inventory and page diff, once a view has built them. */
+  snapshots?: TraceSnapshotsResponse;
+}
+
+/** One ZIP entry kept compressed, detached from its archive, until a view asks for it. */
+interface PackedEntry {
+  meta: ZipEntryMeta;
+  data: Buffer;
+}
+
+function packEntry(zip: Buffer, meta: ZipEntryMeta): PackedEntry {
+  return {
+    meta: { ...meta, dataStart: 0 },
+    data: Buffer.from(zip.subarray(meta.dataStart, meta.dataStart + meta.compressedSize)),
+  };
+}
+
+/** Inflate the text entries matching `suffix`, skipping a corrupt one rather than failing the trace. */
+async function inflateTexts(zip: Buffer, metas: ZipEntryMeta[], suffix: string): Promise<string[]> {
+  const texts: string[] = [];
+  for (const meta of metas.filter((m) => m.name.endsWith(suffix))) {
+    try {
+      texts.push((await decompressEntry(zip, meta)).toString('utf8'));
+    } catch {
+      // Skip a corrupt entry.
+    }
+  }
+  return texts;
 }
 
 /**
  * Load a stored trace and split its streams once. Handles both layouts: the
  * slim blob (events only; `resources/*` live in the project pool listed by the
  * sibling manifest) and a legacy/fallback full ZIP (resources inline).
+ *
+ * Only the event streams (`.trace`, `.stacks`, `.network`) are inflated up
+ * front. The slim blob of a recent trace also carries the per-action aria and
+ * screen snapshots and the screencast, nearly all of its bytes: snapshots stay
+ * compressed until a view reads one, and the screencast, which no view reads,
+ * is never inflated.
  */
-async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
+async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
   const storage = getStorage();
-  let entries: ZipEntry[];
+  let zip: Buffer;
+  let metas: ZipEntryMeta[];
   try {
-    entries = await parseZip(await storage.readFile(blobPath));
+    zip = await storage.readFile(blobPath);
+    metas = parseZipDirectory(zip);
   } catch {
     return null;
   }
 
-  const byRank = (a: ZipEntry, b: ZipEntry) => traceFileRank(a.name) - traceFileRank(b.name);
-  const traceTexts = entries
-    .filter((e) => e.name.endsWith('.trace'))
-    .sort(byRank)
-    .map((e) => e.data.toString('utf8'));
-  const stacksTexts = entries.filter((e) => e.name.endsWith('.stacks')).map((e) => e.data.toString('utf8'));
-  const networkTexts = entries.filter((e) => e.name.endsWith('.network')).map((e) => e.data.toString('utf8'));
+  const byRank = (a: ZipEntryMeta, b: ZipEntryMeta) => traceFileRank(a.name) - traceFileRank(b.name);
+  const traceTexts = await inflateTexts(zip, [...metas].sort(byRank), '.trace');
+  const stacksTexts = await inflateTexts(zip, metas, '.stacks');
+  const networkTexts = await inflateTexts(zip, metas, '.network');
 
   const parsed = traceTexts.length > 0 ? parseTraceTexts(traceTexts) : null;
   const stacks = stacksTexts.length > 0 ? parseStacksTexts(stacksTexts) : null;
@@ -83,16 +120,28 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
 
   // 1.63 aria / screen snapshots sit at their own top-level prefixes in the
   // slim ZIP (never pooled like `resources/`), so they read straight from the
-  // parsed entries by their trace-relative path.
+  // blob's entries by their trace-relative path.
   const snapshotEntries = new Map(
-    entries.filter((e) => e.name.startsWith('aria/') || e.name.startsWith('screenshots/')).map((e) => [e.name, e.data]),
+    metas
+      .filter((m) => m.name.startsWith('aria/') || m.name.startsWith('screenshots/'))
+      .map((m) => [m.name, packEntry(zip, m)]),
   );
-  const readSnapshot = (file: string): Buffer | null => snapshotEntries.get(file) ?? null;
+  const readSnapshot = (file: string): Buffer | null => {
+    const entry = snapshotEntries.get(file);
+    if (!entry) return null;
+    try {
+      return decompressEntrySync(entry.data, entry.meta);
+    } catch {
+      return null;
+    }
+  };
 
   // Resource pool lookup: the blob's manifest lists every `resources/` name the
   // original ZIP carried; a legacy full ZIP keeps them inline instead.
   const inZip = new Map(
-    entries.filter((e) => e.name.startsWith('resources/')).map((e) => [e.name.slice('resources/'.length), e.data]),
+    metas
+      .filter((m) => m.name.startsWith('resources/'))
+      .map((m) => [m.name.slice('resources/'.length), packEntry(zip, m)]),
   );
   const projectPrefix = blobPath.match(/^(project-\d+)\//)?.[1] ?? null;
   let manifestNames: string[] | null = null;
@@ -108,8 +157,13 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
 
   const readResource: TraceResourceReader = async (name) => {
     for (const candidate of resourceNameCandidates(name, inZip.keys())) {
-      const data = inZip.get(candidate);
-      if (data) return data;
+      const entry = inZip.get(candidate);
+      if (!entry) continue;
+      try {
+        return await decompressEntry(entry.data, entry.meta);
+      } catch {
+        // Try the next candidate.
+      }
     }
     if (!projectPrefix) return null;
     const poolCandidates = manifestNames
@@ -128,7 +182,95 @@ async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
     return null;
   };
 
-  return { parsed, stacks, network, readResource, readSnapshot };
+  const retainedBytes =
+    [...snapshotEntries.values(), ...inZip.values()].reduce((sum, e) => sum + e.data.length, 0) +
+    // The parsed events take a few times their text in memory.
+    3 * [...traceTexts, ...stacksTexts, ...networkTexts].reduce((sum, t) => sum + t.length, 0);
+  return { parsed, stacks, network, networkTexts, readResource, readSnapshot, retainedBytes };
+}
+
+/** A content-addressed blob (`project-<id>/blobs/<sha256>.zip`): its bytes never change. */
+const CONTENT_ADDRESSED_BLOB = /^project-\d+\/blobs\/[0-9a-f]{64}\.zip$/;
+
+/** How long a loaded trace stays in memory after its last read. */
+const BUNDLE_IDLE_MS = 2 * 60_000;
+
+/** Upper bound on what the loaded traces hold in memory together; the newest one is always kept. */
+const BUNDLE_BUDGET_BYTES = 64 * 1024 * 1024;
+
+interface CachedBundle {
+  bundle: Promise<TraceBundle | null>;
+  bytes: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+/** Loaded traces by blob path, least recently read first. */
+const bundleCache = new Map<string, CachedBundle>();
+
+function expireLater(blobPath: string, cached: CachedBundle): void {
+  if (cached.timer) clearTimeout(cached.timer);
+  cached.timer = setTimeout(() => {
+    if (bundleCache.get(blobPath) === cached) bundleCache.delete(blobPath);
+  }, BUNDLE_IDLE_MS);
+  cached.timer.unref?.();
+}
+
+function evictOverBudget(): void {
+  let total = [...bundleCache.values()].reduce((sum, c) => sum + c.bytes, 0);
+  for (const [path, cached] of bundleCache) {
+    if (total <= BUNDLE_BUDGET_BYTES || bundleCache.size <= 1) break;
+    // Still loading: dropping it frees nothing and splits the requests waiting on it.
+    if (cached.bytes === 0) continue;
+    if (cached.timer) clearTimeout(cached.timer);
+    bundleCache.delete(path);
+    total -= cached.bytes;
+  }
+}
+
+/**
+ * A stored trace, read and parsed once for every view that asks for it. One
+ * failed execution's page opens the timeline, the call stack, the snapshot list,
+ * each filmstrip image and the network list at once, and each of them reads the
+ * same trace: a content-addressed blob is loaded once, shared by the requests
+ * in flight, and kept briefly for the next one. Any other path is read afresh.
+ */
+async function loadTraceBundle(blobPath: string): Promise<TraceBundle | null> {
+  if (!CONTENT_ADDRESSED_BLOB.test(blobPath)) return readTraceBundle(blobPath);
+
+  const hit = bundleCache.get(blobPath);
+  if (hit) {
+    bundleCache.delete(blobPath);
+    bundleCache.set(blobPath, hit);
+    expireLater(blobPath, hit);
+    return hit.bundle;
+  }
+
+  const cached: CachedBundle = { bundle: readTraceBundle(blobPath), bytes: 0, timer: null };
+  bundleCache.set(blobPath, cached);
+  expireLater(blobPath, cached);
+  const bundle = await cached.bundle;
+  if (bundleCache.get(blobPath) === cached) {
+    if (!bundle) {
+      // A read that failed (storage unreachable, not a ZIP) is retried by the next request.
+      if (cached.timer) clearTimeout(cached.timer);
+      bundleCache.delete(blobPath);
+    } else {
+      cached.bytes = bundle.retainedBytes;
+      evictOverBudget();
+    }
+  }
+  return bundle;
+}
+
+/**
+ * The parsed event stream and `.network` texts of a stored trace, for the DOM
+ * snapshot, which renders the frame snapshots and inlines the captured assets.
+ */
+export async function loadTraceDomStreams(
+  blobPath: string,
+): Promise<{ parsed: ParsedTraceData; networkTexts: string[] } | null> {
+  const bundle = await loadTraceBundle(blobPath);
+  return bundle?.parsed ? { parsed: bundle.parsed, networkTexts: bundle.networkTexts } : null;
 }
 
 /**
@@ -158,45 +300,10 @@ export interface TraceEvidenceStreams {
  * Load a stored trace and return just its event stream and network snapshots —
  * the two inputs the fallback derivation reads to recover console entries and
  * the request list when the capture fixtures were absent.
- *
- * Only the `.trace` and `.network` entries are inflated; decompressing the
- * blob's inline screenshots and aria snapshots (which this derivation never
- * reads) would hold every image in memory at once during ingestion.
  */
 export async function loadTraceEvidenceStreams(blobPath: string): Promise<TraceEvidenceStreams | null> {
-  const storage = getStorage();
-  let data: Buffer;
-  let metas: ReturnType<typeof parseZipDirectory>;
-  try {
-    data = await storage.readFile(blobPath);
-    metas = parseZipDirectory(data);
-  } catch {
-    return null;
-  }
-
-  const traceTexts: string[] = [];
-  for (const meta of metas
-    .filter((m) => m.name.endsWith('.trace'))
-    .sort((a, b) => traceFileRank(a.name) - traceFileRank(b.name))) {
-    try {
-      traceTexts.push((await decompressEntry(data, meta)).toString('utf8'));
-    } catch {
-      // Skip a corrupt entry rather than fail the whole derivation.
-    }
-  }
-
-  const networkTexts: string[] = [];
-  for (const meta of metas.filter((m) => m.name.endsWith('.network'))) {
-    try {
-      networkTexts.push((await decompressEntry(data, meta)).toString('utf8'));
-    } catch {
-      // Skip a corrupt entry.
-    }
-  }
-
-  const parsed = traceTexts.length > 0 ? parseTraceTexts(traceTexts) : null;
-  const network = networkTexts.length > 0 ? parseNetworkTexts(networkTexts) : [];
-  return { parsed, network };
+  const bundle = await loadTraceBundle(blobPath);
+  return bundle ? { parsed: bundle.parsed, network: bundle.network } : null;
 }
 
 /** Full call stack of the failing action, with embedded source when the trace carries it. */
@@ -251,7 +358,10 @@ function readAriaText(bundle: TraceBundle, file: string): string | null {
 export async function getTraceSnapshotsFromBlob(blobPath: string): Promise<TraceSnapshotsResponse> {
   const bundle = await loadTraceBundle(blobPath);
   if (!bundle) return { status: 'no-trace', steps: [], failingCallId: null, hasAria: false, hasScreen: false };
-  return buildTraceSnapshots(bundle.parsed, (file) => readAriaText(bundle, file));
+  // The page diff renders and diffs whole aria trees, the costliest view of a
+  // trace, and its answer never changes: built once per loaded trace.
+  bundle.snapshots ??= buildTraceSnapshots(bundle.parsed, (file) => readAriaText(bundle, file));
+  return bundle.snapshots;
 }
 
 /** A single snapshot file served out of the trace: raw bytes plus the content type to send. */

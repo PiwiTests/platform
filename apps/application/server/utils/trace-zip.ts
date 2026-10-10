@@ -162,6 +162,21 @@ export async function decompressEntry(data: Buffer, meta: ZipEntryMeta): Promise
 }
 
 /**
+ * Decompress a single ZIP entry on the calling thread, for a reader that must
+ * answer synchronously (the aria reader the snapshot view builds from). Meant
+ * for one entry at a time; {@link decompressEntry} is the default.
+ */
+export function decompressEntrySync(data: Buffer, meta: ZipEntryMeta): Buffer {
+  if (meta.dataStart + meta.compressedSize > data.length) {
+    throw new Error(`Truncated data for "${meta.name}"`);
+  }
+  const compressed = data.subarray(meta.dataStart, meta.dataStart + meta.compressedSize);
+  if (meta.method === 0) return Buffer.from(compressed);
+  if (meta.method === 8) return inflateRawSync(compressed, { maxOutputLength: MAX_ENTRY_BYTES });
+  throw new Error(`Unsupported ZIP compression method ${meta.method} for "${meta.name}"`);
+}
+
+/**
  * Parse a ZIP archive and return all file entries with their decompressed data.
  * Reads via the central directory so data descriptors and flag variations don't
  * affect correctness.

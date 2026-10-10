@@ -1,6 +1,6 @@
-import { parseZip } from './trace-zip';
+import { parseZipDirectory, decompressEntry } from './trace-zip';
+import { loadTraceEvidenceStreams } from './trace-evidence';
 import { actionHolds, parseTraceTexts, traceFileRank, type ParsedTraceData } from './trace-events';
-import { getStorage } from '../storage';
 import { getAppSetting, setAppSetting } from './app-settings';
 import type { ContextLimits } from '#shared/ai-context-limits';
 import type { DbClient } from '../database';
@@ -103,13 +103,22 @@ export async function getTraceFailingActionSection(
  */
 export async function parseTraceEvents(zipData: Buffer): Promise<ParsedTraceData | null> {
   try {
-    const entries = await parseZip(zipData);
-    const traceEntries = entries
-      .filter((e) => e.name.endsWith('.trace'))
+    // Only the event streams are inflated: the snapshots and screencast that make
+    // up most of a trace's bytes are never read here.
+    const traceMetas = parseZipDirectory(zipData)
+      .filter((m) => m.name.endsWith('.trace'))
       .sort((a, b) => traceFileRank(a.name) - traceFileRank(b.name));
-    if (traceEntries.length === 0) return null;
+    const traceTexts: string[] = [];
+    for (const meta of traceMetas) {
+      try {
+        traceTexts.push((await decompressEntry(zipData, meta)).toString('utf8'));
+      } catch {
+        // Unknown compression or corrupt entry — skip rather than crash
+      }
+    }
+    if (traceTexts.length === 0) return null;
 
-    return parseTraceTexts(traceEntries.map((entry) => entry.data.toString('utf8')));
+    return parseTraceTexts(traceTexts);
   } catch {
     return null;
   }
@@ -230,15 +239,9 @@ export function formatFailingActionSection(
 }
 
 /**
- * Load a slim ZIP from storage by the blob path and parse the trace events.
- * Caching is the caller's responsibility.
+ * Load a slim ZIP from storage by the blob path and parse the trace events,
+ * sharing the load with the other views of the same trace.
  */
 export async function loadAndParseTrace(blobPath: string): Promise<ParsedTraceData | null> {
-  try {
-    const storage = getStorage();
-    const data = await storage.readFile(blobPath);
-    return parseTraceEvents(data);
-  } catch {
-    return null;
-  }
+  return (await loadTraceEvidenceStreams(blobPath))?.parsed ?? null;
 }

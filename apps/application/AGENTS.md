@@ -673,6 +673,16 @@ project loses its last blob. Two invariants keep it correct:
   from `initDatabase`, non-blocking) indexes pre-existing blobs from their manifests; the nightly
   `reclaimOrphanTraceResources` sweeps resources nothing references any more, same gate.
 
+### Reading a stored trace
+
+A view that reads a stored trace goes through `server/utils/trace-evidence.ts` (its `getTrace*FromBlob` views and
+`loadTraceDomStreams`), never `parseZip` on the blob. The slim blob of a Playwright 1.63 trace still holds every aria and
+screen snapshot and the screencast, nearly all of its bytes; the loader inflates only the `.trace`, `.stacks` and
+`.network` streams, one snapshot entry when a view asks for it, and never the screencast. A content-addressed blob
+(`project-<id>/blobs/<sha256>.zip`) is loaded once for the requests of one page and kept two minutes after its last
+read, within 64 MB for all loaded traces. A new view adds a function there; an answer that is a pure function of the
+trace and costly to build is kept on the loaded bundle, as `snapshots` is.
+
 ## Adding a field to test run data
 
 The full chain, in order:
