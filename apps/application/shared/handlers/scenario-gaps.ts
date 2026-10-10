@@ -41,10 +41,17 @@ import {
   bugReports,
   locatorSnapshots,
   locatorUsages,
+  projects,
 } from '../../server/database/schema';
 import {
+  collectOwnOrigins,
   controlNodeKey,
   fileRouteTarget,
+  isOwnOriginRequest,
+  originsFromDocumentRequests,
+  projectRouteOrigins,
+  routeNodeKey,
+  runBaseUrls,
   filePageTarget,
   linkNodeKey,
   routeKeyMatchesTarget,
@@ -52,7 +59,18 @@ import {
   templateAccessibleName,
 } from '../graph';
 import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
+import {
+  scoreTargetMatch,
+  urlMatches,
+  type FunctionParamSource,
+  type FunctionPatternStep,
+  type MatchCandidate,
+} from '@piwitests/core/function-match';
+import { PATH_ANCHOR_HOST } from '@piwitests/core/page-key';
 import { notLabRun } from './probes';
+import { INVESTIGATION_RUN_ORIGINS } from '../run-eligibility';
+import { finalAttempts } from '../utils/test-counts';
+import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS } from './detector-precision';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
@@ -942,7 +960,7 @@ export function detectPhantomCoverage(tests: PhantomTest[]): DetectedGap[] {
 export interface PassedWithError {
   testCaseId: number;
   title: string;
-  /** A short description of the error, e.g. 'POST /api/audit returned 500 in background'. */
+  /** What the application reported, e.g. 'run #42 · POST /api/audit returned 500'. */
   detail: string;
 }
 
@@ -957,7 +975,7 @@ export function detectPassedWithErrors(execs: PassedWithError[]): DetectedGap[] 
     class: 'false-comfort' as const,
     key: `test:${e.testCaseId}`,
     title: `${e.title} passed with errors`,
-    evidence: [`Passed · ${e.detail} — assert no server errors occur during this flow.`],
+    evidence: [`Passed · ${e.detail} — nothing in the test failed on it; assert the flow ends without errors.`],
     confidence: 0.6,
     testCaseId: e.testCaseId,
   }));
@@ -967,6 +985,8 @@ export function detectPassedWithErrors(execs: PassedWithError[]): DetectedGap[] 
 export interface CatalogMethodReach {
   module: string;
   name: string;
+  /** How the title names it, `cartPage.applyCoupon`; the bare name when absent. */
+  label?: string;
   callCount: number;
   pageReachedBy: number;
 }
@@ -985,7 +1005,7 @@ export function detectCatalogMethodNoTestCalls(methods: CatalogMethodReach[]): D
       kind: 'gap',
       class: 'blind-spot',
       key: `catalog:${m.module}#${m.name}`,
-      title: `${m.name} is never called`,
+      title: `${m.label ?? m.name} is never called`,
       evidence: [
         `${m.module} · ${m.name} · page reached by ${m.pageReachedBy}, called by 0 — the cheapest gap, its steps already exist.`,
       ],
@@ -1053,12 +1073,143 @@ export function detectAssertionLight(pages: AssertionLightPage[]): DetectedGap[]
       key: `page:${p.pageKey}`,
       title: `${p.pageKey} is asserted only by visibility`,
       evidence: [
-        `${p.testCount} test${p.testCount === 1 ? '' : 's'}, 0 data assertions on this page — schedule a probe, or add one assertion.`,
+        `${p.testCount} test${p.testCount === 1 ? '' : 's'} assert${p.testCount === 1 ? 's' : ''} on this page, only that elements are present — check a value (a text, a count, a field), or schedule a probe.`,
       ],
       confidence: 0.4,
     });
   }
   return gaps;
+}
+
+/** Matchers that check an element is there, not what it shows. */
+const PRESENCE_MATCHERS = new Set(['toBeVisible', 'toBeHidden', 'toBeAttached', 'toBeInViewport']);
+
+/**
+ * Per page, the tests that assert on it and how many of them check a value. An
+ * `expect` on presence alone (visible, hidden, attached, in the viewport, or
+ * their negations) is the light kind; any other matcher, and any read of the
+ * element the index cannot name (a count, an evaluate, a text read), counts as
+ * a value check. A page no test asserts on is a step of a journey, not a light
+ * assertion, and is left out, and so is a page the graph does not hold.
+ */
+export function assertionLightPages(
+  uses: ReadonlyArray<{ testCaseId: number; action: string; page: string }>,
+  graphPages: ReadonlySet<string>,
+): AssertionLightPage[] {
+  const presence = new Map<string, Set<number>>();
+  const value = new Map<string, Set<number>>();
+  const add = (map: Map<string, Set<number>>, page: string, id: number) => {
+    let set = map.get(page);
+    if (!set) map.set(page, (set = new Set()));
+    set.add(id);
+  };
+  for (const u of uses) {
+    if (!u.page || !graphPages.has(u.page)) continue;
+    if (isInteractionAction(u.action) || u.action === 'waitFor') continue;
+    const matcher = u.action.startsWith('expect.') ? u.action.slice('expect.'.length).replace(/^not\./, '') : null;
+    if (matcher && PRESENCE_MATCHERS.has(matcher)) add(presence, u.page, u.testCaseId);
+    else add(value, u.page, u.testCaseId);
+  }
+  return [...presence].map(([pageKey, tests]) => ({
+    pageKey,
+    testCount: new Set([...tests, ...(value.get(pageKey) ?? [])]).size,
+    dataAssertions: value.get(pageKey)?.size ?? 0,
+  }));
+}
+
+/** A catalog entry as the catalog detector reads it. */
+export interface CatalogEntryReachInput {
+  module: string;
+  name: string;
+  kind: string;
+  receiver: string | null;
+  urlPattern: string | null;
+  steps: FunctionPatternStep[];
+  paramSources: FunctionParamSource[];
+}
+
+/** What the last locating call of a chain says about its element, for a catalog step's target to match. */
+function locatorMatchCandidate(locator: string): MatchCandidate | null {
+  const calls = tryParseLocatorChain(locator)?.calls.filter((c) => LOCATING_METHODS.has(c.method)) ?? [];
+  const call = calls[calls.length - 1];
+  if (!call) return null;
+  const first = stringArg(call.args[0]);
+  if (!first) return null;
+  const candidate: MatchCandidate = { role: null, testId: null, accessibleName: null, text: null };
+  if (call.method === 'getByRole') {
+    const options = call.args[1]?.type === 'object' ? call.args[1].entries : [];
+    return { ...candidate, role: first, accessibleName: stringArg(options.find(([k]) => k === 'name')?.[1]) };
+  }
+  if (call.method === 'getByTestId') return { ...candidate, testId: first };
+  if (call.method === 'getByText') return { ...candidate, text: first };
+  if (['getByLabel', 'getByPlaceholder', 'getByTitle', 'getByAltText'].includes(call.method)) {
+    return { ...candidate, accessibleName: first };
+  }
+  return null;
+}
+
+/** Whether a catalog step's action is the one a locator use records. */
+function catalogActionMatches(step: FunctionPatternStep['action'], action: string): boolean {
+  if (step === 'assertVisible') return action === 'expect.toBeVisible';
+  if (step === 'assert') return action.startsWith('expect');
+  if (step === 'click' || step === 'press') return action === 'click' || action === 'press';
+  return action === step;
+}
+
+/** The URL a page key stands for, for a catalog entry's URL pattern. */
+function pageKeyUrl(pageKey: string): string {
+  return `http://${PATH_ANCHOR_HOST}${pageKey.startsWith('/') ? '' : '/'}${pageKey}`;
+}
+
+/**
+ * Per catalog method or helper, how many tests call it and how many reach a
+ * page its URL pattern matches. A test calls it when one of its locator uses on
+ * the default branch does what one of the method's steps does, on an element
+ * that step names by test id or by name, on a page the pattern matches (or an
+ * unknown page). A step whose target comes from a parameter names no element,
+ * so a method without a fixed step gets no decision and is left out, and so are
+ * fixtures, which no test calls.
+ */
+export function resolveCatalogMethodReach(
+  entries: ReadonlyArray<CatalogEntryReachInput>,
+  uses: ReadonlyArray<{ testCaseId: number; target: string; action: string; page: string }>,
+  pages: ReadonlyArray<{ url: string; tests: ReadonlySet<number> }>,
+): CatalogMethodReach[] {
+  const candidates = uses.map((u) => ({ use: u, candidate: locatorMatchCandidate(u.target) }));
+  const out: CatalogMethodReach[] = [];
+  for (const entry of entries) {
+    if (entry.kind === 'fixture') continue;
+    const fixed = entry.steps.filter((step, i) => {
+      if (step.action === 'goto') return false;
+      const from = new Set(entry.paramSources.filter((s) => s.stepIndex === i).map((s) => s.from));
+      return Boolean((step.target.testId && !from.has('testId')) || (step.target.name && !from.has('text')));
+    });
+    if (fixed.length === 0) continue;
+    const callers = new Set<number>();
+    for (const { use, candidate } of candidates) {
+      if (!candidate || callers.has(use.testCaseId)) continue;
+      if (use.page && !urlMatches(entry.urlPattern, /^https?:/.test(use.page) ? use.page : pageKeyUrl(use.page))) {
+        continue;
+      }
+      if (
+        fixed.some((s) => catalogActionMatches(s.action, use.action) && scoreTargetMatch(s.target, candidate) >= 0.6)
+      ) {
+        callers.add(use.testCaseId);
+      }
+    }
+    const reachers = new Set<number>();
+    for (const page of pages) {
+      if (urlMatches(entry.urlPattern, page.url)) for (const id of page.tests) reachers.add(id);
+    }
+    out.push({
+      module: entry.module,
+      name: entry.name,
+      label: entry.receiver ? `${entry.receiver}.${entry.name}` : entry.name,
+      callCount: callers.size,
+      pageReachedBy: reachers.size,
+    });
+  }
+  return out;
 }
 
 // ── Change-time detectors (pure) ─────────────────────────────────────────────
@@ -1360,6 +1511,269 @@ async function loadRouteStats(
   return stats;
 }
 
+/** Server log levels that report an error. */
+const ERROR_LOG_LEVELS = new Set(['error', 'critical', 'fatal']);
+
+/** Titles of the steps by which a test routes its own requests, and so may fulfill the 5xx it means to see. */
+const ROUTE_STEP_TITLE = /^(Route requests|Fulfill request|(page|context|browserContext)\.route\b|route\.fulfill\b)/;
+
+/** The browser's own console line for a failed response, which only repeats its status. */
+const RESOURCE_ERROR_TEXT = /^Failed to load resource\b/;
+
+/** The errors one passing execution reported, as the detector's evidence names them. */
+export interface PassedExecutionErrors {
+  runId: number;
+  /** 5xx responses from the project's routes, by route key. */
+  serverErrors: Array<{ route: string; status: number }>;
+  /** Routes whose response carried a backend log at error level. */
+  backendErrors: string[];
+  consoleErrors: number;
+}
+
+/** The evidence detail for a passing execution's errors, or null when it reported none. */
+export function passedWithErrorsDetail(e: PassedExecutionErrors): string | null {
+  const parts: string[] = [];
+  const statuses = new Map<string, number>();
+  for (const s of e.serverErrors) if (!statuses.has(s.route)) statuses.set(s.route, s.status);
+  const shown = [...statuses].slice(0, 2).map(([route, status]) => `${route} returned ${status}`);
+  if (statuses.size > 2) shown.push(`${statuses.size - 2} more 5xx`);
+  parts.push(...shown);
+  const backend = [...new Set(e.backendErrors)];
+  if (backend.length > 0) {
+    parts.push(
+      `the backend logged an error on ${backend[0]}${backend.length > 1 ? ` and ${backend.length - 1} more` : ''}`,
+    );
+  }
+  if (e.consoleErrors > 0) {
+    parts.push(`the page logged ${e.consoleErrors} console error${e.consoleErrors === 1 ? '' : 's'}`);
+  }
+  return parts.length > 0 ? `run #${e.runId} · ${parts.join(' · ')}` : null;
+}
+
+/**
+ * The tests whose newest final attempt on the default branch, in the window,
+ * passed while the application reported an error: a 5xx from one of the
+ * graph's routes, a backend log at error level on one of its responses, or a
+ * console error from the page. A console line from another origin's script and
+ * the browser's own failed-resource line are not the application's errors, and
+ * a test that routes its own requests may fulfill a 5xx on purpose, so its 5xx
+ * responses are not counted.
+ */
+async function loadPassedWithErrors(
+  db: DrizzleDB,
+  projectId: number,
+  runIds: number[],
+  routeNodeKeys: Set<string>,
+): Promise<Array<{ testCaseId: number; errors: PassedExecutionErrors }>> {
+  if (runIds.length === 0) return [];
+  const defaultBranch = await projectDefaultBranch(db, projectId);
+  const [project] = await db
+    .select({ routeOrigins: projects.routeOrigins })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const runs = (
+    await db
+      .select({ id: testRuns.id, branch: testRuns.branch, origin: testRuns.origin, metadata: testRuns.metadata })
+      .from(testRuns)
+      .where(inArray(testRuns.id, runIds))
+  ).filter((r) => {
+    const branch = r.branch?.trim() || null;
+    return (
+      (branch === null || branch === defaultBranch) &&
+      !(INVESTIGATION_RUN_ORIGINS as readonly string[]).includes(r.origin ?? '')
+    );
+  });
+  if (runs.length === 0) return [];
+  const runById = new Map(runs.map((r) => [r.id, r]));
+
+  // The newest run each test ran in decides; only its final attempts are read.
+  const attempts = await db
+    .select({
+      id: testRunsCases.id,
+      testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      retries: testRunsCases.retries,
+      status: testRunsCases.status,
+    })
+    .from(testRunsCases)
+    .where(inArray(testRunsCases.testRunId, [...runById.keys()]));
+  const newestRun = new Map<number, number>();
+  for (const a of attempts) {
+    if (a.testCaseId == null) continue;
+    newestRun.set(a.testCaseId, Math.max(newestRun.get(a.testCaseId) ?? 0, a.testRunId));
+  }
+  const finals = finalAttempts(
+    attempts.filter(
+      (a): a is typeof a & { testCaseId: number } =>
+        a.testCaseId != null && newestRun.get(a.testCaseId) === a.testRunId,
+    ),
+  );
+  // A test fails on any browser: then it is a failure, not a pass with errors.
+  const failedTests = new Set(finals.filter((a) => a.status.toLowerCase() !== 'passed').map((a) => a.testCaseId));
+  const passing = finals.filter((a) => a.status.toLowerCase() === 'passed' && !failedTests.has(a.testCaseId));
+  if (passing.length === 0) return [];
+
+  const byExecution = new Map(
+    passing.map((a) => [
+      a.id,
+      {
+        testCaseId: a.testCaseId,
+        errors: { runId: a.testRunId, serverErrors: [], backendErrors: [], consoleErrors: 0 } as PassedExecutionErrors,
+      },
+    ]),
+  );
+  const ids = [...byExecution.keys()];
+
+  // The application's own origins, for a console error's source: the run's
+  // `baseURL`s and the project's allowlist, else the execution's own page loads,
+  // else the origins of its requests the graph holds as routes.
+  const runOrigins = new Map<number, Set<string>>();
+  const ownOrigins = async (executionId: number, runId: number): Promise<Set<string>> => {
+    let origins = runOrigins.get(runId);
+    if (!origins) {
+      origins = collectOwnOrigins(
+        runBaseUrls(runById.get(runId)?.metadata),
+        projectRouteOrigins(project?.routeOrigins),
+      );
+      runOrigins.set(runId, origins);
+    }
+    if (origins.size > 0) return origins;
+    const requests = await db
+      .select({
+        method: networkRequests.method,
+        url: networkRequests.url,
+        normalizedUrl: networkRequests.normalizedUrl,
+        resourceType: networkRequests.resourceType,
+      })
+      .from(networkRequests)
+      .where(eq(networkRequests.testRunsCaseId, executionId));
+    const pages = originsFromDocumentRequests(requests);
+    if (pages.size > 0) return pages;
+    return collectOwnOrigins(
+      requests
+        .filter((r) => r.normalizedUrl && routeNodeKeys.has(routeNodeKey(r.method, r.normalizedUrl)))
+        .map((r) => r.url),
+    );
+  };
+
+  const routeSteps = new Set<number>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const slice = ids.slice(i, i + 200);
+    const consoleRows = await db
+      .select({ id: testRunsCases.id, consoleLogs: testRunsCases.consoleLogs })
+      .from(testRunsCases)
+      .where(and(inArray(testRunsCases.id, slice), isNotNull(testRunsCases.consoleLogs)));
+    for (const row of consoleRows) {
+      const entry = byExecution.get(row.id)!;
+      const sources: string[] = [];
+      for (const log of parseJsonArray(row.consoleLogs)) {
+        const l = log as { type?: unknown; text?: unknown; location?: unknown } | null;
+        if (l?.type !== 'error' || (typeof l.text === 'string' && RESOURCE_ERROR_TEXT.test(l.text))) continue;
+        sources.push(typeof l.location === 'string' ? l.location.replace(/(:\d+){1,2}$/, '') : '');
+      }
+      if (sources.length === 0) continue;
+      const origins = sources.some((src) => /^https?:/.test(src))
+        ? await ownOrigins(row.id, entry.errors.runId)
+        : new Set<string>();
+      entry.errors.consoleErrors += sources.filter(
+        (src) => !/^https?:/.test(src) || isOwnOriginRequest(src, origins),
+      ).length;
+    }
+    const requestRows = await db
+      .select({
+        caseId: networkRequests.testRunsCaseId,
+        method: networkRequests.method,
+        url: networkRequests.normalizedUrl,
+        status: networkRequests.status,
+        serverLogs: networkRequests.serverLogs,
+      })
+      .from(networkRequests)
+      .where(
+        and(
+          inArray(networkRequests.testRunsCaseId, slice),
+          or(gte(networkRequests.status, 500), isNotNull(networkRequests.serverLogs)),
+        ),
+      );
+    for (const r of requestRows) {
+      if (!r.url) continue;
+      const route = routeNodeKey(r.method, r.url);
+      if (!routeNodeKeys.has(route)) continue;
+      const entry = byExecution.get(r.caseId)!;
+      if (r.status >= 500) {
+        entry.errors.serverErrors.push({ route, status: r.status });
+        routeSteps.add(r.caseId);
+      }
+      const logged = parseJsonArray(r.serverLogs).some((log) =>
+        ERROR_LOG_LEVELS.has(String((log as { level?: unknown } | null)?.level ?? '').toLowerCase()),
+      );
+      if (logged) entry.errors.backendErrors.push(route);
+    }
+  }
+  // Only an execution with a 5xx needs its steps, to see whether it routed its own requests.
+  const withServerErrors = [...routeSteps];
+  for (let i = 0; i < withServerErrors.length; i += 100) {
+    const rows = await db
+      .select({ id: testRunsCases.id, steps: testRunsCases.steps })
+      .from(testRunsCases)
+      .where(inArray(testRunsCases.id, withServerErrors.slice(i, i + 100)));
+    for (const row of rows) {
+      const routes = parseJsonArray(row.steps).some((step) => {
+        const title = (step as { title?: unknown } | null)?.title;
+        return typeof title === 'string' && ROUTE_STEP_TITLE.test(title);
+      });
+      if (routes) byExecution.get(row.id)!.errors.serverErrors = [];
+    }
+  }
+
+  // One execution per test: a test that passed on several browsers reports its first with errors.
+  const out = new Map<number, PassedExecutionErrors>();
+  for (const { testCaseId, errors } of byExecution.values()) {
+    if (out.has(testCaseId) || passedWithErrorsDetail(errors) === null) continue;
+    out.set(testCaseId, errors);
+  }
+  return [...out].map(([testCaseId, errors]) => ({ testCaseId, errors }));
+}
+
+/** The project's catalog entries as the catalog detector reads them; a row whose steps do not parse is left out. */
+async function loadCatalogEntries(db: DrizzleDB, projectId: number): Promise<CatalogEntryReachInput[]> {
+  const rows = await db
+    .select({
+      module: testFunctions.module,
+      name: testFunctions.name,
+      kind: testFunctions.kind,
+      receiver: testFunctions.receiver,
+      urlPattern: testFunctions.urlPattern,
+      steps: testFunctions.steps,
+      paramSources: testFunctions.paramSources,
+    })
+    .from(testFunctions)
+    .where(eq(testFunctions.projectId, projectId));
+  return rows.flatMap((r) => {
+    const steps = parseJsonArray(r.steps).filter(
+      (s): s is FunctionPatternStep =>
+        !!s &&
+        typeof s === 'object' &&
+        typeof (s as FunctionPatternStep).action === 'string' &&
+        !!(s as FunctionPatternStep).target,
+    );
+    if (steps.length === 0) return [];
+    return [{ ...r, steps, paramSources: parseJsonArray(r.paramSources) as FunctionParamSource[] }];
+  });
+}
+
+/** A JSON array column, parsed when stored as text; anything else reads as empty. */
+function parseJsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Recompute a project's project-wide gaps (success-only, single-covering-test,
  * surface-drift) from the graph and history, rank them by exposure, and upsert
@@ -1399,7 +1813,8 @@ export async function computeScenarioGaps(
 
   // The controls and links the tests' locators target, from the locator index,
   // and the pages where a test operated an element the index could not name.
-  const unresolvedByPage = await syncControlReach(db, projectId);
+  const indexedUses = await loadIndexedLocatorUses(db, projectId);
+  const unresolvedByPage = await syncControlReach(db, projectId, indexedUses);
 
   // Reach edges → which test cases reach which nodes. Code reach's `coverage`
   // edges and `file` nodes (every file a test executed) stay out of the node
@@ -1712,6 +2127,33 @@ export async function computeScenarioGaps(
       .where(and(eq(bugReports.projectId, projectId), eq(bugReports.status, 'open')))
   ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
 
+  // Passing tests the application reported an error under, on the default branch.
+  const passedWithErrors = await loadPassedWithErrors(db, projectId, recentIds, routeNodeKeys);
+  const passedMeta = await loadTestMeta(
+    db,
+    passedWithErrors.map((p) => p.testCaseId).filter((id) => !meta.has(id)),
+  );
+  const passedExecutions: PassedWithError[] = passedWithErrors.map((p) => ({
+    testCaseId: p.testCaseId,
+    title: (meta.get(p.testCaseId) ?? passedMeta.get(p.testCaseId))?.title ?? `test ${p.testCaseId}`,
+    detail: passedWithErrorsDetail(p.errors)!,
+  }));
+
+  // Assertions and catalog calls, from the default branch's locator index.
+  const graphPages = nodeRows.filter((n) => n.kind === 'page');
+  const assertionPages = assertionLightPages(indexedUses, new Set(graphPages.map((n) => n.key)));
+  const catalogReach = resolveCatalogMethodReach(
+    await loadCatalogEntries(db, projectId),
+    indexedUses,
+    graphPages.map((n) => {
+      const url = (n.attrs as { url?: unknown } | null)?.url;
+      return {
+        url: typeof url === 'string' && url ? url : pageKeyUrl(n.key),
+        tests: reachByNode.get(`page\x00${n.key}`) ?? new Set<number>(),
+      };
+    }),
+  );
+
   const detected = [
     ...detectReportedBugEscapes(openReports),
     ...detectSuccessOnly([...routeStats.values()]),
@@ -1731,6 +2173,9 @@ export async function computeScenarioGaps(
     ...detectFixDidNotHold(regressedClusters),
     ...detectDeclaredNeverHit(declaredNodes),
     ...detectUnprobedDependency(dependencyProbeStatus),
+    ...detectPassedWithErrors(passedExecutions),
+    ...detectAssertionLight(assertionPages),
+    ...detectCatalogMethodNoTestCalls(catalogReach),
   ];
 
   // A gap on a route, a handler or a dependency is exposed through the handler
@@ -1802,6 +2247,9 @@ export async function computeScenarioGaps(
       'declared-never-hit',
       'unprobed-dependency',
       'escaped-defect',
+      'passed-with-errors',
+      'assertion-light',
+      'catalog-method-no-test-calls',
     ],
     scored,
     latestRunId,
@@ -2134,6 +2582,51 @@ function sameUsedCall(snapshot: { usedMethod: string; usedArgs: unknown }, targe
 /** How long a locator use keeps a test's reach to a control: as long as the graph keeps a reaches edge unseen. */
 const LOCATOR_REACH_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 
+/** One distinct locator use of a test on the default branch, from the locator index. */
+interface IndexedLocatorUse {
+  testCaseId: number;
+  target: string;
+  action: string;
+  callSite: string;
+  /** The page key the call ran on, '' when unknown. */
+  page: string;
+  lastSeenAt: Date | number | string | null;
+  lastSeenRunId: number | null;
+}
+
+/** The default branch's locator uses the index saw within the reach age, one row per distinct use. */
+async function loadIndexedLocatorUses(
+  db: DrizzleDB,
+  projectId: number,
+  now: Date = new Date(),
+): Promise<IndexedLocatorUse[]> {
+  return db
+    .select({
+      testCaseId: locatorUsages.testCaseId,
+      target: locatorUsages.target,
+      action: locatorUsages.action,
+      callSite: locatorUsages.callSite,
+      page: locatorUsages.page,
+      lastSeenAt: max(locatorUsages.lastSeenAt),
+      lastSeenRunId: max(locatorUsages.lastSeenRunId),
+    })
+    .from(locatorUsages)
+    .where(
+      and(
+        eq(locatorUsages.projectId, projectId),
+        eq(locatorUsages.branch, ''),
+        gte(locatorUsages.lastSeenAt, new Date(now.getTime() - LOCATOR_REACH_MAX_AGE_MS)),
+      ),
+    )
+    .groupBy(
+      locatorUsages.testCaseId,
+      locatorUsages.target,
+      locatorUsages.action,
+      locatorUsages.callSite,
+      locatorUsages.page,
+    );
+}
+
 /**
  * Write a `reaches` edge from each test to the controls and links its locators
  * target on the default branch, from the locator index and its snapshots. Only
@@ -2147,6 +2640,7 @@ const LOCATOR_REACH_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 async function syncControlReach(
   db: DrizzleDB,
   projectId: number,
+  indexedUses: IndexedLocatorUse[],
   now: Date = new Date(),
 ): Promise<Map<string, Set<number>>> {
   const nodeRows = await db
@@ -2165,34 +2659,7 @@ async function syncControlReach(
     links: new Set(nodeRows.filter((n) => n.kind === 'link').map((n) => n.key)),
   };
 
-  const useRows =
-    nodeRows.length === 0
-      ? []
-      : await db
-          .select({
-            testCaseId: locatorUsages.testCaseId,
-            target: locatorUsages.target,
-            action: locatorUsages.action,
-            callSite: locatorUsages.callSite,
-            page: locatorUsages.page,
-            lastSeenAt: max(locatorUsages.lastSeenAt),
-            lastSeenRunId: max(locatorUsages.lastSeenRunId),
-          })
-          .from(locatorUsages)
-          .where(
-            and(
-              eq(locatorUsages.projectId, projectId),
-              eq(locatorUsages.branch, ''),
-              gte(locatorUsages.lastSeenAt, new Date(now.getTime() - LOCATOR_REACH_MAX_AGE_MS)),
-            ),
-          )
-          .groupBy(
-            locatorUsages.testCaseId,
-            locatorUsages.target,
-            locatorUsages.action,
-            locatorUsages.callSite,
-            locatorUsages.page,
-          );
+  const useRows = nodeRows.length === 0 ? [] : indexedUses;
 
   // Snapshot alternatives only for the tests with a use their own chain does not name.
   const needsAlternatives = [

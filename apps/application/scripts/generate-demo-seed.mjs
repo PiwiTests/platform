@@ -55,6 +55,7 @@ import {
   WEB_DASHBOARD_PROJECT_ID,
   buildWebDashboardTestMap,
   webDashboardFinalPage,
+  webDashboardPassingConsole,
   webDashboardRequests,
   webDashboardStepTitles,
 } from '../shared/demo/demo-test-map.mjs';
@@ -1321,6 +1322,17 @@ for (const proj of DEMO_PROJECTS) {
           timestamp: caseStartMs + 200 + idx * 60,
           location: entry.location,
         }));
+      }
+      // A web-dashboard test's own console lines, on every passing execution, after the draw above.
+      const ownConsole =
+        !isFailedCase && !isDidNotRunCase && proj.id === WEB_DASHBOARD_PROJECT_ID
+          ? webDashboardPassingConsole(caseDef.title)
+          : null;
+      if (ownConsole) {
+        consoleLogs = [
+          ...(consoleLogs ?? []),
+          ...ownConsole.map((entry, idx) => ({ ...entry, timestamp: caseStartMs + 400 + idx * 60 })),
+        ];
       }
 
       // A dialog left open at the failure moment, when the story carries one —
@@ -4432,6 +4444,7 @@ const REBASE_SQL = [
   // timestamps already bound. Nullable columns stay NULL.
   `UPDATE probes SET probed_at = probed_at + ${D_MS};`,
   `UPDATE flake_experiments SET created_at = created_at + ${D_MS}, finished_at = finished_at + ${D_MS};`,
+  `UPDATE test_functions SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE graph_nodes SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS}, pruned_at = pruned_at + ${D_MS};`,
   `UPDATE graph_edges SET last_seen_at = last_seen_at + ${D_MS}, created_at = created_at + ${D_MS};`,
   `UPDATE scenario_gaps SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, accepted_at = accepted_at + ${D_MS}, covered_at = covered_at + ${D_MS}, closed_at = closed_at + ${D_MS}, snoozed_until = snoozed_until + ${D_MS};`,
@@ -4465,6 +4478,8 @@ gapRun.metadata.scm.remoteUrl = SCM_REPOS[1].repositoryUrl;
 gapRun.metadata.scm.prNumber = 418;
 gapRun.metadata.scm.baseBranch = SCM_REPOS[1].defaultBranch ?? 'main';
 
+/** The function catalog: the web-dashboard model's page objects and helpers. */
+const TEST_FUNCTIONS = [];
 const GRAPH_NODES = [
   {
     project_id: 1,
@@ -5091,6 +5106,7 @@ for (const gap of SCENARIO_GAPS) {
   GRAPH_EDGES.push(...map.edges);
   PROBES.push(...map.probes);
   SCENARIO_GAPS.push(...map.gaps);
+  TEST_FUNCTIONS.push(...map.functions);
 }
 
 // The v2.4.0 release marker, linked to the run it keeps.
@@ -5378,6 +5394,9 @@ const lines = [
   insert('test_run_resource_reports', TEST_RUN_RESOURCE_REPORTS),
   insert('resource_findings', RESOURCE_FINDINGS),
   insert('resource_occurrences', RESOURCE_OCCURRENCES),
+  '',
+  '-- Function catalog (page-object methods and helpers the suite owns)',
+  insert('test_functions', TEST_FUNCTIONS),
   '',
   '-- Feature graph nodes (Test Map)',
   insert('graph_nodes', GRAPH_NODES),

@@ -1,0 +1,378 @@
+/**
+ * The detectors that read inputs Piwi already stores: passed with errors (the
+ * console, backend logs and responses of passing executions), assertion-light
+ * (the matchers the locator index records per page) and catalog method no test
+ * calls (the function catalog against the locator index).
+ */
+import { describe, test, expect, beforeEach } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { createClient } from '@libsql/client';
+import * as schema from '../../server/database/schema.sqlite';
+
+delete process.env.PIWI_DATABASE_URL;
+const gaps = await import('../../shared/handlers/scenario-gaps');
+
+describe('assertionLightPages', () => {
+  const pages = new Set(['/users', '/reports', '/login']);
+
+  test('a page whose every check is on presence is light; a value check or a read clears it', () => {
+    const out = gaps.assertionLightPages(
+      [
+        { testCaseId: 1, action: 'expect.toBeVisible', page: '/users' },
+        { testCaseId: 2, action: 'expect.not.toBeHidden', page: '/users' },
+        { testCaseId: 1, action: 'click', page: '/users' },
+        { testCaseId: 3, action: 'expect.toBeVisible', page: '/reports' },
+        { testCaseId: 4, action: 'expect.toHaveText', page: '/reports' },
+        { testCaseId: 5, action: 'expect.toBeAttached', page: '/login' },
+        { testCaseId: 5, action: 'count', page: '/login' },
+      ],
+      pages,
+    );
+    expect(out).toEqual([
+      { pageKey: '/users', testCount: 2, dataAssertions: 0 },
+      { pageKey: '/reports', testCount: 2, dataAssertions: 1 },
+      { pageKey: '/login', testCount: 1, dataAssertions: 1 },
+    ]);
+    expect(gaps.detectAssertionLight(out).map((g) => g.key)).toEqual(['page:/users']);
+  });
+
+  test('a page no test asserts on, an unknown page and a page the graph lacks are left out', () => {
+    const out = gaps.assertionLightPages(
+      [
+        { testCaseId: 1, action: 'fill', page: '/login' },
+        { testCaseId: 1, action: 'waitFor', page: '/login' },
+        { testCaseId: 1, action: 'expect.toBeVisible', page: '' },
+        { testCaseId: 1, action: 'expect.toBeVisible', page: '/elsewhere' },
+      ],
+      pages,
+    );
+    expect(out).toEqual([]);
+  });
+});
+
+describe('resolveCatalogMethodReach', () => {
+  const entry = (over: Partial<gaps.CatalogEntryReachInput>): gaps.CatalogEntryReachInput => ({
+    module: './pages/UsersPage',
+    name: 'm',
+    kind: 'page-object-method',
+    receiver: 'usersPage',
+    urlPattern: '**/users',
+    steps: [],
+    paramSources: [],
+    ...over,
+  });
+  const pages = [
+    { url: 'https://app.test/users', tests: new Set([1, 2, 3]) },
+    { url: 'https://app.test/settings', tests: new Set([4]) },
+  ];
+
+  test('a test calls a method when it runs one of its fixed steps on a page the pattern matches', () => {
+    const out = gaps.resolveCatalogMethodReach(
+      [
+        entry({
+          name: 'inviteUser',
+          steps: [
+            { action: 'click', target: { role: 'button', name: 'Invite user' } },
+            { action: 'fill', target: { role: 'textbox', name: 'Email' } },
+          ],
+          paramSources: [{ param: 'email', stepIndex: 1, from: 'value' }],
+        }),
+        entry({ name: 'goToNextPage', steps: [{ action: 'click', target: { role: 'button', name: 'Next page' } }] }),
+        entry({ name: 'confirm', steps: [{ action: 'press', target: { testId: 'confirm' } }] }),
+        entry({
+          name: 'save',
+          steps: [{ action: 'click', target: { role: 'button', name: 'Save' } }],
+        }),
+      ],
+      [
+        { testCaseId: 1, target: "getByRole('button', { name: 'Invite user' })", action: 'click', page: '/users' },
+        { testCaseId: 2, target: "getByTestId('confirm')", action: 'click', page: '' },
+        // A Save on another page is not this method's Save.
+        { testCaseId: 4, target: "getByRole('button', { name: 'Save' })", action: 'click', page: '/settings' },
+      ],
+      pages,
+    );
+    expect(out.map((m) => [m.label, m.callCount, m.pageReachedBy])).toEqual([
+      ['usersPage.inviteUser', 1, 3],
+      ['usersPage.goToNextPage', 0, 3],
+      ['usersPage.confirm', 1, 3],
+      ['usersPage.save', 0, 3],
+    ]);
+    expect(gaps.detectCatalogMethodNoTestCalls(out).map((g) => g.title)).toEqual([
+      'usersPage.goToNextPage is never called',
+      'usersPage.save is never called',
+    ]);
+  });
+
+  test('a method whose targets all come from parameters gets no decision, and a fixture none either', () => {
+    const out = gaps.resolveCatalogMethodReach(
+      [
+        entry({
+          name: 'openSection',
+          receiver: null,
+          kind: 'helper',
+          steps: [{ action: 'click', target: { role: 'link', name: 'Appearance' } }],
+          paramSources: [{ param: 'section', stepIndex: 0, from: 'text' }],
+        }),
+        entry({
+          name: 'signedIn',
+          kind: 'fixture',
+          steps: [{ action: 'click', target: { role: 'button', name: 'Go' } }],
+        }),
+        entry({ name: 'open', steps: [{ action: 'goto', target: {} }] }),
+      ],
+      [],
+      pages,
+    );
+    expect(out).toEqual([]);
+  });
+
+  test('a method on a page no test reaches is not raised', () => {
+    const out = gaps.resolveCatalogMethodReach(
+      [entry({ urlPattern: '**/billing', steps: [{ action: 'click', target: { role: 'button', name: 'Pay' } }] })],
+      [],
+      pages,
+    );
+    expect(out[0]).toMatchObject({ callCount: 0, pageReachedBy: 0 });
+    expect(gaps.detectCatalogMethodNoTestCalls(out)).toEqual([]);
+  });
+});
+
+describe('passedWithErrorsDetail', () => {
+  test('names the 5xx responses, the backend errors and the console errors, in that order', () => {
+    expect(
+      gaps.passedWithErrorsDetail({
+        runId: 7,
+        serverErrors: [
+          { route: 'POST /api/audit', status: 500 },
+          { route: 'POST /api/audit', status: 502 },
+          { route: 'GET /api/a', status: 503 },
+          { route: 'GET /api/b', status: 500 },
+        ],
+        backendErrors: ['POST /api/audit', 'GET /api/c'],
+        consoleErrors: 2,
+      }),
+    ).toBe(
+      'run #7 · POST /api/audit returned 500 · GET /api/a returned 503 · 1 more 5xx · the backend logged an error on POST /api/audit and 1 more · the page logged 2 console errors',
+    );
+  });
+
+  test('is null when the execution reported nothing', () => {
+    expect(gaps.passedWithErrorsDetail({ runId: 1, serverErrors: [], backendErrors: [], consoleErrors: 0 })).toBeNull();
+  });
+});
+
+// ── DB-backed ────────────────────────────────────────────────────────────────
+
+let db: ReturnType<typeof drizzle<typeof schema>>;
+beforeEach(async () => {
+  db = drizzle(createClient({ url: ':memory:' }), { schema });
+  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await db.insert(schema.projects).values({ id: 1, name: 'p', defaultBranch: 'main' });
+});
+
+const ORIGIN = 'https://app.test';
+const metadata = { htmlReport: { projects: [{ use: { baseURL: ORIGIN } }] } };
+
+/** One execution with its console lines, its requests and its steps. */
+async function execution(opts: {
+  id: number;
+  runId: number;
+  testCaseId: number;
+  status?: string;
+  console?: Array<{ type: string; text: string; location: string | null }>;
+  requests?: Array<{ method: string; path: string; status: number; logs?: Array<{ level: string; message: string }> }>;
+  steps?: Array<{ title: string }>;
+}) {
+  await db.insert(schema.testRunsCases).values({
+    id: opts.id,
+    testRunId: opts.runId,
+    testCaseId: opts.testCaseId,
+    status: opts.status ?? 'passed',
+    consoleLogs: (opts.console ?? []).map((c) => ({ ...c, timestamp: 0 })) as never,
+    steps: (opts.steps ?? []) as never,
+  });
+  for (const r of opts.requests ?? []) {
+    await db.insert(schema.networkRequests).values({
+      testRunsCaseId: opts.id,
+      testRunId: opts.runId,
+      method: r.method,
+      url: `${ORIGIN}${r.path}`,
+      normalizedUrl: r.path,
+      status: r.status,
+      serverLogs: r.logs ? (r.logs.map((l) => ({ ...l, timestamp: 0, category: 'app' })) as never) : null,
+    });
+  }
+}
+
+describe('computeScenarioGaps — passed with errors', () => {
+  test('raises the passing tests the application reported an error under, on the default branch only', async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      {
+        id: 2,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(),
+        branch: 'feature/x',
+        metadata: metadata as never,
+      },
+      { id: 3, projectId: 1, status: 'failed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+    ]);
+    const titles = ['backend', 'console', 'widget', 'resource', 'routed', 'server', 'branch', 'fails now'];
+    await db
+      .insert(schema.testCases)
+      .values(titles.map((title, i) => ({ id: i + 1, projectId: 1, filePath: 'a.spec.ts', title })));
+    await db.insert(schema.graphNodes).values(
+      ['PATCH /api/orgs', 'GET /api/report'].map((key) => ({
+        projectId: 1,
+        kind: 'route',
+        key,
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+      })),
+    );
+
+    const backendError = [
+      { method: 'PATCH', path: '/api/orgs', status: 200, logs: [{ level: 'Error', message: 'x' }] },
+    ];
+    await execution({ id: 1, runId: 1, testCaseId: 1, requests: backendError });
+    await execution({
+      id: 2,
+      runId: 1,
+      testCaseId: 2,
+      console: [{ type: 'error', text: 'TypeError: boom', location: `${ORIGIN}/assets/app.js:1:200` }],
+    });
+    await execution({
+      id: 3,
+      runId: 1,
+      testCaseId: 3,
+      console: [{ type: 'error', text: 'widget failed', location: 'https://widget.other/loader.js:1:1' }],
+    });
+    await execution({
+      id: 4,
+      runId: 1,
+      testCaseId: 4,
+      console: [{ type: 'error', text: 'Failed to load resource: 403', location: `${ORIGIN}/api/orgs` }],
+    });
+    const fiveHundred = [{ method: 'GET', path: '/api/report', status: 500 }];
+    await execution({ id: 5, runId: 1, testCaseId: 5, requests: fiveHundred, steps: [{ title: 'Route requests' }] });
+    await execution({ id: 6, runId: 1, testCaseId: 6, requests: fiveHundred });
+    await execution({ id: 7, runId: 2, testCaseId: 7, requests: backendError });
+    await execution({ id: 8, runId: 1, testCaseId: 8, requests: backendError });
+    await execution({ id: 9, runId: 3, testCaseId: 8, status: 'failed' });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'passed-with-errors' });
+    expect(raised.map((g) => g.title).sort()).toEqual([
+      'backend passed with errors',
+      'console passed with errors',
+      'server passed with errors',
+    ]);
+    expect(raised.find((g) => g.title.startsWith('server'))!.evidence[0]).toContain('GET /api/report returned 500');
+    expect(raised.find((g) => g.title.startsWith('backend'))!.evidence[0]).toContain(
+      'the backend logged an error on PATCH /api/orgs',
+    );
+  });
+
+  test('without a recorded baseURL, the origins of the graph’s routes tell the page’s own scripts from others', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'own' },
+      { id: 2, projectId: 1, filePath: 'a.spec.ts', title: 'third party' },
+    ]);
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'GET /api/report', firstSeenRunId: 1, lastSeenRunId: 1 });
+    const requests = [{ method: 'GET', path: '/api/report', status: 200 }];
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests,
+      console: [{ type: 'error', text: 'boom', location: `${ORIGIN}/assets/app.js:4:2` }],
+    });
+    await execution({
+      id: 2,
+      runId: 1,
+      testCaseId: 2,
+      requests,
+      console: [{ type: 'error', text: 'widget', location: 'https://widget.other/w.js:1:1' }],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'passed-with-errors' });
+    expect(raised.map((g) => g.title)).toEqual(['own passed with errors']);
+  });
+});
+
+describe('computeScenarioGaps — assertion-light and the function catalog', () => {
+  test('raise a page tests check only for presence and a catalog method no test calls, and close them once covered', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'users.spec.ts', title: 'lists users' });
+    await db.insert(schema.graphNodes).values({
+      projectId: 1,
+      kind: 'page',
+      key: '/users',
+      attrs: { url: `${ORIGIN}/users` },
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+    });
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '1',
+      toKind: 'page',
+      toKey: '/users',
+      kind: 'reaches',
+      lastSeenAt: new Date(),
+    });
+    const use = (action: string, target = "getByRole('table')") => ({
+      projectId: 1,
+      testCaseId: 1,
+      locator: target,
+      target,
+      action,
+      browserName: 'chromium',
+      callSite: `users.spec.ts:${action.length}:5`,
+      page: '/users',
+      lastSeenAt: new Date(),
+    });
+    await db.insert(schema.locatorUsages).values(use('expect.toBeVisible'));
+    const steps = (name: string) => JSON.stringify([{ action: 'click', target: { role: 'button', name } }]);
+    await db.insert(schema.testFunctions).values(
+      ['Invite user', 'Next page'].map((name) => ({
+        projectId: 1,
+        name: name === 'Invite user' ? 'inviteUser' : 'goToNextPage',
+        kind: 'page-object-method',
+        module: './pages/UsersPage',
+        receiver: 'usersPage',
+        params: '[]',
+        urlPattern: '**/users',
+        steps: steps(name),
+        paramSources: '[]',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+    );
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'assertion-light' })).map((g) => g.title)).toEqual([
+      '/users is asserted only by visibility',
+    ]);
+    expect(
+      (await gaps.listScenarioGaps(db, 1, { detector: 'catalog-method-no-test-calls' })).map((g) => g.title).sort(),
+    ).toEqual(['usersPage.goToNextPage is never called', 'usersPage.inviteUser is never called']);
+
+    await db
+      .insert(schema.locatorUsages)
+      .values([use('expect.toHaveCount'), use('click', "getByRole('button', { name: 'Invite user' })")]);
+    await gaps.computeScenarioGaps(db, 1);
+    expect(await gaps.listScenarioGaps(db, 1, { detector: 'assertion-light' })).toEqual([]);
+    expect(
+      (await gaps.listScenarioGaps(db, 1, { detector: 'catalog-method-no-test-calls' })).map((g) => g.title),
+    ).toEqual(['usersPage.goToNextPage is never called']);
+  });
+});

@@ -75,12 +75,20 @@ interface Score {
 const BENCHMARK_FILE = join(rootDir, 'shared/demo/demo-test-map-benchmark.json');
 const ratio = (n: number, d: number) => (d === 0 ? 1 : Math.round((n / d) * 1000) / 1000);
 
-/** Precision and recall per benchmarked detector, from the gaps a recompute raised on an empty ledger. */
-function benchmark(rows: GapRow[]): Record<string, Score> {
+/**
+ * Precision and recall per benchmarked detector, from the gaps a recompute raised
+ * on an empty ledger. The ground truth names a test by its title, so a gap keyed
+ * by test id is read by its title.
+ */
+function benchmark(rows: GapRow[], titles: Map<number, string>): Record<string, Score> {
   const out: Record<string, Score> = {};
+  const byTitle = (key: string) =>
+    key.replace(/^test:(\d+)$/, (_, id: string) => `test:${titles.get(Number(id)) ?? id}`);
   for (const [detector, keys] of Object.entries(expectedWebDashboardGaps()).sort(([a], [b]) => a.localeCompare(b))) {
     const want = new Set(keys);
-    const raised = new Set(rows.filter((r) => r.detector === detector && r.status !== 'closed').map((r) => r.key));
+    const raised = new Set(
+      rows.filter((r) => r.detector === detector && r.status !== 'closed').map((r) => byTitle(r.key)),
+    );
     const found = [...raised].filter((k) => want.has(k)).length;
     out[detector] = {
       precision: ratio(found, raised.size),
@@ -185,11 +193,16 @@ describe('the web-dashboard Test Map', () => {
     await backfillUnindexedProjects(benchDb as never);
     await benchDb.delete(schema.scenarioGaps).where(eq(schema.scenarioGaps.projectId, WEB_DASHBOARD_PROJECT_ID));
     await computeScenarioGaps(benchDb as never, WEB_DASHBOARD_PROJECT_ID);
+    const tests = await benchDb
+      .select({ id: schema.testCases.id, title: schema.testCases.title })
+      .from(schema.testCases)
+      .where(eq(schema.testCases.projectId, WEB_DASHBOARD_PROJECT_ID));
     const scores = benchmark(
       await benchDb
         .select()
         .from(schema.scenarioGaps)
         .where(and(eq(schema.scenarioGaps.projectId, WEB_DASHBOARD_PROJECT_ID), eq(schema.scenarioGaps.kind, 'gap'))),
+      new Map(tests.map((t) => [t.id, t.title])),
     );
     benchClient.close();
     if (process.env.PIWI_UPDATE_DEMO_TEST_MAP) writeFileSync(BENCHMARK_FILE, `${JSON.stringify(scores, null, 2)}\n`);
