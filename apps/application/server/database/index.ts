@@ -54,22 +54,23 @@ function backfillTraceResourceLinks(): void {
 }
 
 /**
- * Take the query out of the route keys an older version wrote, once per
- * instance, before the first run is ingested; a failure is logged and the next
- * start tries again.
+ * Take the query out of the route keys stored with one, once per instance,
+ * without blocking startup; a failure is logged and the next start tries again.
  */
-async function rewriteRouteKeys(target: DB): Promise<void> {
-  try {
-    const { rewriteQueryRouteKeysOnce } = await import('../utils/graph-route-keys');
-    const rewrite = await rewriteQueryRouteKeysOnce(target as any);
-    if (rewrite && rewrite.nodes + rewrite.edges + rewrite.probes + rewrite.gaps > 0) {
-      console.log(
-        `[Database] Route keys without the query: ${rewrite.nodes} node(s), ${rewrite.edges} edge(s), ${rewrite.probes} probe(s), ${rewrite.gaps} gap(s)`,
-      );
+function rewriteRouteKeys(target: DB): void {
+  void (async () => {
+    try {
+      const { rewriteQueryRouteKeysOnce } = await import('../utils/graph-route-keys');
+      const rewrite = await rewriteQueryRouteKeysOnce(target as any);
+      if (rewrite && rewrite.nodes + rewrite.edges + rewrite.probes + rewrite.gaps > 0) {
+        console.log(
+          `[Database] Route keys without the query: ${rewrite.nodes} node(s), ${rewrite.edges} edge(s), ${rewrite.probes} probe(s), ${rewrite.gaps} gap(s)`,
+        );
+      }
+    } catch (err) {
+      console.error('[Database] Route-key rewrite failed:', err);
     }
-  } catch (err) {
-    console.error('[Database] Route-key rewrite failed:', err);
-  }
+  })();
 }
 
 /**
@@ -131,7 +132,7 @@ async function openDatabase(): Promise<DB> {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
-          await rewriteRouteKeys(db as any);
+          rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
         } catch (error) {
@@ -182,7 +183,7 @@ async function openDatabase(): Promise<DB> {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
-          await rewriteRouteKeys(db);
+          rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
         } catch (error) {

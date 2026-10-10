@@ -12,8 +12,13 @@ import * as schema from '../../server/database/schema.sqlite';
 import { routeNodeKey } from '../../shared/graph';
 
 delete process.env.PIWI_DATABASE_URL;
-const { rewriteQueryRouteKeys, rewriteQueryRouteKeysOnce, gapKeyWithoutRouteQuery, signatureWithoutRouteQuery } =
-  await import('../../server/utils/graph-route-keys');
+const {
+  rewriteQueryRouteKeys,
+  rewriteQueryRouteKeysOnce,
+  gapKeyWithoutRouteQuery,
+  signatureWithoutRouteQuery,
+  ROUTE_KEYS_WITHOUT_QUERY_SETTING,
+} = await import('../../server/utils/graph-route-keys');
 const { collectRunGraphReaches } = await import('../../server/utils/graph-ingest');
 
 const PAGE = 'GET /api/users?page=%3Credacted%3E';
@@ -237,10 +242,47 @@ describe('rewriteQueryRouteKeys', () => {
     );
   });
 
-  test('runs once per instance', async () => {
+  test('a closed row holding the new key gives it up to a dismissed duplicate, so the verdict survives', async () => {
+    const gap = (key: string, status: string, updatedAt: number) => ({
+      projectId: 1,
+      kind: 'gap',
+      detector: 'success-only',
+      class: 'blind-spot',
+      title: 't',
+      key,
+      status,
+      updatedAt: new Date(updatedAt),
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('GET /api/users', 'closed', 3000), gap(PAGE, 'dismissed', 1000), gap(ROLE, 'accepted', 2000)]);
+    await rewriteQueryRouteKeys(db as never);
+    const rows = await db.select().from(schema.scenarioGaps);
+    expect(rows.map((r) => [r.key, r.status]).sort()).toEqual(
+      [
+        ['GET /api/users', 'dismissed'],
+        [PAGE, 'closed'],
+        [ROLE, 'closed'],
+      ].sort(),
+    );
+  });
+
+  test('runs once per instance, and a process finding a fresh claim leaves it alone', async () => {
     await db.insert(schema.graphNodes).values({ projectId: 1, kind: 'route', key: PAGE, lastSeenAt: new Date() });
     expect(await rewriteQueryRouteKeysOnce(db as never)).toMatchObject({ nodes: 1 });
     await db.insert(schema.graphNodes).values({ projectId: 1, kind: 'route', key: ROLE, lastSeenAt: new Date() });
     expect(await rewriteQueryRouteKeysOnce(db as never)).toBeNull();
+
+    // Another process is running it: a fresh claim is left alone, a stale one is taken over.
+    await db
+      .update(schema.appSettings)
+      .set({ value: { state: 'running', at: 'x' } as never, updatedAt: new Date() })
+      .where(eq(schema.appSettings.key, ROUTE_KEYS_WITHOUT_QUERY_SETTING));
+    expect(await rewriteQueryRouteKeysOnce(db as never)).toBeNull();
+    await db
+      .update(schema.appSettings)
+      .set({ updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000) })
+      .where(eq(schema.appSettings.key, ROUTE_KEYS_WITHOUT_QUERY_SETTING));
+    expect(await rewriteQueryRouteKeysOnce(db as never)).toMatchObject({ nodes: 1 });
   });
 });

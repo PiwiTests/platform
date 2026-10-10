@@ -69,7 +69,7 @@ import {
 } from '@piwitests/core/function-match';
 import { PATH_ANCHOR_HOST } from '@piwitests/core/page-key';
 import { notLabRun } from './probes';
-import { INVESTIGATION_RUN_ORIGINS } from '../run-eligibility';
+import { INVESTIGATION_RUN_ORIGINS, runOriginIn } from '../run-eligibility';
 import { finalAttempts } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS } from './detector-precision';
@@ -1085,16 +1085,32 @@ export function detectAssertionLight(pages: AssertionLightPage[]): DetectedGap[]
 /** Matchers that check an element is there, not what it shows. */
 const PRESENCE_MATCHERS = new Set(['toBeVisible', 'toBeHidden', 'toBeAttached', 'toBeInViewport']);
 
+/** The text a locator's last locating call finds its element by, when it is a string. */
+function locatorText(target: string): string | null {
+  const calls = tryParseLocatorChain(target)?.calls.filter((c) => LOCATING_METHODS.has(c.method)) ?? [];
+  const call = calls[calls.length - 1];
+  if (!call) return null;
+  if (call.method === 'getByRole') {
+    const options = call.args[1]?.type === 'object' ? call.args[1].entries : [];
+    return stringArg(options.find(([k]) => k === 'name')?.[1]);
+  }
+  return ['getByText', 'getByLabel', 'getByTitle', 'getByAltText', 'getByPlaceholder'].includes(call.method)
+    ? stringArg(call.args[0])
+    : null;
+}
+
 /**
  * Per page, the tests that assert on it and how many of them check a value. An
  * `expect` on presence alone (visible, hidden, attached, in the viewport, or
- * their negations) is the light kind; any other matcher, and any read of the
- * element the index cannot name (a count, an evaluate, a text read), counts as
- * a value check. A page no test asserts on is a step of a journey, not a light
- * assertion, and is left out, and so is a page the graph does not hold.
+ * their negations) is the light kind, unless the element is found by a text
+ * holding a number (`getByText('Total: $42.00')`), which names a value the page
+ * computed. Any other matcher, and any read of the element the index cannot name
+ * (a count, an evaluate, a text read), counts as a value check. A page no test
+ * asserts on is a step of a journey, not a light assertion, and is left out, and
+ * so is a page the graph does not hold.
  */
 export function assertionLightPages(
-  uses: ReadonlyArray<{ testCaseId: number; action: string; page: string }>,
+  uses: ReadonlyArray<{ testCaseId: number; action: string; page: string; target?: string }>,
   graphPages: ReadonlySet<string>,
 ): AssertionLightPage[] {
   const presence = new Map<string, Set<number>>();
@@ -1108,7 +1124,8 @@ export function assertionLightPages(
     if (!u.page || !graphPages.has(u.page)) continue;
     if (isInteractionAction(u.action) || u.action === 'waitFor') continue;
     const matcher = u.action.startsWith('expect.') ? u.action.slice('expect.'.length).replace(/^not\./, '') : null;
-    if (matcher && PRESENCE_MATCHERS.has(matcher)) add(presence, u.page, u.testCaseId);
+    const namesValue = !!u.target && /\d/.test(locatorText(u.target) ?? '');
+    if (matcher && PRESENCE_MATCHERS.has(matcher) && !namesValue) add(presence, u.page, u.testCaseId);
     else add(value, u.page, u.testCaseId);
   }
   return [...presence].map(([pageKey, tests]) => ({
@@ -1163,20 +1180,67 @@ function pageKeyUrl(pageKey: string): string {
 }
 
 /**
+ * Whether a catalog URL pattern matches a page, read the one way for every
+ * caller: against the page's own URL when the graph holds one (so a pattern
+ * naming an origin matches), else against its path, anchored. A page of another
+ * site is keyed with its origin, which is its URL.
+ */
+export function catalogPatternMatchesPage(pattern: string | null, pageKey: string, url?: string | null): boolean {
+  if (!pattern) return true;
+  if (/^https?:/.test(pageKey)) return urlMatches(pattern, pageKey);
+  return (!!url && urlMatches(pattern, url)) || urlMatches(pattern, pageKeyUrl(pageKey));
+}
+
+/**
  * Per catalog method or helper, how many tests call it and how many reach a
  * page its URL pattern matches. A test calls it when one of its locator uses on
  * the default branch does what one of the method's steps does, on an element
  * that step names by test id or by name, on a page the pattern matches (or an
  * unknown page). A step whose target comes from a parameter names no element,
  * so a method without a fixed step gets no decision and is left out, and so are
- * fixtures, which no test calls.
+ * fixtures, which no test calls. Uses are folded to their distinct target,
+ * action and page first, so the work grows with what the suite does, not how
+ * often.
  */
 export function resolveCatalogMethodReach(
   entries: ReadonlyArray<CatalogEntryReachInput>,
   uses: ReadonlyArray<{ testCaseId: number; target: string; action: string; page: string }>,
-  pages: ReadonlyArray<{ url: string; tests: ReadonlySet<number> }>,
+  pages: ReadonlyArray<{ key: string; url?: string | null; tests: ReadonlySet<number> }>,
 ): CatalogMethodReach[] {
-  const candidates = uses.map((u) => ({ use: u, candidate: locatorMatchCandidate(u.target) }));
+  const urlOf = new Map(pages.map((p) => [p.key, p.url ?? null]));
+  type UseGroup = { action: string; page: string; candidate: MatchCandidate; tests: Set<number> };
+  const groups = new Map<string, UseGroup>();
+  const candidateOf = new Map<string, MatchCandidate | null>();
+  for (const u of uses) {
+    if (!candidateOf.has(u.target)) candidateOf.set(u.target, locatorMatchCandidate(u.target));
+    const candidate = candidateOf.get(u.target);
+    if (!candidate) continue;
+    const id = `${u.target}\x00${u.action}\x00${u.page}`;
+    let group = groups.get(id);
+    if (!group) groups.set(id, (group = { action: u.action, page: u.page, candidate, tests: new Set() }));
+    group.tests.add(u.testCaseId);
+  }
+  // A step naming a test id or a role can only match an element with that test id or role.
+  const byTestId = new Map<string, UseGroup[]>();
+  const byRole = new Map<string, UseGroup[]>();
+  const index = (map: Map<string, UseGroup[]>, key: string | null, group: UseGroup) => {
+    if (!key) return;
+    const list = map.get(key.toLowerCase()) ?? [];
+    list.push(group);
+    map.set(key.toLowerCase(), list);
+  };
+  for (const group of groups.values()) {
+    index(byTestId, group.candidate.testId, group);
+    index(byRole, group.candidate.role, group);
+  }
+  const all = [...groups.values()];
+  const groupsFor = (target: FunctionPatternStep['target']): UseGroup[] =>
+    target.testId
+      ? (byTestId.get(target.testId.toLowerCase()) ?? [])
+      : target.role
+        ? (byRole.get(target.role.toLowerCase()) ?? [])
+        : all;
+
   const out: CatalogMethodReach[] = [];
   for (const entry of entries) {
     if (entry.kind === 'fixture') continue;
@@ -1186,22 +1250,24 @@ export function resolveCatalogMethodReach(
       return Boolean((step.target.testId && !from.has('testId')) || (step.target.name && !from.has('text')));
     });
     if (fixed.length === 0) continue;
+    const onPage = new Map<string, boolean>();
+    const matches = (page: string) => {
+      let hit = onPage.get(page);
+      if (hit === undefined)
+        onPage.set(page, (hit = catalogPatternMatchesPage(entry.urlPattern, page, urlOf.get(page))));
+      return hit;
+    };
     const callers = new Set<number>();
-    for (const { use, candidate } of candidates) {
-      if (!candidate || callers.has(use.testCaseId)) continue;
-      if (use.page && !urlMatches(entry.urlPattern, /^https?:/.test(use.page) ? use.page : pageKeyUrl(use.page))) {
-        continue;
-      }
-      if (
-        fixed.some((s) => catalogActionMatches(s.action, use.action) && scoreTargetMatch(s.target, candidate) >= 0.6)
-      ) {
-        callers.add(use.testCaseId);
+    for (const step of fixed) {
+      for (const group of groupsFor(step.target)) {
+        if (!catalogActionMatches(step.action, group.action)) continue;
+        if (group.page && !matches(group.page)) continue;
+        if (scoreTargetMatch(step.target, group.candidate) < 0.6) continue;
+        for (const id of group.tests) callers.add(id);
       }
     }
     const reachers = new Set<number>();
-    for (const page of pages) {
-      if (urlMatches(entry.urlPattern, page.url)) for (const id of page.tests) reachers.add(id);
-    }
+    for (const page of pages) if (matches(page.key)) for (const id of page.tests) reachers.add(id);
     out.push({
       module: entry.module,
       name: entry.name,
@@ -1561,27 +1627,27 @@ export function passedWithErrorsDetail(e: PassedExecutionErrors): string | null 
 async function loadPassedWithErrors(
   db: DrizzleDB,
   projectId: number,
-  runIds: number[],
   routeNodeKeys: Set<string>,
 ): Promise<Array<{ testCaseId: number; errors: PassedExecutionErrors }>> {
-  if (runIds.length === 0) return [];
   const defaultBranch = await projectDefaultBranch(db, projectId);
   const [project] = await db
     .select({ routeOrigins: projects.routeOrigins })
     .from(projects)
     .where(eq(projects.id, projectId));
-  const runs = (
-    await db
-      .select({ id: testRuns.id, branch: testRuns.branch, origin: testRuns.origin, metadata: testRuns.metadata })
-      .from(testRuns)
-      .where(inArray(testRuns.id, runIds))
-  ).filter((r) => {
-    const branch = r.branch?.trim() || null;
-    return (
-      (branch === null || branch === defaultBranch) &&
-      !(INVESTIGATION_RUN_ORIGINS as readonly string[]).includes(r.origin ?? '')
-    );
-  });
+  // The default branch's newest runs, whatever other branches ran since; a run with no branch counts on it.
+  const runs = await db
+    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, projectId),
+        notLabRun(testRuns.origin),
+        not(runOriginIn(testRuns.origin, INVESTIGATION_RUN_ORIGINS)),
+        or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, '')),
+      ),
+    )
+    .orderBy(desc(testRuns.id))
+    .limit(HISTORY_WINDOW_RUNS);
   if (runs.length === 0) return [];
   const runById = new Map(runs.map((r) => [r.id, r]));
 
@@ -1608,8 +1674,10 @@ async function loadPassedWithErrors(
         a.testCaseId != null && newestRun.get(a.testCaseId) === a.testRunId,
     ),
   );
-  // A test fails on any browser: then it is a failure, not a pass with errors.
-  const failedTests = new Set(finals.filter((a) => a.status.toLowerCase() !== 'passed').map((a) => a.testCaseId));
+  // A test that fails on any browser is a failure, not a pass with errors; a skip is neither.
+  const failedTests = new Set(
+    finals.filter((a) => !['passed', 'skipped', 'didnotrun'].includes(a.status.toLowerCase())).map((a) => a.testCaseId),
+  );
   const passing = finals.filter((a) => a.status.toLowerCase() === 'passed' && !failedTests.has(a.testCaseId));
   if (passing.length === 0) return [];
 
@@ -1628,6 +1696,7 @@ async function loadPassedWithErrors(
   // `baseURL`s and the project's allowlist, else the execution's own page loads,
   // else the origins of its requests the graph holds as routes.
   const runOrigins = new Map<number, Set<string>>();
+  const seenOrigins = new Map<number, Set<string>>();
   const ownOrigins = async (executionId: number, runId: number): Promise<Set<string>> => {
     let origins = runOrigins.get(runId);
     if (!origins) {
@@ -1638,6 +1707,9 @@ async function loadPassedWithErrors(
       runOrigins.set(runId, origins);
     }
     if (origins.size > 0) return origins;
+    // A run's executions share its origins: the first one found serves the rest of the run.
+    const found = seenOrigins.get(runId);
+    if (found) return found;
     const requests = await db
       .select({
         method: networkRequests.method,
@@ -1647,13 +1719,16 @@ async function loadPassedWithErrors(
       })
       .from(networkRequests)
       .where(eq(networkRequests.testRunsCaseId, executionId));
-    const pages = originsFromDocumentRequests(requests);
-    if (pages.size > 0) return pages;
-    return collectOwnOrigins(
-      requests
-        .filter((r) => r.normalizedUrl && routeNodeKeys.has(routeNodeKey(r.method, r.normalizedUrl)))
-        .map((r) => r.url),
-    );
+    let fromRequests = originsFromDocumentRequests(requests);
+    if (fromRequests.size === 0) {
+      fromRequests = collectOwnOrigins(
+        requests
+          .filter((r) => r.normalizedUrl && routeNodeKeys.has(routeNodeKey(r.method, r.normalizedUrl)))
+          .map((r) => r.url),
+      );
+    }
+    if (fromRequests.size > 0) seenOrigins.set(runId, fromRequests);
+    return fromRequests;
   };
 
   const mocksFailure = new Set<number>();
@@ -2114,7 +2189,7 @@ export async function computeScenarioGaps(
   ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
 
   // Passing tests the application reported an error under, on the default branch.
-  const passedWithErrors = await loadPassedWithErrors(db, projectId, recentIds, routeNodeKeys);
+  const passedWithErrors = await loadPassedWithErrors(db, projectId, routeNodeKeys);
   const passedMeta = await loadTestMeta(
     db,
     passedWithErrors.map((p) => p.testCaseId).filter((id) => !meta.has(id)),
@@ -2134,7 +2209,8 @@ export async function computeScenarioGaps(
     graphPages.map((n) => {
       const url = (n.attrs as { url?: unknown } | null)?.url;
       return {
-        url: typeof url === 'string' && url ? url : pageKeyUrl(n.key),
+        key: n.key,
+        url: typeof url === 'string' && url ? url : null,
         tests: reachByNode.get(`page\x00${n.key}`) ?? new Set<number>(),
       };
     }),
@@ -3007,11 +3083,14 @@ export async function loadGapFeatureOwners(
   }
 
   const featureByMethod = new Map<string, string>();
-  if (subjects.some((s) => s.kind === 'catalog')) {
-    const entries = await db
-      .select({ module: testFunctions.module, name: testFunctions.name, urlPattern: testFunctions.urlPattern })
-      .from(testFunctions)
-      .where(eq(testFunctions.projectId, projectId));
+  const methods = new Set(subjects.filter((s) => s.kind === 'catalog').map((s) => s.key));
+  if (methods.size > 0) {
+    const entries = (
+      await db
+        .select({ module: testFunctions.module, name: testFunctions.name, urlPattern: testFunctions.urlPattern })
+        .from(testFunctions)
+        .where(eq(testFunctions.projectId, projectId))
+    ).filter((e) => methods.has(`${e.module}#${e.name}`));
     const pages = await db
       .select({ key: graphNodes.key, attrs: graphNodes.attrs })
       .from(graphNodes)
@@ -3029,7 +3108,7 @@ export async function loadGapFeatureOwners(
         const owner = owners.get(`page\x00${page.key}`);
         if (!owner || owner.hub) continue;
         const url = (page.attrs as { url?: unknown } | null)?.url;
-        if (!urlMatches(entry.urlPattern, typeof url === 'string' && url ? url : pageKeyUrl(page.key))) continue;
+        if (!catalogPatternMatchesPage(entry.urlPattern, page.key, typeof url === 'string' ? url : null)) continue;
         tally.set(owner.feature, (tally.get(owner.feature) ?? 0) + 1);
       }
       const [best] = [...tally].sort(([a, x], [b, y]) => y - x || a.localeCompare(b));

@@ -27,13 +27,17 @@ describe('assertionLightPages', () => {
         { testCaseId: 4, action: 'expect.toHaveText', page: '/reports' },
         { testCaseId: 5, action: 'expect.toBeAttached', page: '/login' },
         { testCaseId: 5, action: 'count', page: '/login' },
+        // A visible text holding a number names a value: the total is checked.
+        { testCaseId: 6, action: 'expect.toBeVisible', page: '/orders', target: "getByText('Total: $42.00')" },
+        { testCaseId: 7, action: 'expect.toBeVisible', page: '/orders', target: "getByText('Order placed')" },
       ],
-      pages,
+      new Set([...pages, '/orders']),
     );
     expect(out).toEqual([
       { pageKey: '/users', testCount: 2, dataAssertions: 0 },
       { pageKey: '/reports', testCount: 2, dataAssertions: 1 },
       { pageKey: '/login', testCount: 1, dataAssertions: 1 },
+      { pageKey: '/orders', testCount: 2, dataAssertions: 1 },
     ]);
     expect(gaps.detectAssertionLight(out).map((g) => g.key)).toEqual(['page:/users']);
   });
@@ -64,8 +68,8 @@ describe('resolveCatalogMethodReach', () => {
     ...over,
   });
   const pages = [
-    { url: 'https://app.test/users', tests: new Set([1, 2, 3]) },
-    { url: 'https://app.test/settings', tests: new Set([4]) },
+    { key: '/users', url: 'https://app.test/users', tests: new Set([1, 2, 3]) },
+    { key: '/settings', url: 'https://app.test/settings', tests: new Set([4]) },
   ];
 
   test('a test calls a method when it runs one of its fixed steps on a page the pattern matches', () => {
@@ -127,6 +131,35 @@ describe('resolveCatalogMethodReach', () => {
       pages,
     );
     expect(out).toEqual([]);
+  });
+
+  test('a pattern naming the origin matches a use on that page as it matches the page', () => {
+    const out = gaps.resolveCatalogMethodReach(
+      [
+        entry({
+          urlPattern: 'https://app.test/users',
+          steps: [{ action: 'click', target: { role: 'button', name: 'Next' } }],
+        }),
+      ],
+      [{ testCaseId: 1, target: "getByRole('button', { name: 'Next' })", action: 'click', page: '/users' }],
+      pages,
+    );
+    expect(out[0]).toMatchObject({ callCount: 1, pageReachedBy: 3 });
+  });
+
+  test('stays quick on a large suite', () => {
+    const entries = Array.from({ length: 200 }, (_, i) =>
+      entry({ name: `m${i}`, steps: [{ action: 'click', target: { role: 'button', name: `Action ${i}` } }] }),
+    );
+    const uses = Array.from({ length: 50_000 }, (_, i) => ({
+      testCaseId: i % 2000,
+      target: `getByRole('${i % 3 === 0 ? 'link' : 'button'}', { name: 'Control ${i % 5000}' })`,
+      action: i % 2 ? 'click' : 'expect.toBeVisible',
+      page: '/users',
+    }));
+    const started = performance.now();
+    gaps.resolveCatalogMethodReach(entries, uses, pages);
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 
   test('a method on a page no test reaches is not raised', () => {
@@ -287,6 +320,45 @@ describe('computeScenarioGaps — passed with errors', () => {
     expect(raised.find((g) => g.title.startsWith('backend'))!.evidence[0]).toContain(
       'the backend logged an error on PATCH /api/orgs',
     );
+  });
+
+  test('reads the default branch’s own runs, however many pull-request runs came after, and a skip is no failure', async () => {
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    await db.insert(schema.testRuns).values(
+      Array.from({ length: 31 }, (_, i) => ({
+        id: i + 2,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(),
+        branch: 'feature/busy',
+        metadata: metadata as never,
+      })),
+    );
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'saves' });
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'PATCH /api/orgs', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests: [{ method: 'PATCH', path: '/api/orgs', status: 200, logs: [{ level: 'error', message: 'x' }] }],
+    });
+    // Skipped on a second browser: not a failure.
+    await db
+      .insert(schema.testRunsCases)
+      .values({ id: 2, testRunId: 1, testCaseId: 1, status: 'skipped', browserName: 'webkit' });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'passed-with-errors' });
+    expect(raised.map((g) => g.title)).toEqual(['saves passed with errors']);
   });
 
   test('without a recorded baseURL, the origins of the graph’s routes tell the page’s own scripts from others', async () => {

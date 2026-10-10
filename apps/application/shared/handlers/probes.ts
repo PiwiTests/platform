@@ -671,7 +671,7 @@ export async function recordProbeResults(
     .from(projects)
     .where(eq(projects.id, projectId));
   const settings = resolveServerProbeSettings(project?.serverProbes);
-  // A plan an older server built may still name a route with its query.
+  // A result names its route without the query, as the route node does.
   results = results.map((r) => ({ ...r, routeKey: routeKeyWithoutQuery(r.routeKey) }));
   results = results.filter((r) => {
     if (!ownTestIds.has(r.testCaseId)) return false;

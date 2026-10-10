@@ -29,7 +29,7 @@ without it.
 | **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold** | fragile | a failure cluster whose fix later regressed | nothing more | `Fixed in a1b2c3d · regressed 6 days later` |
 | **Not noticed** | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
-| **Passed with errors** | false-comfort | a test whose newest default-branch execution passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
+| **Passed with errors** | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
 | **Assertion-light** | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | `2 tests assert on this page, only that elements are present` |
 | **Catalog method, no test calls** | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
 | **Unprobed dependency** | false-comfort | a dependency a route's handler calls that no probe has failed | server spans | `Called by 4 route(s) · no probe has checked what happens when it fails` |
@@ -40,8 +40,9 @@ resource* line. A response no server sent, such as one the test's route handler 
 application, and a test that fulfills a failing response means to see the page fail, so its console errors do not
 count either.
 *Assertion-light* counts any other matcher (a text, a count, a value, an attribute) as a value check, and so is a read
-of an element the index cannot name; an `expect` on no locator, such as a downloaded file's name, never reaches the
-index, so a page checked only that way reads as light. A test calls a catalog method when one of its default-branch
+of an element the index cannot name, or a visible element found by a text holding a number
+(`getByText('Total: $42.00')`); an `expect` on no locator, such as a downloaded file's name, never reaches the index,
+so a page checked only that way reads as light. A test calls a catalog method when one of its default-branch
 locator uses does what one of the method's steps does, on the element that step names by test id or name, on a page
 its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 

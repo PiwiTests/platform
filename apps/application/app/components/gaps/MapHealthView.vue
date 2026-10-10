@@ -142,11 +142,9 @@ const fullCount = computed(() => rows.value.filter((r) => stateOf(r) === 'full')
       <p class="text-xs text-muted">{{ fullCount }} of {{ rows.length }} inputs are complete.</p>
       <ul class="mt-2 divide-y divide-default">
         <li v-for="row in rows" :key="row.id" class="py-2.5 flex gap-3" :data-shot="`map-health-${row.id}`">
-          <UIcon
-            :name="STATE_ICON[stateOf(row)].icon"
-            :class="['size-4 mt-0.5 shrink-0', STATE_ICON[stateOf(row)].class]"
-            :aria-label="STATE_ICON[stateOf(row)].label"
-          />
+          <span role="img" :aria-label="STATE_ICON[stateOf(row)].label" class="mt-0.5 shrink-0">
+            <UIcon :name="STATE_ICON[stateOf(row)].icon" :class="['size-4 block', STATE_ICON[stateOf(row)].class]" />
+          </span>
           <div class="min-w-0 flex-1 space-y-1">
             <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
               <span class="text-sm font-medium text-highlighted">{{ COPY[row.id]?.label ?? row.id }}</span>
