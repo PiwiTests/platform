@@ -17,21 +17,6 @@
   {
     "detector": "control-nobody-exercises",
     "class": "blind-spot",
-    "key": "control:button:Create token",
-    "title": "No test exercises control button:Create token",
-    "evidence": ["On 1 page · no locator targets it — observed reach."],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.04000000000000001,
-    "test": null
-  },
-  {
-    "detector": "control-nobody-exercises",
-    "class": "blind-spot",
     "key": "control:button:Deactivate",
     "title": "No test exercises control button:Deactivate",
     "evidence": ["On 1 page · no locator targets it — observed reach."],
@@ -122,21 +107,6 @@
   {
     "detector": "control-nobody-exercises",
     "class": "blind-spot",
-    "key": "control:button:Revoke",
-    "title": "No test exercises control button:Revoke",
-    "evidence": ["On 1 page · no locator targets it — observed reach."],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.04000000000000001,
-    "test": null
-  },
-  {
-    "detector": "control-nobody-exercises",
-    "class": "blind-spot",
     "key": "control:button:Schedule report",
     "title": "No test exercises control button:Schedule report",
     "evidence": ["On 1 page · no locator targets it — observed reach."],
@@ -214,21 +184,6 @@
     "class": "blind-spot",
     "key": "control:combobox:Range",
     "title": "No test exercises control combobox:Range",
-    "evidence": ["On 1 page · no locator targets it — observed reach."],
-    "factors": {
-      "churn": 0.1,
-      "age": 0.1,
-      "escapeHistory": 0.1,
-      "priority": 0.1
-    },
-    "score": 0.04000000000000001,
-    "test": null
-  },
-  {
-    "detector": "control-nobody-exercises",
-    "class": "blind-spot",
-    "key": "control:combobox:Scope",
-    "title": "No test exercises control combobox:Scope",
     "evidence": ["On 1 page · no locator targets it — observed reach."],
     "factors": {
       "churn": 0.1,

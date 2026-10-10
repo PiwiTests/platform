@@ -681,6 +681,7 @@ const SETTINGS_SPEC = [
   "  test('rotates the API token', async ({ page }) => {",
   "    await page.goto('/settings/api');",
   "    await page.getByRole('button', { name: 'Rotate token' }).click();",
+  "    await page.getByTestId('confirm-rotate').click();",
   "    await expect(page.getByText('New token generated')).toBeVisible();",
   '  });',
   '',

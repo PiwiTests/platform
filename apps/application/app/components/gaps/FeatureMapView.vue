@@ -14,7 +14,7 @@ import { errorMessage } from '~/utils';
 
 interface MapFeature {
   key: string;
-  members: { routes: number; pages: number; controls: number };
+  members: { routes: number; pages: number; controls: number; inferred: number };
   tests: number;
   gaps: Record<string, number>;
   worstClass: string | null;
@@ -28,6 +28,7 @@ interface FeatureMap {
   features: MapFeature[];
   links: MapLink[];
   ungrouped: { gaps: Record<string, number>; worstClass: string | null };
+  shared: { nodes: number; gaps: Record<string, number>; worstClass: string | null };
 }
 
 const props = defineProps<{ projectId: number; selected?: string | null }>();
@@ -139,10 +140,16 @@ function membersLabel(f: MapFeature): string {
   return `${counted(f.members.routes, 'route')} · ${counted(f.members.pages, 'page')} · ${counted(f.members.controls, 'control')}`;
 }
 
+/** How many of a feature's members its tests do not reach, as `5 inferred`, or ''. */
+function inferredLabel(f: MapFeature): string {
+  return f.members.inferred > 0 ? `${f.members.inferred} inferred from its pages and routes` : '';
+}
+
 function featureTitle(f: MapFeature): string {
   const gaps = gapCount(f);
   const shared = (map.value?.links ?? []).filter((l) => l.from === f.key || l.to === f.key).length;
-  return `${f.key}\n${membersLabel(f)} · reached by ${counted(f.tests, 'test')}\n${gaps} open gap${gaps === 1 ? '' : 's'}${f.worstClass ? ` (worst: ${f.worstClass})` : ''}${shared ? `\nshares nodes with ${shared} feature${shared === 1 ? '' : 's'}` : ''}`;
+  const inferred = inferredLabel(f);
+  return `${f.key}\n${membersLabel(f)}${inferred ? ` (${inferred})` : ''} · reached by ${counted(f.tests, 'test')}\n${gaps} open gap${gaps === 1 ? '' : 's'}${f.worstClass ? ` (worst: ${f.worstClass})` : ''}${shared ? `\nshares nodes with ${shared} feature${shared === 1 ? '' : 's'}` : ''}`;
 }
 
 function isSelected(key: string): boolean {
@@ -157,6 +164,26 @@ const ungroupedCount = computed(() => {
   let n = 0;
   for (const v of Object.values(map.value?.ungrouped.gaps ?? {})) n += v;
   return n;
+});
+
+const sharedCount = computed(() => {
+  let n = 0;
+  for (const v of Object.values(map.value?.shared?.gaps ?? {})) n += v;
+  return n;
+});
+
+/** The hubs, as one sentence up to where the list's group is named. */
+const sharedLine = computed(() => {
+  const shared = map.value?.shared;
+  if (!shared || shared.nodes === 0) return '';
+  const one = shared.nodes === 1;
+  const head = one
+    ? '1 hub, a node most tests reach or most features group, counts under no feature'
+    : `${shared.nodes} hubs, nodes most tests reach or most features group, count under no feature`;
+  if (sharedCount.value === 0) return head;
+  const worst = shared.worstClass ? ` (worst: ${shared.worstClass})` : '';
+  const gaps = sharedCount.value === 1 ? `1 open gap${worst} sits` : `${sharedCount.value} open gaps${worst} sit`;
+  return `${head}; ${one ? 'its' : 'their'} ${gaps}`;
 });
 
 /** The classes present anywhere on the map, most severe first, for the legend. */
@@ -282,7 +309,9 @@ const legend = computed(() => {
             @mouseleave="hovered = null"
           >
             <span class="min-w-0 basis-40 grow truncate text-sm font-medium text-highlighted">{{ f.key }}</span>
-            <span class="text-xs text-muted tabular-nums">{{ membersLabel(f) }}</span>
+            <span class="text-xs text-muted tabular-nums" :title="inferredLabel(f) || undefined">{{
+              membersLabel(f)
+            }}</span>
             <span class="text-xs text-muted tabular-nums">{{ counted(f.tests, 'test') }}</span>
             <span class="flex items-center gap-1">
               <UBadge
@@ -301,6 +330,10 @@ const legend = computed(() => {
             </span>
           </button>
         </div>
+        <p v-if="sharedLine" class="mt-2 text-xs text-muted" data-shot="feature-map-shared">
+          {{ sharedLine
+          }}<template v-if="sharedCount > 0"> under <em>Shared by most features</em> in the list</template>.
+        </p>
         <p v-if="ungroupedCount > 0" class="mt-2 text-xs text-muted">
           {{ ungroupedCount }} open gap{{ ungroupedCount === 1 ? '' : 's' }} on nodes no feature groups
           <span v-if="map.ungrouped.worstClass">(worst: {{ map.ungrouped.worstClass }})</span> — they sit under

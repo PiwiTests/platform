@@ -411,3 +411,77 @@ describe('control reach from the locator index', () => {
     expect(raised.map((g) => g.key)).toEqual(['control:button:Archive']);
   });
 });
+
+describe('feature grouping beyond reach', () => {
+  const reach = (entries: Array<[string, number[]]>) => new Map(entries.map(([k, ids]) => [k, new Set(ids)]));
+  const groups = gaps.groupFeatures({
+    featureByTest: new Map([
+      [1, 'Settings'],
+      [2, 'Settings'],
+      [3, 'Users'],
+      [4, 'Reports'],
+    ]),
+    reachByNode: reach([
+      ['route\x00GET /api/session', [1, 2, 3, 4]],
+      ['route\x00GET /api/tokens', [1]],
+      ['page\x00/settings/api', [1]],
+      ['page\x00/settings/organization', [2]],
+      ['page\x00/users', [3]],
+      ['page\x00/reports', [4]],
+      ['control\x00button:Rotate token', [1]],
+    ]),
+    controlsByPage: new Map([
+      ['/settings/api', new Set(['button:Rotate token', 'button:Revoke', 'searchbox:Search'])],
+      ['/users', new Set(['button:Invite', 'searchbox:Search'])],
+      ['/reports', new Set(['searchbox:Search'])],
+      ['/settings/security', new Set(['button:Enable 2FA'])],
+    ]),
+    linksByPage: new Map([['/settings/api', new Set(['/settings/security', '/billing'])]]),
+    declaredRoutes: ['DELETE /api/tokens/:id', 'GET /api/audit-log'],
+  });
+  const of = (feature: string) =>
+    groups
+      .filter((g) => g.feature === feature)
+      .map((g) => `${g.kind}:${g.key} ${g.via}${g.confidence == null ? '' : ` ${g.confidence}`}${g.hub ? ' hub' : ''}`);
+
+  test('a feature groups what its pages contain and link to under its prefix, and the declared routes beside its own', () => {
+    expect(of('Settings')).toEqual([
+      'control:button:Enable 2FA contains 0.5',
+      'control:button:Revoke contains 0.8',
+      'control:button:Rotate token reach',
+      'control:searchbox:Search contains 0.8 hub',
+      'page:/settings/api reach',
+      'page:/settings/organization reach',
+      'page:/settings/security links 0.6',
+      'route:DELETE /api/tokens/:id path 0.6',
+      'route:GET /api/session reach hub',
+      'route:GET /api/tokens reach',
+    ]);
+    expect(of('Users')).toEqual([
+      'control:button:Invite contains 0.8',
+      'control:searchbox:Search contains 0.8 hub',
+      'page:/users reach',
+      'route:GET /api/session reach hub',
+    ]);
+  });
+
+  test('a page under another prefix and a declared route beside no feature stay ungrouped', () => {
+    const keys = new Set(groups.map((g) => g.key));
+    expect(keys.has('/billing')).toBe(false);
+    expect(keys.has('GET /api/audit-log')).toBe(false);
+  });
+
+  test('with fewer than three features no node is a hub', () => {
+    const two = gaps.groupFeatures({
+      featureByTest: new Map([
+        [1, 'A'],
+        [2, 'B'],
+      ]),
+      reachByNode: reach([['route\x00GET /api/session', [1, 2]]]),
+      controlsByPage: new Map(),
+      linksByPage: new Map(),
+      declaredRoutes: [],
+    });
+    expect(two.every((g) => !g.hub)).toBe(true);
+  });
+});

@@ -618,7 +618,9 @@ describe('computeScenarioGaps', () => {
 
   test('list_scenario_gaps keeps a success-only gap under a feature filter', async () => {
     await seedRun(1);
-    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
+    await db
+      .insert(schema.testCases)
+      .values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x', feature: 'Orders' });
     const [exec] = await db
       .insert(schema.testRunsCases)
       .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
@@ -640,14 +642,14 @@ describe('computeScenarioGaps', () => {
         status: 200,
       });
     }
-    // A feature groups that route.
+    // A test tagged with the feature reaches that route, so the feature groups it.
     await db.insert(schema.graphEdges).values({
       projectId: 1,
-      fromKind: 'feature',
-      fromKey: 'Orders',
+      fromKind: 'test',
+      fromKey: '2',
       toKind: 'route',
       toKey: 'GET /api/orders',
-      kind: 'groups',
+      kind: 'reaches',
       lastSeenAt: new Date(++clock),
     });
 

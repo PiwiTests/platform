@@ -53,7 +53,9 @@ export type GraphOrigin =
   | 'import'
   | 'coverage'
   | 'usage'
-  | 'manual';
+  | 'manual'
+  /** Derived from other edges, below full confidence: a feature grouping what its pages hold. */
+  | 'inferred';
 
 /**
  * A route node's key is `METHOD /normalized/pattern`, matching how the comment

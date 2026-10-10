@@ -8,7 +8,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient, type Client } from '@libsql/client';
 import { and, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { WEB_DASHBOARD_PROJECT_ID } from '#shared/demo/demo-test-map.mjs';
+import { WEB_DASHBOARD_PROJECT_ID, expectedWebDashboardGaps } from '#shared/demo/demo-test-map.mjs';
 
 const { computeScenarioGaps } = await import('../../shared/handlers/scenario-gaps');
 const { backfillUnindexedProjects } = await import('../../server/utils/locator-usages');
@@ -21,9 +21,14 @@ const { backfillUnindexedProjects } = await import('../../server/utils/locator-u
  * build it when their database opens, so control reach is part of the recompute,
  * and the control reach and feature groups it writes are the seeded ones.
  *
+ * The model also labels its ground truth (`expectedWebDashboardGaps`), and the
+ * benchmark scores each detector's precision and recall against it: a change
+ * that lowers a score fails until `shared/demo/demo-test-map-benchmark.json`
+ * records it.
+ *
  * After a change to the model or to a detector, `PIWI_UPDATE_DEMO_TEST_MAP=1`
- * rewrites `shared/demo/demo-test-map-gaps.json` from the recompute; regenerate
- * the seed (`npm run app:seed:demo`) and run the test again.
+ * rewrites `shared/demo/demo-test-map-gaps.json` and the benchmark from the
+ * recompute; regenerate the seed (`npm run app:seed:demo`) and run the test again.
  */
 
 const rootDir = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
@@ -46,6 +51,42 @@ function shape(rows: GapRow[]) {
       status: r.status,
     }))
     .sort((a, b) => `${a.detector} ${a.key}`.localeCompare(`${b.detector} ${b.key}`));
+}
+
+/** One detector's score on the benchmark: what it raised against what the ground truth expects. */
+interface Score {
+  precision: number;
+  recall: number;
+  raised: number;
+  expected: number;
+  found: number;
+  /** Expected gaps it did not raise. */
+  missed: string[];
+  /** Gaps it raised that the truth does not hold. */
+  wrong: string[];
+}
+
+const BENCHMARK_FILE = join(rootDir, 'shared/demo/demo-test-map-benchmark.json');
+const ratio = (n: number, d: number) => (d === 0 ? 1 : Math.round((n / d) * 1000) / 1000);
+
+/** Precision and recall per benchmarked detector, from the gaps the ledger holds (every status but closed). */
+function benchmark(rows: GapRow[]): Record<string, Score> {
+  const out: Record<string, Score> = {};
+  for (const [detector, keys] of Object.entries(expectedWebDashboardGaps()).sort(([a], [b]) => a.localeCompare(b))) {
+    const want = new Set(keys);
+    const raised = new Set(rows.filter((r) => r.detector === detector && r.status !== 'closed').map((r) => r.key));
+    const found = [...raised].filter((k) => want.has(k)).length;
+    out[detector] = {
+      precision: ratio(found, raised.size),
+      recall: ratio(found, want.size),
+      raised: raised.size,
+      expected: want.size,
+      found,
+      missed: [...want].filter((k) => !raised.has(k)).sort(),
+      wrong: [...raised].filter((k) => !want.has(k)).sort(),
+    };
+  }
+  return out;
 }
 
 /** The edges the recompute writes besides gaps: locator reach to controls and links, and feature groups. */
@@ -127,6 +168,21 @@ describe('the web-dashboard Test Map', () => {
     const after = await projectGaps();
     if (process.env.PIWI_UPDATE_DEMO_TEST_MAP) await writeLedger(after);
     expect(shape(after)).toEqual(seeded);
+  });
+
+  test('no detector scores below the benchmark on the ground truth', async () => {
+    await computeScenarioGaps(db as never, WEB_DASHBOARD_PROJECT_ID);
+    const scores = benchmark(await projectGaps());
+    if (process.env.PIWI_UPDATE_DEMO_TEST_MAP) writeFileSync(BENCHMARK_FILE, `${JSON.stringify(scores, null, 2)}\n`);
+    const baseline = JSON.parse(readFileSync(BENCHMARK_FILE, 'utf-8')) as Record<string, Score>;
+    const drops = Object.entries(baseline).flatMap(([detector, was]) => {
+      const now = scores[detector];
+      return (['precision', 'recall'] as const)
+        .filter((measure) => (now?.[measure] ?? 0) < was[measure])
+        .map((measure) => `${detector} ${measure}: ${was[measure]} → ${now?.[measure] ?? 'none'}`);
+    });
+    expect(drops).toEqual([]);
+    expect(scores).toEqual(baseline);
   });
 
   test('recomputing writes the control reach and the feature groups the seed already holds', async () => {

@@ -30,6 +30,7 @@ interface Gap {
   score: number | null;
   status: string;
   feature: string | null;
+  hub?: boolean;
   testCaseId: number | null;
 }
 
@@ -104,16 +105,19 @@ const capped = computed(() => gaps.value.length >= PAGE_LIMIT);
 
 /** The group a muted detector's gaps sit in, after every feature. */
 const MUTED_GROUP = 'Muted detectors';
+/** The group the gaps on a hub sit in: a node most tests reach or most features group. */
+const SHARED_GROUP = 'Shared by most features';
 
 /**
  * Gaps grouped by feature, features ordered by their top gap's score. The gaps
- * of a muted detector leave their feature for one last group.
+ * on a hub sit in their own group, and those of a muted detector leave their
+ * feature for one last group.
  */
 const grouped = computed(() => {
   const muted = new Set(mutedDetectors.value);
   const map = new Map<string, Gap[]>();
   for (const g of gaps.value) {
-    const key = muted.has(g.detector) ? MUTED_GROUP : (g.feature ?? 'Ungrouped');
+    const key = muted.has(g.detector) ? MUTED_GROUP : g.hub ? SHARED_GROUP : (g.feature ?? 'Ungrouped');
     const arr = map.get(key) ?? [];
     arr.push(g);
     map.set(key, arr);

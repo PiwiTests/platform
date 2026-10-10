@@ -720,6 +720,13 @@ share `app/demo/db.client.ts`.
   instead of spawning a lookalike — hand-copied error strings must never drift from the fixture source again. Live
   updates flow over a BroadcastChannel (`app/demo/run-events.ts`), not SSE.
 
+- **The web-dashboard Test Map** (`shared/demo/demo-test-map.mjs`) is checked against the live recompute by
+  `tests/unit/demo-test-map.test.ts`: the seeded gaps (`demo-test-map-gaps.json`), control reach and feature groups
+  must be what a recompute writes. The model also labels its ground truth (`expectedWebDashboardGaps`), and the test
+  scores each detector's precision and recall against it (`demo-test-map-benchmark.json`): a lower score fails. After
+  a change to the model or a detector, run the test with `PIWI_UPDATE_DEMO_TEST_MAP=1`, format both files, re-seed and
+  run it again; say in the commit why a score moved.
+
 ### Demo data requirements
 
 Any feature adding a DB column, an API response field or a UI-visible change updates the demo in four places:

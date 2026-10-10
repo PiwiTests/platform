@@ -1758,7 +1758,27 @@ export async function computeScenarioGaps(
   };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
-  await syncFeatureNodes(db, projectId, reachByNode, latestRunId);
+  const controlsByPage = new Map<string, Set<string>>();
+  for (const [control, pages] of pagesByControl) {
+    for (const page of pages) controlsByPage.set(page, new Set([...(controlsByPage.get(page) ?? []), control]));
+  }
+  const linksByPage = new Map<string, Set<string>>();
+  for (const [target, sources] of linkSourcesByPage) {
+    for (const source of sources) linksByPage.set(source, new Set([...(linksByPage.get(source) ?? []), target]));
+  }
+  await syncFeatureNodes(
+    db,
+    projectId,
+    {
+      reachByNode,
+      controlsByPage,
+      linksByPage,
+      declaredRoutes: nodeRows
+        .filter((n) => n.kind === 'route' && (n.origin === 'manifest' || n.origin === 'openapi'))
+        .map((n) => n.key),
+    },
+    latestRunId,
+  );
 
   const upserted = await upsertScenarioGaps(db, projectId, scored, { runId: latestRunId });
   const closed = await closeMissingGaps(
@@ -2320,23 +2340,156 @@ async function syncControlReach(
   return unresolvedByPage;
 }
 
+// ── Features ─────────────────────────────────────────────────────────────────
+
+/** What a feature groups beyond its tests' reach is inferred from: the page inventory and the declared surface. */
+export interface FeatureGroupingInput {
+  /** The `piwi:feature` tag per test. */
+  featureByTest: ReadonlyMap<number, string>;
+  /** `kind\0key` → the tests reaching the node. */
+  reachByNode: ReadonlyMap<string, ReadonlySet<number>>;
+  /** Page → the controls it contains. */
+  controlsByPage: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Page → the pages it links to. */
+  linksByPage: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The route keys a manifest or OpenAPI document declares. */
+  declaredRoutes: readonly string[];
+}
+
+/** One `groups` edge: a feature and a node it groups, how, and whether the node is a hub. */
+export interface FeatureGroup {
+  feature: string;
+  kind: 'route' | 'page' | 'control';
+  key: string;
+  /** `reach`: a test carrying the feature reaches it; otherwise inferred from what the feature's nodes hold. */
+  via: 'reach' | 'contains' | 'links' | 'path';
+  /** Null for reach; below one when inferred. */
+  confidence: number | null;
+  /** Reached by more than half the tests or grouped by more than half the features, with three features or more. */
+  hub: boolean;
+}
+
+/** `/settings` of `/settings/api`: the first path segment, which a page's siblings share. */
+function pagePrefix(page: string): string {
+  return `/${page.split('/').filter(Boolean)[0] ?? ''}`;
+}
+
+/** `/api/users` of `GET /api/users/:id`: the first two path segments of a route. */
+function routePrefix(route: string): string {
+  const path = route.slice(route.indexOf(' ') + 1);
+  return `/${path.split('/').filter(Boolean).slice(0, 2).join('/')}`;
+}
+
 /**
- * Build `feature` nodes and `groups` edges from the `piwi:feature` tag on tests:
- * a feature groups the route and page nodes the tests carrying that tag reach.
- * Features from the function catalog and URL clustering are lower-trust sources
- * added later; the tag is the first. Canonical rows only — features are
- * project-level. Upsert semantics, so a feature that loses its tag simply stops
- * being refreshed.
+ * What each feature groups. A feature groups the routes, pages and controls the
+ * tests carrying its tag reach. It also groups, with a confidence below one,
+ * what no feature reaches: the controls its pages contain (0.8), the pages its
+ * pages link to under the same first path segment (0.6) and their controls
+ * (0.5), and the declared routes sharing the first two path segments of a route
+ * it reaches (0.6). With three features or more, a node reached by more than
+ * half the tests or grouped by more than half the features is a hub: still
+ * grouped, but no source of inference, and marked so the map neither links
+ * features through it nor counts its tests. Pure.
+ */
+export function groupFeatures(input: FeatureGroupingInput): FeatureGroup[] {
+  const groups = new Map<string, FeatureGroup>(); // feature\0kind\0key → group
+  const add = (
+    feature: string,
+    kind: FeatureGroup['kind'],
+    key: string,
+    via: FeatureGroup['via'],
+    confidence: number | null,
+  ) => {
+    const id = `${feature}\x00${kind}\x00${key}`;
+    const prev = groups.get(id);
+    if (prev && (prev.confidence == null || (confidence != null && prev.confidence >= confidence))) return;
+    groups.set(id, { feature, kind, key, via, confidence, hub: false });
+  };
+
+  const reachingTests = new Set<number>();
+  for (const [nodeKey, tests] of input.reachByNode) {
+    const kind = nodeKey.slice(0, nodeKey.indexOf('\x00'));
+    if (kind !== 'route' && kind !== 'page' && kind !== 'control') continue;
+    for (const testId of tests) {
+      reachingTests.add(testId);
+      const feature = input.featureByTest.get(testId);
+      if (feature) add(feature, kind, nodeKey.slice(kind.length + 1), 'reach', null);
+    }
+  }
+  const features = new Set([...groups.values()].map((g) => g.feature));
+  const hubsApply = features.size >= 3;
+  const reachedHub = (kind: string, key: string) =>
+    hubsApply && (input.reachByNode.get(`${kind}\x00${key}`)?.size ?? 0) > reachingTests.size / 2;
+  const reachGrouped = new Set([...groups.values()].map((g) => `${g.kind}\x00${g.key}`));
+  const featuresByReachedNode = new Map<string, Set<string>>();
+  for (const g of groups.values()) {
+    const id = `${g.kind}\x00${g.key}`;
+    featuresByReachedNode.set(id, new Set([...(featuresByReachedNode.get(id) ?? []), g.feature]));
+  }
+  const reachHub = (kind: string, key: string) =>
+    reachedHub(kind, key) ||
+    (hubsApply && (featuresByReachedNode.get(`${kind}\x00${key}`)?.size ?? 0) > features.size / 2);
+
+  for (const feature of features) {
+    const own = [...groups.values()].filter(
+      (g) => g.feature === feature && g.via === 'reach' && !reachHub(g.kind, g.key),
+    );
+    const pages = own.filter((g) => g.kind === 'page').map((g) => g.key);
+    const linkedPages: string[] = [];
+    for (const page of pages) {
+      for (const control of input.controlsByPage.get(page) ?? []) {
+        if (!reachGrouped.has(`control\x00${control}`)) add(feature, 'control', control, 'contains', 0.8);
+      }
+      for (const target of input.linksByPage.get(page) ?? []) {
+        if (target === page || pagePrefix(target) !== pagePrefix(page)) continue;
+        if (reachGrouped.has(`page\x00${target}`)) continue;
+        add(feature, 'page', target, 'links', 0.6);
+        linkedPages.push(target);
+      }
+    }
+    for (const page of linkedPages) {
+      for (const control of input.controlsByPage.get(page) ?? []) {
+        if (!reachGrouped.has(`control\x00${control}`)) add(feature, 'control', control, 'contains', 0.5);
+      }
+    }
+    const prefixes = new Set(own.filter((g) => g.kind === 'route').map((g) => routePrefix(g.key)));
+    for (const route of input.declaredRoutes) {
+      if (!reachGrouped.has(`route\x00${route}`) && prefixes.has(routePrefix(route)))
+        add(feature, 'route', route, 'path', 0.6);
+    }
+  }
+
+  const featuresByNode = new Map<string, Set<string>>();
+  for (const g of groups.values()) {
+    const id = `${g.kind}\x00${g.key}`;
+    featuresByNode.set(id, new Set([...(featuresByNode.get(id) ?? []), g.feature]));
+  }
+  for (const g of groups.values()) {
+    g.hub =
+      reachedHub(g.kind, g.key) ||
+      (hubsApply && (featuresByNode.get(`${g.kind}\x00${g.key}`)?.size ?? 0) > features.size / 2);
+  }
+  return [...groups.values()].sort(
+    (a, b) => a.feature.localeCompare(b.feature) || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key),
+  );
+}
+
+/**
+ * Build `feature` nodes and `groups` edges from the `piwi:feature` tag on tests
+ * and what the graph infers from it ({@link groupFeatures}). An inferred edge has
+ * origin `inferred` and evidence naming how (`via`); a hub's edges carry
+ * `hub: true`. Canonical rows only — features are project-level. The groups are
+ * rebuilt whole: an edge the grouping no longer yields is removed, so a feature
+ * that loses its tag leaves the map.
  */
 async function syncFeatureNodes(
   db: DrizzleDB,
   projectId: number,
-  reachByNode: Map<string, Set<number>>,
+  shape: Omit<FeatureGroupingInput, 'featureByTest'>,
   runId: number | null,
 ): Promise<void> {
   const testIds = new Set<number>();
-  for (const ids of reachByNode.values()) for (const id of ids) testIds.add(id);
-  if (testIds.size === 0) return;
+  for (const ids of shape.reachByNode.values()) for (const id of ids) testIds.add(id);
 
   const featureByTest = new Map<number, string>();
   const ids = [...testIds];
@@ -2347,26 +2500,28 @@ async function syncFeatureNodes(
       .where(inArray(testCases.id, ids.slice(i, i + 200)));
     for (const r of rows) if (r.feature?.trim()) featureByTest.set(r.id, r.feature.trim());
   }
-  if (featureByTest.size === 0) return;
+  const groups = featureByTest.size === 0 ? [] : groupFeatures({ ...shape, featureByTest });
 
-  // feature → set of "kind\x00key" nodes its tests reach.
-  const groups = new Map<string, Set<string>>();
-  for (const [nodeKey, testSet] of reachByNode) {
-    const sep = nodeKey.indexOf('\x00');
-    const kind = nodeKey.slice(0, sep);
-    if (kind !== 'route' && kind !== 'page' && kind !== 'control') continue;
-    for (const testId of testSet) {
-      const feature = featureByTest.get(testId);
-      if (!feature) continue;
-      const set = groups.get(feature) ?? new Set<string>();
-      set.add(nodeKey);
-      groups.set(feature, set);
-    }
+  const wanted = new Set(groups.map((g) => `${g.feature}\x00${g.kind}\x00${g.key}`));
+  const existing = await db
+    .select({ id: graphEdges.id, fromKey: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'groups'),
+        eq(graphEdges.fromKind, 'feature'),
+        isNull(graphEdges.branch),
+      ),
+    );
+  const stale = existing.filter((e) => !wanted.has(`${e.fromKey}\x00${e.toKind}\x00${e.toKey}`)).map((e) => e.id);
+  for (let i = 0; i < stale.length; i += 100) {
+    await db.delete(graphEdges).where(inArray(graphEdges.id, stale.slice(i, i + 100)));
   }
-  if (groups.size === 0) return;
+  if (groups.length === 0) return;
 
   const now = new Date();
-  for (const [feature, nodeKeys] of groups) {
+  for (const feature of new Set(groups.map((g) => g.feature))) {
     await db
       .insert(graphNodes)
       .values({
@@ -2389,42 +2544,49 @@ async function syncFeatureNodes(
           prunedAt: sql`null`,
         },
       });
+  }
 
-    const edgeValues = [...nodeKeys].map((nodeKey) => {
-      const sep = nodeKey.indexOf('\x00');
-      return {
-        projectId,
-        fromKind: 'feature',
-        fromKey: feature,
-        toKind: nodeKey.slice(0, sep),
-        toKey: nodeKey.slice(sep + 1),
-        kind: 'groups',
-        branch: null,
-        confidence: null,
-        origin: 'observed',
-        evidence: null as any,
-        firstSeenRunId: runId,
-        lastSeenRunId: runId,
-        lastSeenAt: now,
-      };
-    });
-    for (let i = 0; i < edgeValues.length; i += 100) {
-      await db
-        .insert(graphEdges)
-        .values(edgeValues.slice(i, i + 100))
-        .onConflictDoUpdate({
-          target: [
-            graphEdges.projectId,
-            graphEdges.fromKind,
-            graphEdges.fromKey,
-            graphEdges.kind,
-            graphEdges.toKind,
-            graphEdges.toKey,
-          ],
-          targetWhere: isNull(graphEdges.branch),
-          set: { lastSeenRunId: sql`excluded.last_seen_run_id`, lastSeenAt: sql`excluded.last_seen_at` },
-        });
-    }
+  const edgeValues = groups.map((g) => {
+    const evidence =
+      g.via === 'reach' ? (g.hub ? { hub: true } : null) : { via: g.via, ...(g.hub ? { hub: true } : {}) };
+    return {
+      projectId,
+      fromKind: 'feature',
+      fromKey: g.feature,
+      toKind: g.kind,
+      toKey: g.key,
+      kind: 'groups',
+      branch: null,
+      confidence: g.confidence,
+      origin: g.via === 'reach' ? 'observed' : 'inferred',
+      evidence: evidence as any,
+      firstSeenRunId: runId,
+      lastSeenRunId: runId,
+      lastSeenAt: now,
+    };
+  });
+  for (let i = 0; i < edgeValues.length; i += 100) {
+    await db
+      .insert(graphEdges)
+      .values(edgeValues.slice(i, i + 100))
+      .onConflictDoUpdate({
+        target: [
+          graphEdges.projectId,
+          graphEdges.fromKind,
+          graphEdges.fromKey,
+          graphEdges.kind,
+          graphEdges.toKind,
+          graphEdges.toKey,
+        ],
+        targetWhere: isNull(graphEdges.branch),
+        set: {
+          confidence: sql`excluded.confidence`,
+          origin: sql`excluded.origin`,
+          evidence: sql`excluded.evidence`,
+          lastSeenRunId: sql`excluded.last_seen_run_id`,
+          lastSeenAt: sql`excluded.last_seen_at`,
+        },
+      });
   }
 }
 
@@ -2641,8 +2803,13 @@ export interface ScenarioGapRow {
   testCaseId: number | null;
   testRunId: number | null;
   projectId: number;
-  /** The feature (from a `groups` edge) the gap's subject belongs to, or null. */
+  /**
+   * The feature (from a `groups` edge) the gap's subject belongs to, or null:
+   * one whose tests reach it before one that only infers it. Null for a hub.
+   */
   feature: string | null;
+  /** The subject is a hub: most tests reach it, or most features group it. */
+  hub?: boolean;
   snoozedUntil: number | null;
   acceptedAt: number | null;
   createdAt: number;
@@ -2722,16 +2889,39 @@ export async function listScenarioGaps(
 
   const mapped = rows.map(mapGapRow);
 
-  // Resolve each gap's feature from the `groups` edges (feature → node), canonical.
+  // Resolve each gap's feature from the `groups` edges (feature → node), canonical:
+  // the feature reaching the node, else the one inferring it with the most
+  // confidence, ties by name. A hub belongs to no one feature.
   const groupRows = await db
-    .select({ feature: graphEdges.fromKey, toKind: graphEdges.toKind, toKey: graphEdges.toKey })
+    .select({
+      feature: graphEdges.fromKey,
+      toKind: graphEdges.toKind,
+      toKey: graphEdges.toKey,
+      confidence: graphEdges.confidence,
+      evidence: graphEdges.evidence,
+    })
     .from(graphEdges)
     .where(and(eq(graphEdges.projectId, projectId), eq(graphEdges.kind, 'groups'), isNull(graphEdges.branch)));
   if (groupRows.length > 0) {
-    const featureByNode = new Map<string, string>();
-    for (const g of groupRows) featureByNode.set(`${g.toKind}\x00${g.toKey}`, g.feature);
+    const rank = (confidence: number | null) => confidence ?? 2;
+    const best = new Map<string, { feature: string; confidence: number | null; hub: boolean }>();
+    for (const g of groupRows) {
+      const id = `${g.toKind}\x00${g.toKey}`;
+      const hub = (g.evidence as { hub?: unknown } | null)?.hub === true;
+      const prev = best.get(id);
+      if (
+        !prev ||
+        rank(g.confidence) > rank(prev.confidence) ||
+        (rank(g.confidence) === rank(prev.confidence) && g.feature < prev.feature)
+      ) {
+        best.set(id, { feature: g.feature, confidence: g.confidence, hub: hub || (prev?.hub ?? false) });
+      } else if (hub) prev.hub = true;
+    }
     for (const gap of mapped) {
-      gap.feature = featureByNode.get(`${gap.subject.kind}\x00${gap.subject.key}`) ?? null;
+      const owner = best.get(`${gap.subject.kind}\x00${gap.subject.key}`);
+      if (!owner) continue;
+      if (owner.hub) gap.hub = true;
+      else gap.feature = owner.feature;
     }
   }
 
